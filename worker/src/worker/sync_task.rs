@@ -56,8 +56,15 @@ impl SyncTaskRunner {
         if !local_state.last_synced_commit.is_empty()
             && local_state.last_synced_commit == remote_commit
         {
-            info!("本地已是最新，跳过同步");
-            return Ok(true);
+            let local_count = repo.count_songs().await.unwrap_or(0);
+            if local_count > 0 {
+                info!(
+                    "本地已是最新（commit={}, songs={}），跳过同步",
+                    &remote_commit[..7.min(remote_commit.len())], local_count
+                );
+                return Ok(true);
+            }
+            warn!("commit 一致但本地歌曲数为 0，可能数据丢失，强制同步");
         }
         let is_first_sync = local_state.last_synced_commit.is_empty();
         info!("需要同步，远程 commit: {}, 是否首次: {}", remote_commit, is_first_sync);
@@ -144,20 +151,27 @@ impl SyncTaskRunner {
 
         // 3. 计算差异
         info!("execute_sync - 步骤3: 计算差异");
-        let Diff {
-            to_add,
-            to_update,
-            to_delete,
-        } = diff::compute_diff(entries, local);
-        info!("差异: to_add={}, to_update={}, to_delete={}", to_add.len(), to_update.len(), to_delete.len());
+        let Diff { to_add, to_delete } = diff::compute_diff(entries, local);
+        info!("差异: to_add={}, to_delete={}", to_add.len(), to_delete.len());
 
-        let total = to_add.len() + to_update.len();
+        let total = to_add.len();
+
+        // 3.5 空差集短路：无新增文件时跳过下载和处理阶段
+        if total == 0 {
+            info!("无新增文件，跳过下载和处理阶段");
+            // 仍同步索引文件到 MinIO（jsonl 可能含 metadata 变更）
+            if let Err(e) = sync_index_files(http, &self.app).await {
+                warn!(error = %e, "同步索引文件失败，不影响主流程");
+            }
+            return Ok(SyncSummary::default());
+        }
+
         info!("execute_sync - 步骤4: 创建同步进度记录, total={}", total);
         let progress_id = repo.create_sync_progress(history_id, total as i32).await?;
         info!("进度记录创建成功, progress_id={}", progress_id);
 
-        // 4. 合并待处理列表（新增 + 更新），先处理新增
-        let mut all: Vec<_> = to_add.into_iter().chain(to_update).collect();
+        // 4. 待处理列表 = to_add
+        let mut all: Vec<_> = to_add.into_iter().collect();
         let added_count_hint = all.len() - to_delete.len().min(all.len());
 
         // 进度状态（无锁 atomic 计数，DB 写入限流）
@@ -165,11 +179,23 @@ impl SyncTaskRunner {
         let repo_arc = repo_db_arc(self);
         let progress_id_inner = progress_id;
 
-        // 5. 下载与上传：首次同步走 zip 整包；否则逐文件下载
-        info!("execute_sync - 步骤5: 开始下载和上传文件, 模式: {}", if is_first_sync { "zip" } else { "per-file" });
-        let downloaded = if is_first_sync {
-            // 首次同步：下载整包 zip 后批量匹配上传
-            info!("首次同步: 下载 raw-lyrics.zip");
+        // 5. 下载与上传：首次同步或差集超阈值走 zip；否则逐文件，失败降级 zip
+        let threshold = self.app.cfg.worker.incremental_threshold;
+        let use_zip = is_first_sync || total > threshold;
+
+        info!(
+            "execute_sync - 步骤5: 开始下载和上传文件, 模式: {}, total: {}, threshold: {}",
+            if use_zip { "zip" } else { "per-file" },
+            total,
+            threshold,
+        );
+
+        let downloaded = if use_zip {
+            if is_first_sync {
+                info!("首次同步: 下载 raw-lyrics.zip");
+            } else {
+                info!("差集 {} > 阈值 {}, 降级为全量 zip 下载", total, threshold);
+            }
             let zip_url = self.app.cfg.github.raw_lyrics_zip_url();
             info!("zip URL: {}", zip_url);
             let zip_bytes = github::download_zip(http, &self.app.cfg.github).await?;
@@ -178,91 +204,36 @@ impl SyncTaskRunner {
                 self.app.clone(),
                 std::mem::take(&mut all),
                 zip_bytes,
-                {
-                    let ps = progress_state.clone();
-                    let repo_arc = repo_arc.clone();
-                    move |cur, total, file| {
-                        let downloaded = ps.downloaded.fetch_add(1, Ordering::Relaxed) + 1;
-                        let failed = ps.failed();
-                        // 每 N 个文件才 spawn 一次 DB 写入，避免连接池耗尽
-                        if downloaded % PROGRESS_FLUSH_INTERVAL == 0 {
-                            spawn_progress_flush(
-                                repo_arc.clone(),
-                                progress_id_inner,
-                                downloaded,
-                                failed,
-                                Some(file.to_string()),
-                            );
-                        }
-                        tracing::debug!(cur, total, downloaded, failed, "file processed");
-                    }
-                },
-                {
-                    let ps = progress_state.clone();
-                    let repo_arc = repo_arc.clone();
-                    move |entry, err| {
-                        let failed = ps.failed.fetch_add(1, Ordering::Relaxed) + 1;
-                        let downloaded = ps.downloaded();
-                        let file = entry.raw_file().unwrap_or("").to_string();
-                        // 失败也限流：每 N 次失败才 spawn DB 写入
-                        if failed % PROGRESS_FLUSH_INTERVAL == 0 {
-                            spawn_progress_flush(
-                                repo_arc.clone(),
-                                progress_id_inner,
-                                downloaded,
-                                failed,
-                                Some(file.clone()),
-                            );
-                        }
-                        warn!(file, error = %err, "zip extract/upload failed");
-                    }
-                },
+                make_progress_callback(progress_state.clone(), repo_arc.clone(), progress_id_inner),
+                make_failure_callback(progress_state.clone(), repo_arc.clone(), progress_id_inner, "zip extract/upload failed"),
             )
             .await?
         } else {
-            // 非首次：逐文件下载
-            downloader::download_and_upload_all(
+            info!("增量同步: 逐文件下载 {} 个文件", total);
+            let entries_backup = all.clone();
+            match downloader::download_and_upload_all(
                 self.app.clone(),
                 std::mem::take(&mut all),
-                {
-                    let ps = progress_state.clone();
-                    let repo_arc = repo_arc.clone();
-                    move |cur, total, file| {
-                        let downloaded = ps.downloaded.fetch_add(1, Ordering::Relaxed) + 1;
-                        let failed = ps.failed();
-                        if downloaded % PROGRESS_FLUSH_INTERVAL == 0 {
-                            spawn_progress_flush(
-                                repo_arc.clone(),
-                                progress_id_inner,
-                                downloaded,
-                                failed,
-                                Some(file.to_string()),
-                            );
-                        }
-                        tracing::debug!(cur, total, downloaded, failed, "file processed");
-                    }
-                },
-                {
-                    let ps = progress_state.clone();
-                    let repo_arc = repo_arc.clone();
-                    move |entry, err| {
-                        let failed = ps.failed.fetch_add(1, Ordering::Relaxed) + 1;
-                        let downloaded = ps.downloaded();
-                        let file = entry.raw_file().unwrap_or("").to_string();
-                        if failed % PROGRESS_FLUSH_INTERVAL == 0 {
-                            spawn_progress_flush(
-                                repo_arc.clone(),
-                                progress_id_inner,
-                                downloaded,
-                                failed,
-                                Some(file.clone()),
-                            );
-                        }
-                        warn!(file, error = %err, "download failed");
-                    }
-                },
+                make_progress_callback(progress_state.clone(), repo_arc.clone(), progress_id_inner),
+                make_failure_callback(progress_state.clone(), repo_arc.clone(), progress_id_inner, "download failed"),
             )
-            .await?
+            .await
+            {
+                Ok(d) => d,
+                Err(e) => {
+                    warn!("增量同步失败: {}, 降级为全量 zip 下载", e);
+                    let zip_bytes = github::download_zip(http, &self.app.cfg.github).await?;
+                    info!("zip 下载完成, 字节数: {}", zip_bytes.len());
+                    downloader::download_and_upload_from_zip(
+                        self.app.clone(),
+                        entries_backup,
+                        zip_bytes,
+                        make_progress_callback(progress_state.clone(), repo_arc.clone(), progress_id_inner),
+                        make_failure_callback(progress_state.clone(), repo_arc.clone(), progress_id_inner, "zip extract/upload failed"),
+                    )
+                    .await?
+                }
+            }
         };
         info!("下载完成，成功下载 {} 个文件", downloaded.len());
 
@@ -583,4 +554,50 @@ async fn upload_index_to_minio(
         .await
         .with_context(|| format!("上传索引文件到 MinIO: {}", key))?;
     Ok(())
+}
+
+/// 构造进度回调：递增 downloaded 计数，按 PROGRESS_FLUSH_INTERVAL 限流写 DB
+fn make_progress_callback(
+    ps: Arc<ProgressState>,
+    repo_arc: Arc<Repository>,
+    progress_id: i64,
+) -> impl Fn(usize, usize, &str) + Send + Sync + 'static {
+    move |cur, total, file: &str| {
+        let downloaded = ps.downloaded.fetch_add(1, Ordering::Relaxed) + 1;
+        let failed = ps.failed();
+        if downloaded % PROGRESS_FLUSH_INTERVAL == 0 {
+            spawn_progress_flush(
+                repo_arc.clone(),
+                progress_id,
+                downloaded,
+                failed,
+                Some(file.to_string()),
+            );
+        }
+        tracing::debug!(cur, total, downloaded, failed, "file processed");
+    }
+}
+
+/// 构造失败回调：递增 failed 计数，按 PROGRESS_FLUSH_INTERVAL 限流写 DB
+fn make_failure_callback(
+    ps: Arc<ProgressState>,
+    repo_arc: Arc<Repository>,
+    progress_id: i64,
+    tag: &'static str,
+) -> impl Fn(&index_parser::IndexEntry, anyhow::Error) + Send + Sync + 'static {
+    move |entry, err| {
+        let failed = ps.failed.fetch_add(1, Ordering::Relaxed) + 1;
+        let downloaded = ps.downloaded();
+        let file = entry.raw_file().unwrap_or("").to_string();
+        if failed % PROGRESS_FLUSH_INTERVAL == 0 {
+            spawn_progress_flush(
+                repo_arc.clone(),
+                progress_id,
+                downloaded,
+                failed,
+                Some(file.clone()),
+            );
+        }
+        warn!(file, error = %err, "{}", tag);
+    }
 }

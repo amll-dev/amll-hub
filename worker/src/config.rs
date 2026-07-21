@@ -171,6 +171,8 @@ pub struct WorkerConfig {
     pub sync_lock_ttl: u64,
     #[serde(default = "default_health_port")]
     pub health_port: u16,
+    #[serde(default = "default_incremental_threshold")]
+    pub incremental_threshold: usize,
 }
 
 fn default_concurrency() -> usize {
@@ -184,6 +186,9 @@ fn default_lock_ttl() -> u64 {
 }
 fn default_health_port() -> u16 {
     9090
+}
+fn default_incremental_threshold() -> usize {
+    200
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -305,6 +310,12 @@ pub fn load() -> anyhow::Result<Config> {
             env_or("WORKER_HEALTH_PORT", "9090")
                 .parse::<u16>()
                 .unwrap_or(9090),
+        )?
+        .set_override(
+            "worker.incremental_threshold",
+            env_or("INCREMENTAL_THRESHOLD", "200")
+                .parse::<i64>()
+                .unwrap_or(200),
         )?
         .set_override("ncm.api_base", env_or("NCM_API_BASE", ""))?;
 

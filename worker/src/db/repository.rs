@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
@@ -41,19 +41,26 @@ impl Repository {
         Self { db }
     }
 
-    /// 查询本地已有的 raw_lyric_file
-    /// 返回 HashMap
-    pub async fn list_raw_lyric_files(&self) -> anyhow::Result<HashMap<String, Option<i64>>> {
+    /// 查询本地已有的 raw_lyric_file 文件名集合
+    pub async fn list_raw_lyric_files(&self) -> anyhow::Result<HashSet<String>> {
         tracing::debug!("repository.list_raw_lyric_files - 开始查询本地文件列表");
         let rows = song::Entity::find()
             .select_only()
             .column(song::Column::RawLyricFile)
-            .column(song::Column::CommitTimestamp)
-            .into_tuple::<(String, Option<i64>)>()
+            .into_tuple::<String>()
             .all(&self.db)
             .await?;
         tracing::debug!("repository.list_raw_lyric_files - 查询完成，共 {} 个文件", rows.len());
         Ok(rows.into_iter().collect())
+    }
+
+    /// 统计本地歌曲总数
+    pub async fn count_songs(&self) -> anyhow::Result<i64> {
+        let count = song::Entity::find()
+            .filter(song::Column::IsDeleted.eq(false))
+            .count(&self.db)
+            .await?;
+        Ok(count as i64)
     }
 
     /// 通过 raw_lyric_file 查找 song id
