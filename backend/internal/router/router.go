@@ -21,6 +21,8 @@ func New(
 	nfH *handler.NotFoundHandler,
 	onlineSearchH *handler.OnlineSearchHandler,
 	cloudMusicH *handler.CloudMusicHandler,
+	authH *handler.AuthHandler,
+	jwtSecret string,
 ) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -29,7 +31,7 @@ func New(
 	r.Use(middleware.Logger())
 	r.Use(middleware.Recovery())
 	corsConfig := cors.Config{
-		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "OPTIONS"},
 		AllowHeaders:     []string{"*"},
 		ExposeHeaders:    []string{"Content-Range", "Content-Length", "ETag", "X-Request-ID"},
 		AllowCredentials: false,
@@ -77,6 +79,23 @@ func New(
 		api.GET("/not-found-stats", nfH.GetStats)
 		api.GET("/pure-music-whitelist", nfH.ListPureMusicWhitelist)
 		api.GET("/cloud-music-whitelist", nfH.ListCloudMusicWhitelist)
+
+		// 用户认证系统
+		auth := api.Group("/auth")
+		{
+			auth.POST("/login", authH.Login)
+			auth.POST("/register", authH.Register)
+			auth.POST("/send-code", authH.SendCode)
+			auth.POST("/forgot-password", authH.ForgotPassword)
+
+			// 受保护接口（需 JWT）
+			protected := auth.Group("")
+			protected.Use(middleware.Auth(jwtSecret))
+			protected.GET("/profile", authH.GetProfile)
+			protected.PUT("/profile", authH.UpdateProfile)
+			protected.POST("/change-password", authH.ChangePassword)
+			protected.POST("/avatar", authH.UploadAvatar)
+		}
 
 		// 歌词获取（注意：放在最末，避免与上面具名路由冲突）
 		api.GET("/:folder/:filename", lyricsH.GetLyrics)

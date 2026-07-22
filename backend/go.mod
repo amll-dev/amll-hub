@@ -19,6 +19,8 @@ require (
 
 require github.com/cybaka520/AMLLHub-Music-API v0.0.0-20260709020609-44a3a67cec13
 
+require github.com/golang-jwt/jwt/v5 v5.3.1
+
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect

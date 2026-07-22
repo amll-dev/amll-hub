@@ -83,6 +83,13 @@ func Run() {
 	notFoundSvc := service.NewNotFoundService(notFoundRepo, redisClient, mq)
 	onlineSearchSvc := service.NewOnlineSearchService(cfg)
 	cloudMusicSvc := service.NewCloudMusicService(cfg, redisClient)
+	authSvc := service.NewAuthService(
+		infrastructure.NewCasdoorClient(cfg.Casdoor),
+		redisClient,
+		cfg.Casdoor.JWTSecret,
+		cfg.Casdoor.JWTTTL,
+		cfg.Casdoor.Organization,
+	)
 
 	// 4.1 启动无歌词服务后台任务：白名单预热 + 每周清空
 	appCtx, appCancel := context.WithCancel(context.Background())
@@ -106,9 +113,10 @@ func Run() {
 	nfH := handler.NewNotFoundHandler(notFoundSvc)
 	onlineSearchH := handler.NewOnlineSearchHandler(onlineSearchSvc)
 	cloudMusicH := handler.NewCloudMusicHandler(cloudMusicSvc)
+	authH := handler.NewAuthHandler(authSvc)
 
 	// 6. 启动 HTTP
-	r := router.New(syncH, lyricsH, searchH, batchH, statsH, indexH, nfH, onlineSearchH, cloudMusicH)
+	r := router.New(syncH, lyricsH, searchH, batchH, statsH, indexH, nfH, onlineSearchH, cloudMusicH, authH, cfg.Casdoor.JWTSecret)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTP.Port,

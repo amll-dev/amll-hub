@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -23,6 +24,7 @@ type Config struct {
 	Sync         SyncConfig
 	NCM          NCMConfig
 	OnlineSearch OnlineSearchConfig
+	Casdoor      CasdoorConfig
 }
 
 type HTTPConfig struct {
@@ -96,6 +98,16 @@ type NCMConfig struct {
 
 type OnlineSearchConfig struct {
 	TimeoutSec int // 单平台搜索超时（秒）
+}
+
+type CasdoorConfig struct {
+	Endpoint     string
+	ClientID     string
+	ClientSecret string
+	Organization string
+	Application  string
+	JWTSecret    string
+	JWTTTL       time.Duration
 }
 
 // findDotEnv 从当前工作目录向上查找 .env 文件
@@ -177,6 +189,12 @@ func Load() (*Config, error) {
 	// OnlineSearch
 	v.SetDefault("ONLINE_SEARCH_TIMEOUT_SEC", 10)
 
+	// Casdoor
+	v.SetDefault("CASDOOR_ENDPOINT", "http://localhost:8000")
+	v.SetDefault("CASDOOR_ORGANIZATION", "amll")
+	v.SetDefault("CASDOOR_APPLICATION", "amll-hub")
+	v.SetDefault("CASDOOR_JWT_TTL", "24h")
+
 	cfg := &Config{
 		HTTP: HTTPConfig{
 			Port: v.GetString("PORT"),
@@ -229,6 +247,19 @@ func Load() (*Config, error) {
 		OnlineSearch: OnlineSearchConfig{
 			TimeoutSec: v.GetInt("ONLINE_SEARCH_TIMEOUT_SEC"),
 		},
+		Casdoor: CasdoorConfig{
+			Endpoint:     v.GetString("CASDOOR_ENDPOINT"),
+			ClientID:     v.GetString("CASDOOR_CLIENT_ID"),
+			ClientSecret: v.GetString("CASDOOR_CLIENT_SECRET"),
+			Organization: v.GetString("CASDOOR_ORGANIZATION"),
+			Application:  v.GetString("CASDOOR_APPLICATION"),
+			JWTSecret:    v.GetString("CASDOOR_JWT_SECRET"),
+			JWTTTL:       v.GetDuration("CASDOOR_JWT_TTL"),
+		},
+	}
+
+	if cfg.Casdoor.JWTSecret == "" {
+		logrus.Warnf("CASDOOR_JWT_SECRET is empty, auth endpoints will not work properly")
 	}
 
 	if os.Getenv("APP_ENV") == "production" {
