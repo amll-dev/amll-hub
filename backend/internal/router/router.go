@@ -84,7 +84,9 @@ func New(
 		auth := api.Group("/auth")
 		{
 			auth.POST("/login", authH.Login)
+			auth.POST("/login-code", authH.LoginByCode)
 			auth.POST("/register", authH.Register)
+			auth.GET("/captcha", authH.GetCaptcha)
 			auth.POST("/send-code", authH.SendCode)
 			auth.POST("/forgot-password", authH.ForgotPassword)
 
