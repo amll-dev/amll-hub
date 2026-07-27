@@ -50,6 +50,34 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	pkg.OK(c, result)
 }
 
+// LoginByCode POST /api/v1/auth/login-code
+// 验证码登录
+func (h *AuthHandler) LoginByCode(c *gin.Context) {
+	var req struct {
+		Dest string `json:"dest" binding:"required"`
+		Code string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.BadRequest(c, "邮箱/手机号和验证码必填")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	result, err := h.svc.LoginByCode(ctx, req.Dest, req.Code)
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "锁定") {
+			pkg.Fail(c, 429, 429, msg)
+			return
+		}
+		pkg.Fail(c, 401, 401, msg)
+		return
+	}
+	pkg.OK(c, result)
+}
+
 // Register POST /api/v1/auth/register
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req service.RegisterRequest
@@ -73,11 +101,25 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	pkg.OKWithMsg(c, nil, "注册成功")
 }
 
+// GetCaptcha GET /api/v1/auth/captcha
+// 获取 Casdoor 验证码信息（前端用于展示验证码题目）
+func (h *AuthHandler) GetCaptcha(c *gin.Context) {
+	data, err := h.svc.GetCaptcha()
+	if err != nil {
+		logrus.WithError(err).Warn("get captcha failed")
+		pkg.Fail(c, 502, 502, "获取验证码失败: "+err.Error())
+		return
+	}
+	pkg.OK(c, data)
+}
+
 // SendCode POST /api/v1/auth/send-code
 func (h *AuthHandler) SendCode(c *gin.Context) {
 	var req struct {
-		CheckType string `json:"checkType"`
-		Dest      string `json:"dest" binding:"required"`
+		CheckType    string `json:"checkType"`
+		Dest         string `json:"dest" binding:"required"`
+		CaptchaType  string `json:"captchaType"`
+		CaptchaToken string `json:"captchaToken"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		pkg.BadRequest(c, "dest 参数必填")
@@ -90,7 +132,7 @@ func (h *AuthHandler) SendCode(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
 	defer cancel()
 
-	if err := h.svc.SendVerificationCode(ctx, req.CheckType, req.Dest); err != nil {
+	if err := h.svc.SendVerificationCode(ctx, req.CheckType, req.Dest, req.CaptchaType, req.CaptchaToken); err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "60s") {
 			pkg.Fail(c, 429, 429, msg)

@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -20,6 +22,7 @@ const (
 	maxLoginFails    = 10
 	loginFailTTL     = 15 * time.Minute
 	maxAvatarSize    = 50 * 1024 * 1024 // 50MB
+	cookieCacheTTL   = 10 * time.Minute // Casdoor session cookie 缓存时间
 )
 
 // allowedAvatarExts 允许的头像文件扩展名
@@ -104,7 +107,37 @@ func (s *AuthService) clearLoginFail(ctx context.Context, username string) {
 	_ = s.rdb.Del(ctx, "casdoor:loginfail:"+username).Err()
 }
 
-// ---- 业务方法 ----
+func (s *AuthService) saveCasdoorCookies(ctx context.Context, dest string, cookies []*http.Cookie) {
+	if len(cookies) == 0 {
+		return
+	}
+	data, err := json.Marshal(cookies)
+	if err != nil {
+		slog.Warn("marshal casdoor cookies failed", "error", err)
+		return
+	}
+	key := "casdoor:cookies:" + dest
+	if err := s.rdb.Set(ctx, key, data, cookieCacheTTL).Err(); err != nil {
+		slog.Warn("save casdoor cookies failed", "error", err)
+	}
+}
+
+func (s *AuthService) loadCasdoorCookies(ctx context.Context, dest string) ([]*http.Cookie, error) {
+	key := "casdoor:cookies:" + dest
+	data, err := s.rdb.Get(ctx, key).Bytes()
+	if err != nil {
+		return nil, fmt.Errorf("验证码已失效，请重新发送验证码")
+	}
+	var cookies []*http.Cookie
+	if err := json.Unmarshal(data, &cookies); err != nil {
+		return nil, fmt.Errorf("验证码状态异常，请重新发送验证码")
+	}
+	return cookies, nil
+}
+
+func (s *AuthService) clearCasdoorCookies(ctx context.Context, dest string) {
+	_ = s.rdb.Del(ctx, "casdoor:cookies:"+dest).Err()
+}
 
 // LoginResult 登录返回
 type LoginResult struct {
@@ -129,6 +162,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (*Lo
 
 	user, _, err := s.casdoor.Login(username, password)
 	if err != nil {
+		slog.Warn("casdoor login failed", "username", username, "error", err)
 		locked := s.recordLoginFail(ctx, username)
 		if locked {
 			return nil, errors.New("登录失败次数过多，账户已锁定 15 分钟")
@@ -137,6 +171,42 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (*Lo
 	}
 
 	s.clearLoginFail(ctx, username)
+
+	claims := &pkg.Claims{
+		Sub:         s.org + "/" + user.Name,
+		Name:        user.Name,
+		DisplayName: user.DisplayName,
+		Email:       user.Email,
+		Avatar:      user.Avatar,
+	}
+	token, err := pkg.SignJWT(claims, s.jwtSecret, s.jwtTTL)
+	if err != nil {
+		return nil, fmt.Errorf("签发 token 失败: %w", err)
+	}
+
+	return &LoginResult{
+		Token: token,
+		User:  toUserProfile(user),
+	}, nil
+}
+
+// LoginByCode 验证码登录
+func (s *AuthService) LoginByCode(ctx context.Context, dest, code string) (*LoginResult, error) {
+	if s.isLoginLocked(ctx, dest) {
+		return nil, errors.New("账户已锁定，请 15 分钟后再试")
+	}
+
+	user, err := s.casdoor.LoginByCode(dest, code)
+	if err != nil {
+		slog.Warn("casdoor login by code failed", "dest", dest, "error", err)
+		locked := s.recordLoginFail(ctx, dest)
+		if locked {
+			return nil, errors.New("登录失败次数过多，账户已锁定 15 分钟")
+		}
+		return nil, fmt.Errorf("验证码错误或已失效")
+	}
+
+	s.clearLoginFail(ctx, dest)
 
 	claims := &pkg.Claims{
 		Sub:         s.org + "/" + user.Name,
@@ -176,25 +246,58 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) error {
 	})
 }
 
+// GetCaptcha 获取验证码信息
+func (s *AuthService) GetCaptcha() (json.RawMessage, error) {
+	return s.casdoor.GetCaptcha()
+}
+
 // SendVerificationCode 发送验证码
-func (s *AuthService) SendVerificationCode(ctx context.Context, checkType, dest string) error {
+func (s *AuthService) SendVerificationCode(ctx context.Context, checkType, dest, captchaType, captchaToken string) error {
 	if err := s.checkSendCodeCooldown(ctx, dest); err != nil {
 		return err
 	}
-	if err := s.casdoor.SendVerificationCode(checkType, dest); err != nil {
+	if captchaType == "" {
+		data, err := s.casdoor.GetCaptcha()
+		if err == nil {
+			var c struct {
+				Type  string `json:"type"`
+				Token string `json:"captchaToken"`
+			}
+			_ = json.Unmarshal(data, &c)
+			if c.Type != "" {
+				captchaType = c.Type
+				if captchaToken == "" {
+					captchaToken = c.Token
+				}
+			}
+		}
+	}
+	cookies, err := s.casdoor.SendVerificationCode(checkType, dest, captchaType, captchaToken)
+	if err != nil {
 		return err
 	}
+	s.saveCasdoorCookies(ctx, dest, cookies)
 	s.markSendCodeSent(ctx, dest)
 	return nil
 }
 
-// ForgotPassword 忘记密码（用验证码重置）
 func (s *AuthService) ForgotPassword(ctx context.Context, email, code, newPassword string) error {
 	user, err := s.casdoor.GetUserByEmail(email)
 	if err != nil {
 		return err
 	}
-	return s.casdoor.ResetPassword(user.Owner, user.Name, newPassword, email, code)
+	cookies, err := s.loadCasdoorCookies(ctx, email)
+	if err != nil {
+		return err
+	}
+	if err := s.casdoor.VerifyCode(email, code, cookies); err != nil {
+		return err
+	}
+	if err := s.casdoor.ResetPassword(user.Owner, user.Name, newPassword, code, cookies); err != nil {
+		return err
+	}
+	s.clearCasdoorCookies(ctx, email)
+	return nil
 }
 
 // GetProfile 获取用户资料

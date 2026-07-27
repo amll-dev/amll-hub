@@ -101,13 +101,14 @@ type OnlineSearchConfig struct {
 }
 
 type CasdoorConfig struct {
-	Endpoint     string
-	ClientID     string
-	ClientSecret string
-	Organization string
-	Application  string
-	JWTSecret    string
-	JWTTTL       time.Duration
+	Endpoint         string
+	ClientID         string
+	ClientSecret     string
+	Organization     string
+	Application      string
+	ApplicationOwner string
+	JWTSecret        string
+	JWTTTL           time.Duration
 }
 
 // findDotEnv 从当前工作目录向上查找 .env 文件
@@ -248,13 +249,14 @@ func Load() (*Config, error) {
 			TimeoutSec: v.GetInt("ONLINE_SEARCH_TIMEOUT_SEC"),
 		},
 		Casdoor: CasdoorConfig{
-			Endpoint:     v.GetString("CASDOOR_ENDPOINT"),
-			ClientID:     v.GetString("CASDOOR_CLIENT_ID"),
-			ClientSecret: v.GetString("CASDOOR_CLIENT_SECRET"),
-			Organization: v.GetString("CASDOOR_ORGANIZATION"),
-			Application:  v.GetString("CASDOOR_APPLICATION"),
-			JWTSecret:    v.GetString("CASDOOR_JWT_SECRET"),
-			JWTTTL:       v.GetDuration("CASDOOR_JWT_TTL"),
+			Endpoint:         v.GetString("CASDOOR_ENDPOINT"),
+			ClientID:         v.GetString("CASDOOR_CLIENT_ID"),
+			ClientSecret:     v.GetString("CASDOOR_CLIENT_SECRET"),
+			Organization:     v.GetString("CASDOOR_ORGANIZATION"),
+			Application:      v.GetString("CASDOOR_APPLICATION"),
+			ApplicationOwner: v.GetString("CASDOOR_APPLICATION_OWNER"),
+			JWTSecret:        v.GetString("CASDOOR_JWT_SECRET"),
+			JWTTTL:           v.GetDuration("CASDOOR_JWT_TTL"),
 		},
 	}
 
