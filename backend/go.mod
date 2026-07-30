@@ -19,7 +19,12 @@ require (
 
 require github.com/cybaka520/AMLLHub-Music-API v0.0.0-20260709020609-44a3a67cec13
 
-require github.com/golang-jwt/jwt/v5 v5.3.1
+require (
+	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/gorilla/websocket v1.5.3
+)
+
+require github.com/google/go-cmp v0.6.0 // indirect
 
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect

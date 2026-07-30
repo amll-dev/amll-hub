@@ -1,0 +1,182 @@
+package handler
+
+import (
+	"context"
+	"errors"
+	"io"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/amll-dev/amll-hub/backend/internal/model"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
+	"github.com/amll-dev/amll-hub/backend/internal/service"
+	"github.com/gin-gonic/gin"
+)
+
+// UploadHandler 文件上传 handler
+type UploadHandler struct {
+	files *service.FileService
+	subs  *service.SubmissionService
+}
+
+// NewUploadHandler 创建上传 handler
+func NewUploadHandler(files *service.FileService, subs *service.SubmissionService) *UploadHandler {
+	return &UploadHandler{files: files, subs: subs}
+}
+
+// UploadTTML POST /api/v1/uploads/ttml
+func (h *UploadHandler) UploadTTML(c *gin.Context) {
+	user := currentUser(c)
+	if user == nil {
+		pkg.Fail(c, 401, 401, "未登录")
+		return
+	}
+
+	// 1. 优先从 multipart 表单读取
+	fileName := c.PostForm("fileName")
+	var content []byte
+	var err error
+
+	if fh, _ := c.FormFile("file"); fh != nil {
+		if fileName == "" {
+			fileName = fh.Filename
+		}
+		f, err := fh.Open()
+		if err != nil {
+			pkg.BadRequest(c, "读取文件失败: "+err.Error())
+			return
+		}
+		defer f.Close()
+		content, err = io.ReadAll(f)
+		if err != nil {
+			pkg.InternalError(c, "读取文件内容失败: "+err.Error())
+			return
+		}
+	} else {
+		// 2. 兼容 raw body 上传
+		if fileName == "" {
+			fileName = c.Query("fileName")
+		}
+		if fileName == "" {
+			pkg.BadRequest(c, "fileName 必填")
+			return
+		}
+		content, err = io.ReadAll(c.Request.Body)
+		if err != nil {
+			pkg.InternalError(c, "读取请求体失败: "+err.Error())
+			return
+		}
+	}
+
+	if len(content) == 0 {
+		pkg.BadRequest(c, "文件内容为空")
+		return
+	}
+
+	// 若 fileName 未带 .ttml 后缀，自动补全
+	if !strings.HasSuffix(fileName, ".ttml") {
+		fileName = fileName + ".ttml"
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	if err := h.files.UploadTTML(ctx, fileName, content); err != nil {
+		pkg.BadRequest(c, "上传 TTML 失败: "+err.Error())
+		return
+	}
+	pkg.OK(c, gin.H{"fileName": fileName})
+}
+
+// UploadAudio POST /api/v1/uploads/audio
+func (h *UploadHandler) UploadAudio(c *gin.Context) {
+	user := currentUser(c)
+	if user == nil {
+		pkg.Fail(c, 401, 401, "未登录")
+		return
+	}
+
+	subIDStr := c.PostForm("submissionId")
+	subID, err := strconv.ParseInt(subIDStr, 10, 64)
+	if err != nil || subID <= 0 {
+		pkg.BadRequest(c, "submissionId 必填且为正整数")
+		return
+	}
+
+	audioFH, err := c.FormFile("audio")
+	if err != nil {
+		pkg.BadRequest(c, "audio 字段必填")
+		return
+	}
+	audioFile, err := audioFH.Open()
+	if err != nil {
+		pkg.BadRequest(c, "打开音频文件失败: "+err.Error())
+		return
+	}
+	defer audioFile.Close()
+	audioContent, err := io.ReadAll(audioFile)
+	if err != nil {
+		pkg.InternalError(c, "读取音频失败: "+err.Error())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	audioKey, err := h.files.UploadAudio(ctx, subID, audioFH.Filename, audioContent)
+	if err != nil {
+		pkg.BadRequest(c, "上传音频失败: "+err.Error())
+		return
+	}
+
+	// 封面
+	coverKey := ""
+	if coverFH, _ := c.FormFile("cover"); coverFH != nil {
+		coverFile, err := coverFH.Open()
+		if err == nil {
+			coverBytes, _ := io.ReadAll(coverFile)
+			_ = coverFile.Close()
+			coverKey, err = h.files.UploadCover(ctx, subID, coverFH.Filename, coverBytes)
+			if err != nil {
+				pkg.BadRequest(c, "上传封面失败: "+err.Error())
+				return
+			}
+		}
+	}
+
+	// 组装音频元数据，写入 submission_audios 表
+	audio := &model.SubmissionAudio{
+		FileName:   audioKey,
+		CoverURL:   h.files.CoverURL(coverKey),
+		Title:      truncate(c.PostForm("title"), 200),
+		Artist:     truncate(c.PostForm("artist"), 200),
+		Album:      truncate(c.PostForm("album"), 200),
+		Platform:   c.PostForm("platform"),
+		PlatformID: c.PostForm("platformId"),
+	}
+	if err := h.subs.AttachAudio(ctx, user, subID, audio); err != nil {
+		writeSubmissionErr(c, err)
+		return
+	}
+	pkg.OK(c, gin.H{
+		"fileName": audioKey,
+		"coverUrl": audio.CoverURL,
+	})
+}
+
+// truncate 截断字符串到 max 长度
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max]
+}
+
+// _ 防 time/filepath 未引用
+var (
+	_ = time.Now
+	_ = filepath.Base
+	_ = errors.New
+)

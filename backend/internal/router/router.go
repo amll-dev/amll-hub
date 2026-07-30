@@ -22,6 +22,12 @@ func New(
 	onlineSearchH *handler.OnlineSearchHandler,
 	cloudMusicH *handler.CloudMusicHandler,
 	authH *handler.AuthHandler,
+	submissionH *handler.SubmissionHandler,
+	reviewH *handler.ReviewHandler,
+	commentH *handler.CommentHandler,
+	uploadH *handler.UploadHandler,
+	wsH *handler.WSHandler,
+	reviewerCache *middleware.ReviewerCache,
 	jwtSecret string,
 ) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
@@ -47,6 +53,13 @@ func New(
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
+
+	// ws
+	wsGroup := r.Group("", func(c *gin.Context) {
+		c.Set("jwt_secret", jwtSecret)
+		c.Next()
+	})
+	wsGroup.GET("/ws/viewers", wsH.Viewers)
 
 	api := r.Group("/api/v1")
 	{
@@ -86,11 +99,10 @@ func New(
 			auth.POST("/login", authH.Login)
 			auth.POST("/login-code", authH.LoginByCode)
 			auth.POST("/register", authH.Register)
-			auth.GET("/captcha", authH.GetCaptcha)
 			auth.POST("/send-code", authH.SendCode)
 			auth.POST("/forgot-password", authH.ForgotPassword)
 
-			// 受保护接口（需 JWT）
+			// 受保护接口
 			protected := auth.Group("")
 			protected.Use(middleware.Auth(jwtSecret))
 			protected.GET("/profile", authH.GetProfile)
@@ -99,7 +111,34 @@ func New(
 			protected.POST("/avatar", authH.UploadAvatar)
 		}
 
-		// 歌词获取（注意：放在最末，避免与上面具名路由冲突）
+		// 投稿模块
+		sub := api.Group("")
+		sub.Use(middleware.Auth(jwtSecret))
+		{
+			// 投稿 CRUD
+			sub.POST("/submissions", submissionH.Create)
+			sub.GET("/submissions", submissionH.List)
+			sub.GET("/submissions/stats", submissionH.Stats)
+			sub.GET("/submissions/:id", submissionH.GetDetail)
+			sub.PUT("/submissions/:id/file", submissionH.UpdateFile)
+			sub.POST("/submissions/:id/close", submissionH.Close)
+
+			// 审核
+			sub.POST("/submissions/:id/review",
+				middleware.Auth(jwtSecret), middleware.RequireReviewer(reviewerCache),
+				reviewH.Review,
+			)
+
+			// 评论
+			sub.GET("/submissions/:id/comments", commentH.List)
+			sub.POST("/submissions/:id/comments", commentH.Create)
+
+			// 文件上传
+			sub.POST("/uploads/ttml", uploadH.UploadTTML)
+			sub.POST("/uploads/audio", uploadH.UploadAudio)
+		}
+
+		// 歌词获取
 		api.GET("/:folder/:filename", lyricsH.GetLyrics)
 	}
 
