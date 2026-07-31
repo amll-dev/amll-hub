@@ -63,7 +63,9 @@ func (s *AuthService) checkSendCodeCooldown(ctx context.Context, dest string) er
 	key := "casdoor:sendcode:" + dest
 	n, err := s.rdb.Exists(ctx, key).Result()
 	if err != nil {
-		return nil // Redis 出错不阻塞业务
+		// Redis出错时fail-closed
+		slog.Error("redis check sendcode cooldown failed, fail-closed", "dest", dest, "error", err)
+		return ErrSendCodeCooldown
 	}
 	if n > 0 {
 		return ErrSendCodeCooldown
@@ -80,7 +82,9 @@ func (s *AuthService) isLoginLocked(ctx context.Context, username string) bool {
 	key := "casdoor:loginlock:" + username
 	n, err := s.rdb.Exists(ctx, key).Result()
 	if err != nil {
-		return false
+		// Redis出错时fail-closed
+		slog.Error("redis check login lock failed, fail-closed", "username", username, "error", err)
+		return true
 	}
 	return n > 0
 }

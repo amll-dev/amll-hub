@@ -118,6 +118,8 @@ func Run() {
 	// 4.1 启动无歌词服务
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
+	// RabbitMQ 断线自动重连
+	mq.WatchAndReconnect(appCtx)
 	{
 		preloadCtx, preloadCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		if err := notFoundSvc.PreloadWhitelist(preloadCtx); err != nil {

@@ -61,11 +61,16 @@ func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 				platform := service.ParseFolderToPlatform(folder)
 				clientIP := GetClientIP(c)
 				// 使用独立 context，避免被请求 context 取消
-				go func() {
+				go func(platform, platformID, clientIP string) {
+					defer func() {
+						if r := recover(); r != nil {
+							logrus.WithField("panic", r).Error("not_found handler goroutine panic")
+						}
+					}()
 					nfCtx, nfCancel := context.WithTimeout(context.Background(), 10*time.Second)
 					defer nfCancel()
-					h.nfSvc.HandleNotFoundRequest(nfCtx, platform, filename, clientIP)
-				}()
+					h.nfSvc.HandleNotFoundRequest(nfCtx, platform, platformID, clientIP)
+				}(platform, filename, clientIP)
 			}
 			return
 		}
@@ -95,10 +100,15 @@ func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 	// 歌词流式返回成功后：异步检查是否在排行榜中，如果在则删除
 	if folder != "raw-lyrics" && h.nfSvc != nil {
 		platform := service.ParseFolderToPlatform(folder)
-		go func() {
+		go func(platform, platformID string) {
+			defer func() {
+				if r := recover(); r != nil {
+					logrus.WithField("panic", r).Error("not_found cleanup goroutine panic")
+				}
+			}()
 			nfCtx, nfCancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer nfCancel()
-			h.nfSvc.CheckAndDeleteOnLyricResolved(nfCtx, platform, filename)
-		}()
+			h.nfSvc.CheckAndDeleteOnLyricResolved(nfCtx, platform, platformID)
+		}(platform, filename)
 	}
 }

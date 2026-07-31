@@ -8,6 +8,7 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/gin-gonic/gin"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // ReviewerCacheKey context 中存储投稿模块用户身份的 key
@@ -100,7 +101,8 @@ func RequireReviewer(rc *ReviewerCache) gin.HandlerFunc {
 
 		ok, err := rc.IsReviewer(ctx, name)
 		if err != nil {
-			pkg.InternalError(c, "查询审核员名单失败: "+err.Error())
+			logrus.WithError(err).Error("query reviewer list failed")
+			pkg.InternalError(c, "查询审核员名单失败")
 			c.Abort()
 			return
 		}

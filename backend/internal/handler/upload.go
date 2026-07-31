@@ -171,10 +171,14 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 	})
 }
 
-// truncate 截断字符串到 max 长度
+// truncate 按 rune 截断字符串到 max 长度，
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
-	return s[:max]
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max])
 }

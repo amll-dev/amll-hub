@@ -3,15 +3,20 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use futures_lite::StreamExt;
 use lapin::{
-    options::{BasicAckOptions, BasicConsumeOptions},
+    options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions},
     types::FieldTable,
     Channel,
 };
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::app::AppState;
 
 use super::sync_task::SyncTaskRunner;
+
+/// 同步任务最大重试次数
+const MAX_RETRIES: u32 = 3;
+/// 重试基础退避
+const RETRY_BASE_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// 启动 RabbitMQ 消费循环
 ///
@@ -51,8 +56,8 @@ pub async fn consume_loop(
                         break;
                     }
                 };
-                // handle_message 始终返回 Ok（失败也 ACK 以避免队列阻塞），
-                // 因此无需 nack 分支
+                // handle_message 内部做有限重试；
+                // 重试耗尽后 nack(requeue=false) 让消息进入 DLQ，避免毒消息无限阻塞队列
                 let _ = handle_message(&channel, delivery, &app).await;
             }
         }
@@ -101,7 +106,30 @@ async fn handle_message(
     info!(request_id = %request_id, triggered_by = %triggered_by, "received sync message");
 
     let runner = SyncTaskRunner::new(app.clone());
-    let result = runner.run(&request_id, &triggered_by, &payload).await;
+
+    // 应用层有限重试：处理 GitHub 限流、MinIO 抖动等瞬时故障
+    let mut attempt: u32 = 0;
+    let result = loop {
+        match runner.run(&request_id, &triggered_by, &payload).await {
+            Ok(skipped) => break Ok(skipped),
+            Err(e) => {
+                attempt += 1;
+                if attempt >= MAX_RETRIES {
+                    break Err(e);
+                }
+                let delay = RETRY_BASE_DELAY * 2u32.saturating_pow(attempt - 1);
+                warn!(
+                    request_id = %request_id,
+                    attempt,
+                    max_retries = MAX_RETRIES,
+                    delay_ms = delay.as_millis() as u64,
+                    error = %e,
+                    "sync attempt failed, will retry"
+                );
+                tokio::time::sleep(delay).await;
+            }
+        }
+    };
 
     match result {
         Ok(skipped) => {
@@ -115,13 +143,23 @@ async fn handle_message(
             Ok(())
         }
         Err(e) => {
-            error!(request_id = %request_id, error = %e, "sync task failed");
-            // 失败也 ACK，由 sync_history 内部记录 failed 状态；
-            // 避免无限重试导致队列阻塞
+            error!(
+                request_id = %request_id,
+                attempt,
+                error = %e,
+                "sync task failed after retries, sending to DLQ"
+            );
+            // nack(requeue=false) 触发 dead-lettering 到 DLQ，避免毒消息无限重投
             let _ = channel
-                .basic_ack(tag, BasicAckOptions::default())
+                .basic_nack(
+                    tag,
+                    BasicNackOptions {
+                        multiple: false,
+                        requeue: false,
+                    },
+                )
                 .await
-                .context("basic_ack");
+                .context("basic_nack");
             Ok(())
         }
     }
