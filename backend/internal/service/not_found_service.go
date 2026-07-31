@@ -11,11 +11,62 @@ import (
 	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/infrastructure"
-	"github.com/amll-dev/amll-hub/backend/internal/model"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/redis/go-redis/v9"
 	logrus "github.com/sirupsen/logrus"
 )
+
+// RankingItem 排行榜项
+type RankingItem struct {
+	ID           int64     `json:"id"`
+	Platform     string    `json:"platform"`
+	PlatformID   string    `json:"platformId"`
+	SongName     string    `json:"songName"`
+	RequestCount int       `json:"requestCount"`
+	FirstSeenAt  time.Time `json:"firstSeenAt"`
+	LastSeenAt   time.Time `json:"lastSeenAt"`
+	Category     string    `json:"category"`
+}
+
+// StatsResult 统计数据
+type StatsResult struct {
+	TotalNotFound   int64           `json:"totalNotFound"`
+	TotalPureMusic  int64           `json:"totalPureMusic"`
+	TotalCloudMusic int64           `json:"totalCloudMusic"`
+	NewThisWeek     int64           `json:"newThisWeek"`
+	PlatformDist    []PlatformCount `json:"platformDistribution"`
+	Top10           []RankingItem   `json:"top10"`
+}
+
+// PlatformCount 平台分布
+type PlatformCount struct {
+	Platform string `json:"platform"`
+	Count    int64  `json:"count"`
+}
+
+// PureMusicWhitelistItem 纯音乐白名单
+type PureMusicWhitelistItem struct {
+	ID         int64     `json:"id"`
+	Platform   string    `json:"platform"`
+	PlatformID string    `json:"platformId"`
+	SongName   string    `json:"songName"`
+	Reason     string    `json:"reason"`
+	DetectedAt time.Time `json:"detectedAt"`
+	DetectedBy string    `json:"detectedBy"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
+
+// CloudMusicWhitelistItem 云盘音乐白名单
+type CloudMusicWhitelistItem struct {
+	ID         int64     `json:"id"`
+	Platform   string    `json:"platform"`
+	PlatformID string    `json:"platformId"`
+	SongName   string    `json:"songName"`
+	Reason     string    `json:"reason"`
+	DetectedAt time.Time `json:"detectedAt"`
+	DetectedBy string    `json:"detectedBy"`
+	CreatedAt  time.Time `json:"createdAt"`
+}
 
 // NotFoundService 无歌词记录服务
 type NotFoundService struct {
@@ -99,7 +150,6 @@ func (s *NotFoundService) IsInWhitelist(ctx context.Context, platform, platformI
 }
 
 // HandleNotFoundRequest 处理一次无歌词请求
-// 流程：白名单检查 → Redis 去重 → PG 写入 → 发送 MQ 解析消息
 func (s *NotFoundService) HandleNotFoundRequest(ctx context.Context, platform, platformID, clientIP string) {
 	key := platform + ":" + platformID
 
@@ -178,7 +228,7 @@ func (s *NotFoundService) CheckAndDeleteOnLyricResolved(ctx context.Context, pla
 }
 
 // GetRanking 查询排行榜（带 Redis 缓存）
-func (s *NotFoundService) GetRanking(ctx context.Context, days int, platform string, limit int) (int64, []repository.RankingItem, error) {
+func (s *NotFoundService) GetRanking(ctx context.Context, days int, platform string, limit int) (int64, []RankingItem, error) {
 	if days > 7 {
 		days = 7
 	}
@@ -201,10 +251,11 @@ func (s *NotFoundService) GetRanking(ctx context.Context, days int, platform str
 		}
 	}
 
-	total, items, err := s.repo.GetRanking(ctx, days, platform, limit)
+	total, repoItems, err := s.repo.GetRanking(ctx, days, platform, limit)
 	if err != nil {
 		return 0, nil, err
 	}
+	items := convertRankingItems(repoItems)
 
 	// 缓存 60s
 	if s.redis != nil {
@@ -217,18 +268,56 @@ func (s *NotFoundService) GetRanking(ctx context.Context, days int, platform str
 }
 
 // GetStats 统计数据
-func (s *NotFoundService) GetStats(ctx context.Context) (*repository.StatsResult, error) {
-	return s.repo.GetStats(ctx)
+func (s *NotFoundService) GetStats(ctx context.Context) (*StatsResult, error) {
+	rs, err := s.repo.GetStats(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return convertStats(rs), nil
 }
 
 // ListPureMusicWhitelist 查询纯音乐白名单
-func (s *NotFoundService) ListPureMusicWhitelist(ctx context.Context, limit, offset int) ([]model.PureMusicWhitelist, int64, error) {
-	return s.repo.ListPureMusicWhitelist(ctx, limit, offset)
+func (s *NotFoundService) ListPureMusicWhitelist(ctx context.Context, limit, offset int) ([]PureMusicWhitelistItem, int64, error) {
+	items, total, err := s.repo.ListPureMusicWhitelist(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]PureMusicWhitelistItem, len(items))
+	for i, m := range items {
+		out[i] = PureMusicWhitelistItem{
+			ID:         m.ID,
+			Platform:   m.Platform,
+			PlatformID: m.PlatformID,
+			SongName:   m.SongName,
+			Reason:     m.Reason,
+			DetectedAt: m.DetectedAt,
+			DetectedBy: m.DetectedBy,
+			CreatedAt:  m.CreatedAt,
+		}
+	}
+	return out, total, nil
 }
 
 // ListCloudMusicWhitelist 查询云盘音乐白名单
-func (s *NotFoundService) ListCloudMusicWhitelist(ctx context.Context, limit, offset int) ([]model.CloudMusicWhitelist, int64, error) {
-	return s.repo.ListCloudMusicWhitelist(ctx, limit, offset)
+func (s *NotFoundService) ListCloudMusicWhitelist(ctx context.Context, limit, offset int) ([]CloudMusicWhitelistItem, int64, error) {
+	items, total, err := s.repo.ListCloudMusicWhitelist(ctx, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]CloudMusicWhitelistItem, len(items))
+	for i, m := range items {
+		out[i] = CloudMusicWhitelistItem{
+			ID:         m.ID,
+			Platform:   m.Platform,
+			PlatformID: m.PlatformID,
+			SongName:   m.SongName,
+			Reason:     m.Reason,
+			DetectedAt: m.DetectedAt,
+			DetectedBy: m.DetectedBy,
+			CreatedAt:  m.CreatedAt,
+		}
+	}
+	return out, total, nil
 }
 
 // ClearWeekly 每周清空所有无歌词记录（保留白名单）
@@ -289,8 +378,8 @@ func nextMonday() time.Time {
 
 // rankingCacheData 排行榜缓存结构（包含 total 与 items）
 type rankingCacheData struct {
-	Total int64                    `json:"total"`
-	Items []repository.RankingItem `json:"items"`
+	Total int64         `json:"total"`
+	Items []RankingItem `json:"items"`
 }
 
 // clearRankingCache 使用 SCAN 迭代清理排行榜缓存
@@ -309,7 +398,7 @@ func (s *NotFoundService) clearRankingCache(ctx context.Context) {
 }
 
 // encodeRankingCache / decodeRankingCache 使用 JSON 编码
-func encodeRankingCache(total int64, items []repository.RankingItem) (string, error) {
+func encodeRankingCache(total int64, items []RankingItem) (string, error) {
 	data := rankingCacheData{Total: total, Items: items}
 	b, err := json.Marshal(data)
 	if err != nil {
@@ -324,6 +413,46 @@ func decodeRankingCache(s string) (*rankingCacheData, error) {
 		return nil, err
 	}
 	return &data, nil
+}
+
+// convertRankingItems 将 repository 层结果转为 service DTO
+func convertRankingItems(items []repository.RankingItem) []RankingItem {
+	if len(items) == 0 {
+		return []RankingItem{}
+	}
+	out := make([]RankingItem, len(items))
+	for i, it := range items {
+		out[i] = RankingItem{
+			ID:           it.ID,
+			Platform:     it.Platform,
+			PlatformID:   it.PlatformID,
+			SongName:     it.SongName,
+			RequestCount: it.RequestCount,
+			FirstSeenAt:  it.FirstSeenAt,
+			LastSeenAt:   it.LastSeenAt,
+			Category:     it.Category,
+		}
+	}
+	return out
+}
+
+// convertStats 将 repository 层统计结果转为 service DTO
+func convertStats(rs *repository.StatsResult) *StatsResult {
+	if rs == nil {
+		return nil
+	}
+	out := &StatsResult{
+		TotalNotFound:   rs.TotalNotFound,
+		TotalPureMusic:  rs.TotalPureMusic,
+		TotalCloudMusic: rs.TotalCloudMusic,
+		NewThisWeek:     rs.NewThisWeek,
+		PlatformDist:    make([]PlatformCount, len(rs.PlatformDist)),
+		Top10:           convertRankingItems(rs.Top10),
+	}
+	for i, p := range rs.PlatformDist {
+		out.PlatformDist[i] = PlatformCount{Platform: p.Platform, Count: p.Count}
+	}
+	return out
 }
 
 // 错误定义喵

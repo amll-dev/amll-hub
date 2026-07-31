@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/amll-dev/amll-hub/backend/internal/pkg"
-	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -157,7 +155,3 @@ func GetClientIP(c *gin.Context) string {
 	}
 	return c.Request.RemoteAddr
 }
-
-// _ 防 pkg 未引用
-var _ = pkg.OK
-var _ = repository.RankingItem{}

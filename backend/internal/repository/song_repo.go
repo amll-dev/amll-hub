@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
 	"gorm.io/gorm"
@@ -226,6 +225,3 @@ func platformFromFolder(folder string) string {
 
 // ErrSongNotFound 歌曲未找到
 var ErrSongNotFound = errors.New("song not found")
-
-// _ 防止 fmt 在某些编译配置下报 unused
-var _ = fmt.Sprintf

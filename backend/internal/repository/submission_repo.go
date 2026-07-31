@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
@@ -439,6 +438,3 @@ func (r *ReviewerRepo) Remove(ctx context.Context, username string) error {
 		Where("username = ?", username).
 		Delete(&model.Reviewer{}).Error
 }
-
-// _ 防 fmt 未引用
-var _ = fmt.Sprintf

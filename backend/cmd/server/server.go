@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -114,6 +113,7 @@ func Run() {
 	viewerSvc := service.NewViewerService(nil, subRepo) // hub 后面注入
 	submissionSvc := service.NewSubmissionService(subRepo, audioRepo, historyRepo, commentRepo, fileSvc, db)
 	reviewSvc := service.NewReviewService(subRepo, historyRepo, fileSvc, githubSvc, viewerSvc, db)
+	batchSvc := service.NewBatchService(songRepo)
 
 	// 4.1 启动无歌词服务
 	appCtx, appCancel := context.WithCancel(context.Background())
@@ -148,7 +148,7 @@ func Run() {
 	syncH := handler.NewSyncHandler(syncSvc)
 	lyricsH := handler.NewLyricsHandler(lyricsSvc, notFoundSvc)
 	searchH := handler.NewSearchHandler(searchSvc)
-	batchH := handler.NewBatchHandler(songRepo)
+	batchH := handler.NewBatchHandler(batchSvc)
 	statsH := handler.NewStatsHandler(statsSvc)
 	indexH := handler.NewIndexHandler(indexSvc)
 	nfH := handler.NewNotFoundHandler(notFoundSvc)
@@ -208,6 +208,3 @@ func Run() {
 	}
 	logrus.Info("server exited")
 }
-
-// _ 占位避免 fmt 未引用
-var _ = fmt.Sprintf

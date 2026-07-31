@@ -2,14 +2,10 @@ package handler
 
 import (
 	"context"
-	"errors"
 	"io"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/amll-dev/amll-hub/backend/internal/model"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
@@ -147,7 +143,7 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 	}
 
 	// 组装音频元数据，写入 submission_audios 表
-	audio := &model.SubmissionAudio{
+	audioIn := &service.AttachAudioInput{
 		FileName:   audioKey,
 		CoverURL:   h.files.CoverURL(coverKey),
 		Title:      truncate(c.PostForm("title"), 200),
@@ -156,13 +152,13 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 		Platform:   c.PostForm("platform"),
 		PlatformID: c.PostForm("platformId"),
 	}
-	if err := h.subs.AttachAudio(ctx, user, subID, audio); err != nil {
+	if err := h.subs.AttachAudio(ctx, user, subID, audioIn); err != nil {
 		writeSubmissionErr(c, err)
 		return
 	}
 	pkg.OK(c, gin.H{
 		"fileName": audioKey,
-		"coverUrl": audio.CoverURL,
+		"coverUrl": audioIn.CoverURL,
 	})
 }
 
@@ -173,10 +169,3 @@ func truncate(s string, max int) string {
 	}
 	return s[:max]
 }
-
-// _ 防 time/filepath 未引用
-var (
-	_ = time.Now
-	_ = filepath.Base
-	_ = errors.New
-)

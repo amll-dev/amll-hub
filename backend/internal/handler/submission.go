@@ -9,7 +9,6 @@ import (
 
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
-	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
 )
@@ -60,7 +59,7 @@ func (h *SubmissionHandler) List(c *gin.Context) {
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
-	q := repository.ListQuery{
+	q := service.SubmissionListQuery{
 		Mode:     c.DefaultQuery("mode", "creator"),
 		Status:   c.DefaultQuery("status", "all"),
 		Language: c.Query("language"),
