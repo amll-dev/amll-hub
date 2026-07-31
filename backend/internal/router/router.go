@@ -68,10 +68,12 @@ func New(
 		api.GET("/sync/status", syncH.Status)
 
 		// 在线搜索
-		api.GET("/search", searchH.Search)
-		api.GET("/online-search", onlineSearchH.Search)
-		api.GET("/online-song", onlineSearchH.GetSong)
-		api.GET("/online-lyric", onlineSearchH.GetLyric)
+		online := api.Group("/online")
+		{
+			online.GET("/search", onlineSearchH.Search)
+			online.GET("/songs/:platform/:songId", onlineSearchH.GetSong)
+			online.GET("/lyrics/:platform/:songId", onlineSearchH.GetLyric)
+		}
 
 		// 网易云解析
 		api.GET("/ncm/search", cloudMusicH.Search)
@@ -79,7 +81,7 @@ func New(
 		api.GET("/ncm/parse-playlist", cloudMusicH.ParsePlaylist)
 
 		// 批量查询
-		api.POST("/batch", batchH.Post)
+		api.POST("/songs/batch", batchH.Post)
 
 		// 词库统计
 		api.GET("/stats", statsH.Get)
@@ -139,7 +141,8 @@ func New(
 		}
 
 		// 歌词获取
-		api.GET("/:folder/:filename", lyricsH.GetLyrics)
+		// :folder ∈ {raw-lyrics, ncm-lyrics, qq-lyrics, spotify-lyrics, am-lyrics}
+		api.GET("/lyrics/:folder/:filename", lyricsH.GetLyrics)
 	}
 
 	return r

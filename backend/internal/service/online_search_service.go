@@ -98,12 +98,13 @@ func NewOnlineSearchService(cfg *config.Config) *OnlineSearchService {
 func (s *OnlineSearchService) Search(ctx context.Context, query string, platform string, limit int) (*OnlineSearchResult, error) {
 	provider, ok := s.providers[platform]
 	if !ok {
-		return nil, fmt.Errorf("不支持的平台: %s（可选: ncm, qq, kugou）", platform)
+		return nil, fmt.Errorf("%w: 不支持的平台 %s", ErrInvalidInput, platform)
 	}
 
 	result, err := provider.Search(ctx, query, musicapi.SearchTypeSong, 1, limit)
 	if err != nil {
-		return nil, fmt.Errorf("平台搜索失败: %w", err)
+		logrus.WithError(err).WithField("platform", platform).Warn("online search failed")
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	hits := make([]OnlineSearchHit, 0, len(result.Songs))
@@ -137,12 +138,13 @@ func (s *OnlineSearchService) Search(ctx context.Context, query string, platform
 func (s *OnlineSearchService) GetSong(ctx context.Context, platform string, songID string) (*OnlineSongDetail, error) {
 	provider, ok := s.providers[platform]
 	if !ok {
-		return nil, fmt.Errorf("不支持的平台: %s（可选: ncm, qq, kugou）", platform)
+		return nil, fmt.Errorf("%w: 不支持的平台 %s", ErrInvalidInput, platform)
 	}
 
 	song, err := provider.GetSong(ctx, songID)
 	if err != nil {
-		return nil, fmt.Errorf("获取歌曲详情失败: %w", err)
+		logrus.WithError(err).WithField("platform", platform).WithField("song_id", songID).Warn("online get song failed")
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	detail := &OnlineSongDetail{
@@ -171,12 +173,13 @@ func (s *OnlineSearchService) GetSong(ctx context.Context, platform string, song
 func (s *OnlineSearchService) GetLyric(ctx context.Context, platform string, songID string) (*OnlineLyric, error) {
 	provider, ok := s.providers[platform]
 	if !ok {
-		return nil, fmt.Errorf("不支持的平台: %s（可选: ncm, qq, kugou）", platform)
+		return nil, fmt.Errorf("%w: 不支持的平台 %s", ErrInvalidInput, platform)
 	}
 
 	lyric, err := provider.GetLyric(ctx, songID)
 	if err != nil {
-		return nil, fmt.Errorf("获取歌词失败: %w", err)
+		logrus.WithError(err).WithField("platform", platform).WithField("song_id", songID).Warn("online get lyric failed")
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	result := &OnlineLyric{

@@ -7,6 +7,7 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // CommentHandler 评论 handler
@@ -32,13 +33,12 @@ func (h *CommentHandler) List(c *gin.Context) {
 
 	comments, err := h.svc.ListComments(ctx, id)
 	if err != nil {
-		pkg.InternalError(c, "查询评论失败: "+err.Error())
+		logrus.WithError(err).Error("list comments failed")
+		pkg.InternalError(c, "查询评论失败")
 		return
 	}
-	c.JSON(200, gin.H{
-		"code": 200,
-		"data": comments,
-	})
+
+	pkg.OK(c, comments)
 }
 
 // Create POST /api/v1/submissions/:id/comments

@@ -3,14 +3,13 @@ package handler
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // SubmissionHandler 投稿 handler
@@ -34,7 +33,7 @@ func (h *SubmissionHandler) Create(c *gin.Context) {
 
 	var req service.CreateSubmissionInput
 	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.BadRequest(c, "参数错误: "+err.Error())
+		pkg.BadRequest(c, "参数错误")
 		return
 	}
 
@@ -73,13 +72,13 @@ func (h *SubmissionHandler) List(c *gin.Context) {
 
 	result, err := h.svc.List(ctx, user, q)
 	if err != nil {
-		pkg.InternalError(c, "查询列表失败: "+err.Error())
+		logrus.WithError(err).Error("list submissions failed")
+		pkg.InternalError(c, "查询列表失败")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":  200,
+	pkg.OK(c, gin.H{
 		"total": result.Total,
-		"data":  result.Items,
+		"items": result.Items,
 	})
 }
 
@@ -116,7 +115,8 @@ func (h *SubmissionHandler) Stats(c *gin.Context) {
 
 	stats, err := h.svc.Stats(ctx, user, mode)
 	if err != nil {
-		pkg.InternalError(c, "查询统计失败: "+err.Error())
+		logrus.WithError(err).Error("get submission stats failed")
+		pkg.InternalError(c, "查询统计失败")
 		return
 	}
 	pkg.OK(c, stats)
@@ -141,7 +141,7 @@ func (h *SubmissionHandler) UpdateFile(c *gin.Context) {
 		Metadata *service.CreateSubmissionInput `json:"metadata,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.BadRequest(c, "参数错误: "+err.Error())
+		pkg.BadRequest(c, "参数错误")
 		return
 	}
 
@@ -172,11 +172,7 @@ func (h *SubmissionHandler) Close(c *gin.Context) {
 	// 检查是否审核员
 	isReviewer := false
 	if h.reviewerCache != nil {
-		rctx, cancel := context.WithTimeout(c.Request.Context(), 5*defaultTimeout)
-		defer cancel()
-		_ = rctx
-		ok, _ := h.reviewerCache.IsReviewer(c.Request.Context(), user.Name)
-		isReviewer = ok
+		isReviewer, _ = h.reviewerCache.IsReviewer(c.Request.Context(), user.Name)
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
@@ -215,9 +211,10 @@ func writeSubmissionErr(c *gin.Context, err error) {
 		pkg.Fail(c, 409, 409, "投稿当前状态不允许此操作")
 	case errors.Is(err, service.ErrForbidden):
 		pkg.Fail(c, 403, 403, "无权操作该投稿")
-	case strings.Contains(err.Error(), "github"):
-		pkg.Fail(c, 502, 502, err.Error())
+	case errors.Is(err, service.ErrUpstreamUnavailable):
+		pkg.Fail(c, 502, 502, "上游服务暂不可用")
 	default:
-		pkg.InternalError(c, err.Error())
+		logrus.WithError(err).Error("submission service unknown error")
+		pkg.InternalError(c, "内部错误")
 	}
 }

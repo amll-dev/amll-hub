@@ -2,12 +2,14 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // OnlineSearchHandler 在线搜索 handler
@@ -19,7 +21,7 @@ func NewOnlineSearchHandler(svc *service.OnlineSearchService) *OnlineSearchHandl
 	return &OnlineSearchHandler{svc: svc}
 }
 
-// Search GET /api/v1/online-search?q=&platform=&limit=
+// Search GET /api/v1/online/search?q=&platform=&limit=
 func (h *OnlineSearchHandler) Search(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	platform := strings.TrimSpace(c.Query("platform"))
@@ -42,25 +44,20 @@ func (h *OnlineSearchHandler) Search(c *gin.Context) {
 
 	result, err := h.svc.Search(ctx, q, platform, limit)
 	if err != nil {
-		pkg.Fail(c, http.StatusBadGateway, 502, "在线搜索失败: "+err.Error())
+		writeOnlineSearchErr(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": 200,
-		"data": result,
-	})
+	pkg.OK(c, result)
 }
 
-// GetSong GET /api/v1/online-song?platform=&songId=
+// GetSong GET /api/v1/online/songs/:platform/:songId
 func (h *OnlineSearchHandler) GetSong(c *gin.Context) {
-	platform := strings.TrimSpace(c.Query("platform"))
-	songID := strings.TrimSpace(c.Query("songId"))
+	platform := strings.TrimSpace(c.Param("platform"))
+	songID := strings.TrimSpace(c.Param("songId"))
 
-	switch platform {
-	case "ncm", "qq", "kugou":
-	default:
-		pkg.BadRequest(c, "platform 参数非法（可选: ncm, qq, kugou）")
+	if err := validateOnlinePlatform(platform); err != nil {
+		pkg.BadRequest(c, err.Error())
 		return
 	}
 
@@ -74,25 +71,20 @@ func (h *OnlineSearchHandler) GetSong(c *gin.Context) {
 
 	result, err := h.svc.GetSong(ctx, platform, songID)
 	if err != nil {
-		pkg.Fail(c, http.StatusBadGateway, 502, "获取歌曲详情失败: "+err.Error())
+		writeOnlineSearchErr(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": 200,
-		"data": result,
-	})
+	pkg.OK(c, result)
 }
 
-// GetLyric GET /api/v1/online-lyric?platform=&songId=
+// GetLyric GET /api/v1/online/lyrics/:platform/:songId
 func (h *OnlineSearchHandler) GetLyric(c *gin.Context) {
-	platform := strings.TrimSpace(c.Query("platform"))
-	songID := strings.TrimSpace(c.Query("songId"))
+	platform := strings.TrimSpace(c.Param("platform"))
+	songID := strings.TrimSpace(c.Param("songId"))
 
-	switch platform {
-	case "ncm", "qq", "kugou":
-	default:
-		pkg.BadRequest(c, "platform 参数非法（可选: ncm, qq, kugou）")
+	if err := validateOnlinePlatform(platform); err != nil {
+		pkg.BadRequest(c, err.Error())
 		return
 	}
 
@@ -106,12 +98,31 @@ func (h *OnlineSearchHandler) GetLyric(c *gin.Context) {
 
 	result, err := h.svc.GetLyric(ctx, platform, songID)
 	if err != nil {
-		pkg.Fail(c, http.StatusBadGateway, 502, "获取歌词失败: "+err.Error())
+		writeOnlineSearchErr(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": 200,
-		"data": result,
-	})
+	pkg.OK(c, result)
+}
+
+// validateOnlinePlatform 校验在线搜索平台参数
+func validateOnlinePlatform(platform string) error {
+	switch platform {
+	case "ncm", "qq", "kugou":
+		return nil
+	}
+	return errors.New("platform 参数非法（可选: ncm, qq, kugou）")
+}
+
+// writeOnlineSearchErr 统一处理在线搜索服务错误
+func writeOnlineSearchErr(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrInvalidInput):
+		pkg.BadRequest(c, "请求参数非法")
+	case errors.Is(err, service.ErrUpstreamUnavailable):
+		pkg.Fail(c, http.StatusBadGateway, 502, "在线搜索服务暂不可用")
+	default:
+		logrus.WithError(err).Error("online search unknown error")
+		pkg.InternalError(c, "在线搜索失败")
+	}
 }

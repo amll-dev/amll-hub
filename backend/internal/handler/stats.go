@@ -2,10 +2,13 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // StatsHandler 词库统计 handler
@@ -24,15 +27,14 @@ func (h *StatsHandler) Get(c *gin.Context) {
 
 	stats, err := h.svc.GetStats(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "统计失败: " + err.Error(),
-		})
+		logrus.WithError(err).Error("get stats failed")
+		if errors.Is(err, service.ErrUpstreamUnavailable) {
+			pkg.Fail(c, http.StatusBadGateway, 502, "统计服务暂不可用")
+			return
+		}
+		pkg.InternalError(c, "统计失败")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": 200,
-		"data": stats,
-	})
+	pkg.OK(c, stats)
 }

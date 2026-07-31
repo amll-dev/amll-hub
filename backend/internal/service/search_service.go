@@ -10,6 +10,7 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/config"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/meilisearch/meilisearch-go"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // SearchService 搜索服务
@@ -32,18 +33,18 @@ type SearchRequest struct {
 
 // SearchHitResult 单条命中
 type SearchHitResult struct {
-	ID                     string              `json:"id"`
-	MusicNames             []string            `json:"musicNames"`
-	Artists                []string            `json:"artists"`
-	Albums                 []string            `json:"albums"`
-	PlatformIds            map[string][]string `json:"platformIds"`
-	RawLyricFile           string              `json:"rawLyricFile"`
-	WordCount              int                 `json:"wordCount"`
-	LineCount              int                 `json:"lineCount"`
-	CommitTimestamp        *int64              `json:"commitTimestamp,omitempty"`
-	LyricSnippet           string              `json:"lyricSnippet,omitempty"` // 歌词匹配片段（高亮）
-	TtmlAuthorGithub       string              `json:"ttmlAuthorGithub,omitempty"`
-	TtmlAuthorGithubLogin  string              `json:"ttmlAuthorGithubLogin,omitempty"`
+	ID                    string              `json:"id"`
+	MusicNames            []string            `json:"musicNames"`
+	Artists               []string            `json:"artists"`
+	Albums                []string            `json:"albums"`
+	PlatformIds           map[string][]string `json:"platformIds"`
+	RawLyricFile          string              `json:"rawLyricFile"`
+	WordCount             int                 `json:"wordCount"`
+	LineCount             int                 `json:"lineCount"`
+	CommitTimestamp       *int64              `json:"commitTimestamp,omitempty"`
+	LyricSnippet          string              `json:"lyricSnippet,omitempty"` // 歌词匹配片段（高亮）
+	TtmlAuthorGithub      string              `json:"ttmlAuthorGithub,omitempty"`
+	TtmlAuthorGithubLogin string              `json:"ttmlAuthorGithubLogin,omitempty"`
 }
 
 // SearchResult 搜索结果
@@ -96,7 +97,8 @@ func (s *SearchService) Search(ctx context.Context, req SearchRequest) (*SearchR
 
 	resp, err := index.Search(req2.Query, &req2)
 	if err != nil {
-		return nil, fmt.Errorf("meilisearch search: %w", err)
+		logrus.WithError(err).Warn("meilisearch search failed")
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	hits := make([]SearchHitResult, 0, len(resp.Hits))
@@ -120,7 +122,6 @@ func (s *SearchService) Search(ctx context.Context, req SearchRequest) (*SearchR
 // searchByExactID 使用 filter 精确匹配所有平台 ID 字段和投稿者 ID
 func (s *SearchService) searchByExactID(ctx context.Context, index *meilisearch.Index, req SearchRequest) (*SearchResult, error) {
 	escaped := meiliEscape(req.Query)
-	// 支持：平台 ID（ncm/qq/spotify/apple） + 投稿者 GitHub ID + 投稿者 GitHub 用户名
 	filter := fmt.Sprintf(
 		`platformIds_ncm = "%s" OR platformIds_qq = "%s" OR platformIds_spotify = "%s" OR platformIds_apple = "%s" OR ttmlAuthorGithub = "%s" OR ttmlAuthorGithubLogin = "%s"`,
 		escaped, escaped, escaped, escaped, escaped, escaped,
@@ -135,7 +136,8 @@ func (s *SearchService) searchByExactID(ctx context.Context, index *meilisearch.
 
 	resp, err := index.Search(req2.Query, &req2)
 	if err != nil {
-		return nil, fmt.Errorf("meilisearch search by id: %w", err)
+		logrus.WithError(err).Warn("meilisearch search by id failed")
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	hits := make([]SearchHitResult, 0, len(resp.Hits))
@@ -295,8 +297,6 @@ func hitGroupKey(h SearchHitResult) string {
 }
 
 // reorderHitsByGroup 对搜索结果做应用层重排
-// - 同一歌曲（相同歌名+相同平台ID）的多版本聚在一起，组内按 commitTimestamp:desc
-// - 不同歌曲间保持 MeiliSearch 返回的相关性顺序（以组内首条位置为准）
 func reorderHitsByGroup(hits []SearchHitResult) []SearchHitResult {
 	if len(hits) <= 1 {
 		return hits

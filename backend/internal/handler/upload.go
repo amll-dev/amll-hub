@@ -9,6 +9,7 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // UploadHandler 文件上传 handler
@@ -41,13 +42,15 @@ func (h *UploadHandler) UploadTTML(c *gin.Context) {
 		}
 		f, err := fh.Open()
 		if err != nil {
-			pkg.BadRequest(c, "读取文件失败: "+err.Error())
+			logrus.WithError(err).Warn("open ttml file failed")
+			pkg.BadRequest(c, "读取文件失败")
 			return
 		}
 		defer f.Close()
 		content, err = io.ReadAll(f)
 		if err != nil {
-			pkg.InternalError(c, "读取文件内容失败: "+err.Error())
+			logrus.WithError(err).Warn("read ttml file failed")
+			pkg.InternalError(c, "读取文件内容失败")
 			return
 		}
 	} else {
@@ -61,7 +64,8 @@ func (h *UploadHandler) UploadTTML(c *gin.Context) {
 		}
 		content, err = io.ReadAll(c.Request.Body)
 		if err != nil {
-			pkg.InternalError(c, "读取请求体失败: "+err.Error())
+			logrus.WithError(err).Warn("read ttml request body failed")
+			pkg.InternalError(c, "读取请求体失败")
 			return
 		}
 	}
@@ -80,7 +84,8 @@ func (h *UploadHandler) UploadTTML(c *gin.Context) {
 	defer cancel()
 
 	if err := h.files.UploadTTML(ctx, fileName, content); err != nil {
-		pkg.BadRequest(c, "上传 TTML 失败: "+err.Error())
+		logrus.WithError(err).Warn("upload ttml failed")
+		pkg.BadRequest(c, "上传 TTML 失败")
 		return
 	}
 	pkg.OK(c, gin.H{"fileName": fileName})
@@ -108,13 +113,15 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 	}
 	audioFile, err := audioFH.Open()
 	if err != nil {
-		pkg.BadRequest(c, "打开音频文件失败: "+err.Error())
+		logrus.WithError(err).Warn("open audio file failed")
+		pkg.BadRequest(c, "打开音频文件失败")
 		return
 	}
 	defer audioFile.Close()
 	audioContent, err := io.ReadAll(audioFile)
 	if err != nil {
-		pkg.InternalError(c, "读取音频失败: "+err.Error())
+		logrus.WithError(err).Warn("read audio file failed")
+		pkg.InternalError(c, "读取音频失败")
 		return
 	}
 
@@ -123,7 +130,8 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 
 	audioKey, err := h.files.UploadAudio(ctx, subID, audioFH.Filename, audioContent)
 	if err != nil {
-		pkg.BadRequest(c, "上传音频失败: "+err.Error())
+		logrus.WithError(err).Warn("upload audio failed")
+		pkg.BadRequest(c, "上传音频失败")
 		return
 	}
 
@@ -136,7 +144,8 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 			_ = coverFile.Close()
 			coverKey, err = h.files.UploadCover(ctx, subID, coverFH.Filename, coverBytes)
 			if err != nil {
-				pkg.BadRequest(c, "上传封面失败: "+err.Error())
+				logrus.WithError(err).Warn("upload cover failed")
+				pkg.BadRequest(c, "上传封面失败")
 				return
 			}
 		}

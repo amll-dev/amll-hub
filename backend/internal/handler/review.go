@@ -35,7 +35,7 @@ func (h *ReviewHandler) Review(c *gin.Context) {
 
 	var req service.ReviewInput
 	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.BadRequest(c, "参数错误: "+err.Error())
+		pkg.BadRequest(c, "参数错误")
 		return
 	}
 

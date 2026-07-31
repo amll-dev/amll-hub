@@ -25,8 +25,9 @@ func NewLyricsHandler(svc *service.LyricsService, nfSvc *service.NotFoundService
 	return &LyricsHandler{svc: svc, nfSvc: nfSvc}
 }
 
-// GetLyrics GET /api/v1/:folder/:filename
+// GetLyrics GET /api/v1/lyrics/:folder/:filename
 // 直接返回 TTML 原始字节流
+// :folder ∈ {raw-lyrics, ncm-lyrics, qq-lyrics, spotify-lyrics, am-lyrics}
 func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 	folder := c.Param("folder")
 	filename := c.Param("filename")
@@ -37,7 +38,6 @@ func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 	}
 
 	// 平台 ID 查询时，去掉末尾的 .ttml 后缀
-	// 防呆设计兼容 /ncm-lyrics/114514 和 /ncm-lyrics/114514.ttml 两种写法
 	if folder != "raw-lyrics" {
 		filename = strings.TrimSuffix(filename, ".ttml")
 	}

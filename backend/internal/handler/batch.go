@@ -2,11 +2,11 @@ package handler
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // BatchHandler 批量查询 handler
@@ -24,7 +24,7 @@ type BatchRequest struct {
 	IDs      []string `json:"ids" binding:"required"`
 }
 
-// Post POST /api/v1/batch
+// Post POST /api/v1/songs/batch
 func (h *BatchHandler) Post(c *gin.Context) {
 	var req BatchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -49,12 +49,10 @@ func (h *BatchHandler) Post(c *gin.Context) {
 
 	items, err := h.svc.BatchGetByPlatform(ctx, req.Platform, req.IDs)
 	if err != nil {
-		pkg.Fail(c, http.StatusInternalServerError, 500, "批量查询失败: "+err.Error())
+		logrus.WithError(err).Error("batch query failed")
+		pkg.InternalError(c, "批量查询失败")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": 200,
-		"data": items,
-	})
+	pkg.OK(c, items)
 }
