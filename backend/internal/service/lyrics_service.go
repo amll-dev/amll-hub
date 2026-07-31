@@ -5,15 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/config"
-	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/minio/minio-go/v7"
 	"github.com/redis/go-redis/v9"
-	logrus "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -98,67 +95,24 @@ func (s *LyricsService) ResolveLyric(ctx context.Context, folder, filename strin
 }
 
 // StreamLyric 流式返回 TTML 内容
-// rangeHeader 为 HTTP Range 头（可空）
-// onWrite 在每次写入响应体时调用（用于直接 io.Copy 到 ResponseWriter）
+// onWrite 在拿到 reader 时调用，由调用方决定如何写出
 func (s *LyricsService) StreamLyric(
 	ctx context.Context,
 	minioPath string,
-	rangeHeader string,
-	onWrite func(contentLength int64, reader io.Reader) error,
-) (status int, contentRange string, contentLength int64, err error) {
-	opt := minio.GetObjectOptions{}
-	totalSize := int64(0)
-
-	// 先 stat 拿到 total size
-	statInfo, statErr := s.minio.StatObject(ctx, s.cfg.MinIO.Bucket, minioPath, minio.StatObjectOptions{})
-	if statErr == nil {
-		totalSize = statInfo.Size
-	}
-
-	if rangeHeader != "" && totalSize > 0 {
-		rng := pkg.ParseRange(rangeHeader, totalSize)
-		if !rng.Valid {
-			return 416, "", 0, ErrInvalidRange
-		}
-		if err := opt.SetRange(rng.Start, rng.End); err != nil {
-			return 500, "", 0, fmt.Errorf("set range: %w", err)
-		}
-	}
-
-	obj, err := s.minio.GetObject(ctx, s.cfg.MinIO.Bucket, minioPath, opt)
+	onWrite func(reader io.Reader) error,
+) error {
+	obj, err := s.minio.GetObject(ctx, s.cfg.MinIO.Bucket, minioPath, minio.GetObjectOptions{})
 	if err != nil {
-		return 500, "", 0, fmt.Errorf("get object: %w", err)
+		return fmt.Errorf("get object: %w", err)
 	}
 	defer func() {
-		if err := obj.Close(); err != nil {
-			logrus.Errorf("close minio object: %v", err)
-		}
+		_ = obj.Close()
 	}()
 
-	// 获取对象实际信息（带 Range 时 Size 为分片大小）
-	objInfo, err := obj.Stat()
-	if err != nil {
-		// 如果是 416，minio 会返回 InvalidRange
-		return 416, "", 0, ErrInvalidRange
+	if err := onWrite(obj); err != nil {
+		return err
 	}
-
-	contentLength = objInfo.Size
-	if rangeHeader != "" && totalSize > 0 {
-		rng := pkg.ParseRange(rangeHeader, totalSize)
-		if rng.Valid {
-			contentRange = rng.ContentRangeHeader()
-			status = 206
-		} else {
-			status = 200
-		}
-	} else {
-		status = 200
-	}
-
-	if err := onWrite(contentLength, obj); err != nil {
-		return 500, "", 0, err
-	}
-	return status, contentRange, contentLength, nil
+	return nil
 }
 
 // lyricCacheKey Redis 缓存键
@@ -168,11 +122,3 @@ func lyricCacheKey(folder, filename string) string {
 
 // ErrLyricNotFound 歌词未找到
 var ErrLyricNotFound = errors.New("lyric not found")
-
-// ErrInvalidRange Range 非法
-var ErrInvalidRange = errors.New("invalid range")
-
-// _ 防 strings/logrus 未引用
-var _ = strings.TrimSpace
-var _ = logrus.Infof
-var _ = pkg.HTTPRangeOutOfRange

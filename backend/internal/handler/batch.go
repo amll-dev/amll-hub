@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
@@ -117,7 +118,7 @@ func (h *BatchHandler) Post(c *gin.Context) {
 
 // serviceID 生成前端可识别的 song id
 func serviceID(id int64) string {
-	return "song_" + itoa(id)
+	return "song_" + strconv.FormatInt(id, 10)
 }
 
 // fromJSONArray 将 model.JSONStringArray 转 []string，nil 时返回空数组

@@ -39,7 +39,7 @@ func New(
 	corsConfig := cors.Config{
 		AllowMethods:     []string{"GET", "POST", "PUT", "OPTIONS"},
 		AllowHeaders:     []string{"*"},
-		ExposeHeaders:    []string{"Content-Range", "Content-Length", "ETag", "X-Request-ID"},
+		ExposeHeaders:    []string{"Content-Length", "ETag", "X-Request-ID"},
 		AllowCredentials: false,
 	}
 	if allowedOrigins := os.Getenv("CORS_ALLOWED_ORIGINS"); allowedOrigins != "" {

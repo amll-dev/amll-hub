@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,13 +26,13 @@ func NewLyricsHandler(svc *service.LyricsService, nfSvc *service.NotFoundService
 }
 
 // GetLyrics GET /api/v1/:folder/:filename
-// 直接返回 TTML 原始字节流，支持 Range 请求
+// 直接返回 TTML 原始字节流
 func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 	folder := c.Param("folder")
 	filename := c.Param("filename")
 
 	if !pkg.IsValidFolder(folder) || filename == "" {
-		c.Status(http.StatusNotFound)
+		pkg.Fail(c, http.StatusBadRequest, http.StatusBadRequest, "invalid folder or filename")
 		return
 	}
 
@@ -53,13 +54,7 @@ func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 			if folder == "raw-lyrics" {
 				platformID = strings.TrimSuffix(filename, ".ttml")
 			}
-			c.JSON(http.StatusNotFound, gin.H{
-				"error":       "lyric not found",
-				"folder":      folder,
-				"filename":    filename,
-				"platform":    strings.TrimSuffix(folder, "-lyrics"),
-				"platform_id": platformID,
-			})
+			pkg.Fail(c, http.StatusNotFound, http.StatusNotFound, "lyric not found: "+platformID)
 
 			// 异步记录无歌词（仅对平台歌词端点生效，raw-lyrics 不记录）
 			if folder != "raw-lyrics" && h.nfSvc != nil {
@@ -75,13 +70,9 @@ func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 			return
 		}
 		logrus.WithError(err).Error("resolve lyric failed")
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
-		})
+		pkg.InternalError(c, "internal server error")
 		return
 	}
-
-	rangeHeader := c.GetHeader("Range")
 
 	// 2. 设置基础响应头
 	c.Header("Content-Type", "application/xml; charset=utf-8")
@@ -89,30 +80,17 @@ func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 	if resolved.ETag != "" {
 		c.Header("ETag", resolved.ETag)
 	}
-	c.Header("Accept-Ranges", "bytes")
+	c.Header("Content-Length", strconv.FormatInt(resolved.Size, 10))
 
 	// 3. 流式返回
-	status, contentRange, contentLength, err := h.svc.StreamLyric(ctx, resolved.MinioPath, rangeHeader, func(_ int64, reader io.Reader) error {
+	c.Status(http.StatusOK)
+	if err := h.svc.StreamLyric(ctx, resolved.MinioPath, func(reader io.Reader) error {
 		_, err := io.Copy(c.Writer, reader)
 		return err
-	})
-	if err != nil {
-		if errors.Is(err, service.ErrInvalidRange) {
-			c.Header("Content-Range", "bytes */"+itoa(resolved.Size))
-			c.Status(http.StatusRequestedRangeNotSatisfiable)
-			return
-		}
-		if status == 0 {
-			c.Status(http.StatusInternalServerError)
-		}
+	}); err != nil {
+		logrus.WithError(err).Error("stream lyric failed")
 		return
 	}
-
-	if contentRange != "" {
-		c.Header("Content-Range", contentRange)
-	}
-	c.Header("Content-Length", itoa(contentLength))
-	c.Status(status)
 
 	// 歌词流式返回成功后：异步检查是否在排行榜中，如果在则删除
 	if folder != "raw-lyrics" && h.nfSvc != nil {
@@ -123,28 +101,4 @@ func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 			h.nfSvc.CheckAndDeleteOnLyricResolved(nfCtx, platform, filename)
 		}()
 	}
-}
-
-// itoa int64 -> string，避免引入 strconv 包名的歧义
-func itoa(n int64) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := false
-	if n < 0 {
-		neg = true
-		n = -n
-	}
-	buf := [20]byte{}
-	pos := len(buf)
-	for n > 0 {
-		pos--
-		buf[pos] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		pos--
-		buf[pos] = '-'
-	}
-	return string(buf[pos:])
 }
