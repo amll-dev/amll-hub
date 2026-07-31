@@ -22,6 +22,12 @@ func New(
 	onlineSearchH *handler.OnlineSearchHandler,
 	cloudMusicH *handler.CloudMusicHandler,
 	authH *handler.AuthHandler,
+	submissionH *handler.SubmissionHandler,
+	reviewH *handler.ReviewHandler,
+	commentH *handler.CommentHandler,
+	uploadH *handler.UploadHandler,
+	wsH *handler.WSHandler,
+	reviewerCache *middleware.ReviewerCache,
 	jwtSecret string,
 ) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
@@ -33,7 +39,7 @@ func New(
 	corsConfig := cors.Config{
 		AllowMethods:     []string{"GET", "POST", "PUT", "OPTIONS"},
 		AllowHeaders:     []string{"*"},
-		ExposeHeaders:    []string{"Content-Range", "Content-Length", "ETag", "X-Request-ID"},
+		ExposeHeaders:    []string{"Content-Length", "ETag", "X-Request-ID"},
 		AllowCredentials: false,
 	}
 	if allowedOrigins := os.Getenv("CORS_ALLOWED_ORIGINS"); allowedOrigins != "" {
@@ -48,6 +54,13 @@ func New(
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
+	// ws
+	wsGroup := r.Group("", func(c *gin.Context) {
+		c.Set("jwt_secret", jwtSecret)
+		c.Next()
+	})
+	wsGroup.GET("/ws/viewers", wsH.Viewers)
+
 	api := r.Group("/api/v1")
 	{
 		// 同步触发/状态
@@ -55,10 +68,12 @@ func New(
 		api.GET("/sync/status", syncH.Status)
 
 		// 在线搜索
-		api.GET("/search", searchH.Search)
-		api.GET("/online-search", onlineSearchH.Search)
-		api.GET("/online-song", onlineSearchH.GetSong)
-		api.GET("/online-lyric", onlineSearchH.GetLyric)
+		online := api.Group("/online")
+		{
+			online.GET("/search", onlineSearchH.Search)
+			online.GET("/songs/:platform/:songId", onlineSearchH.GetSong)
+			online.GET("/lyrics/:platform/:songId", onlineSearchH.GetLyric)
+		}
 
 		// 网易云解析
 		api.GET("/ncm/search", cloudMusicH.Search)
@@ -66,7 +81,7 @@ func New(
 		api.GET("/ncm/parse-playlist", cloudMusicH.ParsePlaylist)
 
 		// 批量查询
-		api.POST("/batch", batchH.Post)
+		api.POST("/songs/batch", batchH.Post)
 
 		// 词库统计
 		api.GET("/stats", statsH.Get)
@@ -86,11 +101,10 @@ func New(
 			auth.POST("/login", authH.Login)
 			auth.POST("/login-code", authH.LoginByCode)
 			auth.POST("/register", authH.Register)
-			auth.GET("/captcha", authH.GetCaptcha)
 			auth.POST("/send-code", authH.SendCode)
 			auth.POST("/forgot-password", authH.ForgotPassword)
 
-			// 受保护接口（需 JWT）
+			// 受保护接口
 			protected := auth.Group("")
 			protected.Use(middleware.Auth(jwtSecret))
 			protected.GET("/profile", authH.GetProfile)
@@ -99,8 +113,36 @@ func New(
 			protected.POST("/avatar", authH.UploadAvatar)
 		}
 
-		// 歌词获取（注意：放在最末，避免与上面具名路由冲突）
-		api.GET("/:folder/:filename", lyricsH.GetLyrics)
+		// 投稿模块
+		sub := api.Group("")
+		sub.Use(middleware.Auth(jwtSecret))
+		{
+			// 投稿 CRUD
+			sub.POST("/submissions", submissionH.Create)
+			sub.GET("/submissions", submissionH.List)
+			sub.GET("/submissions/stats", submissionH.Stats)
+			sub.GET("/submissions/:id", submissionH.GetDetail)
+			sub.PUT("/submissions/:id/file", submissionH.UpdateFile)
+			sub.POST("/submissions/:id/close", submissionH.Close)
+
+			// 审核
+			sub.POST("/submissions/:id/review",
+				middleware.Auth(jwtSecret), middleware.RequireReviewer(reviewerCache),
+				reviewH.Review,
+			)
+
+			// 评论
+			sub.GET("/submissions/:id/comments", commentH.List)
+			sub.POST("/submissions/:id/comments", commentH.Create)
+
+			// 文件上传
+			sub.POST("/uploads/ttml", uploadH.UploadTTML)
+			sub.POST("/uploads/audio", uploadH.UploadAudio)
+		}
+
+		// 歌词获取
+		// :folder ∈ {raw-lyrics, ncm-lyrics, qq-lyrics, spotify-lyrics, am-lyrics}
+		api.GET("/lyrics/:folder/:filename", lyricsH.GetLyrics)
 	}
 
 	return r

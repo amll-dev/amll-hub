@@ -2,12 +2,14 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // SearchHandler 搜索 handler
@@ -44,12 +46,14 @@ func (h *SearchHandler) Search(c *gin.Context) {
 		Offset: offset,
 	})
 	if err != nil {
-		pkg.Fail(c, http.StatusBadGateway, 502, "搜索失败: "+err.Error())
+		if errors.Is(err, service.ErrUpstreamUnavailable) {
+			pkg.Fail(c, http.StatusBadGateway, 502, "搜索服务暂不可用")
+			return
+		}
+		logrus.WithError(err).Error("search failed")
+		pkg.InternalError(c, "搜索失败")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": 200,
-		"data": result,
-	})
+	pkg.OK(c, result)
 }

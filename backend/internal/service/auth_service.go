@@ -66,7 +66,7 @@ func (s *AuthService) checkSendCodeCooldown(ctx context.Context, dest string) er
 		return nil // Redis 出错不阻塞业务
 	}
 	if n > 0 {
-		return errors.New("请 60s 后再试")
+		return ErrSendCodeCooldown
 	}
 	return nil
 }
@@ -157,7 +157,7 @@ type UserProfile struct {
 // Login 登录
 func (s *AuthService) Login(ctx context.Context, username, password string) (*LoginResult, error) {
 	if s.isLoginLocked(ctx, username) {
-		return nil, errors.New("账户已锁定，请 15 分钟后再试")
+		return nil, ErrAccountLocked
 	}
 
 	user, _, err := s.casdoor.Login(username, password)
@@ -165,9 +165,9 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (*Lo
 		slog.Warn("casdoor login failed", "username", username, "error", err)
 		locked := s.recordLoginFail(ctx, username)
 		if locked {
-			return nil, errors.New("登录失败次数过多，账户已锁定 15 分钟")
+			return nil, ErrAccountLocked
 		}
-		return nil, fmt.Errorf("用户名或密码错误")
+		return nil, ErrInvalidCredentials
 	}
 
 	s.clearLoginFail(ctx, username)
@@ -193,7 +193,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (*Lo
 // LoginByCode 验证码登录
 func (s *AuthService) LoginByCode(ctx context.Context, dest, code string) (*LoginResult, error) {
 	if s.isLoginLocked(ctx, dest) {
-		return nil, errors.New("账户已锁定，请 15 分钟后再试")
+		return nil, ErrAccountLocked
 	}
 
 	user, err := s.casdoor.LoginByCode(dest, code)
@@ -201,9 +201,9 @@ func (s *AuthService) LoginByCode(ctx context.Context, dest, code string) (*Logi
 		slog.Warn("casdoor login by code failed", "dest", dest, "error", err)
 		locked := s.recordLoginFail(ctx, dest)
 		if locked {
-			return nil, errors.New("登录失败次数过多，账户已锁定 15 分钟")
+			return nil, ErrAccountLocked
 		}
-		return nil, fmt.Errorf("验证码错误或已失效")
+		return nil, ErrInvalidCredentials
 	}
 
 	s.clearLoginFail(ctx, dest)
@@ -237,13 +237,17 @@ type RegisterRequest struct {
 
 // Register 注册
 func (s *AuthService) Register(ctx context.Context, req RegisterRequest) error {
-	return s.casdoor.Signup(infrastructure.SignupRequest{
+	if err := s.casdoor.Signup(infrastructure.SignupRequest{
 		Username:    req.Username,
 		Password:    req.Password,
 		Email:       req.Email,
 		EmailCode:   req.Code,
 		DisplayName: req.DisplayName,
-	})
+	}); err != nil {
+		slog.Warn("casdoor signup failed", "username", req.Username, "error", err)
+		return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
+	}
+	return nil
 }
 
 // GetCaptcha 获取验证码信息
@@ -274,7 +278,8 @@ func (s *AuthService) SendVerificationCode(ctx context.Context, checkType, dest,
 	}
 	cookies, err := s.casdoor.SendVerificationCode(checkType, dest, captchaType, captchaToken)
 	if err != nil {
-		return err
+		slog.Warn("casdoor send verification code failed", "dest", dest, "error", err)
+		return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 	s.saveCasdoorCookies(ctx, dest, cookies)
 	s.markSendCodeSent(ctx, dest)
@@ -284,17 +289,20 @@ func (s *AuthService) SendVerificationCode(ctx context.Context, checkType, dest,
 func (s *AuthService) ForgotPassword(ctx context.Context, email, code, newPassword string) error {
 	user, err := s.casdoor.GetUserByEmail(email)
 	if err != nil {
-		return err
+		slog.Warn("casdoor get user by email failed", "email", email, "error", err)
+		return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 	cookies, err := s.loadCasdoorCookies(ctx, email)
 	if err != nil {
-		return err
+		return ErrInvalidInput
 	}
 	if err := s.casdoor.VerifyCode(email, code, cookies); err != nil {
-		return err
+		slog.Warn("casdoor verify code failed", "email", email, "error", err)
+		return ErrInvalidCredentials
 	}
 	if err := s.casdoor.ResetPassword(user.Owner, user.Name, newPassword, code, cookies); err != nil {
-		return err
+		slog.Warn("casdoor reset password failed", "email", email, "error", err)
+		return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 	s.clearCasdoorCookies(ctx, email)
 	return nil
@@ -304,11 +312,12 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email, code, newPasswo
 func (s *AuthService) GetProfile(ctx context.Context, userID string) (*UserProfile, error) {
 	owner, name, err := splitUserID(userID)
 	if err != nil {
-		return nil, err
+		return nil, ErrInvalidInput
 	}
 	user, err := s.casdoor.GetUser(owner, name)
 	if err != nil {
-		return nil, err
+		slog.Warn("casdoor get user failed", "user_id", userID, "error", err)
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 	profile := toUserProfile(user)
 	return &profile, nil
@@ -326,12 +335,13 @@ type UpdateProfileRequest struct {
 func (s *AuthService) UpdateProfile(ctx context.Context, userID string, req UpdateProfileRequest) (*UserProfile, error) {
 	owner, name, err := splitUserID(userID)
 	if err != nil {
-		return nil, err
+		return nil, ErrInvalidInput
 	}
 
 	user, err := s.casdoor.GetUser(owner, name)
 	if err != nil {
-		return nil, err
+		slog.Warn("casdoor get user failed", "user_id", userID, "error", err)
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	columns := []string{}
@@ -341,7 +351,7 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID string, req Upda
 	}
 	if req.Email != "" {
 		if req.Code == "" {
-			return nil, errors.New("修改邮箱需提供验证码")
+			return nil, ErrInvalidInput
 		}
 		user.Email = req.Email
 		columns = append(columns, "email")
@@ -357,7 +367,8 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID string, req Upda
 	}
 
 	if err := s.casdoor.UpdateUser(user, columns); err != nil {
-		return nil, err
+		slog.Warn("casdoor update user failed", "user_id", userID, "error", err)
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	profile := toUserProfile(user)
@@ -368,27 +379,31 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID string, req Upda
 func (s *AuthService) ChangePassword(ctx context.Context, userID, oldPassword, newPassword string) error {
 	owner, name, err := splitUserID(userID)
 	if err != nil {
-		return err
+		return ErrInvalidInput
 	}
-	return s.casdoor.SetPassword(owner, name, oldPassword, newPassword)
+	if err := s.casdoor.SetPassword(owner, name, oldPassword, newPassword); err != nil {
+		slog.Warn("casdoor set password failed", "user_id", userID, "error", err)
+		return ErrInvalidCredentials
+	}
+	return nil
 }
 
 // UploadAvatar 上传头像
 func (s *AuthService) UploadAvatar(ctx context.Context, userID string, fileBytes []byte, filename string) (string, error) {
 	owner, name, err := splitUserID(userID)
 	if err != nil {
-		return "", err
+		return "", ErrInvalidInput
 	}
 
 	// 校验文件大小（上限 50MB）
 	if int64(len(fileBytes)) > maxAvatarSize {
-		return "", errors.New("头像文件大小不能超过 50MB")
+		return "", ErrInvalidInput
 	}
 
 	// 校验扩展名
 	ext := strings.ToLower(filepath.Ext(filename))
 	if !allowedAvatarExts[ext] {
-		return "", errors.New("不支持的头像格式")
+		return "", ErrInvalidInput
 	}
 
 	// 嗅探内容类型确认是图片
@@ -396,13 +411,14 @@ func (s *AuthService) UploadAvatar(ctx context.Context, userID string, fileBytes
 	if !strings.HasPrefix(contentType, "image/") && contentType != "text/xml; charset=utf-8" {
 		// svg 的 contentType 可能是 text/xml
 		if ext != ".svg" {
-			return "", errors.New("文件不是图片")
+			return "", ErrInvalidInput
 		}
 	}
 
 	avatarURL, err := s.casdoor.UploadAvatar(fileBytes, filename, name)
 	if err != nil {
-		return "", err
+		slog.Warn("casdoor upload avatar failed", "user_id", userID, "error", err)
+		return "", fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	// 写入用户 avatar 字段

@@ -35,15 +35,12 @@ func NewCloudMusicService(cfg *config.Config, redisClient *redis.Client) *CloudM
 }
 
 // Search 搜索音乐
-// keywords: 搜索关键词，limit: 返回数量（1-100）
-// 缓存 key: ncm:search:{keywords}:{limit}，TTL 10 分钟
-// 上游返回业务错误时不写入缓存
 func (s *CloudMusicService) Search(ctx context.Context, keywords string, limit int) (*models.SearchResponse, error) {
 	if s.client == nil {
-		return nil, fmt.Errorf("NCM_MUSIC_U 未配置")
+		return nil, fmt.Errorf("%w: NCM_MUSIC_U 未配置", ErrUpstreamUnavailable)
 	}
 	if keywords = strings.TrimSpace(keywords); keywords == "" {
-		return nil, fmt.Errorf("搜索关键词不能为空")
+		return nil, ErrInvalidInput
 	}
 	if limit < 1 {
 		limit = 1
@@ -63,15 +60,14 @@ func (s *CloudMusicService) Search(ctx context.Context, keywords string, limit i
 
 	resp, err := s.client.Search(ctx, keywords, limit)
 	if err != nil {
-		return nil, fmt.Errorf("搜索失败: %w", err)
+		logrus.WithError(err).Warn("ncm search failed")
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	// 上游业务错误直接透传，不缓存
 	if resp.Code != 200 || resp.Error != "" {
-		if resp.Error != "" {
-			return resp, fmt.Errorf("%s", resp.Error)
-		}
-		return resp, fmt.Errorf("上游返回错误码: %d", resp.Code)
+		logrus.WithField("code", resp.Code).WithField("error", resp.Error).Warn("ncm search upstream error")
+		return resp, ErrUpstreamUnavailable
 	}
 
 	if s.redis != nil {
@@ -82,22 +78,19 @@ func (s *CloudMusicService) Search(ctx context.Context, keywords string, limit i
 	return resp, nil
 }
 
-// ParseMusic 通过音乐 ID 解析单曲（含音质选择）
-// songID 支持纯数字、music.163.com URL、163cn.tv 短链接（短链接需调用方先重定向）
-// 缓存 key: ncm:parse-music:{normalizedSongID}:{level}，TTL 20 分钟
-// 上游返回业务错误（Code != 200 或 Error 非空）时不写入缓存
+// ParseMusic 通过音乐 ID 解析单曲
 func (s *CloudMusicService) ParseMusic(ctx context.Context, songID, level string) (*models.MusicResponse, error) {
 	if s.client == nil {
-		return nil, fmt.Errorf("NCM_MUSIC_U 未配置")
+		return nil, fmt.Errorf("%w: NCM_MUSIC_U 未配置", ErrUpstreamUnavailable)
 	}
 	if !isValidLevel(level) {
-		return nil, fmt.Errorf("非法音质等级: %s", level)
+		return nil, ErrInvalidInput
 	}
 
 	// 规范化 ID：从 URL 中提取纯 ID 作为缓存键，避免同资源多 key
 	normalizedID, err := utils.ExtractSongID(songID)
 	if err != nil {
-		return nil, fmt.Errorf("无效的 songId: %w", err)
+		return nil, ErrInvalidInput
 	}
 
 	cacheKey := fmt.Sprintf("ncm:parse-music:%s:%s", normalizedID, level)
@@ -112,15 +105,14 @@ func (s *CloudMusicService) ParseMusic(ctx context.Context, songID, level string
 
 	resp, err := s.client.ParseMusic(ctx, songID, level)
 	if err != nil {
-		return nil, fmt.Errorf("解析单曲失败: %w", err)
+		logrus.WithError(err).Warn("ncm parse-music failed")
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	// 上游业务错误直接透传，不缓存
 	if resp.Code != 200 || resp.Error != "" {
-		if resp.Error != "" {
-			return resp, fmt.Errorf("%s", resp.Error)
-		}
-		return resp, fmt.Errorf("上游返回错误码: %d", resp.Code)
+		logrus.WithField("code", resp.Code).WithField("error", resp.Error).Warn("ncm parse-music upstream error")
+		return resp, ErrUpstreamUnavailable
 	}
 
 	if s.redis != nil {
@@ -131,19 +123,16 @@ func (s *CloudMusicService) ParseMusic(ctx context.Context, songID, level string
 	return resp, nil
 }
 
-// ParsePlaylist 解析歌单（返回歌单详情与完整歌曲列表）
-// playlistID 支持纯数字、带 id= 参数的 URL、/playlist/{id} 路径的 URL
-// 缓存 key: ncm:parse-playlist:{normalizedPlaylistID}，TTL 30 分钟
-// 上游返回业务错误时不写入缓存
+// ParsePlaylist 解析歌单
 func (s *CloudMusicService) ParsePlaylist(ctx context.Context, playlistID string) (*models.PlaylistResponse, error) {
 	if s.client == nil {
-		return nil, fmt.Errorf("NCM_MUSIC_U 未配置")
+		return nil, fmt.Errorf("%w: NCM_MUSIC_U 未配置", ErrUpstreamUnavailable)
 	}
 
 	// 规范化 ID
 	normalizedID, err := utils.ExtractPlaylistID(playlistID)
 	if err != nil {
-		return nil, fmt.Errorf("无效的 playlistId: %w", err)
+		return nil, ErrInvalidInput
 	}
 
 	cacheKey := fmt.Sprintf("ncm:parse-playlist:%s", normalizedID)
@@ -158,15 +147,14 @@ func (s *CloudMusicService) ParsePlaylist(ctx context.Context, playlistID string
 
 	resp, err := s.client.ParsePlaylist(ctx, playlistID)
 	if err != nil {
-		return nil, fmt.Errorf("解析歌单失败: %w", err)
+		logrus.WithError(err).Warn("ncm parse-playlist failed")
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	// 上游业务错误直接透传，不缓存
 	if resp.Code != 200 || resp.Error != "" {
-		if resp.Error != "" {
-			return resp, fmt.Errorf("%s", resp.Error)
-		}
-		return resp, fmt.Errorf("上游返回错误码: %d", resp.Code)
+		logrus.WithField("code", resp.Code).WithField("error", resp.Error).Warn("ncm parse-playlist upstream error")
+		return resp, ErrUpstreamUnavailable
 	}
 
 	if s.redis != nil {

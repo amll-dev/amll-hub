@@ -2,9 +2,9 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
-	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
@@ -39,12 +39,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 
 	result, err := h.svc.Login(ctx, req.Username, req.Password)
 	if err != nil {
-		msg := err.Error()
-		if strings.Contains(msg, "锁定") {
-			pkg.Fail(c, 429, 429, msg)
-			return
-		}
-		pkg.Fail(c, 401, 401, msg)
+		writeAuthErr(c, err)
 		return
 	}
 	pkg.OK(c, result)
@@ -67,12 +62,7 @@ func (h *AuthHandler) LoginByCode(c *gin.Context) {
 
 	result, err := h.svc.LoginByCode(ctx, req.Dest, req.Code)
 	if err != nil {
-		msg := err.Error()
-		if strings.Contains(msg, "锁定") {
-			pkg.Fail(c, 429, 429, msg)
-			return
-		}
-		pkg.Fail(c, 401, 401, msg)
+		writeAuthErr(c, err)
 		return
 	}
 	pkg.OK(c, result)
@@ -94,23 +84,10 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	defer cancel()
 
 	if err := h.svc.Register(ctx, req); err != nil {
-		logrus.WithError(err).Warn("register failed")
-		pkg.Fail(c, 400, 400, "注册失败: "+err.Error())
+		writeAuthErr(c, err)
 		return
 	}
 	pkg.OKWithMsg(c, nil, "注册成功")
-}
-
-// GetCaptcha GET /api/v1/auth/captcha
-// 获取 Casdoor 验证码信息（前端用于展示验证码题目）
-func (h *AuthHandler) GetCaptcha(c *gin.Context) {
-	data, err := h.svc.GetCaptcha()
-	if err != nil {
-		logrus.WithError(err).Warn("get captcha failed")
-		pkg.Fail(c, 502, 502, "获取验证码失败: "+err.Error())
-		return
-	}
-	pkg.OK(c, data)
 }
 
 // SendCode POST /api/v1/auth/send-code
@@ -133,13 +110,7 @@ func (h *AuthHandler) SendCode(c *gin.Context) {
 	defer cancel()
 
 	if err := h.svc.SendVerificationCode(ctx, req.CheckType, req.Dest, req.CaptchaType, req.CaptchaToken); err != nil {
-		msg := err.Error()
-		if strings.Contains(msg, "60s") {
-			pkg.Fail(c, 429, 429, msg)
-			return
-		}
-		logrus.WithError(err).Warn("send verification code failed")
-		pkg.Fail(c, 502, 502, "发送验证码失败: "+msg)
+		writeAuthErr(c, err)
 		return
 	}
 	pkg.OKWithMsg(c, nil, "验证码已发送")
@@ -161,8 +132,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	defer cancel()
 
 	if err := h.svc.ForgotPassword(ctx, req.Email, req.Code, req.NewPassword); err != nil {
-		logrus.WithError(err).Warn("forgot password failed")
-		pkg.Fail(c, 400, 400, "密码重置失败: "+err.Error())
+		writeAuthErr(c, err)
 		return
 	}
 	pkg.OKWithMsg(c, nil, "密码重置成功")
@@ -172,7 +142,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 func (h *AuthHandler) GetProfile(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == "" {
-		pkg.Fail(c, 401, 401, "unauthorized")
+		pkg.Fail(c, 401, 401, "未登录")
 		return
 	}
 
@@ -181,8 +151,7 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 
 	profile, err := h.svc.GetProfile(ctx, userID)
 	if err != nil {
-		logrus.WithError(err).Warn("get profile failed")
-		pkg.Fail(c, 502, 502, "获取资料失败: "+err.Error())
+		writeAuthErr(c, err)
 		return
 	}
 	pkg.OK(c, profile)
@@ -192,7 +161,7 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == "" {
-		pkg.Fail(c, 401, 401, "unauthorized")
+		pkg.Fail(c, 401, 401, "未登录")
 		return
 	}
 
@@ -207,8 +176,7 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 
 	profile, err := h.svc.UpdateProfile(ctx, userID, req)
 	if err != nil {
-		logrus.WithError(err).Warn("update profile failed")
-		pkg.Fail(c, 400, 400, "更新资料失败: "+err.Error())
+		writeAuthErr(c, err)
 		return
 	}
 	pkg.OK(c, profile)
@@ -218,7 +186,7 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == "" {
-		pkg.Fail(c, 401, 401, "unauthorized")
+		pkg.Fail(c, 401, 401, "未登录")
 		return
 	}
 
@@ -235,8 +203,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	defer cancel()
 
 	if err := h.svc.ChangePassword(ctx, userID, req.OldPassword, req.NewPassword); err != nil {
-		logrus.WithError(err).Warn("change password failed")
-		pkg.Fail(c, 400, 400, "密码修改失败: "+err.Error())
+		writeAuthErr(c, err)
 		return
 	}
 	pkg.OKWithMsg(c, nil, "密码修改成功")
@@ -246,7 +213,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 func (h *AuthHandler) UploadAvatar(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == "" {
-		pkg.Fail(c, 401, 401, "unauthorized")
+		pkg.Fail(c, 401, 401, "未登录")
 		return
 	}
 
@@ -259,6 +226,7 @@ func (h *AuthHandler) UploadAvatar(c *gin.Context) {
 
 	fileBytes, err := io.ReadAll(file)
 	if err != nil {
+		logrus.WithError(err).Warn("read avatar file failed")
 		pkg.InternalError(c, "读取文件失败")
 		return
 	}
@@ -274,8 +242,27 @@ func (h *AuthHandler) UploadAvatar(c *gin.Context) {
 	avatarURL, err := h.svc.UploadAvatar(ctx, userID, fileBytes, filename)
 	if err != nil {
 		logrus.WithError(err).WithField("filename", filepath.Base(filename)).Warn("upload avatar failed")
-		pkg.Fail(c, 400, 400, "头像上传失败: "+err.Error())
+		writeAuthErr(c, err)
 		return
 	}
 	pkg.OK(c, gin.H{"avatar": avatarURL})
+}
+
+// writeAuthErr 统一处理认证服务错误
+func writeAuthErr(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrAccountLocked):
+		pkg.Fail(c, 429, 429, "账户已锁定，请稍后再试")
+	case errors.Is(err, service.ErrInvalidCredentials):
+		pkg.Fail(c, 401, 401, "用户名或密码错误")
+	case errors.Is(err, service.ErrSendCodeCooldown):
+		pkg.Fail(c, 429, 429, "验证码发送过于频繁，请稍后再试")
+	case errors.Is(err, service.ErrInvalidInput):
+		pkg.BadRequest(c, "请求参数非法")
+	case errors.Is(err, service.ErrUpstreamUnavailable):
+		pkg.Fail(c, 502, 502, "认证服务暂不可用")
+	default:
+		logrus.WithError(err).Warn("auth service unknown error")
+		pkg.InternalError(c, "内部错误")
+	}
 }

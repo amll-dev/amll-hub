@@ -21,10 +21,12 @@ type Config struct {
 	RabbitMQ     RabbitMQConfig
 	MeiliSearch  MeiliSearchConfig
 	GitHub       GitHubConfig
+	GitHubApp    GitHubAppConfig
 	Sync         SyncConfig
 	NCM          NCMConfig
 	OnlineSearch OnlineSearchConfig
 	Casdoor      CasdoorConfig
+	Submission   SubmissionConfig
 }
 
 type HTTPConfig struct {
@@ -111,7 +113,33 @@ type CasdoorConfig struct {
 	JWTTTL           time.Duration
 }
 
-// findDotEnv 从当前工作目录向上查找 .env 文件
+// GitHubAppConfig GitHub App 配置
+type GitHubAppConfig struct {
+	AppID          int64
+	InstallationID int64
+	PrivateKeyPath string
+	RepoOwner      string
+	RepoName       string
+	UploadFolder   string
+}
+
+// SubmissionConfig 投稿模块配置
+type SubmissionConfig struct {
+	// AutoRejectInterval 自动拒绝任务执行间隔
+	AutoRejectInterval time.Duration
+	// AutoRejectAfter need_revision 状态超过该时长自动拒绝
+	AutoRejectAfter time.Duration
+	// ReviewerCacheTTL 审核员名单内存缓存 TTL
+	ReviewerCacheTTL time.Duration
+	// MaxTTMLSize 单个 TTML 文件最大字节数
+	MaxTTMLSize int64
+	// MaxAudioSize 单个音频文件最大字节数
+	MaxAudioSize int64
+	// MaxImageSize 单个封面图最大字节数
+	MaxImageSize int64
+}
+
+// findDotEnv查找 .env 文件
 func findDotEnv() string {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -131,7 +159,7 @@ func findDotEnv() string {
 	return ""
 }
 
-// Load 从环境变量加载配置（优先加载当前目录或项目根目录的 .env 文件）
+// Load 从环境变量加载配置
 func Load() (*Config, error) {
 	if dotenv := findDotEnv(); dotenv != "" {
 		if err := gotenv.Load(dotenv); err != nil {
@@ -196,6 +224,22 @@ func Load() (*Config, error) {
 	v.SetDefault("CASDOOR_APPLICATION", "amll-hub")
 	v.SetDefault("CASDOOR_JWT_TTL", "24h")
 
+	// GitHub App
+	v.SetDefault("GITHUB_APP_ID", 0)
+	v.SetDefault("GITHUB_INSTALLATION_ID", 0)
+	v.SetDefault("GITHUB_PRIVATE_KEY_PATH", "")
+	v.SetDefault("GITHUB_APP_REPO_OWNER", "amll-dev")
+	v.SetDefault("GITHUB_APP_REPO_NAME", "amll-ttml-db")
+	v.SetDefault("GITHUB_APP_UPLOAD_FOLDER", "raw-lyrics")
+
+	// Submission 投稿模块
+	v.SetDefault("SUBMISSION_AUTO_REJECT_INTERVAL", "1h")
+	v.SetDefault("SUBMISSION_AUTO_REJECT_AFTER", "96h")
+	v.SetDefault("SUBMISSION_REVIEWER_CACHE_TTL", "30s")
+	v.SetDefault("SUBMISSION_MAX_TTML_SIZE", 2*1024*1024)   // 2MB
+	v.SetDefault("SUBMISSION_MAX_AUDIO_SIZE", 50*1024*1024) // 50MB
+	v.SetDefault("SUBMISSION_MAX_IMAGE_SIZE", 10*1024*1024) // 10MB
+
 	cfg := &Config{
 		HTTP: HTTPConfig{
 			Port: v.GetString("PORT"),
@@ -258,10 +302,30 @@ func Load() (*Config, error) {
 			JWTSecret:        v.GetString("CASDOOR_JWT_SECRET"),
 			JWTTTL:           v.GetDuration("CASDOOR_JWT_TTL"),
 		},
+		GitHubApp: GitHubAppConfig{
+			AppID:          v.GetInt64("GITHUB_APP_ID"),
+			InstallationID: v.GetInt64("GITHUB_INSTALLATION_ID"),
+			PrivateKeyPath: v.GetString("GITHUB_PRIVATE_KEY_PATH"),
+			RepoOwner:      v.GetString("GITHUB_APP_REPO_OWNER"),
+			RepoName:       v.GetString("GITHUB_APP_REPO_NAME"),
+			UploadFolder:   v.GetString("GITHUB_APP_UPLOAD_FOLDER"),
+		},
+		Submission: SubmissionConfig{
+			AutoRejectInterval: v.GetDuration("SUBMISSION_AUTO_REJECT_INTERVAL"),
+			AutoRejectAfter:    v.GetDuration("SUBMISSION_AUTO_REJECT_AFTER"),
+			ReviewerCacheTTL:   v.GetDuration("SUBMISSION_REVIEWER_CACHE_TTL"),
+			MaxTTMLSize:        v.GetInt64("SUBMISSION_MAX_TTML_SIZE"),
+			MaxAudioSize:       v.GetInt64("SUBMISSION_MAX_AUDIO_SIZE"),
+			MaxImageSize:       v.GetInt64("SUBMISSION_MAX_IMAGE_SIZE"),
+		},
 	}
 
 	if cfg.Casdoor.JWTSecret == "" {
 		logrus.Warnf("CASDOOR_JWT_SECRET is empty, auth endpoints will not work properly")
+	}
+
+	if cfg.GitHubApp.AppID == 0 || cfg.GitHubApp.InstallationID == 0 || cfg.GitHubApp.PrivateKeyPath == "" {
+		logrus.Warnf("GitHub App config incomplete (GITHUB_APP_ID/GITHUB_INSTALLATION_ID/GITHUB_PRIVATE_KEY_PATH), submission approve upload will be disabled")
 	}
 
 	if os.Getenv("APP_ENV") == "production" {

@@ -2,12 +2,13 @@ package handler
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
-	logrus "github.com/sirupsen/logrus"
 )
 
 // CloudMusicHandler 网易云解析 handler
@@ -34,14 +35,10 @@ func (h *CloudMusicHandler) Search(c *gin.Context) {
 
 	result, err := h.svc.Search(ctx, q, limit)
 	if err != nil {
-		logrus.WithError(err).
-			WithField("q", q).
-			WithField("limit", limit).
-			Warn("cloud music search failed")
-		pkg.Fail(c, 502, 502, "搜索失败: "+err.Error())
+		writeCloudMusicErr(c, err)
 		return
 	}
-	c.JSON(200, gin.H{"code": 200, "data": result})
+	pkg.OK(c, result)
 }
 
 // ParseMusic GET /api/v1/ncm/parse-music?songId=&level=
@@ -59,14 +56,10 @@ func (h *CloudMusicHandler) ParseMusic(c *gin.Context) {
 
 	result, err := h.svc.ParseMusic(ctx, songID, level)
 	if err != nil {
-		logrus.WithError(err).
-			WithField("songId", songID).
-			WithField("level", level).
-			Warn("cloud music parse-music failed")
-		pkg.Fail(c, 502, 502, "解析单曲失败: "+err.Error())
+		writeCloudMusicErr(c, err)
 		return
 	}
-	c.JSON(200, gin.H{"code": 200, "data": result})
+	pkg.OK(c, result)
 }
 
 // ParsePlaylist GET /api/v1/ncm/parse-playlist?playlistId=
@@ -82,11 +75,20 @@ func (h *CloudMusicHandler) ParsePlaylist(c *gin.Context) {
 
 	result, err := h.svc.ParsePlaylist(ctx, playlistID)
 	if err != nil {
-		logrus.WithError(err).
-			WithField("playlistId", playlistID).
-			Warn("cloud music parse-playlist failed")
-		pkg.Fail(c, 502, 502, "解析歌单失败: "+err.Error())
+		writeCloudMusicErr(c, err)
 		return
 	}
-	c.JSON(200, gin.H{"code": 200, "data": result})
+	pkg.OK(c, result)
+}
+
+// writeCloudMusicErr 统一处理网易云解析服务错误
+func writeCloudMusicErr(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrInvalidInput):
+		pkg.BadRequest(c, "请求参数非法")
+	case errors.Is(err, service.ErrUpstreamUnavailable):
+		pkg.Fail(c, http.StatusBadGateway, 502, "网易云解析服务暂不可用")
+	default:
+		pkg.InternalError(c, "解析失败")
+	}
 }

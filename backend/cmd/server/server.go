@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,9 +12,12 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/config"
 	"github.com/amll-dev/amll-hub/backend/internal/handler"
 	"github.com/amll-dev/amll-hub/backend/internal/infrastructure"
+	"github.com/amll-dev/amll-hub/backend/internal/job"
+	"github.com/amll-dev/amll-hub/backend/internal/middleware"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/amll-dev/amll-hub/backend/internal/router"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
+	"github.com/amll-dev/amll-hub/backend/internal/ws"
 	logrus "github.com/sirupsen/logrus"
 )
 
@@ -67,12 +69,26 @@ func Run() {
 		logrus.Warnf("ensure meilisearch index: %v", err)
 	}
 
+	// 投稿模块基础设施：GitHub App
+	githubApp, err := infrastructure.NewGitHubAppClient(cfg.GitHubApp)
+	if err != nil {
+		logrus.Warnf("init github app client: %v (submission approve upload will be disabled)", err)
+		githubApp = &infrastructure.GitHubAppClient{}
+	}
+
 	// 3. 初始化 repository
 	songRepo := repository.NewSongRepo(db)
 	artistRepo := repository.NewArtistRepo(db)
 	syncRepo := repository.NewSyncRepo(db)
 	progressRepo := repository.NewSyncProgressRepo(db)
 	notFoundRepo := repository.NewNotFoundRepo(db)
+
+	// 投稿模块 repository
+	subRepo := repository.NewSubmissionRepo(db)
+	audioRepo := repository.NewAudioRepo(db)
+	historyRepo := repository.NewReviewHistoryRepo(db)
+	commentRepo := repository.NewCommentRepo(db)
+	reviewerRepo := repository.NewReviewerRepo(db)
 
 	// 4. 初始化 service
 	syncSvc := service.NewSyncService(cfg, syncRepo, progressRepo, mq)
@@ -91,7 +107,15 @@ func Run() {
 		cfg.Casdoor.Organization,
 	)
 
-	// 4.1 启动无歌词服务后台任务：白名单预热 + 每周清空
+	// 投稿模块 service
+	fileSvc := service.NewFileService(cfg, minioClient)
+	githubSvc := service.NewGitHubService(githubApp)
+	viewerSvc := service.NewViewerService(nil, subRepo) // hub 后面注入
+	submissionSvc := service.NewSubmissionService(subRepo, audioRepo, historyRepo, commentRepo, fileSvc, db)
+	reviewSvc := service.NewReviewService(subRepo, historyRepo, fileSvc, githubSvc, viewerSvc, db)
+	batchSvc := service.NewBatchService(songRepo)
+
+	// 4.1 启动无歌词服务
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 	{
@@ -103,11 +127,28 @@ func Run() {
 		notFoundSvc.StartWeeklyClearTask(appCtx)
 	}
 
+	// 4.2 启动 WebSocket Hub
+	hub := ws.NewHub(redisClient)
+	go hub.Run(appCtx)
+
+	// 注入 hub 给 viewerSvc
+	viewerSvc.SetHub(hub)
+
+	// 4.3 启动投稿自动拒绝任务
+	autoRejectJob := job.NewAutoRejectJob(
+		db, subRepo, historyRepo, fileSvc, viewerSvc,
+		cfg.Submission.AutoRejectAfter, cfg.Submission.AutoRejectInterval,
+	)
+	go autoRejectJob.Run(appCtx)
+
+	// 4.4 审核员缓存
+	reviewerCache := middleware.NewReviewerCache(reviewerRepo, cfg.Submission.ReviewerCacheTTL)
+
 	// 5. 初始化 handler
 	syncH := handler.NewSyncHandler(syncSvc)
 	lyricsH := handler.NewLyricsHandler(lyricsSvc, notFoundSvc)
 	searchH := handler.NewSearchHandler(searchSvc)
-	batchH := handler.NewBatchHandler(songRepo)
+	batchH := handler.NewBatchHandler(batchSvc)
 	statsH := handler.NewStatsHandler(statsSvc)
 	indexH := handler.NewIndexHandler(indexSvc)
 	nfH := handler.NewNotFoundHandler(notFoundSvc)
@@ -115,8 +156,19 @@ func Run() {
 	cloudMusicH := handler.NewCloudMusicHandler(cloudMusicSvc)
 	authH := handler.NewAuthHandler(authSvc)
 
+	// 投稿 handler
+	submissionH := handler.NewSubmissionHandler(submissionSvc, reviewerCache)
+	reviewH := handler.NewReviewHandler(reviewSvc)
+	commentH := handler.NewCommentHandler(submissionSvc)
+	uploadH := handler.NewUploadHandler(fileSvc, submissionSvc)
+	wsH := handler.NewWSHandler(hub, viewerSvc, reviewerCache)
+
 	// 6. 启动 HTTP
-	r := router.New(syncH, lyricsH, searchH, batchH, statsH, indexH, nfH, onlineSearchH, cloudMusicH, authH, cfg.Casdoor.JWTSecret)
+	r := router.New(
+		syncH, lyricsH, searchH, batchH, statsH, indexH, nfH, onlineSearchH, cloudMusicH, authH,
+		submissionH, reviewH, commentH, uploadH, wsH, reviewerCache,
+		cfg.Casdoor.JWTSecret,
+	)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTP.Port,
@@ -156,6 +208,3 @@ func Run() {
 	}
 	logrus.Info("server exited")
 }
-
-// _ 占位避免 fmt 未引用
-var _ = fmt.Sprintf

@@ -2,13 +2,12 @@ package handler
 
 import (
 	"context"
-	"net/http"
 	"strconv"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
-	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // NotFoundHandler 无歌词记录 handler
@@ -22,10 +21,6 @@ func NewNotFoundHandler(svc *service.NotFoundService) *NotFoundHandler {
 }
 
 // GetRanking GET /api/v1/not-found-ranking
-// 参数：
-//   - limit: 返回数量（默认 all，可设置具体数量，超过总数返回全部）
-//   - days: 时间范围（默认 7，最大 7，每周清空）
-//   - platform: 平台筛选
 func (h *NotFoundHandler) GetRanking(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
@@ -49,20 +44,17 @@ func (h *NotFoundHandler) GetRanking(c *gin.Context) {
 
 	total, items, err := h.svc.GetRanking(ctx, days, platform, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "查询排行榜失败: " + err.Error(),
-		})
+		logrus.WithError(err).Error("get not-found ranking failed")
+		pkg.InternalError(c, "查询排行榜失败")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":           200,
+	pkg.OK(c, gin.H{
 		"total":          total,
 		"returned":       len(items),
 		"requestedLimit": limitStr,
 		"days":           days,
-		"data":           items,
+		"items":          items,
 	})
 }
 
@@ -73,80 +65,73 @@ func (h *NotFoundHandler) GetStats(c *gin.Context) {
 
 	stats, err := h.svc.GetStats(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "查询统计失败: " + err.Error(),
-		})
+		logrus.WithError(err).Error("get not-found stats failed")
+		pkg.InternalError(c, "查询统计失败")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code": 200,
-		"data": stats,
-	})
+	pkg.OK(c, stats)
 }
 
 // ListPureMusicWhitelist GET /api/v1/pure-music-whitelist
+// 分页参数：page（默认 1）、limit（默认 100，范围 1-1000）
 func (h *NotFoundHandler) ListPureMusicWhitelist(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	limit, offset := parsePaging(c)
+	page, limit := parsePaging(c)
+	offset := (page - 1) * limit
 
 	items, total, err := h.svc.ListPureMusicWhitelist(ctx, limit, offset)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "查询纯音乐白名单失败: " + err.Error(),
-		})
+		logrus.WithError(err).Error("list pure music whitelist failed")
+		pkg.InternalError(c, "查询纯音乐白名单失败")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":   200,
-		"total":  total,
-		"offset": offset,
-		"limit":  limit,
-		"data":   items,
+	pkg.OK(c, gin.H{
+		"total": total,
+		"page":  page,
+		"limit": limit,
+		"items": items,
 	})
 }
 
 // ListCloudMusicWhitelist GET /api/v1/cloud-music-whitelist
+// 分页参数：page（默认 1）、limit（默认 100，范围 1-1000）
 func (h *NotFoundHandler) ListCloudMusicWhitelist(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	limit, offset := parsePaging(c)
+	page, limit := parsePaging(c)
+	offset := (page - 1) * limit
 
 	items, total, err := h.svc.ListCloudMusicWhitelist(ctx, limit, offset)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "查询云盘音乐白名单失败: " + err.Error(),
-		})
+		logrus.WithError(err).Error("list cloud music whitelist failed")
+		pkg.InternalError(c, "查询云盘音乐白名单失败")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":   200,
-		"total":  total,
-		"offset": offset,
-		"limit":  limit,
-		"data":   items,
+	pkg.OK(c, gin.H{
+		"total": total,
+		"page":  page,
+		"limit": limit,
+		"items": items,
 	})
 }
 
 // parsePaging 解析分页参数
 func parsePaging(c *gin.Context) (int, int) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	if limit < 1 || limit > 1000 {
 		limit = 100
 	}
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	if offset < 0 {
-		offset = 0
-	}
-	return limit, offset
+	return page, limit
 }
 
 // GetClientIP 从请求中获取客户端 IP
@@ -157,7 +142,3 @@ func GetClientIP(c *gin.Context) string {
 	}
 	return c.Request.RemoteAddr
 }
-
-// _ 防 pkg 未引用
-var _ = pkg.OK
-var _ = repository.RankingItem{}

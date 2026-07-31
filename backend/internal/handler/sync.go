@@ -2,13 +2,14 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
-	"github.com/amll-dev/amll-hub/backend/internal/middleware"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // SyncHandler 同步相关 handler
@@ -40,24 +41,16 @@ func (h *SyncHandler) Trigger(c *gin.Context) {
 
 	result, err := h.svc.TriggerSync(ctx, triggeredBy)
 	if err != nil {
-		pkg.Fail(c, http.StatusBadGateway, 502, "触发同步失败: "+err.Error())
+		if errors.Is(err, service.ErrUpstreamUnavailable) {
+			pkg.Fail(c, http.StatusBadGateway, 502, "触发同步失败，上游服务不可用")
+			return
+		}
+		logrus.WithError(err).Error("trigger sync failed")
+		pkg.InternalError(c, "触发同步失败")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"code":                 200,
-		"status":               result.Status,
-		"message":              result.Message,
-		"requestId":            result.RequestID,
-		"previousCommit":       result.PreviousCommit,
-		"targetCommit":         result.TargetCommit,
-		"startedAt":            result.StartedAt,
-		"queuePosition":        result.QueuePosition,
-		"currentSyncRequestId": result.CurrentSyncReqID,
-		"currentSyncStartedAt": result.CurrentSyncStart,
-		"lastSyncedCommit":     result.LastSyncedCommit,
-		"lastSyncedAt":         result.LastSyncedAt,
-	})
+	pkg.OK(c, result)
 }
 
 // Status GET /api/v1/sync/status
@@ -67,25 +60,10 @@ func (h *SyncHandler) Status(c *gin.Context) {
 
 	result, err := h.svc.GetStatus(ctx)
 	if err != nil {
+		logrus.WithError(err).Error("get sync status failed")
 		pkg.InternalError(c, "查询同步状态失败")
 		return
 	}
 
-	resp := gin.H{
-		"code":    200,
-		"syncing": result.Syncing,
-	}
-	if result.Syncing {
-		resp["startedAt"] = result.StartedAt
-		if result.Progress != nil {
-			resp["progress"] = result.Progress
-		}
-	} else {
-		resp["lastSyncedAt"] = result.LastSyncedAt
-		resp["lastSyncedCommit"] = result.LastSyncedCommit
-	}
-	c.JSON(http.StatusOK, resp)
+	pkg.OK(c, result)
 }
-
-// _ 防止 unused
-var _ = middleware.GetRequestID

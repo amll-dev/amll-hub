@@ -41,27 +41,27 @@ type StatsResponse struct {
 func (s *StatsService) GetStats(ctx context.Context) (*StatsResponse, error) {
 	totalSongs, err := s.songRepo.CountSongs(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("count songs: %w", err)
+		return nil, fmt.Errorf("%w: count songs: %v", ErrUpstreamUnavailable, err)
 	}
 	totalArtists, err := s.artistRepo.CountArtists(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("count artists: %w", err)
+		return nil, fmt.Errorf("%w: count artists: %v", ErrUpstreamUnavailable, err)
 	}
 	totalAlbums, err := s.songRepo.CountAlbums(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("count albums: %w", err)
+		return nil, fmt.Errorf("%w: count albums: %v", ErrUpstreamUnavailable, err)
 	}
 	totalWords, err := s.songRepo.SumWords(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("sum words: %w", err)
+		return nil, fmt.Errorf("%w: sum words: %v", ErrUpstreamUnavailable, err)
 	}
 	totalLines, err := s.songRepo.SumLines(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("sum lines: %w", err)
+		return nil, fmt.Errorf("%w: sum lines: %v", ErrUpstreamUnavailable, err)
 	}
 	platformDist, err := s.songRepo.PlatformDistribution(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("platform distribution: %w", err)
+		return nil, fmt.Errorf("%w: platform distribution: %v", ErrUpstreamUnavailable, err)
 	}
 	lastSyncAt, _ := s.syncRepo.GetLastSyncedAt(ctx)
 

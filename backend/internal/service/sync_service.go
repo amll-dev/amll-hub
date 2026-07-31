@@ -64,12 +64,13 @@ func (s *SyncService) TriggerSync(ctx context.Context, triggeredBy string) (*Tri
 	remoteCommit, err := s.fetchRemoteCommit(ctx)
 	if err != nil {
 		log.WithError(err).Error("fetch remote commit failed")
-		return nil, fmt.Errorf("fetch remote commit: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	localCommit, err := s.syncRepo.GetLastSyncedCommit(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get last synced commit: %w", err)
+		logrus.WithError(err).Error("get last synced commit failed")
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 	lastSyncedAt, _ := s.syncRepo.GetLastSyncedAt(ctx)
 
@@ -84,7 +85,8 @@ func (s *SyncService) TriggerSync(ctx context.Context, triggeredBy string) (*Tri
 
 	running, err := s.syncRepo.GetLatestRunningHistory(ctx)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("check running sync: %w", err)
+		logrus.WithError(err).Error("check running sync failed")
+		return nil, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -123,7 +125,8 @@ func (s *SyncService) enqueue(ctx context.Context, requestID, triggeredBy string
 		"triggered_at": time.Now().UTC().Format(time.RFC3339),
 	})
 	if err := s.rabbitMQ.PublishSyncRequest(body, requestID, triggeredBy); err != nil {
-		return fmt.Errorf("publish sync request: %w", err)
+		logrus.WithError(err).Error("publish sync request failed")
+		return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 	return nil
 }
