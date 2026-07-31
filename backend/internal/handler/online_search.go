@@ -57,7 +57,8 @@ func (h *OnlineSearchHandler) GetSong(c *gin.Context) {
 	songID := strings.TrimSpace(c.Param("songId"))
 
 	if err := validateOnlinePlatform(platform); err != nil {
-		pkg.BadRequest(c, err.Error())
+		logrus.WithError(err).Warn("invalid online platform")
+		pkg.BadRequest(c, "platform 参数非法（可选: ncm, qq, kugou）")
 		return
 	}
 
@@ -84,7 +85,8 @@ func (h *OnlineSearchHandler) GetLyric(c *gin.Context) {
 	songID := strings.TrimSpace(c.Param("songId"))
 
 	if err := validateOnlinePlatform(platform); err != nil {
-		pkg.BadRequest(c, err.Error())
+		logrus.WithError(err).Warn("invalid online platform")
+		pkg.BadRequest(c, "platform 参数非法（可选: ncm, qq, kugou）")
 		return
 	}
 

@@ -7,6 +7,11 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+const (
+	jwtIssuer   = "amll-hub"
+	jwtAudience = "amll-hub"
+)
+
 // Claims 自定义 JWT 声明
 type Claims struct {
 	Sub         string `json:"sub"`         // "{org}/{name}"，用户唯一标识
@@ -21,7 +26,10 @@ type Claims struct {
 func SignJWT(claims *Claims, secret string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims.RegisteredClaims = jwt.RegisteredClaims{
+		Issuer:    jwtIssuer,
+		Audience:  jwt.ClaimStrings{jwtAudience},
 		IssuedAt:  jwt.NewNumericDate(now),
+		NotBefore: jwt.NewNumericDate(now),
 		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -36,7 +44,10 @@ func ParseJWT(tokenStr string, secret string) (*Claims, error) {
 			return nil, errors.New("unexpected signing method")
 		}
 		return []byte(secret), nil
-	})
+	},
+		jwt.WithIssuer(jwtIssuer),
+		jwt.WithAudience(jwtAudience),
+	)
 	if err != nil {
 		return nil, err
 	}

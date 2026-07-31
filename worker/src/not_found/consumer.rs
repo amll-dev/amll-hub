@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use futures_lite::StreamExt;
 use lapin::{
-    options::{BasicAckOptions, BasicConsumeOptions, BasicQosOptions},
+    options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicQosOptions},
     types::FieldTable,
     Channel,
 };
@@ -72,15 +72,21 @@ pub async fn consume_loop(
                     }
                 };
                 let tag = delivery.delivery_tag;
-                if let Err(e) = handle_message(&channel, delivery, &app).await {
-                    warn!(error = %e, "nf handle_message error, nacking with requeue");
-                    let _ = channel
-                        .basic_nack(
-                            tag,
-                            lapin::options::BasicNackOptions { multiple: false, requeue: true },
-                        )
-                        .await;
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                match handle_message(delivery, &app).await {
+                    Ok(()) => {
+                        let _ = channel
+                            .basic_ack(tag, BasicAckOptions::default())
+                            .await;
+                    }
+                    Err(e) => {
+                        error!(error = %e, "nf task failed after retries, sending to DLQ");
+                        let _ = channel
+                            .basic_nack(
+                                tag,
+                                BasicNackOptions { multiple: false, requeue: false },
+                            )
+                            .await;
+                    }
                 }
             }
         }
@@ -89,22 +95,51 @@ pub async fn consume_loop(
     Ok(())
 }
 
+/// 无歌词解析最大重试次数
+const NF_MAX_RETRIES: u32 = 3;
+const NF_RETRY_BASE_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+
 async fn handle_message(
-    channel: &Channel,
     delivery: lapin::message::Delivery,
     app: &Arc<AppState>,
 ) -> Result<()> {
-    let tag = delivery.delivery_tag;
     let msg: NotFoundMessage = serde_json::from_slice(&delivery.data)
         .context("parse nf message")?;
 
     info!(platform = %msg.platform, platform_id = %msg.platform_id, "processing not_found message");
 
+    // 应用层有限重试
+    let mut attempt: u32 = 0;
+    loop {
+        match process_once(&msg, app).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                attempt += 1;
+                if attempt >= NF_MAX_RETRIES {
+                    return Err(e);
+                }
+                let delay = NF_RETRY_BASE_DELAY * 2u32.saturating_pow(attempt - 1);
+                warn!(
+                    platform = %msg.platform,
+                    platform_id = %msg.platform_id,
+                    attempt,
+                    max_retries = NF_MAX_RETRIES,
+                    delay_ms = delay.as_millis() as u64,
+                    error = %e,
+                    "nf attempt failed, will retry"
+                );
+                tokio::time::sleep(delay).await;
+            }
+        }
+    }
+}
+
+/// 单次处理
+async fn process_once(msg: &NotFoundMessage, app: &Arc<AppState>) -> Result<()> {
     // 1. 检查白名单（Redis）
     let mut redis_conn = app.redis.clone();
     if is_in_whitelist(&mut redis_conn, &msg.platform, &msg.platform_id).await? {
         info!(platform = %msg.platform, platform_id = %msg.platform_id, "already in whitelist, skip");
-        let _ = channel.basic_ack(tag, BasicAckOptions::default()).await;
         return Ok(());
     }
 
@@ -174,8 +209,6 @@ async fn handle_message(
         warn!(error = %e, "update not_found category failed");
     }
 
-    // 5. ACK
-    let _ = channel.basic_ack(tag, BasicAckOptions::default()).await;
     Ok(())
 }
 

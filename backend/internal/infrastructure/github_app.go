@@ -1,6 +1,7 @@
 package infrastructure
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,6 +35,9 @@ func NewGitHubAppClient(cfg config.GitHubAppConfig) (*GitHubAppClient, error) {
 		key, err := os.ReadFile(cfg.PrivateKeyPath)
 		if err != nil {
 			return nil, fmt.Errorf("read github app private key: %w", err)
+		}
+		if !bytes.Contains(key, []byte("-----BEGIN ")) || !bytes.Contains(key, []byte("PRIVATE KEY-----")) {
+			return nil, fmt.Errorf("invalid github app private key: not a PEM-encoded key")
 		}
 		client.privateKey = key
 	}

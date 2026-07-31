@@ -244,7 +244,7 @@ func (c *CasdoorClient) Login(username, password string) (*CasdoorUser, string, 
 	slog.Info("casdoor /api/login/oauth/access_token response",
 		"status_code", resp.StatusCode,
 		"body_len", len(body),
-		"body_preview", truncateStr(body, 200),
+		"has_access_token", strings.Contains(body, "access_token"),
 	)
 
 	// OAuth token 响应：{"access_token":"...","token_type":"Bearer","expires_in":10080,...}

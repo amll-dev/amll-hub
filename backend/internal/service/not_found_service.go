@@ -74,9 +74,12 @@ type NotFoundService struct {
 	redis *redis.Client
 	mq    *infrastructure.RabbitMQ
 
-	// 进程内并发去重锁：防止同一 musicId 并发触发解析
+	// 进程内并发去重锁：Redis 不可用时的单进程兜底
 	inFlight sync.Map
 }
+
+// notFoundInFlightTTL 分布式处理锁 TTL，略大于 worker 单次处理上限
+const notFoundInFlightTTL = 5 * time.Minute
 
 // NewNotFoundService 创建服务
 func NewNotFoundService(
@@ -158,12 +161,11 @@ func (s *NotFoundService) HandleNotFoundRequest(ctx context.Context, platform, p
 		return
 	}
 
-	// 2. 进程内并发去重锁：防止同一 musicId 同时触发解析
-	if _, exists := s.inFlight.Load(key); exists {
+	// 进程内/分布式并发去重锁
+	if !s.acquireInFlight(ctx, key) {
 		return
 	}
-	s.inFlight.Store(key, true)
-	defer s.inFlight.Delete(key)
+	defer s.releaseInFlight(key)
 
 	// 3. Redis 按日去重（platform:platformId:today:ip）
 	today := time.Now().Format("2006-01-02")
@@ -211,10 +213,15 @@ func (s *NotFoundService) CheckAndDeleteOnLyricResolved(ctx context.Context, pla
 	// 清理 Redis 相关缓存
 	if s.redis != nil {
 		pattern := fmt.Sprintf("not_found:dedup:%s:%s:*", platform, platformID)
-		iter := s.redis.Scan(ctx, 0, pattern, 100).Iterator()
 		var keys []string
-		for iter.Next(ctx) {
-			keys = append(keys, iter.Val())
+		var cursor uint64
+		for i := 0; i < 200; i++ {
+			var batch []string
+			batch, cursor = s.redis.Scan(ctx, cursor, pattern, 100).Val()
+			keys = append(keys, batch...)
+			if cursor == 0 {
+				break
+			}
 		}
 		if len(keys) > 0 {
 			s.redis.Del(ctx, keys...)
@@ -261,6 +268,7 @@ func (s *NotFoundService) GetRanking(ctx context.Context, days int, platform str
 	if s.redis != nil {
 		if encoded, err := encodeRankingCache(total, items); err == nil {
 			_ = s.redis.Set(ctx, cacheKey, encoded, 60*time.Second).Err()
+			s.trackRankingCacheKey(ctx, cacheKey)
 		}
 	}
 
@@ -376,25 +384,65 @@ func nextMonday() time.Time {
 		0, 0, 0, 0, now.Location())
 }
 
+// 获取处理锁
+func (s *NotFoundService) acquireInFlight(ctx context.Context, key string) bool {
+	if s.redis != nil {
+		lockKey := "not_found:inflight:" + key
+		ok, err := s.redis.SetNX(ctx, lockKey, "1", notFoundInFlightTTL).Result()
+		if err == nil {
+			return ok
+		}
+		// Redis出错回退进程内锁
+		logrus.WithError(err).Warn("[not_found] redis SetNX inflight failed, fallback to local")
+	}
+	if _, exists := s.inFlight.Load(key); exists {
+		return false
+	}
+	s.inFlight.Store(key, true)
+	return true
+}
+
+// 释放处理锁
+func (s *NotFoundService) releaseInFlight(key string) {
+	if s.redis != nil {
+		_ = s.redis.Del(context.Background(), "not_found:inflight:"+key).Err()
+	}
+	s.inFlight.Delete(key)
+}
+
 // rankingCacheData 排行榜缓存结构（包含 total 与 items）
 type rankingCacheData struct {
 	Total int64         `json:"total"`
 	Items []RankingItem `json:"items"`
 }
 
-// clearRankingCache 使用 SCAN 迭代清理排行榜缓存
+// 排行榜缓存 key 索引集合
+const rankingCacheIndexKey = "not_found:ranking:index"
+
+// 通过索引集合批量删除排行榜缓存，避免全库 SCAN
 func (s *NotFoundService) clearRankingCache(ctx context.Context) {
 	if s.redis == nil {
 		return
 	}
-	iter := s.redis.Scan(ctx, 0, "not_found:ranking:cache:*", 100).Iterator()
-	var keys []string
-	for iter.Next(ctx) {
-		keys = append(keys, iter.Val())
+	keys, err := s.redis.SMembers(ctx, rankingCacheIndexKey).Result()
+	if err != nil || len(keys) == 0 {
+		_ = s.redis.Del(ctx, rankingCacheIndexKey).Err()
+		return
 	}
-	if len(keys) > 0 {
-		s.redis.Del(ctx, keys...)
+	delKeys := append(keys, rankingCacheIndexKey)
+	s.redis.Del(ctx, delKeys...)
+}
+
+// 记录缓存 key 到索引集合，便于批量清理
+func (s *NotFoundService) trackRankingCacheKey(ctx context.Context, key string) {
+	if s.redis == nil {
+		return
 	}
+	// 索引集合设 TTL 与缓存最长有效期对齐，避免无限增长
+	pipe := s.redis.Pipeline()
+	pipe.SAdd(ctx, rankingCacheIndexKey, key)
+	pipe.Expire(ctx, rankingCacheIndexKey, 120*time.Second)
+	_, _ = pipe.Exec(ctx)
 }
 
 // encodeRankingCache / decodeRankingCache 使用 JSON 编码

@@ -6,8 +6,10 @@ import (
 
 	"github.com/amll-dev/amll-hub/backend/internal/handler"
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	logrus "github.com/sirupsen/logrus"
 )
 
 // New 构建并返回 Gin 引擎
@@ -33,12 +35,25 @@ func New(
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 
+	// 受信代理配置
+	if tp := os.Getenv("TRUSTED_PROXIES"); tp != "" {
+		proxies := strings.Split(tp, ",")
+		for i := range proxies {
+			proxies[i] = strings.TrimSpace(proxies[i])
+		}
+		if err := r.SetTrustedProxies(proxies); err != nil {
+			logrus.Warnf("set trusted proxies failed: %v", err)
+		}
+	} else {
+		_ = r.SetTrustedProxies(nil)
+	}
+
 	r.Use(middleware.RequestID())
 	r.Use(middleware.Logger())
 	r.Use(middleware.Recovery())
 	corsConfig := cors.Config{
 		AllowMethods:     []string{"GET", "POST", "PUT", "OPTIONS"},
-		AllowHeaders:     []string{"*"},
+		AllowHeaders:     []string{"Authorization", "Content-Type", "X-Request-ID"},
 		ExposeHeaders:    []string{"Content-Length", "ETag", "X-Request-ID"},
 		AllowCredentials: false,
 	}
@@ -51,7 +66,7 @@ func New(
 
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		pkg.OK(c, gin.H{"status": "ok"})
 	})
 
 	// ws
