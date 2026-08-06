@@ -204,17 +204,17 @@ func convertHit(raw interface{}) SearchHitResult {
 	if v, ok := m["ttmlAuthorGithubLogin"].(string); ok {
 		hit.TtmlAuthorGithubLogin = v
 	}
-	if v := toStringSlice(m["platformIds_ncm"]); len(v) > 0 {
-		hit.PlatformIds["ncm"] = v
-	}
-	if v := toStringSlice(m["platformIds_qq"]); len(v) > 0 {
-		hit.PlatformIds["qq"] = v
-	}
-	if v := toStringSlice(m["platformIds_spotify"]); len(v) > 0 {
-		hit.PlatformIds["spotify"] = v
-	}
-	if v := toStringSlice(m["platformIds_apple"]); len(v) > 0 {
-		hit.PlatformIds["apple"] = v
+	// 动态提取所有 platformIds_xxx 字段
+	// 遍历原始 map，凡是 platformIds_ 前缀的字段都提取，
+	// 避免硬编码平台列表导致新增平台时漏返回
+	for k, v := range m {
+		const prefix = "platformIds_"
+		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
+			platform := k[len(prefix):]
+			if ids := toStringSlice(v); len(ids) > 0 {
+				hit.PlatformIds[platform] = ids
+			}
+		}
 	}
 	if v, ok := toFloat(m["wordCount"]); ok {
 		hit.WordCount = int(v)
@@ -239,13 +239,20 @@ func toStringSlice(v interface{}) []string {
 	if v == nil {
 		return nil
 	}
+	// 兼容标量字符串：某些字段在 Meili 中可能存为单值而非数组
+	if s, ok := v.(string); ok {
+		if s == "" {
+			return nil
+		}
+		return []string{s}
+	}
 	arr, ok := v.([]interface{})
 	if !ok {
 		return nil
 	}
 	out := make([]string, 0, len(arr))
 	for _, e := range arr {
-		if s, ok := e.(string); ok {
+		if s, ok := e.(string); ok && s != "" {
 			out = append(out, s)
 		}
 	}

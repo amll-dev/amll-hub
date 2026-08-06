@@ -78,6 +78,9 @@ func New(
 
 	api := r.Group("/api/v1")
 	{
+		// 搜索
+		api.GET("/search", searchH.Search)
+
 		// 同步触发/状态
 		api.POST("/sync", syncH.Trigger)
 		api.GET("/sync/status", syncH.Status)

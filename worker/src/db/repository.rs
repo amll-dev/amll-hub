@@ -164,6 +164,8 @@ impl Repository {
         tracing::debug!("repository.upsert_song - 艺术家关联写入完成");
 
         // 写平台映射
+        // 约束 UNIQUE(song_id, platform, platform_id)：同平台多 ID 全部入库，
+        // 完全重复的 (song_id, platform, platform_id) 通过 ON CONFLICT DO NOTHING 跳过
         tracing::debug!("repository.upsert_song - 写入平台映射，platform_mappings={:?}", data.platform_mappings);
         for (platform, pid) in &data.platform_mappings {
             platform_mapping::Entity::insert(platform_mapping::ActiveModel {
@@ -172,6 +174,15 @@ impl Repository {
                 platform_id: Set(pid.clone()),
                 ..Default::default()
             })
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::columns([
+                    platform_mapping::Column::SongId,
+                    platform_mapping::Column::Platform,
+                    platform_mapping::Column::PlatformId,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
             .exec(&txn)
             .await?;
         }

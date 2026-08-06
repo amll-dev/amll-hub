@@ -80,11 +80,12 @@ func (Artist) TableName() string { return "artists" }
 // PlatformMapping 平台 ID 映射表
 type PlatformMapping struct {
 	ID         int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	SongID     int64     `gorm:"not null;uniqueIndex:idx_pm_song_platform,priority:1" json:"songId"`
-	// Platform + PlatformID 不再是 UNIQUE，允许同一平台 ID 关联多个版本 song
-	// 后端按 commit_timestamp DESC 取最新；查询性能由 idx_pm_platform_id 普通索引保障
-	Platform   string    `gorm:"type:varchar(20);not null;uniqueIndex:idx_pm_song_platform,priority:2;index:idx_pm_platform_id,priority:1" json:"platform"`
-	PlatformID string    `gorm:"column:platform_id;type:varchar(100);not null;index:idx_pm_platform_id,priority:2" json:"platformId"`
+	SongID     int64     `gorm:"not null;index:idx_pm_song_platform,priority:1;uniqueIndex:platform_mappings_song_platform_pid_key,priority:1" json:"songId"`
+	// (song_id, platform, platform_id) 唯一：允许一首歌在同一平台有多个 ID，但防止完全重复
+	// (song_id, platform) 普通索引：按歌查平台映射
+	// (platform, platform_id) 普通索引：按平台 ID 反查 song，后端按 commit_timestamp DESC 取最新
+	Platform   string    `gorm:"type:varchar(20);not null;index:idx_pm_song_platform,priority:2;uniqueIndex:platform_mappings_song_platform_pid_key,priority:2;index:idx_pm_platform_id,priority:1" json:"platform"`
+	PlatformID string    `gorm:"column:platform_id;type:varchar(100);not null;uniqueIndex:platform_mappings_song_platform_pid_key,priority:3;index:idx_pm_platform_id,priority:2" json:"platformId"`
 	CreatedAt  time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"createdAt"`
 }
 

@@ -74,6 +74,16 @@ func EnsureMeiliSearchIndex(client *meilisearch.Client, indexName string) error 
 	if _, err := index.UpdateRankingRules(&rankingRules); err != nil {
 		return fmt.Errorf("update ranking rules: %w", err)
 	}
+	// 提高 pagination 上限（MeiliSearch 默认 maxTotalHits=1000）
+	// 前端 all=true 时一次拿全部命中做本地分页
+	settings := meilisearch.Settings{
+		Pagination: &meilisearch.Pagination{
+			MaxTotalHits: 100000,
+		},
+	}
+	if _, err := index.UpdateSettings(&settings); err != nil {
+		return fmt.Errorf("update pagination settings: %w", err)
+	}
 
 	return nil
 }

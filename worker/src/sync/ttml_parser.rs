@@ -22,7 +22,7 @@ pub fn parse_ttml(content: &[u8]) -> anyhow::Result<ParsedTtml> {
     use quick_xml::Reader;
 
     let mut reader = Reader::from_reader(content);
-    reader.config_mut().trim_text(true);
+    // 不启用 trim_text：保留歌词文本中的空格，避免字数统计和歌词显示失真
 
     let mut buf = Vec::new();
     let mut lyric_text = String::new();

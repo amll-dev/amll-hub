@@ -278,7 +278,7 @@ impl SyncTaskRunner {
             join_set.spawn(async move {
                 let _permit = permit;
                 let d = &downloaded_clone[idx];
-                let result = process_one(repo_clone, d).await;
+                let result = process_one_with_retry(repo_clone, d).await;
                 (idx, result)
             });
         }
@@ -295,7 +295,15 @@ impl SyncTaskRunner {
                     meili_docs.push(doc);
                 }
                 Err(e) => {
-                    warn!(error = %e, "process failed");
+                    let d = &downloaded_arc[idx];
+                    warn!(
+                        file = %d.raw_lyric_file,
+                        music_names = ?d.entry.music_names(),
+                        platform_mappings = ?d.entry.platform_mappings(),
+                        ttml_author = ?d.entry.ttml_author_github_login(),
+                        error = %e,
+                        "入库最终失败（重试耗尽）",
+                    );
                 }
             }
             if (idx + 1) % 100 == 0 {
@@ -345,6 +353,42 @@ impl SyncTaskRunner {
         // 简化实现：当前不做全量预热，避免启动时大量 DB 查询
         // 实际预热可在 Go 端首次访问时 lazy 加载
     }
+}
+
+/// 处理单个文件（带重试）：最多 3 次尝试（首次 + 2 次重试）
+/// 每次失败记录文件名、错误与尝试次数；重试间隔 1s
+/// 用于应对 DB 临时锁冲突、网络抖动等瞬时错误；
+/// 数据本身错误（如 TTML 格式异常）重试也会失败，但成本可接受
+async fn process_one_with_retry(
+    repo: Repository,
+    d: &downloader::DownloadResult,
+) -> Result<(bool, MeiliDocument)> {
+    const MAX_ATTEMPTS: u32 = 3;
+    let mut last_err: Option<anyhow::Error> = None;
+    for attempt in 1..=MAX_ATTEMPTS {
+        match process_one(repo.clone(), d).await {
+            Ok(res) => {
+                if attempt > 1 {
+                    info!(file = %d.raw_lyric_file, attempt, "重试入库成功");
+                }
+                return Ok(res);
+            }
+            Err(e) => {
+                warn!(
+                    file = %d.raw_lyric_file,
+                    attempt,
+                    max_attempts = MAX_ATTEMPTS,
+                    error = %e,
+                    "入库失败",
+                );
+                last_err = Some(e);
+                if attempt < MAX_ATTEMPTS {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        }
+    }
+    Err(last_err.unwrap())
 }
 
 /// 处理单个文件：解析 TTML -> 入库 -> 准备 MeiliSearch 文档
