@@ -4,8 +4,8 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "song_artists")]
 pub struct Model {
     #[sea_orm(primary_key)]
+    pub id: i64,
     pub song_id: i64,
-    #[sea_orm(primary_key)]
     pub artist_id: i64,
 }
 

@@ -45,6 +45,9 @@ type NotFoundRequest struct {
 	Platform       string        `gorm:"type:varchar(20);not null;uniqueIndex:idx_nf_platform_id,priority:1" json:"platform"`
 	PlatformID     string        `gorm:"column:platform_id;type:varchar(100);not null;uniqueIndex:idx_nf_platform_id,priority:2" json:"platformId"`
 	SongName       string        `gorm:"type:varchar(255)" json:"songName"`
+	Artists        string        `gorm:"type:varchar(500)" json:"artists"` // 歌手名
+	Cover          string        `gorm:"type:varchar(500)" json:"cover"`   // 封面 URL
+	Album          string        `gorm:"type:varchar(255)" json:"album"`   // 专辑名
 	RequestCount   int           `gorm:"not null;default:1" json:"requestCount"`
 	FirstSeenAt    time.Time     `gorm:"not null;default:CURRENT_TIMESTAMP" json:"firstSeenAt"`
 	LastSeenAt     time.Time     `gorm:"not null;default:CURRENT_TIMESTAMP" json:"lastSeenAt"`

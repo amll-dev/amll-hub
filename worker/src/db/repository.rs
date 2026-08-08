@@ -151,12 +151,18 @@ impl Repository {
 
         // 写艺术家关联
         tracing::debug!("repository.upsert_song - 写入艺术家关联，artists={:?}", data.artists);
+        let mut seen_artists = std::collections::HashSet::new();
         for name in &data.artists {
+            if !seen_artists.insert(name.as_str()) {
+                tracing::debug!("repository.upsert_song - 跳过重复 artist: {}", name);
+                continue;
+            }
             let aid = self.upsert_artist_inner(&txn, name).await?;
             tracing::debug!("repository.upsert_song - 写入 artist: name={}, aid={}", name, aid);
             song_artist::Entity::insert(song_artist::ActiveModel {
                 song_id: Set(song_id),
                 artist_id: Set(aid),
+                ..Default::default()
             })
             .exec(&txn)
             .await?;
@@ -164,25 +170,19 @@ impl Repository {
         tracing::debug!("repository.upsert_song - 艺术家关联写入完成");
 
         // 写平台映射
-        // 约束 UNIQUE(song_id, platform, platform_id)：同平台多 ID 全部入库，
-        // 完全重复的 (song_id, platform, platform_id) 通过 ON CONFLICT DO NOTHING 跳过
         tracing::debug!("repository.upsert_song - 写入平台映射，platform_mappings={:?}", data.platform_mappings);
+        let mut seen_pm = std::collections::HashSet::new();
         for (platform, pid) in &data.platform_mappings {
+            if !seen_pm.insert((platform.as_str(), pid.as_str())) {
+                tracing::debug!("repository.upsert_song - 跳过重复 platform_mapping: ({}, {})", platform, pid);
+                continue;
+            }
             platform_mapping::Entity::insert(platform_mapping::ActiveModel {
                 song_id: Set(song_id),
                 platform: Set(platform.clone()),
                 platform_id: Set(pid.clone()),
                 ..Default::default()
             })
-            .on_conflict(
-                sea_orm::sea_query::OnConflict::columns([
-                    platform_mapping::Column::SongId,
-                    platform_mapping::Column::Platform,
-                    platform_mapping::Column::PlatformId,
-                ])
-                .do_nothing()
-                .to_owned(),
-            )
             .exec(&txn)
             .await?;
         }

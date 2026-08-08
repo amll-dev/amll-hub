@@ -204,9 +204,6 @@ func convertHit(raw interface{}) SearchHitResult {
 	if v, ok := m["ttmlAuthorGithubLogin"].(string); ok {
 		hit.TtmlAuthorGithubLogin = v
 	}
-	// 动态提取所有 platformIds_xxx 字段
-	// 遍历原始 map，凡是 platformIds_ 前缀的字段都提取，
-	// 避免硬编码平台列表导致新增平台时漏返回
 	for k, v := range m {
 		const prefix = "platformIds_"
 		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
@@ -226,7 +223,7 @@ func convertHit(raw interface{}) SearchHitResult {
 		ts := int64(v)
 		hit.CommitTimestamp = &ts
 	}
-	// 提取歌词片段（来自 _formatted.lyricText）
+	// 提取歌词片段
 	if formatted, ok := m["_formatted"].(map[string]interface{}); ok {
 		if v, ok := formatted["lyricText"].(string); ok && v != "" {
 			hit.LyricSnippet = v
@@ -239,7 +236,6 @@ func toStringSlice(v interface{}) []string {
 	if v == nil {
 		return nil
 	}
-	// 兼容标量字符串：某些字段在 Meili 中可能存为单值而非数组
 	if s, ok := v.(string); ok {
 		if s == "" {
 			return nil

@@ -27,10 +27,6 @@ type CloudMusicService struct {
 func NewCloudMusicService(cfg *config.Config, redisClient *redis.Client) *CloudMusicService {
 	s := &CloudMusicService{cfg: cfg, redis: redisClient}
 	if cfg.NCM.MusicU != "" {
-		// 第三方库期望传入 cookie 格式字符串（如 "MUSIC_U=xxxxx"），
-		// .env 里的 NCM_MUSIC_U 可能是纯 token 值，需要补上 "MUSIC_U=" 前缀，
-		// 否则 ParseCookie 解析不到键值对，请求将不带登录态。
-		// 兼容已配置成 cookie 格式（含 "="）或多 cookie（含 ";"）的情况。
 		musicU := strings.TrimSpace(cfg.NCM.MusicU)
 		if !strings.Contains(musicU, "=") {
 			musicU = "MUSIC_U=" + musicU

@@ -198,13 +198,17 @@ async fn process_once(msg: &NotFoundMessage, app: &Arc<AppState>) -> Result<()> 
         ParseCategory::ApiFailed => "api_failed",
     };
 
-    // 4. 更新 not_found_requests 表的 category
+    // 4. 更新 not_found_requests 表的 category 及元数据
+    let artists_str = result.artists.join(" / ");
     if let Err(e) = update_category_pg(
         &app.db,
         &msg.platform,
         &msg.platform_id,
         category_str,
         &result.song_name,
+        &artists_str,
+        &result.cover,
+        &result.album,
     ).await {
         warn!(error = %e, "update not_found category failed");
     }
@@ -212,42 +216,37 @@ async fn process_once(msg: &NotFoundMessage, app: &Arc<AppState>) -> Result<()> 
     Ok(())
 }
 
-/// 更新 not_found_requests 的 category
+/// 更新 not_found_requests 的 category 及歌曲元数据
 async fn update_category_pg(
     db: &DatabaseConnection,
     platform: &str,
     platform_id: &str,
     category: &str,
     song_name: &str,
+    artists: &str,
+    cover: &str,
+    album: &str,
 ) -> Result<()> {
     use sea_orm::ConnectionTrait;
 
-    let sql = if song_name.is_empty() {
-        r#"UPDATE not_found_requests SET category = $1, updated_at = NOW() WHERE platform = $2 AND platform_id = $3"#.to_string()
-    } else {
-        r#"UPDATE not_found_requests SET category = $1, song_name = $2, updated_at = NOW() WHERE platform = $3 AND platform_id = $4"#.to_string()
-    };
+    let sql = r#"UPDATE not_found_requests
+        SET category = $1, song_name = $2, artists = $3, cover = $4, album = $5, updated_at = NOW()
+        WHERE platform = $6 AND platform_id = $7"#;
 
-    if song_name.is_empty() {
-        db.execute(sea_orm::Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            &sql,
-            [category.into(), platform.into(), platform_id.into()],
-        ))
-        .await?;
-    } else {
-        db.execute(sea_orm::Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            &sql,
-            [
-                category.into(),
-                song_name.into(),
-                platform.into(),
-                platform_id.into(),
-            ],
-        ))
-        .await?;
-    }
+    db.execute(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        sql,
+        [
+            category.into(),
+            song_name.into(),
+            artists.into(),
+            cover.into(),
+            album.into(),
+            platform.into(),
+            platform_id.into(),
+        ],
+    ))
+    .await?;
 
     Ok(())
 }

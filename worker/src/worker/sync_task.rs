@@ -316,11 +316,6 @@ impl SyncTaskRunner {
             summary.updated,
             total - summary.added - summary.updated
         );
-
-        // 7. 删除：本地有但远程无（CC0 仓库暂不主动删除）
-        // summary.deleted = to_delete.len();
-        // 预留：未来若开启删除，需要同时删除 MinIO 对象与 MeiliSearch 文档
-
         // 8. 写入 MeiliSearch
         if !meili_docs.is_empty() {
             info!("execute_sync - 步骤7: 写入 MeiliSearch, 文档数={}", meili_docs.len());
@@ -350,15 +345,10 @@ impl SyncTaskRunner {
 
     /// 缓存预热：扫描 platform_mappings，写入 Redis
     async fn warmup_cache(&self, _repo: &Repository) {
-        // 简化实现：当前不做全量预热，避免启动时大量 DB 查询
-        // 实际预热可在 Go 端首次访问时 lazy 加载
     }
 }
 
-/// 处理单个文件（带重试）：最多 3 次尝试（首次 + 2 次重试）
-/// 每次失败记录文件名、错误与尝试次数；重试间隔 1s
-/// 用于应对 DB 临时锁冲突、网络抖动等瞬时错误；
-/// 数据本身错误（如 TTML 格式异常）重试也会失败，但成本可接受
+/// 处理单个文件
 async fn process_one_with_retry(
     repo: Repository,
     d: &downloader::DownloadResult,
@@ -392,7 +382,6 @@ async fn process_one_with_retry(
 }
 
 /// 处理单个文件：解析 TTML -> 入库 -> 准备 MeiliSearch 文档
-/// 返回 (is_new, meili_document)，is_new=true 表示新增，false 表示更新
 async fn process_one(
     repo: Repository,
     d: &downloader::DownloadResult,
@@ -413,7 +402,7 @@ async fn process_one(
     let ttml_author_github = entry.ttml_author_github();
     let ttml_author_github_login = entry.ttml_author_github_login();
 
-    // 解析文件名时间戳：{timestamp}-{githubId}-{random}.ttml
+    // 解析文件名时间戳
     let (commit_timestamp, commit_time) = match entry.parse_file_meta() {
         Some((ts, _github_id)) => {
             let ts_i64 = ts as i64;
@@ -512,7 +501,7 @@ impl ProgressState {
     }
 }
 
-/// 进度刷新间隔：每处理 N 个文件才 spawn 一次 DB 写入，避免连接池耗尽
+/// 进度刷新间隔
 const PROGRESS_FLUSH_INTERVAL: i32 = 50;
 
 /// 执行一次进度 DB 写入
@@ -528,7 +517,7 @@ async fn run_progress_flush(
         .await;
 }
 
-/// 触发一次进度 DB 写入（周期性刷新，fire-and-forget）
+/// 触发一次进度 DB 写入
 fn spawn_progress_flush(
     repo: Arc<Repository>,
     progress_id: i64,

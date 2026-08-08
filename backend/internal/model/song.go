@@ -45,7 +45,7 @@ type Song struct {
 	ID                    int64           `gorm:"primaryKey;autoIncrement" json:"id"`
 	MusicName             JSONStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"musicName"`
 	Album                 JSONStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"album"`
-	ISRC                  string          `gorm:"column:isrc;type:varchar(20)" json:"isrc"`
+	ISRC                  string          `gorm:"column:isrc;type:text" json:"isrc"`
 	RawLyricFile          string          `gorm:"type:varchar(255);not null;uniqueIndex" json:"rawLyricFile"`
 	MinioPath             string          `gorm:"type:varchar(500);not null" json:"minioPath"`
 	LyricText             string          `gorm:"type:text" json:"lyricText"`
@@ -53,14 +53,12 @@ type Song struct {
 	TtmlAuthorGithubLogin string          `gorm:"column:ttml_author_github_login;type:varchar(100)" json:"ttmlAuthorGithubLogin"`
 	WordCount             int             `gorm:"default:0" json:"wordCount"`
 	LineCount             int             `gorm:"default:0" json:"lineCount"`
-	// CommitTimestamp 从 raw_lyric_file 文件名解析的提交毫秒时间戳
-	CommitTimestamp *int64 `gorm:"column:commit_timestamp;type:bigint" json:"commitTimestamp,omitempty"`
-	// CommitTime 人类可读的提交时间
-	CommitTime *time.Time `gorm:"column:commit_time;type:timestamptz" json:"commitTime,omitempty"`
-	IsDeleted  bool       `gorm:"not null;default:false" json:"isDeleted"`
-	DeletedAt  gorm.DeletedAt  `gorm:"column:deleted_at" json:"deletedAt,omitempty"`
-	CreatedAt  time.Time       `gorm:"not null;default:CURRENT_TIMESTAMP" json:"createdAt"`
-	UpdatedAt  time.Time       `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updatedAt"`
+	CommitTimestamp       *int64          `gorm:"column:commit_timestamp;type:bigint" json:"commitTimestamp,omitempty"`
+	CommitTime            *time.Time      `gorm:"column:commit_time;type:timestamptz" json:"commitTime,omitempty"`
+	IsDeleted             bool            `gorm:"not null;default:false" json:"isDeleted"`
+	DeletedAt             gorm.DeletedAt  `gorm:"column:deleted_at" json:"deletedAt,omitempty"`
+	CreatedAt             time.Time       `gorm:"not null;default:CURRENT_TIMESTAMP" json:"createdAt"`
+	UpdatedAt             time.Time       `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updatedAt"`
 
 	Artists         []Artist          `gorm:"many2many:song_artists;" json:"artists,omitempty"`
 	PlatformMapping []PlatformMapping `gorm:"foreignKey:SongID" json:"platformMappings,omitempty"`
@@ -80,12 +78,9 @@ func (Artist) TableName() string { return "artists" }
 // PlatformMapping 平台 ID 映射表
 type PlatformMapping struct {
 	ID         int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	SongID     int64     `gorm:"not null;index:idx_pm_song_platform,priority:1;uniqueIndex:platform_mappings_song_platform_pid_key,priority:1" json:"songId"`
-	// (song_id, platform, platform_id) 唯一：允许一首歌在同一平台有多个 ID，但防止完全重复
-	// (song_id, platform) 普通索引：按歌查平台映射
-	// (platform, platform_id) 普通索引：按平台 ID 反查 song，后端按 commit_timestamp DESC 取最新
-	Platform   string    `gorm:"type:varchar(20);not null;index:idx_pm_song_platform,priority:2;uniqueIndex:platform_mappings_song_platform_pid_key,priority:2;index:idx_pm_platform_id,priority:1" json:"platform"`
-	PlatformID string    `gorm:"column:platform_id;type:varchar(100);not null;uniqueIndex:platform_mappings_song_platform_pid_key,priority:3;index:idx_pm_platform_id,priority:2" json:"platformId"`
+	SongID     int64     `gorm:"not null;index:idx_pm_song_platform,priority:1" json:"songId"`
+	Platform   string    `gorm:"type:varchar(50);not null;index:idx_pm_song_platform,priority:2;index:idx_pm_platform_id,priority:1" json:"platform"`
+	PlatformID string    `gorm:"column:platform_id;type:varchar(100);not null;index:idx_pm_platform_id,priority:2" json:"platformId"`
 	CreatedAt  time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"createdAt"`
 }
 

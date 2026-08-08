@@ -27,7 +27,7 @@ func (h *SearchHandler) Search(c *gin.Context) {
 	field := strings.TrimSpace(c.DefaultQuery("field", "all"))
 	limit := pkg.Clamp(pkg.ParseInt(c.Query("limit"), 20), 1, 100)
 	offset := pkg.Clamp(pkg.ParseInt(c.Query("offset"), 0), 0, 100000)
-	// all=true 时返回全部命中（前端本地分页用）
+	// all=true 时返回全部命中
 	if c.Query("all") == "true" {
 		limit = 100000
 	}

@@ -25,6 +25,31 @@ struct SongDetail {
     #[serde(rename = "t")]
     song_type: Option<i32>,
     name: Option<String>,
+    #[serde(default)]
+    ar: Vec<Artist>,
+    al: Option<Album>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Artist {
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Album {
+    name: Option<String>,
+    #[serde(rename = "picUrl")]
+    pic_url: Option<String>,
+}
+
+/// 从详情接口提取的歌曲元数据
+#[derive(Debug, Default, Clone)]
+struct SongMeta {
+    song_type: Option<i32>,
+    name: String,
+    artists: Vec<String>,
+    album: String,
+    cover: String,
 }
 
 /// 网易云歌词响应
@@ -57,11 +82,13 @@ pub enum ParseCategory {
 pub struct ParseResult {
     pub category: ParseCategory,
     pub song_name: String,
+    pub artists: Vec<String>,
+    pub cover: String,
+    pub album: String,
 }
 
-/// 调用网易云详情 API 检查歌曲类型
-/// 返回 (song_type, song_name)
-async fn fetch_song_detail(client: &reqwest::Client, api_base: &str, platform_id: &str) -> Result<(Option<i32>, String)> {
+/// 调用网易云详情 API 检查歌曲类型并提取元数据
+async fn fetch_song_detail(client: &reqwest::Client, api_base: &str, platform_id: &str) -> Result<SongMeta> {
     let url = format!("{}/song/detail?ids={}", api_base, platform_id);
     let resp = client.get(&url).send().await.context("fetch song detail")?;
 
@@ -77,11 +104,26 @@ async fn fetch_song_detail(client: &reqwest::Client, api_base: &str, platform_id
 
     if let Some(songs) = body.songs {
         if let Some(first) = songs.into_iter().next() {
-            return Ok((first.song_type, first.name.unwrap_or_default()));
+            let artists = first
+                .ar
+                .into_iter()
+                .filter_map(|a| a.name.filter(|n| !n.is_empty()))
+                .collect();
+            let (album, cover) = first
+                .al
+                .map(|al| (al.name.unwrap_or_default(), al.pic_url.unwrap_or_default()))
+                .unwrap_or_default();
+            return Ok(SongMeta {
+                song_type: first.song_type,
+                name: first.name.unwrap_or_default(),
+                artists,
+                album,
+                cover,
+            });
         }
     }
 
-    Ok((None, String::new()))
+    Ok(SongMeta::default())
 }
 
 /// 调用网易云歌词 API 检查是否纯音乐
@@ -130,26 +172,35 @@ pub async fn parse_and_categorize(
         return Ok(ParseResult {
             category: ParseCategory::NotFound,
             song_name: String::new(),
+            artists: Vec::new(),
+            cover: String::new(),
+            album: String::new(),
         });
     }
 
     // 1. 查询歌曲详情
-    let (song_type, song_name) = match fetch_song_detail(client, &ctx.ncm_api_base, platform_id).await {
+    let meta = match fetch_song_detail(client, &ctx.ncm_api_base, platform_id).await {
         Ok(v) => v,
         Err(e) => {
             tracing::warn!(error = %e, platform_id, "fetch song detail failed");
             return Ok(ParseResult {
                 category: ParseCategory::ApiFailed,
                 song_name: String::new(),
+                artists: Vec::new(),
+                cover: String::new(),
+                album: String::new(),
             });
         }
     };
 
     // 2. t=1 或 t=2则云盘音乐
-    if matches!(song_type, Some(1) | Some(2)) {
+    if matches!(meta.song_type, Some(1) | Some(2)) {
         return Ok(ParseResult {
             category: ParseCategory::CloudMusic,
-            song_name,
+            song_name: meta.name,
+            artists: meta.artists,
+            cover: meta.cover,
+            album: meta.album,
         });
     }
 
@@ -160,7 +211,10 @@ pub async fn parse_and_categorize(
             tracing::warn!(error = %e, platform_id, "fetch lyric failed");
             return Ok(ParseResult {
                 category: ParseCategory::ApiFailed,
-                song_name,
+                song_name: meta.name,
+                artists: meta.artists,
+                cover: meta.cover,
+                album: meta.album,
             });
         }
     };
@@ -169,7 +223,10 @@ pub async fn parse_and_categorize(
         if is_pure_music_keyword(lyric_text) {
             return Ok(ParseResult {
                 category: ParseCategory::PureMusic,
-                song_name,
+                song_name: meta.name,
+                artists: meta.artists,
+                cover: meta.cover,
+                album: meta.album,
             });
         }
     }
@@ -177,6 +234,9 @@ pub async fn parse_and_categorize(
     // 4. 不是纯音乐也不是云盘则无歌词
     Ok(ParseResult {
         category: ParseCategory::NotFound,
-        song_name,
+        song_name: meta.name,
+        artists: meta.artists,
+        cover: meta.cover,
+        album: meta.album,
     })
 }
