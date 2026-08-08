@@ -21,12 +21,16 @@ func NewSearchHandler(svc *service.SearchService) *SearchHandler {
 	return &SearchHandler{svc: svc}
 }
 
-// Search GET /api/v1/search?q=&field=&limit=&offset=
+// Search GET /api/v1/search?q=&field=&limit=&offset=&all=
 func (h *SearchHandler) Search(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	field := strings.TrimSpace(c.DefaultQuery("field", "all"))
 	limit := pkg.Clamp(pkg.ParseInt(c.Query("limit"), 20), 1, 100)
 	offset := pkg.Clamp(pkg.ParseInt(c.Query("offset"), 0), 0, 100000)
+	// all=true 时返回全部命中
+	if c.Query("all") == "true" {
+		limit = 100000
+	}
 
 	// 校验 field
 	switch field {

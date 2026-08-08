@@ -5,24 +5,18 @@ use pinyin::ToPinyin;
 pub struct ParsedTtml {
     /// 提取的纯歌词文本
     pub lyric_text: String,
-    /// 行数（<p> 数量）
+    /// 行数
     pub line_count: i32,
-    /// 字数（去除空白后的中英文/数字字符数）
+    /// 字数
     pub word_count: i32,
 }
 
 /// 解析 TTML 字节流
-///
-/// TTML 结构：
-/// <tt xml:lang="..."><body><div><p begin="..." end="..."><span>词1</span><span>词2</span></p>...</div></body></tt>
-///
-/// 提取所有 <p> 中文本，作为一行；<span> 中的字拼成一行内容
 pub fn parse_ttml(content: &[u8]) -> anyhow::Result<ParsedTtml> {
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
     let mut reader = Reader::from_reader(content);
-    reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();
     let mut lyric_text = String::new();
@@ -134,11 +128,7 @@ fn is_punctuation(c: char) -> bool {
     )
 }
 
-/// 提取文本中所有中文字符的拼音（小写无音调，空格分词）
-///
-/// 例："普阿山" -> "pu a shan"
-/// 例："宜" -> "yi"
-/// 非中文字符忽略
+/// 提取文本中所有中文字符的拼音
 pub fn extract_pinyin_string(text: &str) -> String {
     let mut out = String::new();
     let mut need_space = false;
@@ -154,15 +144,14 @@ pub fn extract_pinyin_string(text: &str) -> String {
     out
 }
 
-/// 提取多字段拼音，去重后返回数组
-/// 同时包含逐字拼音和连写版本，支持 "qingtian" 和 "qing tian" 两种搜索方式
+/// 提取多字段拼音
 pub fn extract_pinyin_list(text: &str) -> Vec<String> {
     let s = extract_pinyin_string(text);
     if s.is_empty() {
         return Vec::new();
     }
     let mut result: Vec<String> = s.split_whitespace().map(|s| s.to_string()).collect();
-    // 额外添加连写版本（无空格），支持 "qingtian" 这样的连续拼音搜索
+    // 额外添加连写版本
     let joined: String = result.join("");
     if !joined.is_empty() && !result.contains(&joined) {
         result.push(joined);

@@ -130,6 +130,9 @@ type RankingItem struct {
 	Platform     string    `json:"platform"`
 	PlatformID   string    `json:"platformId"`
 	SongName     string    `json:"songName"`
+	Artists      string    `json:"artists"` // 逗号分隔
+	Cover        string    `json:"cover"`   // 封面 URL
+	Album        string    `json:"album"`   // 专辑名
 	RequestCount int       `json:"requestCount"`
 	FirstSeenAt  time.Time `json:"firstSeenAt"`
 	LastSeenAt   time.Time `json:"lastSeenAt"`

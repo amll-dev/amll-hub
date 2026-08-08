@@ -204,17 +204,14 @@ func convertHit(raw interface{}) SearchHitResult {
 	if v, ok := m["ttmlAuthorGithubLogin"].(string); ok {
 		hit.TtmlAuthorGithubLogin = v
 	}
-	if v := toStringSlice(m["platformIds_ncm"]); len(v) > 0 {
-		hit.PlatformIds["ncm"] = v
-	}
-	if v := toStringSlice(m["platformIds_qq"]); len(v) > 0 {
-		hit.PlatformIds["qq"] = v
-	}
-	if v := toStringSlice(m["platformIds_spotify"]); len(v) > 0 {
-		hit.PlatformIds["spotify"] = v
-	}
-	if v := toStringSlice(m["platformIds_apple"]); len(v) > 0 {
-		hit.PlatformIds["apple"] = v
+	for k, v := range m {
+		const prefix = "platformIds_"
+		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
+			platform := k[len(prefix):]
+			if ids := toStringSlice(v); len(ids) > 0 {
+				hit.PlatformIds[platform] = ids
+			}
+		}
 	}
 	if v, ok := toFloat(m["wordCount"]); ok {
 		hit.WordCount = int(v)
@@ -226,7 +223,7 @@ func convertHit(raw interface{}) SearchHitResult {
 		ts := int64(v)
 		hit.CommitTimestamp = &ts
 	}
-	// 提取歌词片段（来自 _formatted.lyricText）
+	// 提取歌词片段
 	if formatted, ok := m["_formatted"].(map[string]interface{}); ok {
 		if v, ok := formatted["lyricText"].(string); ok && v != "" {
 			hit.LyricSnippet = v
@@ -239,13 +236,19 @@ func toStringSlice(v interface{}) []string {
 	if v == nil {
 		return nil
 	}
+	if s, ok := v.(string); ok {
+		if s == "" {
+			return nil
+		}
+		return []string{s}
+	}
 	arr, ok := v.([]interface{})
 	if !ok {
 		return nil
 	}
 	out := make([]string, 0, len(arr))
 	for _, e := range arr {
-		if s, ok := e.(string); ok {
+		if s, ok := e.(string); ok && s != "" {
 			out = append(out, s)
 		}
 	}

@@ -22,6 +22,9 @@ type RankingItem struct {
 	Platform     string    `json:"platform"`
 	PlatformID   string    `json:"platformId"`
 	SongName     string    `json:"songName"`
+	Artists      []string  `json:"artists"`
+	Cover        string    `json:"cover"`
+	Album        string    `json:"album"`
 	RequestCount int       `json:"requestCount"`
 	FirstSeenAt  time.Time `json:"firstSeenAt"`
 	LastSeenAt   time.Time `json:"lastSeenAt"`
@@ -470,11 +473,20 @@ func convertRankingItems(items []repository.RankingItem) []RankingItem {
 	}
 	out := make([]RankingItem, len(items))
 	for i, it := range items {
+		var artists []string
+		if it.Artists != "" {
+			artists = strings.Split(it.Artists, " / ")
+		} else {
+			artists = []string{}
+		}
 		out[i] = RankingItem{
 			ID:           it.ID,
 			Platform:     it.Platform,
 			PlatformID:   it.PlatformID,
 			SongName:     it.SongName,
+			Artists:      artists,
+			Cover:        it.Cover,
+			Album:        it.Album,
 			RequestCount: it.RequestCount,
 			FirstSeenAt:  it.FirstSeenAt,
 			LastSeenAt:   it.LastSeenAt,

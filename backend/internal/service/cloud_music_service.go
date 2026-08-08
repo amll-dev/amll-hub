@@ -27,7 +27,11 @@ type CloudMusicService struct {
 func NewCloudMusicService(cfg *config.Config, redisClient *redis.Client) *CloudMusicService {
 	s := &CloudMusicService{cfg: cfg, redis: redisClient}
 	if cfg.NCM.MusicU != "" {
-		s.client = netease.NewClient(cfg.NCM.MusicU)
+		musicU := strings.TrimSpace(cfg.NCM.MusicU)
+		if !strings.Contains(musicU, "=") {
+			musicU = "MUSIC_U=" + musicU
+		}
+		s.client = netease.NewClient(musicU)
 	} else {
 		logrus.Warn("NCM_MUSIC_U not set, cloud music parse API will be disabled")
 	}
