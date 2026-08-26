@@ -1,15 +1,10 @@
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
-use futures_lite::StreamExt;
-use lapin::{
-    options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions},
-    types::FieldTable,
-    Channel,
-};
-use tracing::{error, info, warn};
+use anyhow::Result;
+use tracing::{info, warn};
 
 use crate::app::AppState;
+use crate::infra;
 
 use super::sync_task::SyncTaskRunner;
 
@@ -22,57 +17,29 @@ const RETRY_BASE_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
 ///
 /// 返回时表示收到 shutdown 信号或消费者异常
 pub async fn consume_loop(
-    channel: Channel,
+    channel: lapin::Channel,
     queue_name: String,
     app: Arc<AppState>,
     shutdown: Arc<tokio::sync::Notify>,
 ) -> Result<()> {
-    let mut consumer = channel
-        .basic_consume(
-            &queue_name,
-            "ttml-worker",
-            BasicConsumeOptions::default(),
-            FieldTable::default(),
-        )
-        .await
-        .context("basic_consume")?;
-
-    info!(queue = %queue_name, "consumer started");
-
-    let notified = shutdown.notified();
-    tokio::pin!(notified);
-    loop {
-        tokio::select! {
-            _ = &mut notified => {
-                info!("shutdown signal received, stopping consumer");
-                break;
-            }
-            msg = consumer.next() => {
-                let Some(delivery) = msg else { break; };
-                let delivery = match delivery {
-                    Ok(d) => d,
-                    Err(e) => {
-                        error!(error = %e, "consumer error");
-                        break;
-                    }
-                };
-                // handle_message 内部做有限重试；
-                // 重试耗尽后 nack(requeue=false) 让消息进入 DLQ，避免毒消息无限阻塞队列
-                let _ = handle_message(&channel, delivery, &app).await;
-            }
-        }
-    }
-
-    Ok(())
+    infra::rabbitmq::consume_loop(
+        channel,
+        queue_name,
+        "ttml-worker",
+        shutdown,
+        move |delivery| {
+            let app = app.clone();
+            async move { handle_message(delivery, &app).await }
+        },
+    )
+    .await
 }
 
+/// 处理单条同步消息；重试耗尽后返回 Err，由通用消费循环 nack 进 DLQ
 async fn handle_message(
-    channel: &Channel,
     delivery: lapin::message::Delivery,
     app: &Arc<AppState>,
 ) -> Result<()> {
-    let tag = delivery.delivery_tag;
-    let body = &delivery.data;
     let request_id = delivery
         .properties
         .correlation_id()
@@ -96,7 +63,7 @@ async fn handle_message(
         .map(|s| String::from_utf8_lossy(s.as_bytes()).to_string())
         .unwrap_or_else(|| "api".to_string());
 
-    let payload: serde_json::Value = serde_json::from_slice(body).unwrap_or_else(|_| {
+    let payload: serde_json::Value = serde_json::from_slice(&delivery.data).unwrap_or_else(|_| {
         serde_json::json!({
             "request_id": request_id,
             "triggered_by": triggered_by,
@@ -109,13 +76,20 @@ async fn handle_message(
 
     // 应用层有限重试：处理 GitHub 限流、MinIO 抖动等瞬时故障
     let mut attempt: u32 = 0;
-    let result = loop {
+    loop {
         match runner.run(&request_id, &triggered_by, &payload).await {
-            Ok(skipped) => break Ok(skipped),
+            Ok(skipped) => {
+                if skipped {
+                    info!(request_id = %request_id, "sync skipped (already up-to-date)");
+                }
+                return Ok(());
+            }
             Err(e) => {
                 attempt += 1;
                 if attempt >= MAX_RETRIES {
-                    break Err(e);
+                    // 最终失败由通用消费循环统一记录并 nack 进 DLQ，
+                    // 这里附上 request_id 便于追踪
+                    return Err(e.context(format!("request_id={}, attempts={}", request_id, attempt)));
                 }
                 let delay = RETRY_BASE_DELAY * 2u32.saturating_pow(attempt - 1);
                 warn!(
@@ -128,39 +102,6 @@ async fn handle_message(
                 );
                 tokio::time::sleep(delay).await;
             }
-        }
-    };
-
-    match result {
-        Ok(skipped) => {
-            if skipped {
-                info!(request_id = %request_id, "sync skipped (already up-to-date)");
-            }
-            let _ = channel
-                .basic_ack(tag, BasicAckOptions::default())
-                .await
-                .context("basic_ack");
-            Ok(())
-        }
-        Err(e) => {
-            error!(
-                request_id = %request_id,
-                attempt,
-                error = %e,
-                "sync task failed after retries, sending to DLQ"
-            );
-            // nack(requeue=false) 触发 dead-lettering 到 DLQ，避免毒消息无限重投
-            let _ = channel
-                .basic_nack(
-                    tag,
-                    BasicNackOptions {
-                        multiple: false,
-                        requeue: false,
-                    },
-                )
-                .await
-                .context("basic_nack");
-            Ok(())
         }
     }
 }

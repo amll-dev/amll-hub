@@ -2,15 +2,11 @@ package service
 
 import (
 	"context"
-	"errors"
 	"io"
 
 	"github.com/amll-dev/amll-hub/backend/internal/config"
 	"github.com/minio/minio-go/v7"
 )
-
-// ErrIndexNotFound 索引文件未找到
-var ErrIndexNotFound = errors.New("index file not found")
 
 // IndexService 索引文件下载服务
 type IndexService struct {

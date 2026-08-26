@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
@@ -122,7 +121,7 @@ func writeOnlineSearchErr(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrInvalidInput):
 		pkg.BadRequest(c, "请求参数非法")
 	case errors.Is(err, service.ErrUpstreamUnavailable):
-		pkg.Fail(c, http.StatusBadGateway, 502, "在线搜索服务暂不可用")
+		writeUpstreamErr(c, err, "在线搜索服务暂不可用")
 	default:
 		logrus.WithError(err).Error("online search unknown error")
 		pkg.InternalError(c, "在线搜索失败")

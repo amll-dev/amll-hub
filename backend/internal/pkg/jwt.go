@@ -39,7 +39,7 @@ func SignJWT(claims *Claims, secret string, ttl time.Duration) (string, error) {
 // ParseJWT 解析并校验 JWT
 func ParseJWT(tokenStr string, secret string) (*Claims, error) {
 	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
 		}

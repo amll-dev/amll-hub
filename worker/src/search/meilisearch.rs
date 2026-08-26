@@ -3,17 +3,21 @@ use meilisearch_sdk::client::Client;
 use meilisearch_sdk::indexes::Index;
 use serde_json::Value;
 
-/// 索引文档（与规范中 MeiliSearch 文档结构一致）
+/// 索引文档
 pub struct MeiliDocument {
     pub id: String,
     pub music_names: Vec<String>,
     pub music_names_pinyin: Vec<String>,
+    /// 歌名拼音首字母
+    pub music_names_initials: Vec<String>,
     pub artists: Vec<String>,
     pub artists_pinyin: Vec<String>,
+    pub artists_initials: Vec<String>,
     pub albums: Vec<String>,
     pub albums_pinyin: Vec<String>,
+    pub albums_initials: Vec<String>,
     pub lyric_text: String,
-    /// 平台 ID 列表（一首歌在同一平台可能有多个 ID，全部存入以便搜索）
+    /// 平台 ID 列表
     pub platform_ids_ncm: Vec<String>,
     pub platform_ids_qq: Vec<String>,
     pub platform_ids_spotify: Vec<String>,
@@ -33,10 +37,13 @@ impl MeiliDocument {
             "id": self.id,
             "musicNames": self.music_names,
             "musicNamesPinyin": self.music_names_pinyin,
+            "musicNamesInitials": self.music_names_initials,
             "artists": self.artists,
             "artistsPinyin": self.artists_pinyin,
+            "artistsInitials": self.artists_initials,
             "albums": self.albums,
             "albumsPinyin": self.albums_pinyin,
+            "albumsInitials": self.albums_initials,
             "lyricText": self.lyric_text,
             "platformIds_ncm": self.platform_ids_ncm,
             "platformIds_qq": self.platform_ids_qq,
@@ -77,7 +84,6 @@ pub async fn add_documents_in_batches(
 }
 
 /// 删除索引文档（按 raw_lyric_file -> id 关联，id 形如 "song_{song_id}"）
-#[allow(dead_code)]
 pub async fn delete_documents(client: &Client, index_name: &str, ids: &[String]) -> Result<()> {
     if ids.is_empty() {
         return Ok(());

@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -30,6 +29,3 @@ func GetRequestID(c *gin.Context) string {
 	}
 	return ""
 }
-
-// _ 避免 unused 警告
-var _ = pkg.IsHTTPRequestIDEmpty

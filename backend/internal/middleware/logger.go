@@ -3,7 +3,6 @@ package middleware
 import (
 	"time"
 
-	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
 	logrus "github.com/sirupsen/logrus"
 )
@@ -45,6 +44,3 @@ func Logger() gin.HandlerFunc {
 		}
 	}
 }
-
-// _ 避免 unused 警告
-var _ = pkg.BadRequest

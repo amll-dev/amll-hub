@@ -57,7 +57,7 @@ func (r *SubmissionRepo) UpdateStatus(ctx context.Context, tx *gorm.DB, s *model
 	}
 	return tx.WithContext(ctx).Model(&model.Submission{}).
 		Where("id = ?", s.ID).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"status":                s.Status,
 			"reviewer":              s.Reviewer,
 			"reviewed_at":           s.ReviewedAt,
@@ -70,15 +70,41 @@ func (r *SubmissionRepo) UpdateStatus(ctx context.Context, tx *gorm.DB, s *model
 		}).Error
 }
 
-// UpdateFile 更新投稿文件（need_revision → pending）
-func (r *SubmissionRepo) UpdateFile(ctx context.Context, tx *gorm.DB, id int64, fileName string, metadata *model.Submission) error {
+// UpdateStatusWhere 条件更新投稿状态：仅当当前状态在 fromStatuses 中才生效。
+func (r *SubmissionRepo) UpdateStatusWhere(ctx context.Context, tx *gorm.DB, s *model.Submission, fromStatuses []string) (bool, error) {
 	if tx == nil {
 		tx = r.db.WithContext(ctx)
 	}
-	updates := map[string]interface{}{
+	res := tx.WithContext(ctx).Model(&model.Submission{}).
+		Where("id = ? AND status IN ?", s.ID, fromStatuses).
+		Updates(map[string]any{
+			"status":                s.Status,
+			"reviewer":              s.Reviewer,
+			"reviewed_at":           s.ReviewedAt,
+			"review_comment":        s.ReviewComment,
+			"revision_requested_at": s.RevisionRequestedAt,
+			"closed_at":             s.ClosedAt,
+			"closed_by":             s.ClosedBy,
+			"closed_by_info":        s.ClosedByInfo,
+			"file_updated_at":       s.FileUpdatedAt,
+		})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// UpdateFile 更新投稿文件
+func (r *SubmissionRepo) UpdateFile(ctx context.Context, tx *gorm.DB, id int64, fileName string, metadata *model.Submission, newStatus string) error {
+	if tx == nil {
+		tx = r.db.WithContext(ctx)
+	}
+	updates := map[string]any{
 		"file_name":       fileName,
 		"file_updated_at": time.Now(),
-		"status":          model.StatusPending,
+	}
+	if newStatus != "" {
+		updates["status"] = newStatus
 	}
 	if metadata != nil {
 		updates["title"] = metadata.Title
@@ -105,7 +131,7 @@ func (r *SubmissionRepo) Close(ctx context.Context, tx *gorm.DB, id int64, close
 	}
 	return tx.WithContext(ctx).Model(&model.Submission{}).
 		Where("id = ?", id).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"status":         model.StatusClosed,
 			"closed_at":      time.Now(),
 			"closed_by":      closedBy,
@@ -285,7 +311,7 @@ func (r *SubmissionRepo) AutoReject(ctx context.Context, tx *gorm.DB, cutoff tim
 	err := tx.WithContext(ctx).
 		Table("submissions").
 		Where("status = ? AND revision_requested_at < ?", model.StatusNeedRevision, cutoff).
-		Updates(map[string]interface{}{
+		Updates(map[string]any{
 			"status":         model.StatusRejected,
 			"reviewer":       "system",
 			"reviewed_at":    time.Now(),
@@ -317,6 +343,33 @@ func (r *ReviewHistoryRepo) ListBySubmission(ctx context.Context, submissionID i
 
 // Insert 插入审核历史（事务内）
 func (r *ReviewHistoryRepo) Insert(ctx context.Context, tx *gorm.DB, h *model.ReviewHistory) error {
+	if tx == nil {
+		tx = r.db.WithContext(ctx)
+	}
+	return tx.WithContext(ctx).Create(h).Error
+}
+
+// FileHistoryRepo 文件更新历史
+type FileHistoryRepo struct {
+	db *gorm.DB
+}
+
+func NewFileHistoryRepo(db *gorm.DB) *FileHistoryRepo {
+	return &FileHistoryRepo{db: db}
+}
+
+// ListBySubmission 按时间倒序返回投稿的文件更新历史
+func (r *FileHistoryRepo) ListBySubmission(ctx context.Context, submissionID int64) ([]model.SubmissionFileHistory, error) {
+	var items []model.SubmissionFileHistory
+	err := r.db.WithContext(ctx).
+		Where("submission_id = ?", submissionID).
+		Order("uploaded_at DESC").
+		Find(&items).Error
+	return items, err
+}
+
+// Insert 插入文件更新历史（事务内）
+func (r *FileHistoryRepo) Insert(ctx context.Context, tx *gorm.DB, h *model.SubmissionFileHistory) error {
 	if tx == nil {
 		tx = r.db.WithContext(ctx)
 	}
@@ -356,38 +409,26 @@ func NewAudioRepo(db *gorm.DB) *AudioRepo {
 	return &AudioRepo{db: db}
 }
 
-// GetBySubmissionID 查询投稿的音频
+// GetBySubmissionID 查询投稿的第一条音频（兼容旧调用）
 func (r *AudioRepo) GetBySubmissionID(ctx context.Context, submissionID int64) (*model.SubmissionAudio, error) {
 	var a model.SubmissionAudio
-	if err := r.db.WithContext(ctx).Where("submission_id = ?", submissionID).First(&a).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("submission_id = ?", submissionID).Order("uploaded_at ASC").First(&a).Error; err != nil {
 		return nil, err
 	}
 	return &a, nil
 }
 
-// Upsert 创建或更新音频（每个投稿最多一个）
-func (r *AudioRepo) Upsert(ctx context.Context, a *model.SubmissionAudio) error {
-	// 优先尝试更新；不存在则插入
-	res := r.db.WithContext(ctx).
-		Model(&model.SubmissionAudio{}).
-		Where("submission_id = ?", a.SubmissionID).
-		Updates(map[string]interface{}{
-			"file_name":   a.FileName,
-			"cover_url":   a.CoverURL,
-			"title":       a.Title,
-			"artist":      a.Artist,
-			"album":       a.Album,
-			"platform":    a.Platform,
-			"platform_id": a.PlatformID,
-			"uploaded_by": a.UploadedBy,
-			"uploaded_at": time.Now(),
-		})
-	if res.Error != nil {
-		return res.Error
+// ListBySubmissionID 查询投稿的全部音频（按上传时间升序）
+func (r *AudioRepo) ListBySubmissionID(ctx context.Context, submissionID int64) ([]*model.SubmissionAudio, error) {
+	var list []*model.SubmissionAudio
+	if err := r.db.WithContext(ctx).Where("submission_id = ?", submissionID).Order("uploaded_at ASC").Find(&list).Error; err != nil {
+		return nil, err
 	}
-	if res.RowsAffected > 0 {
-		return nil
-	}
+	return list, nil
+}
+
+// Append 插入一条音频附件（支持每个投稿多条）
+func (r *AudioRepo) Append(ctx context.Context, a *model.SubmissionAudio) error {
 	return r.db.WithContext(ctx).Create(a).Error
 }
 
@@ -437,4 +478,33 @@ func (r *ReviewerRepo) Remove(ctx context.Context, username string) error {
 	return r.db.WithContext(ctx).
 		Where("username = ?", username).
 		Delete(&model.Reviewer{}).Error
+}
+
+// AdminRepo 超级管理员名单
+type AdminRepo struct {
+	db *gorm.DB
+}
+
+func NewAdminRepo(db *gorm.DB) *AdminRepo {
+	return &AdminRepo{db: db}
+}
+
+// ListAll 返回所有超级管理员用户名
+func (r *AdminRepo) ListAll(ctx context.Context) ([]string, error) {
+	var names []string
+	err := r.db.WithContext(ctx).Model(&model.Admin{}).
+		Pluck("username", &names).Error
+	return names, err
+}
+
+// IsAdmin 判断是否超级管理员
+func (r *AdminRepo) IsAdmin(ctx context.Context, username string) (bool, error) {
+	if username == "" {
+		return false, nil
+	}
+	var cnt int64
+	err := r.db.WithContext(ctx).Model(&model.Admin{}).
+		Where("username = ?", username).
+		Count(&cnt).Error
+	return cnt > 0, err
 }

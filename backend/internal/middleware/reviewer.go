@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"net/http"
 	"sync"
 	"time"
 
@@ -42,23 +43,26 @@ func NewReviewerCache(repo *repository.ReviewerRepo, ttl time.Duration) *Reviewe
 	}
 }
 
-// IsReviewer 检查是否审核员（缓存未命中时查 DB）
-func (rc *ReviewerCache) IsReviewer(ctx context.Context, username string) (bool, error) {
+// nameListLoader 名单查询函数（供泛化缓存使用）
+type nameListLoader func(ctx context.Context) ([]string, error)
+
+// checkNameInList 通用名单缓存检查（缓存未命中时查 DB）
+func (rc *cachedReviewer) check(ctx context.Context, username string, load nameListLoader) (bool, error) {
 	if username == "" {
 		return false, nil
 	}
 	// fast path: 读缓存
-	rc.c.mu.RLock()
+	rc.mu.RLock()
 	now := time.Now()
-	if rc.c.loaded && now.Before(rc.c.expireAt) {
-		_, ok := rc.c.names[username]
-		rc.c.mu.RUnlock()
+	if rc.loaded && now.Before(rc.expireAt) {
+		_, ok := rc.names[username]
+		rc.mu.RUnlock()
 		return ok, nil
 	}
-	rc.c.mu.RUnlock()
+	rc.mu.RUnlock()
 
 	// slow path: 查 DB
-	names, err := rc.repo.ListAll(ctx)
+	names, err := load(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -67,14 +71,19 @@ func (rc *ReviewerCache) IsReviewer(ctx context.Context, username string) (bool,
 		set[n] = struct{}{}
 	}
 
-	rc.c.mu.Lock()
-	rc.c.names = set
-	rc.c.expireAt = time.Now().Add(rc.c.ttl)
-	rc.c.loaded = true
-	rc.c.mu.Unlock()
+	rc.mu.Lock()
+	rc.names = set
+	rc.expireAt = time.Now().Add(rc.ttl)
+	rc.loaded = true
+	rc.mu.Unlock()
 
 	_, ok := set[username]
 	return ok, nil
+}
+
+// IsReviewer 检查是否审核员（缓存未命中时查 DB）
+func (rc *ReviewerCache) IsReviewer(ctx context.Context, username string) (bool, error) {
+	return rc.c.check(ctx, username, rc.repo.ListAll)
 }
 
 // Invalidate 主动失效缓存（添加/移除审核员时调用）
@@ -91,7 +100,7 @@ func RequireReviewer(rc *ReviewerCache) gin.HandlerFunc {
 		username, _ := c.Get(UserNameKey)
 		name, _ := username.(string)
 		if name == "" {
-			pkg.Fail(c, 401, 401, "未登录")
+			pkg.Unauthorized(c)
 			c.Abort()
 			return
 		}
@@ -107,7 +116,7 @@ func RequireReviewer(rc *ReviewerCache) gin.HandlerFunc {
 			return
 		}
 		if !ok {
-			pkg.Fail(c, 403, 403, "需要审核员权限")
+			pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "需要审核员权限")
 			c.Abort()
 			return
 		}

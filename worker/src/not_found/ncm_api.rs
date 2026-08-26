@@ -44,12 +44,12 @@ struct Album {
 
 /// 从详情接口提取的歌曲元数据
 #[derive(Debug, Default, Clone)]
-struct SongMeta {
-    song_type: Option<i32>,
-    name: String,
-    artists: Vec<String>,
-    album: String,
-    cover: String,
+pub struct SongMeta {
+    pub song_type: Option<i32>,
+    pub name: String,
+    pub artists: Vec<String>,
+    pub album: String,
+    pub cover: String,
 }
 
 /// 网易云歌词响应
@@ -88,8 +88,17 @@ pub struct ParseResult {
 }
 
 /// 调用网易云详情 API 检查歌曲类型并提取元数据
-async fn fetch_song_detail(client: &reqwest::Client, api_base: &str, platform_id: &str) -> Result<SongMeta> {
-    let url = format!("{}/song/detail?ids={}", api_base, platform_id);
+pub async fn fetch_song_detail(
+    client: &reqwest::Client,
+    api_base: &str,
+    platform_id: &str,
+) -> Result<SongMeta> {
+    // platform_id 来自消息队列，需 URL 编码防止破坏查询串
+    let url = format!(
+        "{}/song/detail?ids={}",
+        api_base,
+        urlencoding::encode(platform_id)
+    );
     let resp = client.get(&url).send().await.context("fetch song detail")?;
 
     if !resp.status().is_success() {
@@ -102,33 +111,46 @@ async fn fetch_song_detail(client: &reqwest::Client, api_base: &str, platform_id
         anyhow::bail!("song detail API code: {}", body.code);
     }
 
-    if let Some(songs) = body.songs {
-        if let Some(first) = songs.into_iter().next() {
-            let artists = first
-                .ar
-                .into_iter()
-                .filter_map(|a| a.name.filter(|n| !n.is_empty()))
-                .collect();
-            let (album, cover) = first
-                .al
-                .map(|al| (al.name.unwrap_or_default(), al.pic_url.unwrap_or_default()))
-                .unwrap_or_default();
-            return Ok(SongMeta {
-                song_type: first.song_type,
-                name: first.name.unwrap_or_default(),
-                artists,
-                album,
-                cover,
-            });
-        }
+    if let Some(first) = body.songs.and_then(|songs| songs.into_iter().next()) {
+        let artists = first
+            .ar
+            .into_iter()
+            .filter_map(|a| a.name.filter(|n| !n.is_empty()))
+            .collect();
+        let (album, cover) = first
+            .al
+            .map(|al| (al.name.unwrap_or_default(), al.pic_url.unwrap_or_default()))
+            .unwrap_or_default();
+        return Ok(SongMeta {
+            song_type: first.song_type,
+            name: first.name.unwrap_or_default(),
+            artists,
+            album,
+            cover,
+        });
     }
 
     Ok(SongMeta::default())
 }
 
+/// 获取歌曲的展示元数据
+pub async fn fetch_song_meta(
+    client: &reqwest::Client,
+    api_base: &str,
+    platform_id: &str,
+) -> Option<(String, String, String)> {
+    let meta = fetch_song_detail(client, api_base, platform_id).await.ok()?;
+    let artist = meta.artists.join(" / ");
+    Some((meta.name, artist, meta.cover))
+}
+
 /// 调用网易云歌词 API 检查是否纯音乐
 async fn fetch_lyric(client: &reqwest::Client, api_base: &str, platform_id: &str) -> Result<Option<String>> {
-    let url = format!("{}/lyric?id={}", api_base, platform_id);
+    let url = format!(
+        "{}/lyric?id={}",
+        api_base,
+        urlencoding::encode(platform_id)
+    );
     let resp = client.get(&url).send().await.context("fetch lyric")?;
 
     if !resp.status().is_success() {
@@ -219,16 +241,16 @@ pub async fn parse_and_categorize(
         }
     };
 
-    if let Some(ref lyric_text) = lyric {
-        if is_pure_music_keyword(lyric_text) {
-            return Ok(ParseResult {
-                category: ParseCategory::PureMusic,
-                song_name: meta.name,
-                artists: meta.artists,
-                cover: meta.cover,
-                album: meta.album,
-            });
-        }
+    if let Some(ref lyric_text) = lyric
+        && is_pure_music_keyword(lyric_text)
+    {
+        return Ok(ParseResult {
+            category: ParseCategory::PureMusic,
+            song_name: meta.name,
+            artists: meta.artists,
+            cover: meta.cover,
+            album: meta.album,
+        });
     }
 
     // 4. 不是纯音乐也不是云盘则无歌词

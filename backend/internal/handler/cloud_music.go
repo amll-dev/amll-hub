@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
@@ -11,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// CloudMusicHandler 网易云解析 handler
+// CloudMusicHandler 云音乐解析 handler
 type CloudMusicHandler struct {
 	svc *service.CloudMusicService
 }
@@ -81,13 +80,13 @@ func (h *CloudMusicHandler) ParsePlaylist(c *gin.Context) {
 	pkg.OK(c, result)
 }
 
-// writeCloudMusicErr 统一处理网易云解析服务错误
+// writeCloudMusicErr 统一处理云音乐解析服务错误
 func writeCloudMusicErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, service.ErrInvalidInput):
 		pkg.BadRequest(c, "请求参数非法")
 	case errors.Is(err, service.ErrUpstreamUnavailable):
-		pkg.Fail(c, http.StatusBadGateway, 502, "网易云解析服务暂不可用")
+		writeUpstreamErr(c, err, "云音乐解析服务暂不可用")
 	default:
 		pkg.InternalError(c, "解析失败")
 	}

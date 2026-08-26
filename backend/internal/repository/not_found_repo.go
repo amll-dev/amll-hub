@@ -53,7 +53,7 @@ func (r *NotFoundRepo) UpsertNotFound(ctx context.Context, platform, platformID,
 		}
 
 		// 即使同 IP 已记录，也要更新 last_seen_at（仅当未记录时才 +1 count）
-		updates := map[string]interface{}{
+		updates := map[string]any{
 			"last_seen_at":   time.Now(),
 			"daily_requests": daily,
 		}
@@ -184,7 +184,7 @@ func (r *NotFoundRepo) GetRanking(ctx context.Context, days int, platform string
 
 // UpdateCategory 更新某条记录的分类（Worker 解析后回写）
 func (r *NotFoundRepo) UpdateCategory(ctx context.Context, platform, platformID, category, songName string) error {
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"category": category,
 	}
 	if songName != "" {

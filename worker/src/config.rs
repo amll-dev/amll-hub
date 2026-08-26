@@ -218,9 +218,9 @@ pub fn load() -> anyhow::Result<Config> {
     let dotenv_path = find_dotenv();
     if let Some(ref path) = dotenv_path {
         let _ = dotenvy::from_path(path);
-        eprintln!("加载 .env 文件: {:?}", path);
+        tracing::info!(path = %path.display(), "加载 .env 文件");
     } else {
-        eprintln!("警告: 未找到 .env 文件，使用默认配置");
+        tracing::warn!("未找到 .env 文件，使用默认配置");
     }
 
     // 先收集所有环境变量
@@ -321,23 +321,22 @@ pub fn load() -> anyhow::Result<Config> {
 
     let cfg = builder.build()?;
     let result: Config = cfg.try_deserialize()?;
-    let masked_url = {
-        let url = &result.rabbitmq.url;
-        match url.find("://") {
-            Some(scheme_end) => {
-                let after_scheme = &url[scheme_end + 3..];
-                match after_scheme.find('@') {
-                    Some(at) => {
-                        format!("{}://***{}", &url[..scheme_end], &after_scheme[at..])
-                    }
-                    None => url.clone(),
-                }
-            }
-            None => url.clone(),
-        }
-    };
-    eprintln!("RabbitMQ URL: {}", masked_url);
+    tracing::info!(url = %mask_url_credentials(&result.rabbitmq.url), "RabbitMQ URL");
     Ok(result)
+}
+
+/// 遮蔽 URL 中的用户凭证部分
+fn mask_url_credentials(url: &str) -> String {
+    match url.find("://") {
+        Some(scheme_end) => {
+            let after_scheme = &url[scheme_end + 3..];
+            match after_scheme.find('@') {
+                Some(at) => format!("{}://***{}", &url[..scheme_end], &after_scheme[at..]),
+                None => url.to_string(),
+            }
+        }
+        None => url.to_string(),
+    }
 }
 
 fn env_or(key: &str, default: &str) -> String {
@@ -346,4 +345,113 @@ fn env_or(key: &str, default: &str) -> String {
 
 fn parse_bool(s: &str) -> bool {
     matches!(s.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn database_config() -> DatabaseConfig {
+        DatabaseConfig {
+            host: "localhost".to_string(),
+            port: 5432,
+            user: "ttml".to_string(),
+            password: "secret".to_string(),
+            name: "ttml_db".to_string(),
+            sslmode: "disable".to_string(),
+            max_open_conns: 50,
+            max_idle_conns: 10,
+        }
+    }
+
+    #[test]
+    fn database_dsn_contains_all_parts() {
+        assert_eq!(
+            database_config().dsn(),
+            "postgres://ttml:secret@localhost:5432/ttml_db?sslmode=disable"
+        );
+    }
+
+    #[test]
+    fn redis_url_without_password() {
+        let cfg = RedisConfig {
+            host: "localhost".to_string(),
+            port: 6379,
+            password: String::new(),
+            db: 0,
+        };
+        assert_eq!(cfg.url(), "redis://localhost:6379/0");
+    }
+
+    #[test]
+    fn redis_url_with_password() {
+        let cfg = RedisConfig {
+            host: "redis".to_string(),
+            port: 6380,
+            password: "pass".to_string(),
+            db: 2,
+        };
+        assert_eq!(cfg.url(), "redis://:pass@redis:6380/2");
+    }
+
+    #[test]
+    fn minio_endpoint_url_respects_ssl_flag() {
+        let mut cfg = MinioConfig {
+            endpoint: "localhost:9000".to_string(),
+            access_key: "ak".to_string(),
+            secret_key: "sk".to_string(),
+            bucket: "ttml-db".to_string(),
+            use_ssl: false,
+        };
+        assert_eq!(cfg.endpoint_url(), "http://localhost:9000");
+        cfg.use_ssl = true;
+        assert_eq!(cfg.endpoint_url(), "https://localhost:9000");
+    }
+
+    #[test]
+    fn github_urls_are_well_formed() {
+        let cfg = GitHubConfig {
+            token: String::new(),
+            repo: "amll-dev/amll-ttml-db".to_string(),
+            branch: "main".to_string(),
+        };
+        assert_eq!(
+            cfg.api_commits_url(),
+            "https://api.github.com/repos/amll-dev/amll-ttml-db/commits/main"
+        );
+        assert_eq!(
+            cfg.raw_url("metadata/raw-lyrics-index.jsonl"),
+            "https://raw.githubusercontent.com/amll-dev/amll-ttml-db/main/metadata/raw-lyrics-index.jsonl"
+        );
+        assert_eq!(
+            cfg.raw_lyrics_zip_url(),
+            "https://github.com/amll-dev/amll-ttml-db/raw/refs/heads/main/raw-lyrics/raw-lyrics.zip"
+        );
+    }
+
+    #[test]
+    fn mask_url_credentials_hides_userinfo() {
+        assert_eq!(
+            mask_url_credentials("amqp://guest:guest@localhost:5672/amllhub"),
+            "amqp://***@localhost:5672/amllhub"
+        );
+        // 无凭证时原样返回
+        assert_eq!(
+            mask_url_credentials("amqp://localhost:5672/amllhub"),
+            "amqp://localhost:5672/amllhub"
+        );
+        // 无 scheme 时原样返回
+        assert_eq!(mask_url_credentials("not-a-url"), "not-a-url");
+    }
+
+    #[test]
+    fn parse_bool_accepts_common_truthy_values() {
+        assert!(parse_bool("true"));
+        assert!(parse_bool("1"));
+        assert!(parse_bool("YES"));
+        assert!(parse_bool("On"));
+        assert!(!parse_bool("false"));
+        assert!(!parse_bool("0"));
+        assert!(!parse_bool(""));
+    }
 }

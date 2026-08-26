@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -113,7 +112,7 @@ func (s *NotFoundService) PreloadWhitelist(ctx context.Context) error {
 
 	// 批量写入
 	if len(pureKeys) > 0 {
-		members := make([]interface{}, len(pureKeys))
+		members := make([]any, len(pureKeys))
 		for i, k := range pureKeys {
 			members[i] = k
 		}
@@ -122,7 +121,7 @@ func (s *NotFoundService) PreloadWhitelist(ctx context.Context) error {
 		}
 	}
 	if len(cloudKeys) > 0 {
-		members := make([]interface{}, len(cloudKeys))
+		members := make([]any, len(cloudKeys))
 		for i, k := range cloudKeys {
 			members[i] = k
 		}
@@ -513,19 +512,4 @@ func convertStats(rs *repository.StatsResult) *StatsResult {
 		out.PlatformDist[i] = PlatformCount{Platform: p.Platform, Count: p.Count}
 	}
 	return out
-}
-
-// 错误定义喵
-
-// ErrInvalidParameter 参数错误
-var ErrInvalidParameter = errors.New("invalid parameter")
-
-// 辅助函数
-
-// ParseFolderToPlatform 将 folder 名（ncm-lyrics）转为平台代码（ncm）
-func ParseFolderToPlatform(folder string) string {
-	if strings.HasSuffix(folder, "-lyrics") {
-		return strings.TrimSuffix(folder, "-lyrics")
-	}
-	return folder
 }

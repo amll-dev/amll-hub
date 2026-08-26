@@ -2,8 +2,9 @@ package job
 
 import (
 	"context"
-	"log/slog"
 	"time"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
@@ -50,10 +51,10 @@ func NewAutoRejectJob(
 
 // Run 阻塞执行，每 interval 执行一次扫描，直到 ctx 取消
 func (j *AutoRejectJob) Run(ctx context.Context) {
-	slog.Info("auto-reject job started",
-		"interval", j.interval.String(),
-		"after", j.after.String(),
-	)
+	logrus.WithFields(logrus.Fields{
+		"interval": j.interval.String(),
+		"after":    j.after.String(),
+	}).Info("auto-reject job started")
 	ticker := time.NewTicker(j.interval)
 	defer ticker.Stop()
 
@@ -63,7 +64,7 @@ func (j *AutoRejectJob) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("auto-reject job stopped")
+			logrus.Info("auto-reject job stopped")
 			return
 		case <-ticker.C:
 			j.runOnce(ctx)
@@ -91,16 +92,16 @@ func (j *AutoRejectJob) runOnce(ctx context.Context) {
 				Comment:      "[系统自动处理] 超过4天未修改，自动拒绝。",
 			}
 			if err := j.historyRepo.Insert(ctx, tx, h); err != nil {
-				slog.Warn("auto-reject: insert review history failed",
-					"submission_id", items[i].ID,
-					"error", err,
-				)
+				logrus.WithFields(logrus.Fields{
+					"submission_id": items[i].ID,
+					"error":         err,
+				}).Warn("auto-reject: insert review history failed")
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		slog.Error("auto-reject job failed", "error", err)
+		logrus.WithError(err).Error("auto-reject job failed")
 		return
 	}
 
@@ -108,20 +109,18 @@ func (j *AutoRejectJob) runOnce(ctx context.Context) {
 		return
 	}
 
-	slog.Info("auto-reject: marked submissions as rejected",
-		"count", len(affected),
-	)
+	logrus.WithField("count", len(affected)).Info("auto-reject: marked submissions as rejected")
 
 	// 删除对象存储中的待审核文件 + 通知状态变更
 	for i := range affected {
 		fileName := affected[i].FileName
 		if fileName != "" {
 			if err := j.files.Delete(ctx, service.PendingLyricKey(fileName)); err != nil {
-				slog.Warn("auto-reject: delete file failed",
-					"submission_id", affected[i].ID,
-					"file", fileName,
-					"error", err,
-				)
+				logrus.WithFields(logrus.Fields{
+					"submission_id": affected[i].ID,
+					"file":          fileName,
+					"error":         err,
+				}).Warn("auto-reject: delete file failed")
 			}
 		}
 		if j.viewers != nil {

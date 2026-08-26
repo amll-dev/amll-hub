@@ -119,6 +119,3 @@ func (s *LyricsService) StreamLyric(
 func lyricCacheKey(folder, filename string) string {
 	return "lyric:" + folder + ":" + filename
 }
-
-// ErrLyricNotFound 歌词未找到
-var ErrLyricNotFound = errors.New("lyric not found")

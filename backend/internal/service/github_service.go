@@ -8,9 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/amll-dev/amll-hub/backend/internal/infrastructure"
 )
@@ -32,7 +33,7 @@ func NewGitHubService(app *infrastructure.GitHubAppClient) *GitHubService {
 // 上传文件内容到 GitHub 仓库
 func (s *GitHubService) UploadFile(ctx context.Context, fileName string, contentReader io.Reader, reviewer string) error {
 	if !s.app.Enabled() {
-		slog.Warn("github app not enabled, skip upload", "file", fileName)
+		logrus.WithField("file", fileName).Warn("github app not enabled, skip upload")
 		return errors.New("github app 未配置，无法上传")
 	}
 
@@ -57,7 +58,7 @@ func (s *GitHubService) UploadFile(ctx context.Context, fileName string, content
 
 	// PUT
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", owner, repo, path)
-	body := map[string]interface{}{
+	body := map[string]any{
 		"message": fmt.Sprintf("Upload lyric file: %s (approved by %s)", fileName, reviewer),
 		"content": base64.StdEncoding.EncodeToString(content),
 		"branch":  "main",

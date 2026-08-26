@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"strings"
 	"time"
 
@@ -13,21 +14,6 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"gorm.io/gorm"
 )
-
-// ErrSubmissionNotFound 投稿不存在
-var ErrSubmissionNotFound = errors.New("submission not found")
-
-// ErrMissingFile 缺少文件
-var ErrMissingFile = errors.New("missing file")
-
-// ErrFileNotFound 文件不存在
-var ErrFileNotFound = errors.New("file not found in object storage")
-
-// ErrInvalidStatus 投稿状态不允许该操作
-var ErrInvalidStatus = errors.New("invalid submission status for this action")
-
-// ErrForbidden 无权操作该投稿
-var ErrForbidden = errors.New("forbidden")
 
 // SubmissionUser 当前登录用户上下文信息（从 JWT Claims 提取）
 type SubmissionUser struct {
@@ -38,43 +24,43 @@ type SubmissionUser struct {
 
 // CreateSubmissionInput 创建投稿入参
 type CreateSubmissionInput struct {
-	Title    string                 `json:"title"`
-	Metadata map[string]interface{} `json:"metadata"`
-	FileName string                 `json:"fileName"`
-	Notes    string                 `json:"notes"`
-	Tags     []string               `json:"tags"`
-	Language string                 `json:"language"`
-	Type     string                 `json:"type"`
-	Status   string                 `json:"status"`
+	Title    string         `json:"title"`
+	Metadata map[string]any `json:"metadata"`
+	FileName string         `json:"fileName"`
+	Notes    string         `json:"notes"`
+	Tags     []string       `json:"tags"`
+	Language string         `json:"language"`
+	Type     string         `json:"type"`
+	Status   string         `json:"status"`
 } // Submission 投稿 DTO
 type Submission struct {
-	ID                  int64                  `json:"id"`
-	Title               string                 `json:"title"`
-	Artist              string                 `json:"artist"`
-	Album               string                 `json:"album"`
-	NcmID               string                 `json:"ncmId"`
-	QqID                string                 `json:"qqId"`
-	AmID                string                 `json:"amId"`
-	SpotifyID           string                 `json:"spotifyId"`
-	FileName            string                 `json:"fileName"`
-	Notes               string                 `json:"notes"`
-	Tags                []string               `json:"tags"`
-	Metadata            map[string]interface{} `json:"metadata"`
-	Language            string                 `json:"language"`
-	Status              string                 `json:"status"`
-	Submitter           string                 `json:"submitter"`
-	SubmitterInfo       UserInfo               `json:"submitterInfo"`
-	Provider            string                 `json:"provider"`
-	CreatedAt           time.Time              `json:"createdAt"`
-	UpdatedAt           time.Time              `json:"updatedAt"`
-	FileUpdatedAt       *time.Time             `json:"fileUpdatedAt,omitempty"`
-	RevisionRequestedAt *time.Time             `json:"revisionRequestedAt,omitempty"`
-	ClosedAt            *time.Time             `json:"closedAt,omitempty"`
-	ClosedBy            string                 `json:"closedBy,omitempty"`
-	ClosedByInfo        *UserInfo              `json:"closedByInfo,omitempty"`
-	Reviewer            string                 `json:"reviewer,omitempty"`
-	ReviewedAt          *time.Time             `json:"reviewedAt,omitempty"`
-	ReviewComment       string                 `json:"reviewComment,omitempty"`
+	ID                  int64          `json:"id"`
+	Title               string         `json:"title"`
+	Artist              string         `json:"artist"`
+	Album               string         `json:"album"`
+	NcmID               string         `json:"ncmId"`
+	QqID                string         `json:"qqId"`
+	AmID                string         `json:"amId"`
+	SpotifyID           string         `json:"spotifyId"`
+	FileName            string         `json:"fileName"`
+	Notes               string         `json:"notes"`
+	Tags                []string       `json:"tags"`
+	Metadata            map[string]any `json:"metadata"`
+	Language            string         `json:"language"`
+	Status              string         `json:"status"`
+	Submitter           string         `json:"submitter"`
+	SubmitterInfo       UserInfo       `json:"submitterInfo"`
+	Provider            string         `json:"provider"`
+	CreatedAt           time.Time      `json:"createdAt"`
+	UpdatedAt           time.Time      `json:"updatedAt"`
+	FileUpdatedAt       *time.Time     `json:"fileUpdatedAt,omitempty"`
+	RevisionRequestedAt *time.Time     `json:"revisionRequestedAt,omitempty"`
+	ClosedAt            *time.Time     `json:"closedAt,omitempty"`
+	ClosedBy            string         `json:"closedBy,omitempty"`
+	ClosedByInfo        *UserInfo      `json:"closedByInfo,omitempty"`
+	Reviewer            string         `json:"reviewer,omitempty"`
+	ReviewedAt          *time.Time     `json:"reviewedAt,omitempty"`
+	ReviewComment       string         `json:"reviewComment,omitempty"`
 }
 
 // UserInfo 用户信息（投稿者/审核员/关闭者）
@@ -119,12 +105,24 @@ type SubmissionAudio struct {
 	UploadedAt   time.Time `json:"uploadedAt"`
 }
 
-// SubmissionDetail 投稿详情（含审核历史、评论、音频）
+// FileHistory 文件更新历史
+type FileHistory struct {
+	ID           int64     `json:"id"`
+	SubmissionID int64     `json:"submissionId"`
+	Uploader     string    `json:"uploader"`
+	UploaderInfo UserInfo  `json:"uploaderInfo"`
+	FileName     string    `json:"fileName"`
+	UploadedAt   time.Time `json:"uploadedAt"`
+}
+
+// SubmissionDetail 投稿详情（含审核历史、文件更新历史、评论、音频）
 type SubmissionDetail struct {
 	Submission
-	ReviewHistory []ReviewHistory  `json:"reviewHistory"`
-	Comments      []Comment        `json:"comments"`
-	Audio         *SubmissionAudio `json:"audio,omitempty"`
+	ReviewHistory []ReviewHistory    `json:"reviewHistory"`
+	FileHistory   []FileHistory      `json:"fileHistory"`
+	Comments      []Comment          `json:"comments"`
+	Audio         *SubmissionAudio   `json:"audio,omitempty"`
+	Audios        []*SubmissionAudio `json:"audios,omitempty"`
 }
 
 // SubmissionListQuery 列表查询参数
@@ -168,12 +166,13 @@ type AttachAudioInput struct {
 
 // SubmissionService 投稿业务逻辑
 type SubmissionService struct {
-	subRepo     *repository.SubmissionRepo
-	audioRepo   *repository.AudioRepo
-	historyRepo *repository.ReviewHistoryRepo
-	commentRepo *repository.CommentRepo
-	files       *FileService
-	db          *gorm.DB
+	subRepo         *repository.SubmissionRepo
+	audioRepo       *repository.AudioRepo
+	historyRepo     *repository.ReviewHistoryRepo
+	fileHistoryRepo *repository.FileHistoryRepo
+	commentRepo     *repository.CommentRepo
+	files           *FileService
+	db              *gorm.DB
 }
 
 // NewSubmissionService 创建投稿服务
@@ -181,17 +180,19 @@ func NewSubmissionService(
 	subRepo *repository.SubmissionRepo,
 	audioRepo *repository.AudioRepo,
 	historyRepo *repository.ReviewHistoryRepo,
+	fileHistoryRepo *repository.FileHistoryRepo,
 	commentRepo *repository.CommentRepo,
 	files *FileService,
 	db *gorm.DB,
 ) *SubmissionService {
 	return &SubmissionService{
-		subRepo:     subRepo,
-		audioRepo:   audioRepo,
-		historyRepo: historyRepo,
-		commentRepo: commentRepo,
-		files:       files,
-		db:          db,
+		subRepo:         subRepo,
+		audioRepo:       audioRepo,
+		historyRepo:     historyRepo,
+		fileHistoryRepo: fileHistoryRepo,
+		commentRepo:     commentRepo,
+		files:           files,
+		db:              db,
 	}
 }
 
@@ -219,17 +220,17 @@ func (s *SubmissionService) Create(ctx context.Context, user *SubmissionUser, in
 	title := sanitize(in.Title, 200)
 	notes := sanitize(in.Notes, 2000)
 	language := validLanguage(in.Language)
-	artists := extractStrings(in.Metadata, "artists")
+	artists := extractStrings(in.Metadata, "artist")
 	album := extractStrings(in.Metadata, "album")
 
 	sub := &model.Submission{
 		Title:         title,
 		Artist:        strings.Join(artists, ", "),
 		Album:         strings.Join(album, ", "),
-		NcmID:         extractString(in.Metadata, "ncmMusicId"),
-		QqID:          extractString(in.Metadata, "qqMusicId"),
-		AmID:          extractString(in.Metadata, "appleMusicId"),
-		SpotifyID:     extractString(in.Metadata, "spotifyId"),
+		NcmID:         extractPlatformId(in.Metadata, "ncm_music_id"),
+		QqID:          extractPlatformId(in.Metadata, "qq_music_id"),
+		AmID:          extractPlatformId(in.Metadata, "apple_music_id"),
+		SpotifyID:     extractPlatformId(in.Metadata, "spotify_id"),
 		FileName:      in.FileName,
 		Notes:         notes,
 		Tags:          normalizeTags(in.Tags),
@@ -276,8 +277,37 @@ func (s *SubmissionService) List(ctx context.Context, user *SubmissionUser, q Su
 	return &SubmissionListResult{Total: res.Total, Items: items}, nil
 }
 
-// GetDetail 查询详情（含审核历史 + 评论 + 音频）
-func (s *SubmissionService) GetDetail(ctx context.Context, id int64) (*SubmissionDetail, error) {
+// GetTtmlContent 读取投稿的 TTML 文件内容
+func (s *SubmissionService) GetTtmlContent(ctx context.Context, user *SubmissionUser, id int64, isReviewer bool) (string, error) {
+	sub, err := s.subRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", ErrSubmissionNotFound
+		}
+		return "", err
+	}
+	if sub.Submitter != user.Name && !isReviewer {
+		return "", ErrForbidden
+	}
+	if sub.FileName == "" {
+		return "", ErrMissingFile
+	}
+
+	reader, err := s.files.Get(ctx, PendingLyricKey(sub.FileName))
+	if err != nil {
+		return "", ErrFileNotFound
+	}
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", fmt.Errorf("read ttml: %w", err)
+	}
+	return string(data), nil
+}
+
+// GetDetail 查询详情
+func (s *SubmissionService) GetDetail(ctx context.Context, user *SubmissionUser, id int64, isReviewer bool) (*SubmissionDetail, error) {
 	sub, err := s.subRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -285,7 +315,14 @@ func (s *SubmissionService) GetDetail(ctx context.Context, id int64) (*Submissio
 		}
 		return nil, err
 	}
+	if sub.Submitter != user.Name && !isReviewer {
+		return nil, ErrForbidden
+	}
 	history, err := s.historyRepo.ListBySubmission(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	fileHistory, err := s.fileHistoryRepo.ListBySubmission(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -293,15 +330,20 @@ func (s *SubmissionService) GetDetail(ctx context.Context, id int64) (*Submissio
 	if err != nil {
 		return nil, err
 	}
-	audio, _ := s.audioRepo.GetBySubmissionID(ctx, id) // 不存在不报错
+	audios, _ := s.audioRepo.ListBySubmissionID(ctx, id) // 不存在不报错
 
 	detail := &SubmissionDetail{
 		Submission:    convertSubmission(*sub),
 		ReviewHistory: convertReviewHistory(history),
+		FileHistory:   convertFileHistory(fileHistory),
 		Comments:      convertComments(comments),
 	}
-	if audio != nil {
-		detail.Audio = convertAudio(audio)
+	if len(audios) > 0 {
+		converted := convertAudios(audios)
+		detail.Audios = converted
+		if len(converted) > 0 {
+			detail.Audio = converted[0]
+		}
 	}
 	return detail, nil
 }
@@ -328,7 +370,7 @@ func (s *SubmissionService) Stats(ctx context.Context, user *SubmissionUser, mod
 	}, nil
 }
 
-// UpdateFile 更新投稿的 TTML 文件（need_revision → pending）
+// UpdateFile 更新投稿的 TTML 文件
 func (s *SubmissionService) UpdateFile(ctx context.Context, user *SubmissionUser, id int64, fileName string, metadata *CreateSubmissionInput) error {
 	if fileName == "" {
 		return ErrMissingFile
@@ -350,11 +392,16 @@ func (s *SubmissionService) UpdateFile(ctx context.Context, user *SubmissionUser
 		if su.Submitter != user.Name {
 			return ErrForbidden
 		}
-		// 仅 need_revision / rejected / missing_audio 状态允许更新文件
+		// 除已关闭外都允许更新文件
 		switch su.Status {
-		case model.StatusNeedRevision, model.StatusRejected, model.StatusMissingAudio:
-		default:
+		case model.StatusClosed:
 			return ErrInvalidStatus
+		}
+
+		// 仅 need_revision 状态下重置为 pending，其余状态（如 missing_audio）保持不变
+		newStatus := ""
+		if su.Status == model.StatusNeedRevision {
+			newStatus = model.StatusPending
 		}
 
 		// 删除旧文件
@@ -365,23 +412,33 @@ func (s *SubmissionService) UpdateFile(ctx context.Context, user *SubmissionUser
 		// 组装元数据更新
 		var metaUpdate *model.Submission
 		if metadata != nil {
-			artists := extractStrings(metadata.Metadata, "artists")
+			artists := extractStrings(metadata.Metadata, "artist")
 			album := extractStrings(metadata.Metadata, "album")
 			metaUpdate = &model.Submission{
 				Title:     sanitize(metadata.Title, 200),
 				Artist:    strings.Join(artists, ", "),
 				Album:     strings.Join(album, ", "),
-				NcmID:     extractString(metadata.Metadata, "ncmMusicId"),
-				QqID:      extractString(metadata.Metadata, "qqMusicId"),
-				AmID:      extractString(metadata.Metadata, "appleMusicId"),
-				SpotifyID: extractString(metadata.Metadata, "spotifyId"),
+				NcmID:     extractPlatformId(metadata.Metadata, "ncm_music_id"),
+				QqID:      extractPlatformId(metadata.Metadata, "qq_music_id"),
+				AmID:      extractPlatformId(metadata.Metadata, "apple_music_id"),
+				SpotifyID: extractPlatformId(metadata.Metadata, "spotify_id"),
 				Notes:     sanitize(metadata.Notes, 2000),
 				Tags:      normalizeTags(metadata.Tags),
 				Metadata:  normalizeMetadata(metadata.Metadata),
 				Language:  validLanguage(metadata.Language),
 			}
 		}
-		if err := s.subRepo.UpdateFile(ctx, tx, id, fileName, metaUpdate); err != nil {
+		if err := s.subRepo.UpdateFile(ctx, tx, id, fileName, metaUpdate, newStatus); err != nil {
+			return err
+		}
+		// 记录文件更新历史（独立于审核历史），用于时间线展示多次更新
+		if err := s.fileHistoryRepo.Insert(ctx, tx, &model.SubmissionFileHistory{
+			SubmissionID: id,
+			Uploader:     user.Name,
+			UploaderInfo: model.UserInfo{Username: user.Name, DisplayName: user.DisplayName, Avatar: user.Avatar},
+			FileName:     fileName,
+			UploadedAt:   time.Now(),
+		}); err != nil {
 			return err
 		}
 		sub = su
@@ -476,15 +533,33 @@ func (s *SubmissionService) AttachAudio(ctx context.Context, user *SubmissionUse
 	}
 	audio.SubmissionID = id
 	audio.UploadedBy = user.Name
-	return s.audioRepo.Upsert(ctx, audio)
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.audioRepo.Append(ctx, audio); err != nil {
+			return err
+		}
+		// missing_audio 状态下上传音频后重置为 pending
+		if sub.Status == model.StatusMissingAudio {
+			if err := s.subRepo.UpdateStatus(ctx, tx, &model.Submission{
+				ID:     sub.ID,
+				Status: model.StatusPending,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // ---- 工具函数 ----
 
-// sanitize 截断 + HTML 转义
+// sanitize 按 rune 截断 + HTML 转义（按字节截断会切碎多字节 UTF-8 字符产生乱码）
 func sanitize(s string, max int) string {
 	if len(s) > max {
-		s = s[:max]
+		r := []rune(s)
+		if len(r) > max {
+			s = string(r[:max])
+		}
 	}
 	return html.EscapeString(s)
 }
@@ -497,7 +572,7 @@ func validLanguage(lang string) string {
 	return model.LangOthers
 }
 
-func extractString(m map[string]interface{}, key string) string {
+func extractString(m map[string]any, key string) string {
 	if m == nil {
 		return ""
 	}
@@ -509,7 +584,7 @@ func extractString(m map[string]interface{}, key string) string {
 	return ""
 }
 
-func extractStrings(m map[string]interface{}, key string) []string {
+func extractStrings(m map[string]any, key string) []string {
 	if m == nil {
 		return nil
 	}
@@ -520,7 +595,7 @@ func extractStrings(m map[string]interface{}, key string) []string {
 	switch val := v.(type) {
 	case []string:
 		return val
-	case []interface{}:
+	case []any:
 		out := make([]string, 0, len(val))
 		for _, item := range val {
 			if s, ok := item.(string); ok && s != "" {
@@ -530,6 +605,42 @@ func extractStrings(m map[string]interface{}, key string) []string {
 		return out
 	}
 	return nil
+}
+
+// extractPlatformId 从 metadata.platform_ids 嵌套 map 中提取指定平台 ID 的第一个值
+func extractPlatformId(m map[string]any, platformKey string) string {
+	if m == nil {
+		return ""
+	}
+	rawPids, ok := m["platform_ids"]
+	if !ok {
+		return ""
+	}
+	pids, ok := rawPids.(map[string]any)
+	if !ok {
+		return ""
+	}
+	rawIds, ok := pids[platformKey]
+	if !ok {
+		return ""
+	}
+	switch val := rawIds.(type) {
+	case string:
+		return val
+	case []any:
+		for _, item := range val {
+			if s, ok := item.(string); ok && s != "" {
+				return s
+			}
+		}
+	case []string:
+		for _, s := range val {
+			if s != "" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 func normalizeTags(tags []string) model.JSONStringArray {
@@ -543,7 +654,7 @@ func normalizeTags(tags []string) model.JSONStringArray {
 	return out
 }
 
-func normalizeMetadata(m map[string]interface{}) model.JSONObject {
+func normalizeMetadata(m map[string]any) model.JSONObject {
 	if m == nil {
 		return model.JSONObject{}
 	}
@@ -577,7 +688,7 @@ func convertSubmission(m model.Submission) Submission {
 		FileName:            m.FileName,
 		Notes:               m.Notes,
 		Tags:                ensureStringSlice(m.Tags),
-		Metadata:            map[string]interface{}(m.Metadata),
+		Metadata:            map[string]any(m.Metadata),
 		Language:            m.Language,
 		Status:              m.Status,
 		Submitter:           m.Submitter,
@@ -624,6 +735,21 @@ func convertReviewHistory(items []model.ReviewHistory) []ReviewHistory {
 	return out
 }
 
+func convertFileHistory(items []model.SubmissionFileHistory) []FileHistory {
+	out := make([]FileHistory, len(items))
+	for i, h := range items {
+		out[i] = FileHistory{
+			ID:           h.ID,
+			SubmissionID: h.SubmissionID,
+			Uploader:     h.Uploader,
+			UploaderInfo: convertUserInfo(h.UploaderInfo),
+			FileName:     h.FileName,
+			UploadedAt:   h.UploadedAt,
+		}
+	}
+	return out
+}
+
 func convertComments(items []model.Comment) []Comment {
 	out := make([]Comment, len(items))
 	for i, c := range items {
@@ -655,4 +781,14 @@ func convertAudio(a *model.SubmissionAudio) *SubmissionAudio {
 		UploadedBy:   a.UploadedBy,
 		UploadedAt:   a.UploadedAt,
 	}
+}
+
+func convertAudios(items []*model.SubmissionAudio) []*SubmissionAudio {
+	out := make([]*SubmissionAudio, 0, len(items))
+	for _, a := range items {
+		if c := convertAudio(a); c != nil {
+			out = append(out, c)
+		}
+	}
+	return out
 }

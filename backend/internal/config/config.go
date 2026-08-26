@@ -27,6 +27,7 @@ type Config struct {
 	OnlineSearch OnlineSearchConfig
 	Casdoor      CasdoorConfig
 	Submission   SubmissionConfig
+	Worker       WorkerConfig
 }
 
 type HTTPConfig struct {
@@ -139,6 +140,12 @@ type SubmissionConfig struct {
 	MaxImageSize int64
 }
 
+// Worker 服务配置
+type WorkerConfig struct {
+	// Worker 地址
+	BaseURL string
+}
+
 // findDotEnv查找 .env 文件
 func findDotEnv() string {
 	dir, err := os.Getwd()
@@ -236,9 +243,12 @@ func Load() (*Config, error) {
 	v.SetDefault("SUBMISSION_AUTO_REJECT_INTERVAL", "1h")
 	v.SetDefault("SUBMISSION_AUTO_REJECT_AFTER", "96h")
 	v.SetDefault("SUBMISSION_REVIEWER_CACHE_TTL", "30s")
-	v.SetDefault("SUBMISSION_MAX_TTML_SIZE", 2*1024*1024)   // 2MB
-	v.SetDefault("SUBMISSION_MAX_AUDIO_SIZE", 50*1024*1024) // 50MB
-	v.SetDefault("SUBMISSION_MAX_IMAGE_SIZE", 10*1024*1024) // 10MB
+	v.SetDefault("SUBMISSION_MAX_TTML_SIZE", 2*1024*1024)    // 2MB
+	v.SetDefault("SUBMISSION_MAX_AUDIO_SIZE", 50*1024*1024)  // 50MB
+	v.SetDefault("SUBMISSION_MAX_IMAGE_SIZE", 100*1024*1024) // 100MB
+
+	// Worker
+	v.SetDefault("WORKER_BASE_URL", "http://localhost:9090")
 
 	cfg := &Config{
 		HTTP: HTTPConfig{
@@ -318,10 +328,13 @@ func Load() (*Config, error) {
 			MaxAudioSize:       v.GetInt64("SUBMISSION_MAX_AUDIO_SIZE"),
 			MaxImageSize:       v.GetInt64("SUBMISSION_MAX_IMAGE_SIZE"),
 		},
+		Worker: WorkerConfig{
+			BaseURL: v.GetString("WORKER_BASE_URL"),
+		},
 	}
 
 	if cfg.Casdoor.JWTSecret == "" {
-		logrus.Warnf("CASDOOR_JWT_SECRET is empty, auth endpoints will not work properly")
+		logrus.Fatal("CASDOOR_JWT_SECRET is empty: anyone could forge JWTs; refusing to start")
 	}
 
 	if cfg.GitHubApp.AppID == 0 || cfg.GitHubApp.InstallationID == 0 || cfg.GitHubApp.PrivateKeyPath == "" {

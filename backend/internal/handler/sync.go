@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
@@ -42,7 +41,7 @@ func (h *SyncHandler) Trigger(c *gin.Context) {
 	result, err := h.svc.TriggerSync(ctx, triggeredBy)
 	if err != nil {
 		if errors.Is(err, service.ErrUpstreamUnavailable) {
-			pkg.Fail(c, http.StatusBadGateway, 502, "触发同步失败，上游服务不可用")
+			writeUpstreamErr(c, err, "触发同步失败，上游服务不可用")
 			return
 		}
 		logrus.WithError(err).Error("trigger sync failed")

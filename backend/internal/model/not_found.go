@@ -11,7 +11,7 @@ import (
 // JSONB 字段：{"2026-07-01": ["1.2.3.4", "5.6.7.8"]}
 type DailyRequests map[string][]string
 
-func (d *DailyRequests) Scan(value interface{}) error {
+func (d *DailyRequests) Scan(value any) error {
 	if value == nil {
 		*d = nil
 		return nil

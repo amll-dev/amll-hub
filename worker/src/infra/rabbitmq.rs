@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
 use lapin::{
-    options::{BasicQosOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions},
+    options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicQosOptions,
+        ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions},
     types::{AMQPValue, FieldTable},
     Channel, Connection, ConnectionProperties, ExchangeKind,
 };
@@ -9,6 +12,7 @@ use crate::config::Config;
 
 /// 初始化 RabbitMQ 连接与队列声明
 pub struct RabbitMq {
+    /// 持有底层连接防止其被提前 Drop（channel 依赖该连接存活）
     #[allow(dead_code)]
     pub conn: Connection,
     pub channel: Channel,
@@ -16,12 +20,75 @@ pub struct RabbitMq {
     pub nf_channel: Channel,
 }
 
-impl RabbitMq {
-    #[allow(dead_code)]
-    pub async fn channel(&self) -> Result<Channel> {
-        let ch = self.conn.create_channel().await.context("create channel")?;
-        Ok(ch)
+/// 通用消费循环骨架
+pub async fn consume_loop<F, Fut>(
+    channel: Channel,
+    queue: String,
+    consumer_tag: &str,
+    shutdown: Arc<tokio::sync::Notify>,
+    handler: F,
+) -> Result<()>
+where
+    F: Fn(lapin::message::Delivery) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
+{
+    use futures_lite::StreamExt;
+
+    let mut consumer = channel
+        .basic_consume(
+            &queue,
+            consumer_tag,
+            BasicConsumeOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+        .context("basic_consume")?;
+
+    tracing::info!(queue = %queue, consumer_tag, "consumer started");
+
+    let notified = shutdown.notified();
+    tokio::pin!(notified);
+    loop {
+        tokio::select! {
+            _ = &mut notified => {
+                tracing::info!(queue = %queue, "shutdown signal received, stopping consumer");
+                break;
+            }
+            msg = consumer.next() => {
+                let Some(delivery) = msg else { break; };
+                let delivery = match delivery {
+                    Ok(d) => d,
+                    Err(e) => {
+                        tracing::error!(error = %e, "consumer error");
+                        break;
+                    }
+                };
+                let tag = delivery.delivery_tag;
+                match handler(delivery).await {
+                    Ok(()) => {
+                        let _ = channel
+                            .basic_ack(tag, BasicAckOptions::default())
+                            .await;
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "task failed after retries, sending to DLQ");
+                        // nack(requeue=false) 触发 dead-lettering 到 DLQ，避免毒消息无限重投
+                        let _ = channel
+                            .basic_nack(
+                                tag,
+                                BasicNackOptions {
+                                    multiple: false,
+                                    requeue: false,
+                                },
+                            )
+                            .await;
+                    }
+                }
+            }
+        }
     }
+
+    Ok(())
 }
 
 pub async fn init_rabbitmq(cfg: &Config) -> Result<RabbitMq> {

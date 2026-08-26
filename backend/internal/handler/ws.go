@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -21,16 +22,18 @@ type WSHandler struct {
 	hub            *ws.Hub
 	viewers        *service.ViewerService
 	rc             *middleware.ReviewerCache
+	jwtSecret      string
 	allowedOrigins map[string]struct{}
 	upgrader       websocket.Upgrader
 }
 
 // NewWSHandler 创建 WS handler
-func NewWSHandler(hub *ws.Hub, viewers *service.ViewerService, rc *middleware.ReviewerCache) *WSHandler {
+func NewWSHandler(hub *ws.Hub, viewers *service.ViewerService, rc *middleware.ReviewerCache, jwtSecret string) *WSHandler {
 	h := &WSHandler{
 		hub:            hub,
 		viewers:        viewers,
 		rc:             rc,
+		jwtSecret:      jwtSecret,
 		allowedOrigins: loadWSAllowedOrigins(),
 	}
 	h.upgrader = websocket.Upgrader{
@@ -56,22 +59,28 @@ func loadWSAllowedOrigins() map[string]struct{} {
 
 // 校验握手
 func (h *WSHandler) checkOrigin(r *http.Request) bool {
-	if len(h.allowedOrigins) == 0 {
-		return true
-	}
 	origin := r.Header.Get("Origin")
 	if origin == "" {
+		// 非浏览器客户端
 		return true
 	}
-	_, ok := h.allowedOrigins[origin]
-	return ok
+	if len(h.allowedOrigins) > 0 {
+		_, ok := h.allowedOrigins[origin]
+		return ok
+	}
+	// 未配置白名单：仅允许同源
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return u.Host == r.Host
 }
 
 // 从握手请求提取JWT
 func extractWSToken(r *http.Request) string {
 	for _, p := range websocket.Subprotocols(r) {
-		if strings.HasPrefix(p, "bearer,") {
-			return strings.TrimPrefix(p, "bearer,")
+		if p != "" {
+			return p
 		}
 	}
 	return r.URL.Query().Get("token")
@@ -81,19 +90,18 @@ func extractWSToken(r *http.Request) string {
 func (h *WSHandler) Viewers(c *gin.Context) {
 	// 鉴权
 	token := extractWSToken(c.Request)
-	jwtSecret := c.GetString("jwt_secret")
-	if token == "" || jwtSecret == "" {
-		pkg.Fail(c, 401, 401, "未登录")
+	if token == "" {
+		pkg.Unauthorized(c)
 		return
 	}
-	claims, err := pkg.ParseJWT(token, jwtSecret)
+	claims, err := pkg.ParseJWT(token, h.jwtSecret)
 	if err != nil {
-		pkg.Fail(c, 401, 401, "token 无效或已过期")
+		pkg.Fail(c, http.StatusUnauthorized, http.StatusUnauthorized, "token 无效或已过期")
 		return
 	}
 	username := claims.Name
 	if username == "" {
-		pkg.Fail(c, 401, 401, "token 中无用户信息")
+		pkg.Fail(c, http.StatusUnauthorized, http.StatusUnauthorized, "token 中无用户信息")
 		return
 	}
 
@@ -115,7 +123,11 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 	}
 
 	// 升级为ws
-	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, nil)
+	respHeader := http.Header{}
+	if subs := websocket.Subprotocols(c.Request); len(subs) > 0 {
+		respHeader.Set("Sec-WebSocket-Protocol", subs[0])
+	}
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, respHeader)
 	if err != nil {
 		return
 	}
@@ -131,17 +143,12 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 	}
 
 	// 创建客户端并注册到 hub
-	client := ws.NewClient(conn, h.hub, submissionID, username, onClose)
+	client := ws.NewClient(conn, h.hub, submissionID, username, claims.DisplayName, claims.Avatar, onClose)
 	h.hub.Register(client)
 
 	// 启动读写 goroutine
 	go client.ReadPump()
 	go client.WritePump()
 
-	// 通知当前观众列表更新
-	if submissionID > 0 && h.viewers != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = h.viewers.NotifyViewers(ctx, submissionID)
-	}
+	// 观众列表广播由 Hub 在 registerClient 内部触发（确保客户端已入 map）
 }

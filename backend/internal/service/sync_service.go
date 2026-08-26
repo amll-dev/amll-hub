@@ -119,7 +119,7 @@ func (s *SyncService) TriggerSync(ctx context.Context, triggeredBy string) (*Tri
 }
 
 func (s *SyncService) enqueue(ctx context.Context, requestID, triggeredBy string) error {
-	body, _ := json.Marshal(map[string]interface{}{
+	body, _ := json.Marshal(map[string]any{
 		"request_id":   requestID,
 		"triggered_by": triggeredBy,
 		"triggered_at": time.Now().UTC().Format(time.RFC3339),
@@ -172,11 +172,11 @@ func (s *SyncService) fetchRemoteCommit(ctx context.Context) (string, error) {
 
 // SyncStatusResult 同步状态查询结果
 type SyncStatusResult struct {
-	Syncing          bool                   `json:"syncing"`
-	StartedAt        string                 `json:"startedAt,omitempty"`
-	LastSyncedAt     string                 `json:"lastSyncedAt,omitempty"`
-	LastSyncedCommit string                 `json:"lastSyncedCommit,omitempty"`
-	Progress         map[string]interface{} `json:"progress,omitempty"`
+	Syncing          bool           `json:"syncing"`
+	StartedAt        string         `json:"startedAt,omitempty"`
+	LastSyncedAt     string         `json:"lastSyncedAt,omitempty"`
+	LastSyncedCommit string         `json:"lastSyncedCommit,omitempty"`
+	Progress         map[string]any `json:"progress,omitempty"`
 }
 
 // GetStatus 查询当前同步状态
@@ -193,7 +193,7 @@ func (s *SyncService) GetStatus(ctx context.Context) (*SyncStatusResult, error) 
 			StartedAt: running.StartedAt.UTC().Format(time.RFC3339),
 		}
 		if progress != nil {
-			result.Progress = map[string]interface{}{
+			result.Progress = map[string]any{
 				"total":       progress.Total,
 				"downloaded":  progress.Downloaded,
 				"failed":      progress.Failed,

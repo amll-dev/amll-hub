@@ -12,7 +12,7 @@ import (
 // JSONStringArray 自定义类型，对应 PostgreSQL JSONB 数组
 type JSONStringArray []string
 
-func (a *JSONStringArray) Scan(value interface{}) error {
+func (a *JSONStringArray) Scan(value any) error {
 	if value == nil {
 		*a = nil
 		return nil
