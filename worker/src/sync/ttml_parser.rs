@@ -126,10 +126,10 @@ pub fn extract_pinyin_list(text: &str) -> Vec<String> {
 pub fn extract_pinyin_initials(text: &str) -> String {
     let mut out = String::new();
     for c in text.chars() {
-        if let Some(p) = c.to_pinyin() {
-            if let Some(first) = p.plain().chars().next() {
-                out.push(first);
-            }
+        if let Some(p) = c.to_pinyin()
+            && let Some(first) = p.plain().chars().next()
+        {
+            out.push(first);
         }
     }
     out

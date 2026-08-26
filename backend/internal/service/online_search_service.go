@@ -49,10 +49,10 @@ type OnlineSongDetail struct {
 
 // OnlineLyricLine 歌词行
 type OnlineLyricLine struct {
-	Time      int64             `json:"time"`      // 毫秒
-	Duration  int64             `json:"duration"`  // 毫秒
-	Text      string            `json:"text"`
-	Syllables []OnlineSyllable  `json:"syllables,omitempty"` // 逐字时间轴（QRC/KRC）
+	Time      int64            `json:"time"`     // 毫秒
+	Duration  int64            `json:"duration"` // 毫秒
+	Text      string           `json:"text"`
+	Syllables []OnlineSyllable `json:"syllables,omitempty"` // 逐字时间轴（QRC/KRC）
 }
 
 // OnlineSyllable 逐字歌词段
