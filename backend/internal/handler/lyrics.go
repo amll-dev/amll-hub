@@ -58,7 +58,7 @@ func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 
 			// 异步记录无歌词（仅对平台歌词端点生效，raw-lyrics 不记录）
 			if folder != "raw-lyrics" && h.nfSvc != nil {
-				platform := service.ParseFolderToPlatform(folder)
+				platform := pkg.FolderToPlatform(folder)
 				clientIP := GetClientIP(c)
 				// 使用独立 context，避免被请求 context 取消
 				go func(platform, platformID, clientIP string) {
@@ -99,7 +99,7 @@ func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 
 	// 歌词流式返回成功后：异步检查是否在排行榜中，如果在则删除
 	if folder != "raw-lyrics" && h.nfSvc != nil {
-		platform := service.ParseFolderToPlatform(folder)
+		platform := pkg.FolderToPlatform(folder)
 		go func(platform, platformID string) {
 			defer func() {
 				if r := recover(); r != nil {
@@ -111,4 +111,55 @@ func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 			h.nfSvc.CheckAndDeleteOnLyricResolved(nfCtx, platform, platformID)
 		}(platform, filename)
 	}
+}
+
+// ViewLyric GET /api/v1/lyrics/view/:filename
+// 解析 raw-lyrics 下的 TTML 文件，返回结构化歌词数据（搜索页查看歌词）
+func (h *LyricsHandler) ViewLyric(c *gin.Context) {
+	filename := c.Param("filename")
+	if filename == "" {
+		pkg.BadRequest(c, "invalid filename")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	resp, err := h.svc.ViewLyric(ctx, filename)
+	if err != nil {
+		if errors.Is(err, service.ErrLyricNotFound) {
+			pkg.Fail(c, http.StatusNotFound, http.StatusNotFound, "lyric not found")
+			return
+		}
+		logrus.WithError(err).Error("view lyric failed")
+		pkg.InternalError(c, "解析歌词失败")
+		return
+	}
+	pkg.OK(c, resp)
+}
+
+// ParseLyric POST /api/v1/lyrics/parse
+// 解析任意 TTML 文本，返回结构化歌词数据（投稿详情页歌词预览用）
+// body = 原始 TTML 文本 (text/plain)
+func (h *LyricsHandler) ParseLyric(c *gin.Context) {
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 2*1024*1024))
+	if err != nil {
+		pkg.BadRequest(c, "读取请求体失败")
+		return
+	}
+	if len(body) == 0 {
+		pkg.BadRequest(c, "TTML 内容为空")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	resp, err := h.svc.ParseLyric(ctx, string(body))
+	if err != nil {
+		logrus.WithError(err).Error("parse lyric failed")
+		pkg.InternalError(c, "解析歌词失败")
+		return
+	}
+	pkg.OK(c, resp)
 }

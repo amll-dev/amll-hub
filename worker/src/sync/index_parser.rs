@@ -109,10 +109,10 @@ impl IndexEntry {
                 (&self.spotify_id, "spotify"),
                 (&self.apple_music_id, "apple"),
             ] {
-                if let Some(id) = id {
-                    if !id.is_empty() {
-                        out.push((platform.to_string(), id.clone()));
-                    }
+                if let Some(id) = id
+                    && !id.is_empty()
+                {
+                    out.push((platform.to_string(), id.clone()));
                 }
             }
         }

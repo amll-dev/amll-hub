@@ -1,6 +1,5 @@
 use anyhow::Result;
 use redis::aio::ConnectionManager;
-use redis::AsyncCommands;
 
 /// Redis 分布式锁
 pub struct SyncLock {
@@ -24,9 +23,9 @@ impl SyncLock {
 
     /// 尝试获取锁：SET key value NX EX ttl
     pub async fn try_acquire(&mut self) -> Result<bool> {
-        tracing::info!("Redis SyncLock - 尝试获取锁, key={}, ttl={}", self.key, self.ttl_seconds);
+        tracing::debug!(key = %self.key, ttl = self.ttl_seconds, "尝试获取 Redis 同步锁");
         let mut conn = self.conn.clone();
-        
+
         // 使用正确的 Redis SET 命令格式
         let result: Option<String> = redis::cmd("SET")
             .arg(&self.key)
@@ -36,10 +35,10 @@ impl SyncLock {
             .arg(self.ttl_seconds)
             .query_async(&mut conn)
             .await?;
-            
+
         let ok = result.is_some();
         self.acquired = ok;
-        tracing::info!("Redis SyncLock - 获取锁结果: {}", ok);
+        tracing::debug!(key = %self.key, ok, "获取 Redis 同步锁结果");
         Ok(ok)
     }
 
@@ -60,18 +59,4 @@ impl SyncLock {
         self.acquired = false;
         Ok(())
     }
-}
-
-/// 平台 ID -> MinioPath 缓存（缓存预热时使用）
-#[allow(dead_code)]
-pub async fn cache_platform_path(
-    conn: &mut ConnectionManager,
-    platform: &str,
-    platform_id: &str,
-    minio_path: &str,
-    ttl_seconds: u64,
-) -> Result<()> {
-    let key = format!("lyric:{}-lyrics:{}", platform, platform_id);
-    let _: () = conn.set_ex(&key, minio_path, ttl_seconds).await?;
-    Ok(())
 }

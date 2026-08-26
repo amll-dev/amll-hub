@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"errors"
-	"net/http"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
@@ -29,7 +28,7 @@ func (h *StatsHandler) Get(c *gin.Context) {
 	if err != nil {
 		logrus.WithError(err).Error("get stats failed")
 		if errors.Is(err, service.ErrUpstreamUnavailable) {
-			pkg.Fail(c, http.StatusBadGateway, 502, "统计服务暂不可用")
+			writeUpstreamErr(c, err, "统计服务暂不可用")
 			return
 		}
 		pkg.InternalError(c, "统计失败")

@@ -38,6 +38,15 @@ func NewFileService(cfg *config.Config, minioClient *minio.Client) *FileService 
 	}
 }
 
+// MaxTTMLSize 返回 TTML 文件大小上限（handler 层读取时前置校验用）
+func (s *FileService) MaxTTMLSize() int64 { return s.cfg.Submission.MaxTTMLSize }
+
+// MaxAudioSize 返回音频文件大小上限
+func (s *FileService) MaxAudioSize() int64 { return s.cfg.Submission.MaxAudioSize }
+
+// MaxImageSize 返回图片文件大小上限
+func (s *FileService) MaxImageSize() int64 { return s.cfg.Submission.MaxImageSize }
+
 // UploadTTML 上传 TTML 到待审核目录
 func (s *FileService) UploadTTML(ctx context.Context, fileName string, content []byte) error {
 	if err := validateTTMLFileName(fileName); err != nil {
@@ -128,6 +137,20 @@ func (s *FileService) Get(ctx context.Context, key string) (io.ReadCloser, error
 	return obj, nil
 }
 
+// GetWithStat 返回可 Seek 的对象及其大小/修改时间，用于 HTTP Range 请求（音频流式播放）
+func (s *FileService) GetWithStat(ctx context.Context, key string) (io.ReadSeekCloser, int64, time.Time, error) {
+	obj, err := s.minio.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, 0, time.Time{}, err
+	}
+	info, statErr := obj.Stat()
+	if statErr != nil {
+		_ = obj.Close()
+		return nil, 0, time.Time{}, statErr
+	}
+	return obj, info.Size, info.LastModified, nil
+}
+
 // Move 复制对象到新 key 并删除旧对象
 func (s *FileService) Move(ctx context.Context, srcKey, dstKey string) error {
 	if srcKey == dstKey {
@@ -170,13 +193,32 @@ func ApprovedLyricKey(fileName string) string {
 	return ApprovedLyricsPrefix + fileName
 }
 
-// validateTTMLFileName 校验 TTML 文件名格式
+// validateTTMLFileName 校验 TTML 文件名格式。
+// 仅允许安全字符集，防止 ../ 等路径穿越进入 MinIO key 与 GitHub 仓库路径
 func validateTTMLFileName(name string) error {
 	if !strings.HasSuffix(name, ".ttml") {
 		return errors.New("文件名必须以 .ttml 结尾")
 	}
 	if len(name) > 255 {
 		return errors.New("文件名过长")
+	}
+	base := strings.TrimSuffix(name, ".ttml")
+	if base == "" {
+		return errors.New("文件名不能为空")
+	}
+	if strings.Contains(base, "..") {
+		return errors.New("文件名不能包含连续的点")
+	}
+	for _, r := range base {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '.', r == '_', r == '-', r == '(', r == ')', r == '[', r == ']':
+		case r >= 0x4e00 && r <= 0x9fff: // 常用汉字
+		case r >= 0x3040 && r <= 0x30ff: // 日文假名
+		case r >= 0xac00 && r <= 0xd7af: // 韩文音节
+		default:
+			return errors.New("文件名含有非法字符")
+		}
 	}
 	return nil
 }

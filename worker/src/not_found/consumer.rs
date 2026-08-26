@@ -1,20 +1,15 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use futures_lite::StreamExt;
-use lapin::{
-    options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicQosOptions},
-    types::FieldTable,
-    Channel,
-};
 use sea_orm::DatabaseConnection;
 use serde::Deserialize;
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::app::AppState;
+use crate::infra;
 
 use super::ncm_api::{parse_and_categorize, ParseCategory, ParseContext};
-use super::repository::{add_cloud_music, add_pure_music, is_in_whitelist};
+use super::whitelist::{add_cloud_music, add_pure_music, is_in_whitelist};
 
 /// 无歌词解析消息体
 #[derive(Debug, Deserialize)]
@@ -28,71 +23,23 @@ struct NotFoundMessage {
 
 /// 启动无歌词解析消费循环
 pub async fn consume_loop(
-    channel: Channel,
+    channel: lapin::Channel,
     nf_queue_name: String,
     app: Arc<AppState>,
     shutdown: Arc<tokio::sync::Notify>,
 ) -> Result<()> {
-    // QoS = 5（允许并发 5 个 API 调用）
-    if let Err(e) = channel
-        .basic_qos(5, BasicQosOptions { global: false })
-        .await
-        .context("nf qos")
-    {
-        return Err(e);
-    }
-
-    let mut consumer = channel
-        .basic_consume(
-            &nf_queue_name,
-            "ttml-nf-worker",
-            BasicConsumeOptions::default(),
-            FieldTable::default(),
-        )
-        .await
-        .context("nf basic_consume")?;
-
-    info!(queue = %nf_queue_name, "not_found consumer started");
-
-    let notified = shutdown.notified();
-    tokio::pin!(notified);
-    loop {
-        tokio::select! {
-            _ = &mut notified => {
-                info!("not_found consumer shutdown signal received");
-                break;
-            }
-            msg = consumer.next() => {
-                let Some(delivery) = msg else { break; };
-                let delivery = match delivery {
-                    Ok(d) => d,
-                    Err(e) => {
-                        error!(error = %e, "nf consumer error");
-                        break;
-                    }
-                };
-                let tag = delivery.delivery_tag;
-                match handle_message(delivery, &app).await {
-                    Ok(()) => {
-                        let _ = channel
-                            .basic_ack(tag, BasicAckOptions::default())
-                            .await;
-                    }
-                    Err(e) => {
-                        error!(error = %e, "nf task failed after retries, sending to DLQ");
-                        let _ = channel
-                            .basic_nack(
-                                tag,
-                                BasicNackOptions { multiple: false, requeue: false },
-                            )
-                            .await;
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
+    // nf_channel 的 QoS=5 已在 init_rabbitmq 中设置
+    infra::rabbitmq::consume_loop(
+        channel,
+        nf_queue_name,
+        "ttml-nf-worker",
+        shutdown,
+        move |delivery| {
+            let app = app.clone();
+            async move { handle_message(delivery, &app).await }
+        },
+    )
+    .await
 }
 
 /// 无歌词解析最大重试次数
@@ -158,20 +105,23 @@ async fn process_once(msg: &NotFoundMessage, app: &Arc<AppState>) -> Result<()> 
     );
 
     // 3. 根据分类更新数据库和 Redis
-    let category_str = match result.category {
+    let category_str = match &result.category {
         ParseCategory::PureMusic => {
             // 加入纯音乐白名单
             if let Err(e) = add_pure_music(&mut redis_conn, &msg.platform, &msg.platform_id).await {
                 warn!(error = %e, "add to pure_music redis set failed");
             }
             // 同时写入 PG 白名单表
-            if let Err(e) = upsert_pure_music_pg(
+            if let Err(e) = upsert_whitelist_pg(
                 &app.db,
-                &msg.platform,
-                &msg.platform_id,
-                &result.song_name,
-                "歌词解析发现纯音乐关键词",
-                msg.client_ip.as_deref().unwrap_or(""),
+                &WhitelistUpsert {
+                    table: "pure_music_whitelist",
+                    platform: &msg.platform,
+                    platform_id: &msg.platform_id,
+                    song_name: &result.song_name,
+                    reason: "歌词解析发现纯音乐关键词",
+                    detected_by: msg.client_ip.as_deref().unwrap_or(""),
+                },
             ).await {
                 warn!(error = %e, "upsert pure_music pg failed");
             }
@@ -182,34 +132,35 @@ async fn process_once(msg: &NotFoundMessage, app: &Arc<AppState>) -> Result<()> 
             if let Err(e) = add_cloud_music(&mut redis_conn, &msg.platform, &msg.platform_id).await {
                 warn!(error = %e, "add to cloud_music redis set failed");
             }
-            if let Err(e) = upsert_cloud_music_pg(
+            if let Err(e) = upsert_whitelist_pg(
                 &app.db,
-                &msg.platform,
-                &msg.platform_id,
-                &result.song_name,
-                "网易云 t=1/2 云盘音乐",
-                msg.client_ip.as_deref().unwrap_or(""),
+                &WhitelistUpsert {
+                    table: "cloud_music_whitelist",
+                    platform: &msg.platform,
+                    platform_id: &msg.platform_id,
+                    song_name: &result.song_name,
+                    reason: "网易云 t=1/2 云盘音乐",
+                    detected_by: msg.client_ip.as_deref().unwrap_or(""),
+                },
             ).await {
                 warn!(error = %e, "upsert cloud_music pg failed");
             }
             "cloud_music"
         }
         ParseCategory::NotFound => "not_found",
-        ParseCategory::ApiFailed => "api_failed",
+        ParseCategory::ApiFailed => {
+            // API 瞬时故障不是最终状态：返回 Err 触发应用层重试，
+            // 重试耗尽后消息进 DLQ 等待人工处理，而不是被 ack 静默丢弃
+            anyhow::bail!(
+                "ncm api failed (transient), platform={} platform_id={}",
+                msg.platform,
+                msg.platform_id
+            );
+        }
     };
 
     // 4. 更新 not_found_requests 表的 category 及元数据
-    let artists_str = result.artists.join(" / ");
-    if let Err(e) = update_category_pg(
-        &app.db,
-        &msg.platform,
-        &msg.platform_id,
-        category_str,
-        &result.song_name,
-        &artists_str,
-        &result.cover,
-        &result.album,
-    ).await {
+    if let Err(e) = update_category_pg(&app.db, msg, category_str, &result).await {
         warn!(error = %e, "update not_found category failed");
     }
 
@@ -219,16 +170,13 @@ async fn process_once(msg: &NotFoundMessage, app: &Arc<AppState>) -> Result<()> 
 /// 更新 not_found_requests 的 category 及歌曲元数据
 async fn update_category_pg(
     db: &DatabaseConnection,
-    platform: &str,
-    platform_id: &str,
+    msg: &NotFoundMessage,
     category: &str,
-    song_name: &str,
-    artists: &str,
-    cover: &str,
-    album: &str,
+    result: &super::ncm_api::ParseResult,
 ) -> Result<()> {
     use sea_orm::ConnectionTrait;
 
+    let artists = result.artists.join(" / ");
     let sql = r#"UPDATE not_found_requests
         SET category = $1, song_name = $2, artists = $3, cover = $4, album = $5, updated_at = NOW()
         WHERE platform = $6 AND platform_id = $7"#;
@@ -238,12 +186,12 @@ async fn update_category_pg(
         sql,
         [
             category.into(),
-            song_name.into(),
+            result.song_name.clone().into(),
             artists.into(),
-            cover.into(),
-            album.into(),
-            platform.into(),
-            platform_id.into(),
+            result.cover.clone().into(),
+            result.album.clone().into(),
+            msg.platform.clone().into(),
+            msg.platform_id.clone().into(),
         ],
     ))
     .await?;
@@ -251,61 +199,37 @@ async fn update_category_pg(
     Ok(())
 }
 
-/// 写入 pure_music_whitelist 表（ON CONFLICT DO NOTHING）
-async fn upsert_pure_music_pg(
-    db: &DatabaseConnection,
-    platform: &str,
-    platform_id: &str,
-    song_name: &str,
-    reason: &str,
-    detected_by: &str,
-) -> Result<()> {
-    use sea_orm::ConnectionTrait;
-
-    let sql = r#"INSERT INTO pure_music_whitelist (platform, platform_id, song_name, reason, detected_by)
-                 VALUES ($1, $2, $3, $4, $5)
-                 ON CONFLICT (platform, platform_id) DO NOTHING"#;
-
-    db.execute(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DatabaseBackend::Postgres,
-        sql,
-        [
-            platform.into(),
-            platform_id.into(),
-            song_name.into(),
-            reason.into(),
-            detected_by.into(),
-        ],
-    ))
-    .await?;
-
-    Ok(())
+/// 白名单表 upsert 参数
+struct WhitelistUpsert<'a> {
+    /// 目标表：pure_music_whitelist / cloud_music_whitelist
+    table: &'a str,
+    platform: &'a str,
+    platform_id: &'a str,
+    song_name: &'a str,
+    reason: &'a str,
+    detected_by: &'a str,
 }
 
-/// 写入 cloud_music_whitelist 表（ON CONFLICT DO NOTHING）
-async fn upsert_cloud_music_pg(
-    db: &DatabaseConnection,
-    platform: &str,
-    platform_id: &str,
-    song_name: &str,
-    reason: &str,
-    detected_by: &str,
-) -> Result<()> {
+/// 写入白名单表（pure_music_whitelist / cloud_music_whitelist），ON CONFLICT DO NOTHING
+async fn upsert_whitelist_pg(db: &DatabaseConnection, p: &WhitelistUpsert<'_>) -> Result<()> {
     use sea_orm::ConnectionTrait;
 
-    let sql = r#"INSERT INTO cloud_music_whitelist (platform, platform_id, song_name, reason, detected_by)
+    let sql = format!(
+        r#"INSERT INTO {} (platform, platform_id, song_name, reason, detected_by)
                  VALUES ($1, $2, $3, $4, $5)
-                 ON CONFLICT (platform, platform_id) DO NOTHING"#;
+                 ON CONFLICT (platform, platform_id) DO NOTHING"#,
+        p.table
+    );
 
     db.execute(sea_orm::Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
         sql,
         [
-            platform.into(),
-            platform_id.into(),
-            song_name.into(),
-            reason.into(),
-            detected_by.into(),
+            p.platform.into(),
+            p.platform_id.into(),
+            p.song_name.into(),
+            p.reason.into(),
+            p.detected_by.into(),
         ],
     ))
     .await?;

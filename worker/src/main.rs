@@ -6,13 +6,12 @@ mod not_found;
 mod search;
 mod storage;
 mod sync;
+mod validate;
 mod worker;
 
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use aws_config::BehaviorVersion;
-use aws_sdk_s3::Config as S3Config;
 use redis::aio::ConnectionManager;
 use tracing::{error, info, warn};
 
@@ -38,22 +37,7 @@ async fn main() -> Result<()> {
     let redis_mgr = ConnectionManager::new(redis_client).await?;
 
     // S3 / MinIO 客户端
-    let s3_cfg = S3Config::builder()
-        .behavior_version(BehaviorVersion::latest())
-        .region(aws_sdk_s3::config::Region::new(
-            cfg.minio.region().to_string(),
-        ))
-        .endpoint_url(cfg.minio.endpoint_url())
-        .credentials_provider(aws_sdk_s3::config::Credentials::new(
-            &cfg.minio.access_key,
-            &cfg.minio.secret_key,
-            None,
-            None,
-            "static",
-        ))
-        .force_path_style(true)
-        .build();
-    let s3 = aws_sdk_s3::Client::from_conf(s3_cfg);
+    let s3 = storage::minio::build_s3_client(&cfg.minio)?;
 
     // 确保 bucket
     if let Err(e) = storage::minio::ensure_bucket(&s3, &cfg.minio.bucket).await {
@@ -63,7 +47,7 @@ async fn main() -> Result<()> {
     // MeiliSearch
     let meili = infra::meilisearch_client::init_meilisearch(&cfg).await?;
 
-    let app = AppState::new(db, redis_mgr, s3.clone(), meili, cfg.clone());
+    let app = AppState::new(db, redis_mgr, s3, meili, cfg.clone());
 
     // 清理上次 worker 未正常退出残留的 running 状态同步历史
     {
@@ -120,14 +104,57 @@ async fn main() -> Result<()> {
 }
 
 async fn run_health_server(port: u16) -> Result<()> {
-    use axum::{routing::get, Router};
-    let app = Router::new().route("/health", get(|| async { "ok" }));
+    use axum::{routing::{get, post}, Router};
+    let app = Router::new()
+        .route("/health", get(|| async { "ok" }))
+        .route("/validate", post(validate_handler));
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
         .context("bind health port")?;
     info!(port, "health server listening");
     axum::serve(listener, app).await.context("axum serve")?;
     Ok(())
+}
+
+/// POST /validate — 接收原始 TTML 文本,解析→校验→重排,返回结果
+async fn validate_handler(body: String) -> axum::Json<validate::ValidateResponse> {
+    // CPU 密集型任务放入 spawn_blocking,避免阻塞 async runtime
+    let result = tokio::task::spawn_blocking(move || -> validate::ValidateResponse {
+        // 1. 解析 TTML
+        let parsed = match ttml_processor::parse_ttml(&body) {
+            Ok(result) => result,
+            Err(e) => {
+                return validate::ValidateResponse::parse_error(format!("TTML 解析失败: {e}"));
+            }
+        };
+
+        // 2. 校验元数据与歌词行
+        if let Err(errors) = validate::validate_lyrics_and_metadata(&parsed) {
+            return validate::ValidateResponse::validation_errors(errors);
+        }
+
+        // 3. 重排生成规范化 TTML
+        let config = ttml_processor::GeneratorConfig {
+            use_apple_format_rules: false,
+            format: false,
+        };
+        let regenerated = match ttml_processor::generate_ttml(&parsed, &config) {
+            Ok(ttml) => ttml,
+            Err(e) => {
+                return validate::ValidateResponse::parse_error(format!("TTML 重排失败: {e}"));
+            }
+        };
+
+        validate::ValidateResponse::ok(regenerated, parsed.metadata)
+    })
+    .await;
+
+    match result {
+        Ok(resp) => axum::Json(resp),
+        Err(e) => axum::Json(validate::ValidateResponse::parse_error(format!(
+            "内部任务执行失败: {e}"
+        ))),
+    }
 }
 
 #[cfg(unix)]

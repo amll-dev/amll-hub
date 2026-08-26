@@ -49,8 +49,16 @@ type OnlineSongDetail struct {
 
 // OnlineLyricLine 歌词行
 type OnlineLyricLine struct {
-	Time     int64  `json:"time"`     // 毫秒
-	Duration int64  `json:"duration"` // 毫秒
+	Time      int64            `json:"time"`     // 毫秒
+	Duration  int64            `json:"duration"` // 毫秒
+	Text      string           `json:"text"`
+	Syllables []OnlineSyllable `json:"syllables,omitempty"` // 逐字时间轴（QRC/KRC）
+}
+
+// OnlineSyllable 逐字歌词段
+type OnlineSyllable struct {
+	Time     int64  `json:"time"`               // 毫秒（绝对时间）
+	Duration int64  `json:"duration,omitempty"` // 毫秒
 	Text     string `json:"text"`
 }
 
@@ -188,11 +196,19 @@ func (s *OnlineSearchService) GetLyric(ctx context.Context, platform string, son
 
 	// 转换 Lines
 	for _, line := range lyric.Lines {
-		result.Lines = append(result.Lines, OnlineLyricLine{
+		out := OnlineLyricLine{
 			Time:     line.Time,
 			Duration: line.Duration,
 			Text:     line.Text,
-		})
+		}
+		for _, syl := range line.Syllables {
+			out.Syllables = append(out.Syllables, OnlineSyllable{
+				Time:     syl.Time,
+				Duration: syl.Duration,
+				Text:     syl.Text,
+			})
+		}
+		result.Lines = append(result.Lines, out)
 	}
 
 	// 转换 Translation

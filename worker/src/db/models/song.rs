@@ -5,9 +5,9 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    #[sea_orm(column_type = "JsonBinary", nullable)]
+    #[sea_orm(column_type = "JsonBinary")]
     pub music_name: Json,
-    #[sea_orm(column_type = "JsonBinary", nullable)]
+    #[sea_orm(column_type = "JsonBinary")]
     pub album: Json,
     pub isrc: Option<String>,
     #[sea_orm(unique)]

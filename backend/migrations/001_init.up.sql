@@ -223,7 +223,7 @@ CREATE TRIGGER trg_submissions_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
---  音频附件表
+--  音频附件表（支持单个投稿关联多个音频，无 submission_id 唯一约束）
 CREATE TABLE submission_audios (
     id              BIGSERIAL PRIMARY KEY,
     submission_id   BIGINT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
@@ -235,8 +235,7 @@ CREATE TABLE submission_audios (
     platform        VARCHAR(50)  NOT NULL DEFAULT '',
     platform_id     VARCHAR(100) NOT NULL DEFAULT '',
     uploaded_by     VARCHAR(100) NOT NULL,
-    uploaded_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    UNIQUE(submission_id)
+    uploaded_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 --  审核历史表
@@ -251,6 +250,18 @@ CREATE TABLE submission_review_history (
 );
 
 CREATE INDEX idx_review_history_submission ON submission_review_history(submission_id, reviewed_at DESC);
+
+--  歌词文件更新历史表（独立于审核历史）
+CREATE TABLE submission_file_history (
+    id              BIGSERIAL PRIMARY KEY,
+    submission_id   BIGINT NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+    uploader        VARCHAR(100) NOT NULL,
+    uploader_info   JSONB NOT NULL,
+    file_name       VARCHAR(255) NOT NULL,
+    uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_file_history_submission ON submission_file_history(submission_id, uploaded_at DESC);
 
 --  普通评论表
 CREATE TABLE submission_comments (
@@ -273,3 +284,75 @@ CREATE TRIGGER trg_reviewers_updated_at
     BEFORE UPDATE ON reviewers
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+--  超级管理员名单（手动维护）：可在前端审核员管理页面对审核员名单进行增删
+CREATE TABLE admins (
+    username        VARCHAR(100) PRIMARY KEY,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER trg_admins_updated_at
+    BEFORE UPDATE ON admins
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+--  搜索IP显示投稿表（新投稿默认待审核，审核通过后才公开展示）
+CREATE TABLE search_ip_submissions (
+    id             BIGSERIAL PRIMARY KEY,
+    title          VARCHAR(200) NOT NULL DEFAULT '',
+    data           JSONB NOT NULL,
+    image_keys     JSONB NOT NULL DEFAULT '{}',
+    submitter      VARCHAR(100) NOT NULL,
+    submitter_info JSONB NOT NULL DEFAULT '{}',
+    status         VARCHAR(20) NOT NULL DEFAULT 'pending',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_search_ip_submissions_status ON search_ip_submissions(status);
+
+--  每日推荐投稿表
+CREATE TABLE daily_recommendations (
+    id BIGSERIAL PRIMARY KEY,
+    date DATE NOT NULL UNIQUE,
+    song_name VARCHAR(200) NOT NULL DEFAULT '',
+    artist VARCHAR(200) NOT NULL DEFAULT '',
+    cover_key VARCHAR(500) NOT NULL DEFAULT '',
+    ncm_id VARCHAR(50) NOT NULL DEFAULT '',
+    comment TEXT NOT NULL DEFAULT '',
+    submitter VARCHAR(100) NOT NULL,
+    submitter_info JSONB NOT NULL DEFAULT '{}',
+    status VARCHAR(20) NOT NULL DEFAULT 'approved',
+    like_count INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_daily_recommendations_status ON daily_recommendations(status);
+CREATE INDEX idx_daily_recommendations_date ON daily_recommendations(date);
+
+--  每日推荐点赞表（UNIQUE 约束保证一人一赞，点赞数以本表统计为准）
+CREATE TABLE daily_recommendation_likes (
+    id BIGSERIAL PRIMARY KEY,
+    recommendation_id BIGINT NOT NULL REFERENCES daily_recommendations(id) ON DELETE CASCADE,
+    username VARCHAR(100) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_daily_rec_like UNIQUE (recommendation_id, username)
+);
+
+CREATE INDEX idx_daily_rec_likes_rec ON daily_recommendation_likes(recommendation_id);
+
+--  最新收录歌曲快照表（每次同步后记录，最多9首）
+CREATE TABLE latest_songs (
+    id BIGSERIAL PRIMARY KEY,
+    sync_history_id BIGINT NOT NULL,
+    song_id BIGINT NOT NULL,
+    ncm_id VARCHAR(100),
+    title VARCHAR(500) NOT NULL DEFAULT '',
+    artist VARCHAR(500) NOT NULL DEFAULT '',
+    cover_url VARCHAR(1000) NOT NULL DEFAULT '',
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_latest_songs_sync ON latest_songs(sync_history_id);

@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"gorm.io/gorm"
 )
 
@@ -32,7 +33,7 @@ func (r *SongRepo) GetByPlatform(ctx context.Context, folder, filename string) (
 		}
 		return &song, nil
 	case "ncm-lyrics", "qq-lyrics", "spotify-lyrics", "am-lyrics":
-		platform := platformFromFolder(folder)
+		platform := pkg.FolderToPlatform(folder)
 		var song model.Song
 		err := r.db.WithContext(ctx).
 			Joins("JOIN platform_mappings ON platform_mappings.song_id = songs.id").
@@ -207,20 +208,6 @@ func (r *SongRepo) PlatformDistribution(ctx context.Context) (map[string]int64, 
 		m[rows[i].Platform] = rows[i].Count
 	}
 	return m, nil
-}
-
-func platformFromFolder(folder string) string {
-	switch folder {
-	case "ncm-lyrics":
-		return "ncm"
-	case "qq-lyrics":
-		return "qq"
-	case "spotify-lyrics":
-		return "spotify"
-	case "am-lyrics":
-		return "apple"
-	}
-	return ""
 }
 
 // ErrSongNotFound 歌曲未找到

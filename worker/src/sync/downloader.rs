@@ -17,6 +17,23 @@ pub struct DownloadResult {
     pub entry: IndexEntry,
 }
 
+/// 等待全部下载任务完成并收集成功结果（panic 的任务仅告警）
+async fn collect_download_results(
+    handles: Vec<tokio::task::JoinHandle<Option<DownloadResult>>>,
+) -> Vec<DownloadResult> {
+    let mut out = Vec::new();
+    for h in handles {
+        match h.await {
+            Ok(Some(r)) => out.push(r),
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!("download task panicked: {}", e);
+            }
+        }
+    }
+    out
+}
+
 /// 并发下载所有文件（逐文件下载），并上传到 MinIO
 ///
 /// 返回成功下载的列表，失败项通过 on_failure 回调上报
@@ -30,9 +47,7 @@ pub async fn download_and_upload_all(
     let semaphore = Arc::new(Semaphore::new(app.cfg.worker.concurrency));
     let on_progress = Arc::new(on_progress);
     let on_failure = Arc::new(on_failure);
-    let http = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()?;
+    let http = app.http_client_long.clone();
 
     let mut handles = Vec::with_capacity(entries.len());
     for (idx, entry) in entries.into_iter().enumerate() {
@@ -70,24 +85,10 @@ pub async fn download_and_upload_all(
         }));
     }
 
-    let mut out = Vec::new();
-    for h in handles {
-        match h.await {
-            Ok(Some(r)) => out.push(r),
-            Ok(None) => {}
-            Err(e) => {
-                tracing::warn!("download task panicked: {}", e);
-            }
-        }
-    }
-    Ok(out)
+    Ok(collect_download_results(handles).await)
 }
 
 /// 首次同步路径：从已下载的 raw-lyrics.zip 字节中按文件名匹配 entries，并上传到 MinIO
-///
-/// - zip 内部条目按 basename 匹配 IndexEntry.raw_file()
-/// - 仅上传 entries 中列出的文件，不会上传 zip 中的额外文件
-/// - zip 解压失败直接返回 Err；单个文件上传失败通过 on_failure 上报
 pub async fn download_and_upload_from_zip(
     app: Arc<AppState>,
     entries: Vec<IndexEntry>,
@@ -166,7 +167,8 @@ pub async fn download_and_upload_from_zip(
                 return None;
             }
 
-            match upload_to_minio(&app.s3, &app.cfg.minio.bucket, &raw, &bytes).await {
+            let key = format!("raw-lyrics/{}", raw);
+            match upload_to_minio(&app.s3, &app.cfg.minio.bucket, &key, &bytes, "application/xml; charset=utf-8").await {
                 Ok(_) => {
                     on_progress(cur, total, &raw);
                     Some(DownloadResult {
@@ -184,17 +186,7 @@ pub async fn download_and_upload_from_zip(
         }));
     }
 
-    let mut out = Vec::new();
-    for h in handles {
-        match h.await {
-            Ok(Some(r)) => out.push(r),
-            Ok(None) => {}
-            Err(e) => {
-                tracing::warn!("download task panicked: {}", e);
-            }
-        }
-    }
-    Ok(out)
+    Ok(collect_download_results(handles).await)
 }
 
 async fn download_one(
@@ -212,19 +204,26 @@ async fn download_one(
         anyhow::bail!("downloaded file is empty: {}", raw);
     }
 
-    upload_to_minio(s3, bucket, raw, &bytes).await?;
+    let key = format!("raw-lyrics/{}", raw);
+    upload_to_minio(s3, bucket, &key, &bytes, "application/xml; charset=utf-8").await?;
     Ok(bytes)
 }
 
-async fn upload_to_minio(s3: &S3Client, bucket: &str, raw: &str, bytes: &[u8]) -> Result<()> {
-    let key = format!("raw-lyrics/{}", raw);
+/// 上传对象到 MinIO 指定 key（
+pub async fn upload_to_minio(
+    s3: &S3Client,
+    bucket: &str,
+    key: &str,
+    bytes: &[u8],
+    content_type: &str,
+) -> Result<()> {
     s3.put_object()
         .bucket(bucket)
-        .key(&key)
-        .body(bytes::Bytes::from(bytes.to_vec()).into())
-        .content_type("application/xml; charset=utf-8")
+        .key(key)
+        .body(bytes::Bytes::copy_from_slice(bytes).into())
+        .content_type(content_type)
         .send()
         .await
-        .with_context(|| format!("upload to s3: {}", key))?;
+        .with_context(|| format!("上传对象到 MinIO: {}", key))?;
     Ok(())
 }

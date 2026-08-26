@@ -2,7 +2,6 @@ package pkg
 
 import (
 	"strconv"
-	"strings"
 )
 
 // ParseInt 解析整数参数，失败返回默认值
@@ -46,6 +45,18 @@ func IsValidPlatform(p string) bool {
 	return false
 }
 
+// Truncate 按 rune 截断字符串到 max 长度
+func Truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max])
+}
+
 // FolderToPlatform folder 名称转 platform 标识
 // ncm-lyrics -> ncm, am-lyrics -> apple, etc.
 func FolderToPlatform(folder string) string {
@@ -63,6 +74,3 @@ func FolderToPlatform(folder string) string {
 	}
 	return ""
 }
-
-// IsHTTPRequestIDEmpty 用于判断 request id 是否已生成
-func IsHTTPRequestIDEmpty(s string) bool { return strings.TrimSpace(s) == "" }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
+	"github.com/sirupsen/logrus"
 )
 
 // 消息类型
@@ -25,9 +26,9 @@ const (
 
 // Message WebSocket 推送消息
 type Message struct {
-	Type         string      `json:"type"`
-	SubmissionID int64       `json:"submissionId,omitempty"`
-	Data         interface{} `json:"data,omitempty"`
+	Type         string `json:"type"`
+	SubmissionID int64  `json:"submissionId,omitempty"`
+	Data         any    `json:"data,omitempty"`
 }
 
 // Client WebSocket 客户端
@@ -35,6 +36,8 @@ type Client struct {
 	conn         *websocket.Conn
 	submissionID int64 // 0 表示列表页连接
 	username     string
+	displayName  string
+	avatar       string
 	send         chan []byte
 	hub          *Hub
 	onClose      func() // 连接断开后回调（用于通知观众列表更新）
@@ -63,6 +66,9 @@ type Hub struct {
 
 	register   chan *Client
 	unregister chan *Client
+
+	// 客户端注册/注销后的回调，通过 SetViewerNotifier 注入
+	viewerNotifier func(submissionID int64)
 }
 
 // NewHub 创建 Hub
@@ -76,13 +82,22 @@ func NewHub(rdb *redis.Client) *Hub {
 	}
 }
 
+// SetViewerNotifier 注入观众列表通知回调（由 main 注入 ViewerService.NotifyViewers）
+func (h *Hub) SetViewerNotifier(fn func(submissionID int64)) {
+	h.viewerNotifier = fn
+}
+
 // Register 注册客户端到 Hub（非阻塞，由 handler 调用）
 func (h *Hub) Register(c *Client) {
 	select {
 	case h.register <- c:
 	default:
 		// register 通道满，直接关闭客户端
-		close(c.send)
+		logrus.WithFields(logrus.Fields{
+			"submission_id": c.submissionID,
+			"username":      c.username,
+		}).Warn("ws hub register channel full, closing client")
+		safeClose(c.send)
 	}
 }
 
@@ -121,7 +136,6 @@ func (h *Hub) Run(ctx context.Context) {
 
 func (h *Hub) registerClient(c *Client) {
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if c.submissionID > 0 {
 		set, ok := h.clientsBySub[c.submissionID]
 		if !ok {
@@ -132,11 +146,19 @@ func (h *Hub) registerClient(c *Client) {
 	} else {
 		h.listClients[c] = struct{}{}
 	}
+	h.mu.Unlock()
+	// 注册成功后触发观众列表广播（此时客户端已在 map 中，不会漏算）
+	if c.submissionID > 0 && h.viewerNotifier != nil {
+		h.viewerNotifier(c.submissionID)
+	}
 }
 
 func (h *Hub) unregisterClient(c *Client) {
+	logrus.WithFields(logrus.Fields{
+		"submission_id": c.submissionID,
+		"username":      c.username,
+	}).Debug("ws client unregistered")
 	h.mu.Lock()
-	defer h.mu.Unlock()
 	if c.submissionID > 0 {
 		if set, ok := h.clientsBySub[c.submissionID]; ok {
 			delete(set, c)
@@ -147,7 +169,13 @@ func (h *Hub) unregisterClient(c *Client) {
 	} else {
 		delete(h.listClients, c)
 	}
-	close(c.send)
+	safeClose(c.send)
+	subID := c.submissionID
+	h.mu.Unlock()
+	// 注销后触发观众列表广播
+	if subID > 0 && h.viewerNotifier != nil {
+		h.viewerNotifier(subID)
+	}
 }
 
 // broadcastLocal 在本实例内广播消息
@@ -163,33 +191,39 @@ func (h *Hub) broadcastLocal(channel string, payload []byte) {
 		// 推送给该投稿详情页所有客户端
 		if set, ok := h.clientsBySub[msg.SubmissionID]; ok {
 			for c := range set {
-				select {
-				case c.send <- payload:
-				default:
-					// 客户端慢，丢弃
-				}
+				safeSend(c.send, payload)
 			}
 		}
 	case ChannelChanged:
 		// 推给所有列表页客户端
 		for c := range h.listClients {
-			select {
-			case c.send <- payload:
-			default:
-			}
+			safeSend(c.send, payload)
 		}
 		// 同时推给该投稿详情页客户端
 		if msg.SubmissionID > 0 {
 			if set, ok := h.clientsBySub[msg.SubmissionID]; ok {
 				for c := range set {
-					select {
-					case c.send <- payload:
-					default:
-					}
+					safeSend(c.send, payload)
 				}
 			}
 		}
 	}
+}
+
+// safeSend 非阻塞发送，recover 防止向已关闭 channel 发送时 panic 导致 Hub 崩溃
+func safeSend(ch chan []byte, payload []byte) {
+	defer func() { _ = recover() }()
+	select {
+	case ch <- payload:
+	default:
+		// 客户端慢，丢弃
+	}
+}
+
+// safeClose 安全关闭 channel，recover 防止重复 close 导致 panic
+func safeClose(ch chan []byte) {
+	defer func() { _ = recover() }()
+	close(ch)
 }
 
 // PublishViewers 发布观众列表变更到 Redis（其他实例收到后广播本地）
@@ -207,7 +241,7 @@ func (h *Hub) PublishViewers(ctx context.Context, submissionID int64, viewers []
 }
 
 // PublishChanged 发布投稿状态变更到 Redis
-func (h *Hub) PublishChanged(ctx context.Context, submissionID int64, data interface{}) error {
+func (h *Hub) PublishChanged(ctx context.Context, submissionID int64, data any) error {
 	dataBytes, err := json.Marshal(Message{
 		Type:         TypeSubmissionChg,
 		SubmissionID: submissionID,
@@ -231,18 +265,21 @@ func (h *Hub) CollectViewers(submissionID int64) []Viewer {
 	for c := range set {
 		viewers = append(viewers, Viewer{
 			Username:    c.username,
-			DisplayName: c.username, // 客户端连接时仅带 username，简化处理
+			DisplayName: c.displayName,
+			Avatar:      c.avatar,
 		})
 	}
 	return viewers
 }
 
 // NewClient 创建客户端
-func NewClient(conn *websocket.Conn, hub *Hub, submissionID int64, username string, onClose func()) *Client {
+func NewClient(conn *websocket.Conn, hub *Hub, submissionID int64, username, displayName, avatar string, onClose func()) *Client {
 	return &Client{
 		conn:         conn,
 		submissionID: submissionID,
 		username:     username,
+		displayName:  displayName,
+		avatar:       avatar,
 		send:         make(chan []byte, 32),
 		hub:          hub,
 		onClose:      onClose,
@@ -267,6 +304,11 @@ func (c *Client) ReadPump() {
 	for {
 		_, _, err := c.conn.ReadMessage()
 		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"submission_id": c.submissionID,
+				"username":      c.username,
+				"error":         err,
+			}).Debug("ws read loop closed")
 			return
 		}
 	}
@@ -288,16 +330,23 @@ func (c *Client) WritePump() {
 				return
 			}
 			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				logrus.WithFields(logrus.Fields{
+					"submission_id": c.submissionID,
+					"username":      c.username,
+					"error":         err,
+				}).Debug("ws write message failed, closing write loop")
 				return
 			}
 		case <-ticker.C:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				logrus.WithFields(logrus.Fields{
+					"submission_id": c.submissionID,
+					"username":      c.username,
+					"error":         err,
+				}).Debug("ws ping failed, closing write loop")
 				return
 			}
 		}
 	}
 }
-
-// _ 防 context 未引用
-var _ = context.Background

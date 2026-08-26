@@ -45,7 +45,7 @@ func (h *CommentHandler) List(c *gin.Context) {
 func (h *CommentHandler) Create(c *gin.Context) {
 	user := currentUser(c)
 	if user == nil {
-		pkg.Fail(c, 401, 401, "未登录")
+		pkg.Unauthorized(c)
 		return
 	}
 

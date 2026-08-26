@@ -2,7 +2,8 @@ package handler
 
 import (
 	"context"
-	"io"
+	"net/http"
+	"path"
 	"strconv"
 	"strings"
 
@@ -27,7 +28,7 @@ func NewUploadHandler(files *service.FileService, subs *service.SubmissionServic
 func (h *UploadHandler) UploadTTML(c *gin.Context) {
 	user := currentUser(c)
 	if user == nil {
-		pkg.Fail(c, 401, 401, "未登录")
+		pkg.Unauthorized(c)
 		return
 	}
 
@@ -47,10 +48,10 @@ func (h *UploadHandler) UploadTTML(c *gin.Context) {
 			return
 		}
 		defer f.Close()
-		content, err = io.ReadAll(f)
+		content, err = readLimited(f, h.files.MaxTTMLSize())
 		if err != nil {
 			logrus.WithError(err).Warn("read ttml file failed")
-			pkg.InternalError(c, "读取文件内容失败")
+			pkg.BadRequest(c, err.Error())
 			return
 		}
 	} else {
@@ -62,10 +63,10 @@ func (h *UploadHandler) UploadTTML(c *gin.Context) {
 			pkg.BadRequest(c, "fileName 必填")
 			return
 		}
-		content, err = io.ReadAll(c.Request.Body)
+		content, err = readLimited(c.Request.Body, h.files.MaxTTMLSize())
 		if err != nil {
 			logrus.WithError(err).Warn("read ttml request body failed")
-			pkg.InternalError(c, "读取请求体失败")
+			pkg.BadRequest(c, err.Error())
 			return
 		}
 	}
@@ -95,7 +96,7 @@ func (h *UploadHandler) UploadTTML(c *gin.Context) {
 func (h *UploadHandler) UploadAudio(c *gin.Context) {
 	user := currentUser(c)
 	if user == nil {
-		pkg.Fail(c, 401, 401, "未登录")
+		pkg.Unauthorized(c)
 		return
 	}
 
@@ -118,10 +119,10 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 		return
 	}
 	defer audioFile.Close()
-	audioContent, err := io.ReadAll(audioFile)
+	audioContent, err := readLimited(audioFile, h.files.MaxAudioSize())
 	if err != nil {
 		logrus.WithError(err).Warn("read audio file failed")
-		pkg.InternalError(c, "读取音频失败")
+		pkg.BadRequest(c, err.Error())
 		return
 	}
 
@@ -131,33 +132,41 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 	audioKey, err := h.files.UploadAudio(ctx, subID, audioFH.Filename, audioContent)
 	if err != nil {
 		logrus.WithError(err).Warn("upload audio failed")
-		pkg.BadRequest(c, "上传音频失败")
+		pkg.BadRequest(c, err.Error())
 		return
 	}
 
-	// 封面
+	// 表单上传的 cover
 	coverKey := ""
 	if coverFH, _ := c.FormFile("cover"); coverFH != nil {
 		coverFile, err := coverFH.Open()
 		if err == nil {
-			coverBytes, _ := io.ReadAll(coverFile)
+			coverBytes, readErr := readLimited(coverFile, h.files.MaxImageSize())
 			_ = coverFile.Close()
+			if readErr != nil {
+				logrus.WithError(readErr).Warn("read cover file failed")
+				pkg.BadRequest(c, readErr.Error())
+				return
+			}
 			coverKey, err = h.files.UploadCover(ctx, subID, coverFH.Filename, coverBytes)
 			if err != nil {
 				logrus.WithError(err).Warn("upload cover failed")
-				pkg.BadRequest(c, "上传封面失败")
+				pkg.BadRequest(c, err.Error())
 				return
 			}
 		}
 	}
 
-	// 组装音频元数据，写入 submission_audios 表
+	title := pkg.Truncate(c.PostForm("title"), 200)
+	artist := pkg.Truncate(c.PostForm("artist"), 200)
+	album := pkg.Truncate(c.PostForm("album"), 200)
+
 	audioIn := &service.AttachAudioInput{
 		FileName:   audioKey,
 		CoverURL:   h.files.CoverURL(coverKey),
-		Title:      truncate(c.PostForm("title"), 200),
-		Artist:     truncate(c.PostForm("artist"), 200),
-		Album:      truncate(c.PostForm("album"), 200),
+		Title:      title,
+		Artist:     artist,
+		Album:      album,
 		Platform:   c.PostForm("platform"),
 		PlatformID: c.PostForm("platformId"),
 	}
@@ -168,17 +177,88 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 	pkg.OK(c, gin.H{
 		"fileName": audioKey,
 		"coverUrl": audioIn.CoverURL,
+		"title":    audioIn.Title,
+		"artist":   audioIn.Artist,
+		"album":    audioIn.Album,
 	})
 }
 
-// truncate 按 rune 截断字符串到 max 长度，
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
+// publicServePrefixes 是允许匿名访问的 MinIO 前缀白名单，
+// 防止通过该接口读取 bucket 内其他对象
+var publicServePrefixes = []string{service.MusicPrefix, service.CoverPrefix}
+
+// isPublicServeKey 校验 key 是否落在公开前缀内且不含路径穿越
+func isPublicServeKey(key string) bool {
+	if strings.Contains(key, "..") {
+		return false
 	}
-	r := []rune(s)
-	if len(r) <= max {
-		return s
+	for _, p := range publicServePrefixes {
+		if strings.HasPrefix(key, p) {
+			return true
+		}
 	}
-	return string(r[:max])
+	return false
+}
+
+// ServeFile GET /api/v1/uploads/file/*key
+// 从 MinIO 流式返回音频/封面文件，支持 HTTP Range 请求
+func (h *UploadHandler) ServeFile(c *gin.Context) {
+	key := c.Param("key")
+	key = strings.TrimPrefix(key, "/")
+
+	if key == "" || !isPublicServeKey(key) {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	obj, size, modTime, err := h.files.GetWithStat(ctx, key)
+	if err != nil {
+		exists, existsErr := h.files.Exists(ctx, key)
+		if existsErr == nil && !exists {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		logrus.WithError(err).Warn("serve upload file failed")
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = obj.Close() }()
+
+	c.Header("Content-Type", fileContentType(key))
+	c.Header("Cache-Control", "public, max-age=3600")
+	// http.ServeContent 支持 Range 请求，浏览器可流式播放与 seek
+	http.ServeContent(c.Writer, c.Request, path.Base(key), modTime, obj)
+	_ = size
+}
+
+// fileContentType 根据文件扩展名返回 Content-Type
+func fileContentType(name string) string {
+	ext := strings.ToLower(path.Ext(name))
+	switch ext {
+	case ".mp3":
+		return "audio/mpeg"
+	case ".flac":
+		return "audio/flac"
+	case ".wav":
+		return "audio/wav"
+	case ".m4a":
+		return "audio/mp4"
+	case ".ogg":
+		return "audio/ogg"
+	case ".aac":
+		return "audio/aac"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	case ".gif":
+		return "image/gif"
+	default:
+		return "application/octet-stream"
+	}
 }

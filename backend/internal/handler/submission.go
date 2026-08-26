@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strconv"
 
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
@@ -27,7 +28,7 @@ func NewSubmissionHandler(svc *service.SubmissionService, rc *middleware.Reviewe
 func (h *SubmissionHandler) Create(c *gin.Context) {
 	user := currentUser(c)
 	if user == nil {
-		pkg.Fail(c, 401, 401, "未登录")
+		pkg.Unauthorized(c)
 		return
 	}
 
@@ -52,7 +53,7 @@ func (h *SubmissionHandler) Create(c *gin.Context) {
 func (h *SubmissionHandler) List(c *gin.Context) {
 	user := currentUser(c)
 	if user == nil {
-		pkg.Fail(c, 401, 401, "未登录")
+		pkg.Unauthorized(c)
 		return
 	}
 
@@ -70,6 +71,20 @@ func (h *SubmissionHandler) List(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
+	// reviewer 模式查询全部投稿
+	if q.Mode == "reviewer" {
+		ok, err := h.reviewerCache.IsReviewer(ctx, user.Name)
+		if err != nil {
+			logrus.WithError(err).Error("query reviewer list failed")
+			pkg.InternalError(c, "查询审核员名单失败")
+			return
+		}
+		if !ok {
+			pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "需要审核员权限")
+			return
+		}
+	}
+
 	result, err := h.svc.List(ctx, user, q)
 	if err != nil {
 		logrus.WithError(err).Error("list submissions failed")
@@ -84,16 +99,27 @@ func (h *SubmissionHandler) List(c *gin.Context) {
 
 // GetDetail GET /api/v1/submissions/:id
 func (h *SubmissionHandler) GetDetail(c *gin.Context) {
+	user := currentUser(c)
+	if user == nil {
+		pkg.Unauthorized(c)
+		return
+	}
+
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
 		pkg.BadRequest(c, "无效的 id")
 		return
 	}
 
+	isReviewer := false
+	if h.reviewerCache != nil {
+		isReviewer, _ = h.reviewerCache.IsReviewer(c.Request.Context(), user.Name)
+	}
+
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	detail, err := h.svc.GetDetail(ctx, id)
+	detail, err := h.svc.GetDetail(ctx, user, id, isReviewer)
 	if err != nil {
 		writeSubmissionErr(c, err)
 		return
@@ -105,13 +131,27 @@ func (h *SubmissionHandler) GetDetail(c *gin.Context) {
 func (h *SubmissionHandler) Stats(c *gin.Context) {
 	user := currentUser(c)
 	if user == nil {
-		pkg.Fail(c, 401, 401, "未登录")
+		pkg.Unauthorized(c)
 		return
 	}
 
 	mode := c.DefaultQuery("mode", "creator")
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
+
+	// reviewer 模式查询全局统计
+	if mode == "reviewer" {
+		ok, err := h.reviewerCache.IsReviewer(ctx, user.Name)
+		if err != nil {
+			logrus.WithError(err).Error("query reviewer list failed")
+			pkg.InternalError(c, "查询审核员名单失败")
+			return
+		}
+		if !ok {
+			pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "需要审核员权限")
+			return
+		}
+	}
 
 	stats, err := h.svc.Stats(ctx, user, mode)
 	if err != nil {
@@ -126,7 +166,7 @@ func (h *SubmissionHandler) Stats(c *gin.Context) {
 func (h *SubmissionHandler) UpdateFile(c *gin.Context) {
 	user := currentUser(c)
 	if user == nil {
-		pkg.Fail(c, 401, 401, "未登录")
+		pkg.Unauthorized(c)
 		return
 	}
 
@@ -159,7 +199,7 @@ func (h *SubmissionHandler) UpdateFile(c *gin.Context) {
 func (h *SubmissionHandler) Close(c *gin.Context) {
 	user := currentUser(c)
 	if user == nil {
-		pkg.Fail(c, 401, 401, "未登录")
+		pkg.Unauthorized(c)
 		return
 	}
 
@@ -185,16 +225,49 @@ func (h *SubmissionHandler) Close(c *gin.Context) {
 	pkg.OKWithMsg(c, nil, "已关闭")
 }
 
+// GetTtml GET /api/v1/submissions/:id/ttml
+// 返回投稿的 TTML 文件纯文本内容
+func (h *SubmissionHandler) GetTtml(c *gin.Context) {
+	user := currentUser(c)
+	if user == nil {
+		pkg.Unauthorized(c)
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		pkg.BadRequest(c, "无效的 id")
+		return
+	}
+
+	// 检查是否审核员
+	isReviewer := false
+	if h.reviewerCache != nil {
+		isReviewer, _ = h.reviewerCache.IsReviewer(c.Request.Context(), user.Name)
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
+	defer cancel()
+
+	content, err := h.svc.GetTtmlContent(ctx, user, id, isReviewer)
+	if err != nil {
+		writeSubmissionErr(c, err)
+		return
+	}
+
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(content))
+}
+
 // currentUser 从 gin.Context 提取登录用户信息
 func currentUser(c *gin.Context) *service.SubmissionUser {
-	name, _ := c.Get(middleware.UserNameKey)
-	nameStr, _ := name.(string)
+	nameStr := middleware.GetUserName(c)
 	if nameStr == "" {
 		return nil
 	}
-	// displayName
 	return &service.SubmissionUser{
-		Name: nameStr,
+		Name:        nameStr,
+		DisplayName: middleware.GetUserDisplayName(c),
+		Avatar:      middleware.GetUserAvatar(c),
 	}
 }
 
@@ -206,13 +279,13 @@ func writeSubmissionErr(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrMissingFile):
 		pkg.BadRequest(c, "缺少文件")
 	case errors.Is(err, service.ErrFileNotFound):
-		pkg.Fail(c, 404, 404, "文件未上传或已过期")
+		pkg.Fail(c, http.StatusNotFound, http.StatusNotFound, "文件未上传或已过期")
 	case errors.Is(err, service.ErrInvalidStatus):
-		pkg.Fail(c, 409, 409, "投稿当前状态不允许此操作")
+		pkg.Fail(c, http.StatusConflict, http.StatusConflict, "投稿当前状态不允许此操作")
 	case errors.Is(err, service.ErrForbidden):
-		pkg.Fail(c, 403, 403, "无权操作该投稿")
+		pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "无权操作该投稿")
 	case errors.Is(err, service.ErrUpstreamUnavailable):
-		pkg.Fail(c, 502, 502, "上游服务暂不可用")
+		writeUpstreamErr(c, err, "上游服务暂不可用")
 	default:
 		logrus.WithError(err).Error("submission service unknown error")
 		pkg.InternalError(c, "内部错误")

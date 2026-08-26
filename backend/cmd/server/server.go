@@ -87,8 +87,16 @@ func Run() {
 	subRepo := repository.NewSubmissionRepo(db)
 	audioRepo := repository.NewAudioRepo(db)
 	historyRepo := repository.NewReviewHistoryRepo(db)
+	fileHistoryRepo := repository.NewFileHistoryRepo(db)
 	commentRepo := repository.NewCommentRepo(db)
 	reviewerRepo := repository.NewReviewerRepo(db)
+	adminRepo := repository.NewAdminRepo(db)
+
+	// 搜索IP投稿 repository
+	searchIpRepo := repository.NewSearchIPRepo(db)
+
+	// 每日推荐 repository
+	dailyRecRepo := repository.NewDailyRecommendationRepo(db)
 
 	// 4. 初始化 service
 	syncSvc := service.NewSyncService(cfg, syncRepo, progressRepo, mq)
@@ -111,13 +119,30 @@ func Run() {
 	fileSvc := service.NewFileService(cfg, minioClient)
 	githubSvc := service.NewGitHubService(githubApp)
 	viewerSvc := service.NewViewerService(nil, subRepo) // hub 后面注入
-	submissionSvc := service.NewSubmissionService(subRepo, audioRepo, historyRepo, commentRepo, fileSvc, db)
+	submissionSvc := service.NewSubmissionService(subRepo, audioRepo, historyRepo, fileHistoryRepo, commentRepo, fileSvc, db)
 	reviewSvc := service.NewReviewService(subRepo, historyRepo, fileSvc, githubSvc, viewerSvc, db)
 	batchSvc := service.NewBatchService(songRepo)
+
+	// 搜索IP投稿
+	searchIpSvc := service.NewSearchIPService(searchIpRepo, minioClient, cfg.MinIO.Bucket)
+
+	// 每日推荐
+	dailyRecSvc := service.NewDailyRecommendationService(dailyRecRepo, minioClient, cfg.MinIO.Bucket)
+
+	// 最新收录
+	latestSongRepo := repository.NewLatestSongRepo(db)
+	latestSongSvc := service.NewLatestSongService(latestSongRepo)
+
+	// 歌词校验
+	validateSvc := service.NewValidateService(cfg.Worker.BaseURL)
 
 	// 4.1 启动无歌词服务
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
+	// 搜索IP临时文件清理定时任务
+	searchIpSvc.StartTempCleaner(appCtx)
+	// 每日推荐临时文件清理定时任务
+	dailyRecSvc.StartTempCleaner(appCtx)
 	// RabbitMQ 断线自动重连
 	mq.WatchAndReconnect(appCtx)
 	{
@@ -135,6 +160,12 @@ func Run() {
 
 	// 注入 hub 给 viewerSvc
 	viewerSvc.SetHub(hub)
+	// 注入观众列表通知回调给 hub
+	hub.SetViewerNotifier(func(submissionID int64) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = viewerSvc.NotifyViewers(ctx, submissionID)
+	})
 
 	// 4.3 启动投稿自动拒绝任务
 	autoRejectJob := job.NewAutoRejectJob(
@@ -143,8 +174,9 @@ func Run() {
 	)
 	go autoRejectJob.Run(appCtx)
 
-	// 4.4 审核员缓存
+	// 4.4 审核员/超级管理员缓存
 	reviewerCache := middleware.NewReviewerCache(reviewerRepo, cfg.Submission.ReviewerCacheTTL)
+	adminCache := middleware.NewAdminCache(adminRepo, cfg.Submission.ReviewerCacheTTL)
 
 	// 5. 初始化 handler
 	syncH := handler.NewSyncHandler(syncSvc)
@@ -156,21 +188,47 @@ func Run() {
 	nfH := handler.NewNotFoundHandler(notFoundSvc)
 	onlineSearchH := handler.NewOnlineSearchHandler(onlineSearchSvc)
 	cloudMusicH := handler.NewCloudMusicHandler(cloudMusicSvc)
-	authH := handler.NewAuthHandler(authSvc)
+	authH := handler.NewAuthHandler(authSvc, reviewerCache, adminCache)
 
 	// 投稿 handler
 	submissionH := handler.NewSubmissionHandler(submissionSvc, reviewerCache)
 	reviewH := handler.NewReviewHandler(reviewSvc)
 	commentH := handler.NewCommentHandler(submissionSvc)
 	uploadH := handler.NewUploadHandler(fileSvc, submissionSvc)
-	wsH := handler.NewWSHandler(hub, viewerSvc, reviewerCache)
+	searchIpH := handler.NewSearchIPHandler(searchIpSvc)
+	dailyRecH := handler.NewDailyRecommendationHandler(dailyRecSvc)
+	validateH := handler.NewValidateHandler(validateSvc)
+	latestSongH := handler.NewLatestSongHandler(latestSongSvc)
+	adminH := handler.NewAdminHandler(reviewerRepo, reviewerCache)
+	wsH := handler.NewWSHandler(hub, viewerSvc, reviewerCache, cfg.Casdoor.JWTSecret)
 
 	// 6. 启动 HTTP
-	r := router.New(
-		syncH, lyricsH, searchH, batchH, statsH, indexH, nfH, onlineSearchH, cloudMusicH, authH,
-		submissionH, reviewH, commentH, uploadH, wsH, reviewerCache,
-		cfg.Casdoor.JWTSecret,
-	)
+	r := router.New(router.RouterDeps{
+		Sync:         syncH,
+		Lyrics:       lyricsH,
+		Search:       searchH,
+		Batch:        batchH,
+		Stats:        statsH,
+		Index:        indexH,
+		NotFound:     nfH,
+		OnlineSearch: onlineSearchH,
+		CloudMusic:   cloudMusicH,
+		Auth:         authH,
+		Submission:   submissionH,
+		Review:       reviewH,
+		Comment:      commentH,
+		Upload:       uploadH,
+		SearchIP:     searchIpH,
+		DailyRec:     dailyRecH,
+		WS:           wsH,
+		Validate:     validateH,
+		LatestSong:   latestSongH,
+		Admin:        adminH,
+
+		ReviewerCache: reviewerCache,
+		AdminCache:    adminCache,
+		JWTSecret:     cfg.Casdoor.JWTSecret,
+	})
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.HTTP.Port,

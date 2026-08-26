@@ -29,9 +29,9 @@ const (
 )
 
 // JSONObject 自定义类型
-type JSONObject map[string]interface{}
+type JSONObject map[string]any
 
-func (o *JSONObject) Scan(value interface{}) error {
+func (o *JSONObject) Scan(value any) error {
 	if value == nil {
 		*o = nil
 		return nil
@@ -66,7 +66,7 @@ type UserInfo struct {
 	Avatar      string `json:"avatar"`
 }
 
-func (u *UserInfo) Scan(value interface{}) error {
+func (u *UserInfo) Scan(value any) error {
 	if value == nil {
 		*u = UserInfo{}
 		return nil
@@ -131,7 +131,7 @@ func (Submission) TableName() string { return "submissions" }
 // SubmissionAudio 音频附件
 type SubmissionAudio struct {
 	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	SubmissionID int64     `gorm:"column:submission_id;not null;uniqueIndex" json:"submissionId"`
+	SubmissionID int64     `gorm:"column:submission_id;not null;index" json:"submissionId"`
 	FileName     string    `gorm:"type:varchar(255);not null" json:"fileName"`
 	CoverURL     string    `gorm:"column:cover_url;type:varchar(500)" json:"coverUrl,omitempty"`
 	Title        string    `gorm:"type:varchar(200);not null;default:''" json:"title"`
@@ -158,6 +158,18 @@ type ReviewHistory struct {
 
 func (ReviewHistory) TableName() string { return "submission_review_history" }
 
+// SubmissionFileHistory 文件更新历史（独立于审核历史）
+type SubmissionFileHistory struct {
+	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	SubmissionID int64     `gorm:"column:submission_id;not null" json:"submissionId"`
+	Uploader     string    `gorm:"type:varchar(100);not null" json:"uploader"`
+	UploaderInfo UserInfo  `gorm:"type:jsonb;not null" json:"uploaderInfo"`
+	FileName     string    `gorm:"type:varchar(255);not null" json:"fileName"`
+	UploadedAt   time.Time `gorm:"column:uploaded_at;not null;default:CURRENT_TIMESTAMP" json:"uploadedAt"`
+}
+
+func (SubmissionFileHistory) TableName() string { return "submission_file_history" }
+
 // Comment 普通评论
 type Comment struct {
 	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
@@ -176,3 +188,11 @@ type Reviewer struct {
 }
 
 func (Reviewer) TableName() string { return "reviewers" }
+
+// Admin 超级管理员（手动维护，可管理审核员名单）
+type Admin struct {
+	Username  string    `gorm:"primaryKey;type:varchar(100)" json:"username"`
+	UpdatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updatedAt"`
+}
+
+func (Admin) TableName() string { return "admins" }

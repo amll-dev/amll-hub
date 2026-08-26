@@ -41,9 +41,9 @@ func EnsureMeiliSearchIndex(client *meilisearch.Client, indexName string) error 
 	}
 
 	searchable := []string{
-		"musicNames", "musicNamesPinyin",
-		"artists", "artistsPinyin",
-		"albums", "albumsPinyin",
+		"musicNames", "musicNamesPinyin", "musicNamesInitials",
+		"artists", "artistsPinyin", "artistsInitials",
+		"albums", "albumsPinyin", "albumsInitials",
 		"lyricText",
 		"platformIds_ncm", "platformIds_qq", "platformIds_spotify", "platformIds_apple",
 		"ttmlAuthorGithub",

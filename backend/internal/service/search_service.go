@@ -3,12 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 
 	"github.com/amll-dev/amll-hub/backend/internal/config"
-	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/meilisearch/meilisearch-go"
 	logrus "github.com/sirupsen/logrus"
 )
@@ -159,20 +157,20 @@ func (s *SearchService) searchByExactID(ctx context.Context, index *meilisearch.
 func searchOnFields(field string) []string {
 	switch field {
 	case "song":
-		return []string{"musicNames", "musicNamesPinyin"}
+		return []string{"musicNames", "musicNamesPinyin", "musicNamesInitials"}
 	case "artist":
-		return []string{"artists", "artistsPinyin"}
+		return []string{"artists", "artistsPinyin", "artistsInitials"}
 	case "album":
-		return []string{"albums", "albumsPinyin"}
+		return []string{"albums", "albumsPinyin", "albumsInitials"}
 	case "lyric":
 		return []string{"lyricText"}
 	case "author":
 		return []string{"ttmlAuthorGithub", "ttmlAuthorGithubLogin"}
 	case "", "all":
 		return []string{
-			"musicNames", "musicNamesPinyin",
-			"artists", "artistsPinyin",
-			"albums", "albumsPinyin",
+			"musicNames", "musicNamesPinyin", "musicNamesInitials",
+			"artists", "artistsPinyin", "artistsInitials",
+			"albums", "albumsPinyin", "albumsInitials",
 			"lyricText",
 			"platformIds_ncm", "platformIds_qq", "platformIds_spotify", "platformIds_apple",
 		}
@@ -180,9 +178,9 @@ func searchOnFields(field string) []string {
 	return []string{"*"}
 }
 
-// convertHit 把 map[string]interface{} 转换为 SearchHitResult
-func convertHit(raw interface{}) SearchHitResult {
-	m, ok := raw.(map[string]interface{})
+// convertHit 把 map[string]any 转换为 SearchHitResult
+func convertHit(raw any) SearchHitResult {
+	m, ok := raw.(map[string]any)
 	if !ok {
 		return SearchHitResult{}
 	}
@@ -224,7 +222,7 @@ func convertHit(raw interface{}) SearchHitResult {
 		hit.CommitTimestamp = &ts
 	}
 	// 提取歌词片段
-	if formatted, ok := m["_formatted"].(map[string]interface{}); ok {
+	if formatted, ok := m["_formatted"].(map[string]any); ok {
 		if v, ok := formatted["lyricText"].(string); ok && v != "" {
 			hit.LyricSnippet = v
 		}
@@ -232,7 +230,7 @@ func convertHit(raw interface{}) SearchHitResult {
 	return hit
 }
 
-func toStringSlice(v interface{}) []string {
+func toStringSlice(v any) []string {
 	if v == nil {
 		return nil
 	}
@@ -242,7 +240,7 @@ func toStringSlice(v interface{}) []string {
 		}
 		return []string{s}
 	}
-	arr, ok := v.([]interface{})
+	arr, ok := v.([]any)
 	if !ok {
 		return nil
 	}
@@ -255,7 +253,7 @@ func toStringSlice(v interface{}) []string {
 	return out
 }
 
-func toFloat(v interface{}) (float64, bool) {
+func toFloat(v any) (float64, bool) {
 	switch n := v.(type) {
 	case float64:
 		return n, true
@@ -347,7 +345,3 @@ func reorderHitsByGroup(hits []SearchHitResult) []SearchHitResult {
 	}
 	return result
 }
-
-// _ 防 errors unused
-var _ = errors.New
-var _ = pkg.IsValidPlatform

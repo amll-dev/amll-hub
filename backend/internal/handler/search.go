@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"errors"
-	"net/http"
 	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
@@ -51,7 +50,7 @@ func (h *SearchHandler) Search(c *gin.Context) {
 	})
 	if err != nil {
 		if errors.Is(err, service.ErrUpstreamUnavailable) {
-			pkg.Fail(c, http.StatusBadGateway, 502, "搜索服务暂不可用")
+			writeUpstreamErr(c, err, "搜索服务暂不可用")
 			return
 		}
 		logrus.WithError(err).Error("search failed")

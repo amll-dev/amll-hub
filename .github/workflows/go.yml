@@ -92,6 +92,11 @@ jobs:
       - name: 下载依赖
         run: go mod download
 
+      - name: 静态检查
+        run: |
+          go vet ./...
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+
       - name: 测试
         run: go test -v ./...
 
