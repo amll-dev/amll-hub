@@ -8,10 +8,10 @@ use crate::infra;
 
 use super::sync_task::SyncTaskRunner;
 
-/// 同步任务最大重试次数
-const MAX_RETRIES: u32 = 3;
 /// 重试基础退避
 const RETRY_BASE_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+/// 重试退避上限（指数增长到此封顶）
+const RETRY_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// 启动 RabbitMQ 消费循环
 ///
@@ -74,7 +74,8 @@ async fn handle_message(
 
     let runner = SyncTaskRunner::new(app.clone());
 
-    // 应用层有限重试：处理 GitHub 限流、MinIO 抖动等瞬时故障
+    // 应用层无限自动重试：处理 GitHub 限流、MinIO 抖动、下载失败等故障，
+    // 不成功不放弃，直到同步成功（退避指数增长，60s 封顶）
     let mut attempt: u32 = 0;
     loop {
         match runner.run(&request_id, &triggered_by, &payload).await {
@@ -86,17 +87,11 @@ async fn handle_message(
             }
             Err(e) => {
                 attempt += 1;
-                if attempt >= MAX_RETRIES {
-                    // 最终失败由通用消费循环统一记录并 nack 进 DLQ，
-                    // 这里附上 request_id 便于追踪
-                    return Err(e.context(format!("request_id={}, attempts={}", request_id, attempt)));
-                }
-                let delay = RETRY_BASE_DELAY * 2u32.saturating_pow(attempt - 1);
+                let delay = (RETRY_BASE_DELAY * 2u32.saturating_pow(attempt - 1)).min(RETRY_MAX_DELAY);
                 warn!(
                     request_id = %request_id,
                     attempt,
-                    max_retries = MAX_RETRIES,
-                    delay_ms = delay.as_millis() as u64,
+                    delay_secs = delay.as_secs(),
                     error = %e,
                     "sync attempt failed, will retry"
                 );

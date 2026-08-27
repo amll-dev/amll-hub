@@ -106,11 +106,14 @@ pub async fn download_raw_text(client: &Client, url: &str, cfg: &GitHubConfig) -
     .await
 }
 
-/// 下载 TTML 文件原始字节，带 token
+/// 下载 TTML 文件原始字节，带 token，失败无限重试直到成功
 pub async fn download_raw_bytes(client: &Client, url: &str, cfg: &GitHubConfig) -> Result<Vec<u8>> {
-    let resp = send_github_get(client, url, None, cfg, "download bytes").await?;
-    let bytes = resp.bytes().await.context("read raw bytes")?;
-    Ok(bytes.to_vec())
+    with_retry("download raw bytes", move || async move {
+        let resp = send_github_get(client, url, None, cfg, "download bytes").await?;
+        let bytes = resp.bytes().await.context("read raw bytes")?;
+        Ok(bytes.to_vec())
+    })
+    .await
 }
 
 /// 下载整包 zip
