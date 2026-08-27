@@ -250,9 +250,10 @@ impl SyncTaskRunner {
         info!("下载完成，成功下载 {} 个文件", downloaded.len());
 
         // 5.5 强制 flush 最终下载进度到 DB（最终刷新直接 await，确保落库）
+        let final_failed;
         {
             let final_downloaded = progress_state.downloaded();
-            let final_failed = progress_state.failed();
+            final_failed = progress_state.failed();
             debug!(final_downloaded, final_failed, "flush 最终下载进度");
             run_progress_flush(
                 repo_arc.clone(),
@@ -262,6 +263,12 @@ impl SyncTaskRunner {
                 None,
             )
             .await;
+        }
+
+        // 下载/上传存在失败文件时同步失败（不更新 last_synced_commit），
+        // 由消费者层重试；下次同步 diff 会重新包含这些文件，避免静默丢失
+        if final_failed > 0 {
+            anyhow::bail!("{} 个文件下载/上传失败，本次同步标记失败以待重试", final_failed);
         }
 
         // 6. 并发解析 + 入库 + 累积 MeiliSearch 文档
