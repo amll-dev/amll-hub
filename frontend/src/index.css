@@ -1,0 +1,287 @@
+@import 'tailwindcss';
+
+/* 设计 token — 迁移自 amllhub-homepage/colors_and_type.css */
+:root {
+  --amll-background: #fbfbfd;
+  --amll-foreground: #1d1d1f;
+
+  --amll-card: #ffffff;
+  --amll-card-foreground: #1d1d1f;
+
+  --amll-popover: #ffffff;
+  --amll-popover-foreground: #1d1d1f;
+
+  --amll-primary: #e0303f;
+  --amll-primary-hover: #c82836;
+  --amll-primary-foreground: #ffffff;
+
+  --amll-muted: #f2f2f5;
+  --amll-muted-foreground: #6e6e73;
+
+  --amll-border: #e6e6eb;
+  --amll-input: #e6e6eb;
+  --amll-ring: #e0303f;
+
+  --amll-surface: #ffffff;
+  --amll-surface-2: #f7f7f9;
+
+  --amll-ink: #1d1d1f;
+  --amll-ink-2: #535359;
+  --amll-ink-3: #8a8a90;
+
+  --amll-line: #ededf1;
+
+  --amll-radius-sm: 4px;
+  --amll-radius-md: 8px;
+  --amll-radius-lg: 16px;
+
+  --amll-primary-soft: rgba(224, 48, 63, 0.08);
+  --amll-primary-tint: #fbe7e9;
+
+  --amll-state-success: #1a9e5e;
+  --amll-state-warning: #c97a0e;
+  --amll-state-error: #d12d2d;
+  --amll-state-info: #2a7ab8;
+
+  --amll-font-sans:
+    'Inter', 'PingFang SC', 'Noto Sans SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', system-ui,
+    sans-serif;
+  --amll-font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', ui-monospace, monospace;
+}
+
+/* 桥接 --amll-* 到 Tailwind v4 语义 utility（bg-background / text-foreground / bg-primary 等） */
+@theme inline {
+  --color-background: var(--amll-background);
+  --color-foreground: var(--amll-foreground);
+
+  --color-card: var(--amll-card);
+  --color-card-foreground: var(--amll-card-foreground);
+
+  --color-popover: var(--amll-popover);
+  --color-popover-foreground: var(--amll-popover-foreground);
+
+  --color-primary: var(--amll-primary);
+  --color-primary-hover: var(--amll-primary-hover);
+  --color-primary-foreground: var(--amll-primary-foreground);
+
+  --color-muted: var(--amll-muted);
+  --color-muted-foreground: var(--amll-muted-foreground);
+
+  --color-border: var(--amll-border);
+  --color-input: var(--amll-input);
+  --color-ring: var(--amll-ring);
+
+  --color-surface: var(--amll-surface);
+  --color-surface-2: var(--amll-surface-2);
+
+  --color-ink: var(--amll-ink);
+  --color-ink-2: var(--amll-ink-2);
+  --color-ink-3: var(--amll-ink-3);
+
+  --color-line: var(--amll-line);
+
+  --color-primary-soft: var(--amll-primary-soft);
+  --color-primary-tint: var(--amll-primary-tint);
+
+  --color-success: var(--amll-state-success);
+  --color-warning: var(--amll-state-warning);
+  --color-error: var(--amll-state-error);
+  --color-info: var(--amll-state-info);
+
+  --font-sans: var(--amll-font-sans);
+  --font-mono: var(--amll-font-mono);
+
+  --radius-sm: var(--amll-radius-sm);
+  --radius-md: var(--amll-radius-md);
+  --radius-lg: var(--amll-radius-lg);
+}
+
+html {
+  scroll-behavior: smooth;
+  /* 始终为滚动条预留空间，避免内容高度变化时滚动条出现/消失
+     导致页面宽度抖动（如歌词加载后页面变高出现滚动条） */
+  scrollbar-gutter: stable;
+  /* 让浏览器原生控件（select 下拉、滚动条等）使用浅色主题，
+     避免在浅色背景下下拉列表透明看不清 */
+  color-scheme: light;
+}
+
+body {
+  font-family: var(--amll-font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  background: var(--amll-background);
+  color: var(--amll-foreground);
+}
+
+/* select 下拉列表项样式（浏览器原生 <option>） */
+select option {
+  background: var(--amll-card);
+  color: var(--amll-foreground);
+  padding: 8px 12px;
+}
+
+select option:hover,
+select option:checked,
+select option:focus {
+  background: var(--amll-primary-tint);
+  color: var(--amll-primary);
+}
+
+/* date / time / datetime-local 输入框：让日历/时钟图标可见 */
+input[type='date']::-webkit-calendar-picker-indicator,
+input[type='time']::-webkit-calendar-picker-indicator,
+input[type='datetime-local']::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(0.5);
+  opacity: 0.7;
+}
+
+input[type='date']::-webkit-calendar-picker-indicator:hover,
+input[type='time']::-webkit-calendar-picker-indicator:hover,
+input[type='datetime-local']::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+/* 骨架屏 shimmer */
+@keyframes amll-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.amll-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--amll-surface-2);
+}
+
+.amll-skeleton::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  animation: amll-shimmer 1.6s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .amll-skeleton::after {
+    animation: none;
+  }
+}
+
+/* 评论 Markdown 渲染样式（投稿详情页评论 + 预览区共用） */
+.comment-markdown {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--amll-ink);
+  word-break: break-word;
+}
+
+.comment-markdown > *:first-child {
+  margin-top: 0;
+}
+
+.comment-markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+.comment-markdown h1,
+.comment-markdown h2,
+.comment-markdown h3,
+.comment-markdown h4,
+.comment-markdown h5,
+.comment-markdown h6 {
+  margin-top: 1.2em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.comment-markdown p {
+  margin-bottom: 0.8em;
+}
+
+.comment-markdown code {
+  padding: 0.2em 0.4em;
+  margin: 0;
+  font-family: var(--amll-font-mono);
+  font-size: 85%;
+  background-color: var(--amll-surface-2);
+  border-radius: 3px;
+}
+
+.comment-markdown pre {
+  padding: 12px 14px;
+  overflow: auto;
+  font-size: 85%;
+  line-height: 1.5;
+  background-color: var(--amll-surface-2);
+  border: 1px solid var(--amll-line);
+  border-radius: 6px;
+  margin-bottom: 0.8em;
+}
+
+.comment-markdown pre code {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  background-color: transparent;
+  border-radius: 0;
+  border: none;
+}
+
+.comment-markdown blockquote {
+  padding: 0 1em;
+  margin: 0 0 0.8em 0;
+  color: var(--amll-ink-2);
+  border-left: 0.25em solid var(--amll-line);
+}
+
+.comment-markdown ul,
+.comment-markdown ol {
+  padding-left: 1.6em;
+  margin-bottom: 0.8em;
+}
+
+.comment-markdown li {
+  margin-bottom: 0.2em;
+}
+
+.comment-markdown a {
+  color: var(--amll-primary);
+  text-decoration: none;
+}
+
+.comment-markdown a:hover {
+  text-decoration: underline;
+}
+
+.comment-markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 6px 0;
+  display: block;
+}
+
+.comment-markdown table {
+  border-collapse: collapse;
+  margin-bottom: 0.8em;
+}
+
+.comment-markdown th,
+.comment-markdown td {
+  border: 1px solid var(--amll-line);
+  padding: 6px 12px;
+}
+
+.comment-markdown hr {
+  border: none;
+  border-top: 1px solid var(--amll-line);
+  margin: 1em 0;
+}
