@@ -687,7 +687,7 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
       <motion.p variants={fadeUp} className="text-center text-xs text-ink-3">
         上传即表示同意
         <button type="button" className="text-primary hover:underline">
-          《AMLLHub使用协议》
+          《AMLL Hub使用协议》
         </button>
         与
         <button type="button" className="text-primary hover:underline">

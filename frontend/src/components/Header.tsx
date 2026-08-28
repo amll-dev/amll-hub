@@ -72,10 +72,10 @@ export function Header() {
           >
             <img
               src="/logo.png"
-              alt="AMLLHub"
+              alt="AMLL-Hub"
               className="h-8 w-8 shrink-0 rounded-md object-contain"
             />
-            <span className="text-lg font-bold tracking-tight">AMLLHub</span>
+            <span className="text-lg font-bold tracking-tight">AMLL Hub</span>
             <span className="absolute inset-x-0 top-full mt-0.5 whitespace-nowrap text-center text-[9px] leading-none text-ink-3">
               测试版本，不代表最终品质
             </span>

@@ -375,7 +375,7 @@ export function RecommendCard({
                 compact ? 'text-base' : 'text-base'
               }`}
             >
-              AMLLHub | 今日推荐
+              AMLL Hub | 今日推荐
             </p>
           </div>
         </div>

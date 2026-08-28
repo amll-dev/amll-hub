@@ -35,15 +35,15 @@ export function Footer() {
         >
           <div>
             <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="AMLLHub" className="h-8 w-8 rounded-md object-contain" />
-              <span className="text-lg font-bold">AMLLHub</span>
+              <img src="/logo.png" alt="AMLL-Hub" className="h-8 w-8 rounded-md object-contain" />
+              <span className="text-lg font-bold">AMLL Hub</span>
               <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
                 测试版
               </span>
             </div>
             <p className="mt-3 text-sm text-ink-2">与 AMLL 歌词生态协作</p>
             <p className="mt-1 text-xs text-ink-3">测试版本，不代表最终品质</p>
-            <p className="mt-4 text-xs text-ink-3">© 2026 AMLLHub</p>
+            <p className="mt-4 text-xs text-ink-3">© 2026 AMLL Hub</p>
           </div>
 
           <div>
