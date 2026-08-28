@@ -24,6 +24,9 @@ jobs:
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v4
+        with:
+          # packageManager 字段在 frontend/package.json 中，action 默认只读仓库根目录，需显式指定
+          version: 12.0.0
 
       - name: 配置 Node 环境
         uses: actions/setup-node@v4
