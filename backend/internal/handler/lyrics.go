@@ -26,14 +26,13 @@ func NewLyricsHandler(svc *service.LyricsService, nfSvc *service.NotFoundService
 }
 
 // GetLyrics GET /api/v1/lyrics/:folder/:filename
-// 直接返回 TTML 原始字节流
 // :folder ∈ {raw-lyrics, ncm-lyrics, qq-lyrics, spotify-lyrics, am-lyrics}
 func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 	folder := c.Param("folder")
 	filename := c.Param("filename")
 
 	if !pkg.IsValidFolder(folder) || filename == "" {
-		pkg.Fail(c, http.StatusBadRequest, http.StatusBadRequest, "invalid folder or filename")
+		c.String(http.StatusBadRequest, "invalid folder or filename\n")
 		return
 	}
 
@@ -54,8 +53,7 @@ func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 			if folder == "raw-lyrics" {
 				platformID = strings.TrimSuffix(filename, ".ttml")
 			}
-			pkg.Fail(c, http.StatusNotFound, http.StatusNotFound, "lyric not found: "+platformID)
-
+			c.String(http.StatusNotFound, "lyric not found: "+platformID+"\n")
 			// 异步记录无歌词（仅对平台歌词端点生效，raw-lyrics 不记录）
 			if folder != "raw-lyrics" && h.nfSvc != nil {
 				platform := pkg.FolderToPlatform(folder)
@@ -75,19 +73,20 @@ func (h *LyricsHandler) GetLyrics(c *gin.Context) {
 			return
 		}
 		logrus.WithError(err).Error("resolve lyric failed")
-		pkg.InternalError(c, "internal server error")
+		c.String(http.StatusInternalServerError, "internal server error\n")
 		return
 	}
 
 	// 2. 设置基础响应头
-	c.Header("Content-Type", "application/xml; charset=utf-8")
+	c.Header("Content-Type", "application/ttml+xml; charset=utf-8")
+	c.Header("Accept-Ranges", "none")
 	c.Header("Cache-Control", "public, max-age=31536000, immutable")
 	if resolved.ETag != "" {
 		c.Header("ETag", resolved.ETag)
 	}
 	c.Header("Content-Length", strconv.FormatInt(resolved.Size, 10))
 
-	// 3. 流式返回
+	// 3. 返回 TTML
 	c.Status(http.StatusOK)
 	if err := h.svc.StreamLyric(ctx, resolved.MinioPath, func(reader io.Reader) error {
 		_, err := io.Copy(c.Writer, reader)

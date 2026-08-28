@@ -8,6 +8,7 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/gin-contrib/cors"
+	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 	logrus "github.com/sirupsen/logrus"
 )
@@ -97,6 +98,15 @@ func New(deps RouterDeps) *gin.Engine {
 		corsConfig.AllowAllOrigins = true
 	}
 	r.Use(cors.New(corsConfig))
+
+	// HTTP gzip 压缩
+	r.Use(gzip.Gzip(gzip.DefaultCompression,
+		gzip.WithExcludedPaths([]string{
+			"/api/v1/uploads/file",
+			"/api/v1/search-ip/image",
+			"/api/v1/daily-recommendations/image",
+		}),
+	))
 
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
