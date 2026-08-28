@@ -301,444 +301,448 @@ export function SearchIpForm() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18 }}
           >
-          <div>
-          {/* 隐藏的文件输入 */}
-          <input
-            id="search-ip-json-input"
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) {
-                clearUploadedImages();
-                setSelectedFile(f);
-                parseFile(f);
-              }
-              e.target.value = '';
-            }}
-          />
-          <input
-            id="search-ip-images-input"
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              handleImageUpload(e.target.files);
-              e.target.value = '';
-            }}
-          />
-          {/* 上传区域 */}
-          {!selectedFile && (
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(true);
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragOver(false);
-                const f = e.dataTransfer.files?.[0];
-                if (f) {
-                  setSelectedFile(f);
-                  parseFile(f);
-                }
-              }}
-              className={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed py-16 transition-colors ${
-                dragOver ? 'border-primary bg-primary-soft' : 'border-line bg-surface-2'
-              }`}
-            >
-              <CloudUpload className="h-16 w-16 text-ink-3" />
-              <p className="mt-4 text-sm text-ink-2">点击上传或将文件拖拽到此区域</p>
-              <p className="mt-1 text-xs text-ink-3">支持 .json 格式文件</p>
-              <motion.button
-                type="button"
-                {...buttonTap}
-                onClick={() => document.getElementById('search-ip-json-input')?.click()}
-                className={`mt-6 ${primaryBtnClass}`}
-              >
-                选择文件
-              </motion.button>
-            </div>
-          )}
-
-          {/* 解析错误提示 */}
-          {parseError && (
-            <div className="mt-4 rounded-md border border-error/30 bg-error/5 px-4 py-3 text-sm text-error">
-              {parseError}
-            </div>
-          )}
-
-          {/* 已选文件 - 管理区 */}
-          {selectedFile && (
-            <div className="mt-6 space-y-6">
-              {/* 标题输入 */}
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-ink-2">
-                  标题 <span className="text-error">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={ipTitle}
-                  onChange={(e) => setIpTitle(e.target.value)}
-                  maxLength={200}
-                  placeholder="请输入投稿标题"
-                  className="h-11 w-full rounded-md border border-input bg-background px-4 text-sm outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/20"
-                />
-              </div>
-
-              {/* 文件卡片列表 */}
-              <div className="flex flex-wrap gap-4">
-                {/* JSON 文件卡片 */}
-                <div className="relative flex h-28 w-44 flex-col justify-between overflow-hidden rounded-lg bg-primary p-3 text-white">
-                  <div className="flex items-start justify-between">
-                    <FileText className="h-6 w-6" />
-                    <span className="flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-medium">
-                      <Check className="h-3 w-3" />
-                      上传完成
-                    </span>
-                  </div>
-                  <div>
-                    <p className="truncate text-xs font-semibold">{selectedFile.name}</p>
-                    <p className="mt-0.5 text-[10px] opacity-80">
-                      {(selectedFile.size / 1024).toFixed(1)} KB · JSON
-                    </p>
-                  </div>
-                </div>
-
-                {/* 添加图片文件区域 */}
+            <div>
+              {/* 隐藏的文件输入 */}
+              <input
+                id="search-ip-json-input"
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    clearUploadedImages();
+                    setSelectedFile(f);
+                    parseFile(f);
+                  }
+                  e.target.value = '';
+                }}
+              />
+              <input
+                id="search-ip-images-input"
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  handleImageUpload(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+              {/* 上传区域 */}
+              {!selectedFile && (
                 <div
                   onDragOver={(e) => {
                     e.preventDefault();
-                    e.currentTarget.classList.add(
-                      'border-primary',
-                      'text-primary',
-                      'bg-primary-soft'
-                    );
+                    setDragOver(true);
                   }}
-                  onDragLeave={(e) => {
-                    e.currentTarget.classList.remove(
-                      'border-primary',
-                      'text-primary',
-                      'bg-primary-soft'
-                    );
-                  }}
+                  onDragLeave={() => setDragOver(false)}
                   onDrop={(e) => {
                     e.preventDefault();
-                    e.currentTarget.classList.remove(
-                      'border-primary',
-                      'text-primary',
-                      'bg-primary-soft'
-                    );
-                    const files = e.dataTransfer.files;
-                    if (files && files.length > 0) {
-                      // 只处理图片文件
-                      const imageFiles = Array.from(files).filter((f) =>
-                        f.type.startsWith('image/')
-                      );
-                      if (imageFiles.length > 0) {
-                        const dt = new DataTransfer();
-                        imageFiles.forEach((f) => dt.items.add(f));
-                        handleImageUpload(dt.files);
-                      }
+                    setDragOver(false);
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) {
+                      setSelectedFile(f);
+                      parseFile(f);
                     }
                   }}
-                  onClick={() => document.getElementById('search-ip-images-input')?.click()}
-                  className="flex h-28 w-44 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line bg-surface-2 text-ink-3 transition-colors hover:border-primary hover:text-primary"
+                  className={`flex flex-col items-center justify-center rounded-lg border-2 border-dashed py-16 transition-colors ${
+                    dragOver ? 'border-primary bg-primary-soft' : 'border-line bg-surface-2'
+                  }`}
                 >
-                  <ImagePlus className="h-8 w-8" />
-                  <span className="text-sm">
-                    {Object.keys(uploadedImages).length > 0
-                      ? `已上传 ${Object.keys(uploadedImages).length} 张`
-                      : '添加图片'}
-                  </span>
-                  <span className="text-[10px] text-ink-3">点击或拖拽导入</span>
+                  <CloudUpload className="h-16 w-16 text-ink-3" />
+                  <p className="mt-4 text-sm text-ink-2">点击上传或将文件拖拽到此区域</p>
+                  <p className="mt-1 text-xs text-ink-3">支持 .json 格式文件</p>
+                  <motion.button
+                    type="button"
+                    {...buttonTap}
+                    onClick={() => document.getElementById('search-ip-json-input')?.click()}
+                    className={`mt-6 ${primaryBtnClass}`}
+                  >
+                    选择文件
+                  </motion.button>
                 </div>
-              </div>
+              )}
 
-              {/* 文件上传列表 */}
-              <div className="rounded-md border border-line bg-card">
-                <button
-                  type="button"
-                  onClick={() => setUploadListCollapsed((v) => !v)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-surface-2"
-                >
-                  <div className="flex items-center gap-2">
-                    <motion.span
-                      animate={{ rotate: uploadListCollapsed ? 0 : 180 }}
-                      transition={{ duration: 0.2 }}
-                      className="text-ink-3"
-                    >
-                      <ChevronDown className="h-4 w-4" />
-                    </motion.span>
-                    <span className="text-xs font-medium text-ink-2">
-                      上传列表（{1 + Object.keys(uploadedImages).length} 个文件）
-                    </span>
-                    {!uploadListCollapsed && (
-                      <span className="flex items-center gap-1 text-[10px] text-success">
-                        <Check className="h-3 w-3" />
-                        全部上传完成
-                      </span>
-                    )}
+              {/* 解析错误提示 */}
+              {parseError && (
+                <div className="mt-4 rounded-md border border-error/30 bg-error/5 px-4 py-3 text-sm text-error">
+                  {parseError}
+                </div>
+              )}
+
+              {/* 已选文件 - 管理区 */}
+              {selectedFile && (
+                <div className="mt-6 space-y-6">
+                  {/* 标题输入 */}
+                  <div>
+                    <label className="mb-1.5 block text-sm font-medium text-ink-2">
+                      标题 <span className="text-error">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={ipTitle}
+                      onChange={(e) => setIpTitle(e.target.value)}
+                      maxLength={200}
+                      placeholder="请输入投稿标题"
+                      className="h-11 w-full rounded-md border border-input bg-background px-4 text-sm outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    />
                   </div>
-                </button>
-                {/* 内容区 */}
-                <AnimatePresence initial={false}>
-                  {!uploadListCollapsed && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.2, ease: 'easeOut' }}
-                      className="overflow-hidden"
+
+                  {/* 文件卡片列表 */}
+                  <div className="flex flex-wrap gap-4">
+                    {/* JSON 文件卡片 */}
+                    <div className="relative flex h-28 w-44 flex-col justify-between overflow-hidden rounded-lg bg-primary p-3 text-white">
+                      <div className="flex items-start justify-between">
+                        <FileText className="h-6 w-6" />
+                        <span className="flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-medium">
+                          <Check className="h-3 w-3" />
+                          上传完成
+                        </span>
+                      </div>
+                      <div>
+                        <p className="truncate text-xs font-semibold">{selectedFile.name}</p>
+                        <p className="mt-0.5 text-[10px] opacity-80">
+                          {(selectedFile.size / 1024).toFixed(1)} KB · JSON
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* 添加图片文件区域 */}
+                    <div
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.add(
+                          'border-primary',
+                          'text-primary',
+                          'bg-primary-soft'
+                        );
+                      }}
+                      onDragLeave={(e) => {
+                        e.currentTarget.classList.remove(
+                          'border-primary',
+                          'text-primary',
+                          'bg-primary-soft'
+                        );
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.currentTarget.classList.remove(
+                          'border-primary',
+                          'text-primary',
+                          'bg-primary-soft'
+                        );
+                        const files = e.dataTransfer.files;
+                        if (files && files.length > 0) {
+                          // 只处理图片文件
+                          const imageFiles = Array.from(files).filter((f) =>
+                            f.type.startsWith('image/')
+                          );
+                          if (imageFiles.length > 0) {
+                            const dt = new DataTransfer();
+                            imageFiles.forEach((f) => dt.items.add(f));
+                            handleImageUpload(dt.files);
+                          }
+                        }
+                      }}
+                      onClick={() => document.getElementById('search-ip-images-input')?.click()}
+                      className="flex h-28 w-44 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line bg-surface-2 text-ink-3 transition-colors hover:border-primary hover:text-primary"
                     >
-                      <div className="space-y-3 border-t border-line px-4 py-3">
-                        {/* JSON 文件项 */}
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary text-white">
-                            <FileText className="h-5 w-5" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="truncate text-sm font-medium text-foreground">
-                                {selectedFile.name}
-                              </span>
-                              <span className="shrink-0 text-[10px] text-ink-3">
-                                {(selectedFile.size / 1024).toFixed(1)} KB
-                              </span>
-                              <span className="flex shrink-0 items-center gap-1 text-xs text-success">
-                                <Check className="h-3 w-3" />
-                                上传完成
-                              </span>
-                            </div>
-                            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
-                              <div className="h-full w-full rounded-full bg-success" />
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => document.getElementById('search-ip-json-input')?.click()}
-                            className="flex shrink-0 items-center gap-1 text-xs text-primary transition-colors hover:underline"
-                            aria-label="更换 JSON 文件"
-                          >
-                            <RefreshCw className="h-3.5 w-3.5" />
-                            更换
-                          </button>
-                        </div>
-                        {/* 图片文件项 */}
-                        {Object.entries(uploadedImages).map(([name, item]) => (
-                          <div key={name} className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface-2">
-                              <img
-                                src={item.url}
-                                alt={name}
-                                className="h-full w-full object-cover"
-                              />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="truncate text-sm font-medium text-foreground">
-                                  {name}
-                                </span>
-                                <span className="shrink-0 text-[10px] text-ink-3">
-                                  {(item.file.size / 1024).toFixed(1)} KB
-                                </span>
-                                {item.uploading ? (
-                                  <span className="shrink-0 text-xs text-ink-3">
-                                    {item.progress}%
+                      <ImagePlus className="h-8 w-8" />
+                      <span className="text-sm">
+                        {Object.keys(uploadedImages).length > 0
+                          ? `已上传 ${Object.keys(uploadedImages).length} 张`
+                          : '添加图片'}
+                      </span>
+                      <span className="text-[10px] text-ink-3">点击或拖拽导入</span>
+                    </div>
+                  </div>
+
+                  {/* 文件上传列表 */}
+                  <div className="rounded-md border border-line bg-card">
+                    <button
+                      type="button"
+                      onClick={() => setUploadListCollapsed((v) => !v)}
+                      className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-surface-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <motion.span
+                          animate={{ rotate: uploadListCollapsed ? 0 : 180 }}
+                          transition={{ duration: 0.2 }}
+                          className="text-ink-3"
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </motion.span>
+                        <span className="text-xs font-medium text-ink-2">
+                          上传列表（{1 + Object.keys(uploadedImages).length} 个文件）
+                        </span>
+                        {!uploadListCollapsed && (
+                          <span className="flex items-center gap-1 text-[10px] text-success">
+                            <Check className="h-3 w-3" />
+                            全部上传完成
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                    {/* 内容区 */}
+                    <AnimatePresence initial={false}>
+                      {!uploadListCollapsed && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          className="overflow-hidden"
+                        >
+                          <div className="space-y-3 border-t border-line px-4 py-3">
+                            {/* JSON 文件项 */}
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary text-white">
+                                <FileText className="h-5 w-5" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="truncate text-sm font-medium text-foreground">
+                                    {selectedFile.name}
                                   </span>
-                                ) : item.error ? (
-                                  <span className="shrink-0 text-xs text-error">失败</span>
-                                ) : (
+                                  <span className="shrink-0 text-[10px] text-ink-3">
+                                    {(selectedFile.size / 1024).toFixed(1)} KB
+                                  </span>
                                   <span className="flex shrink-0 items-center gap-1 text-xs text-success">
                                     <Check className="h-3 w-3" />
                                     上传完成
                                   </span>
-                                )}
+                                </div>
+                                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+                                  <div className="h-full w-full rounded-full bg-success" />
+                                </div>
                               </div>
-                              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
-                                <div
-                                  className={`h-full rounded-full transition-all ${
-                                    item.error ? 'bg-error' : 'bg-success'
-                                  }`}
-                                  style={{ width: `${item.progress}%` }}
-                                />
-                              </div>
-                              {item.error && (
-                                <p className="mt-1 text-[10px] text-error">{item.error}</p>
-                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  document.getElementById('search-ip-json-input')?.click()
+                                }
+                                className="flex shrink-0 items-center gap-1 text-xs text-primary transition-colors hover:underline"
+                                aria-label="更换 JSON 文件"
+                              >
+                                <RefreshCw className="h-3.5 w-3.5" />
+                                更换
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setReplaceTarget(name);
-                                document.getElementById('search-ip-images-input')?.click();
-                              }}
-                              className="flex shrink-0 items-center gap-1 text-xs text-primary transition-colors hover:underline"
-                              aria-label="更换图片"
-                            >
-                              <RefreshCw className="h-3.5 w-3.5" />
-                              更换
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removeImage(name)}
-                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-error/5 hover:text-error"
-                              aria-label="移除图片"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* 文件指向显示区 */}
-              {parsedData && (
-                <div className="rounded-md border border-line bg-card p-6">
-                  <h3 className="mb-4 text-sm font-semibold text-foreground">文件指向显示</h3>
-                  <div className="space-y-6">
-                    {buildMindNodes(parsedData).map((group) => (
-                      <div key={group.name}>
-                        {/* 根节点 */}
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="h-10 w-10 shrink-0 rounded-full"
-                            style={{ backgroundColor: group.color }}
-                            title={group.name}
-                          />
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-foreground">{group.name}</p>
-                            {group.aliases && group.aliases.length > 0 && (
-                              <p className="truncate text-xs text-ink-3">
-                                {group.aliases.join(' / ')}
-                              </p>
-                            )}
-                          </div>
-                          <div className="ml-auto flex items-center gap-2 rounded-md bg-surface-2 px-2.5 py-1">
-                            {group.picture && uploadedImages[group.picture]?.url ? (
-                              <img
-                                src={uploadedImages[group.picture]?.url}
-                                alt={group.name}
-                                className="h-10 max-w-[120px] w-auto rounded object-contain"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = 'none';
-                                }}
-                              />
-                            ) : group.picture ? (
-                              <>
-                                <ImagePlus className="h-3.5 w-3.5 text-ink-3" />
-                                <span className="text-xs text-ink-3">
-                                  {group.picture}（未上传）
-                                </span>
-                              </>
-                            ) : (
-                              <span className="text-xs text-ink-3">无图片</span>
-                            )}
-                          </div>
-                        </div>
-                        {/* 连接线 */}
-                        {group.children && group.children.length > 0 && (
-                          <div className="ml-5 mt-2 space-y-2 border-l-2 border-line pl-5">
-                            {group.children.map((member) => (
-                              <div key={member.name} className="flex items-center gap-3">
-                                <div
-                                  className="h-3 w-3 shrink-0 rounded-full"
-                                  style={{ backgroundColor: member.color }}
-                                />
+                            {/* 图片文件项 */}
+                            {Object.entries(uploadedImages).map(([name, item]) => (
+                              <div key={name} className="flex items-center gap-3">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface-2">
+                                  <img
+                                    src={item.url}
+                                    alt={name}
+                                    className="h-full w-full object-cover"
+                                  />
+                                </div>
                                 <div className="min-w-0 flex-1">
-                                  <p className="text-sm text-foreground">{member.name}</p>
-                                  {member.aliases && member.aliases.length > 0 && (
-                                    <p className="truncate text-xs text-ink-3">
-                                      {member.aliases.join(' / ')}
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 rounded-md bg-surface-2 px-2.5 py-1">
-                                  {member.picture && uploadedImages[member.picture]?.url ? (
-                                    <img
-                                      src={uploadedImages[member.picture]?.url}
-                                      alt={member.name}
-                                      className="h-10 max-w-[120px] w-auto rounded object-contain"
-                                      onError={(e) => {
-                                        (e.target as HTMLImageElement).style.display = 'none';
-                                      }}
-                                    />
-                                  ) : member.picture ? (
-                                    <>
-                                      <ImagePlus className="h-3.5 w-3.5 text-ink-3" />
-                                      <span className="text-xs text-ink-3">
-                                        {member.picture}（未上传）
+                                  <div className="flex items-center gap-2">
+                                    <span className="truncate text-sm font-medium text-foreground">
+                                      {name}
+                                    </span>
+                                    <span className="shrink-0 text-[10px] text-ink-3">
+                                      {(item.file.size / 1024).toFixed(1)} KB
+                                    </span>
+                                    {item.uploading ? (
+                                      <span className="shrink-0 text-xs text-ink-3">
+                                        {item.progress}%
                                       </span>
-                                    </>
-                                  ) : (
-                                    <span className="text-xs text-ink-3">无图片</span>
+                                    ) : item.error ? (
+                                      <span className="shrink-0 text-xs text-error">失败</span>
+                                    ) : (
+                                      <span className="flex shrink-0 items-center gap-1 text-xs text-success">
+                                        <Check className="h-3 w-3" />
+                                        上传完成
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+                                    <div
+                                      className={`h-full rounded-full transition-all ${
+                                        item.error ? 'bg-error' : 'bg-success'
+                                      }`}
+                                      style={{ width: `${item.progress}%` }}
+                                    />
+                                  </div>
+                                  {item.error && (
+                                    <p className="mt-1 text-[10px] text-error">{item.error}</p>
                                   )}
                                 </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReplaceTarget(name);
+                                    document.getElementById('search-ip-images-input')?.click();
+                                  }}
+                                  className="flex shrink-0 items-center gap-1 text-xs text-primary transition-colors hover:underline"
+                                  aria-label="更换图片"
+                                >
+                                  <RefreshCw className="h-3.5 w-3.5" />
+                                  更换
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeImage(name)}
+                                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-error/5 hover:text-error"
+                                  aria-label="移除图片"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
                               </div>
                             ))}
                           </div>
-                        )}
-                      </div>
-                    ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
+
+                  {/* 文件指向显示区 */}
+                  {parsedData && (
+                    <div className="rounded-md border border-line bg-card p-6">
+                      <h3 className="mb-4 text-sm font-semibold text-foreground">文件指向显示</h3>
+                      <div className="space-y-6">
+                        {buildMindNodes(parsedData).map((group) => (
+                          <div key={group.name}>
+                            {/* 根节点 */}
+                            <div className="flex items-center gap-3">
+                              <div
+                                className="h-10 w-10 shrink-0 rounded-full"
+                                style={{ backgroundColor: group.color }}
+                                title={group.name}
+                              />
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-foreground">
+                                  {group.name}
+                                </p>
+                                {group.aliases && group.aliases.length > 0 && (
+                                  <p className="truncate text-xs text-ink-3">
+                                    {group.aliases.join(' / ')}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="ml-auto flex items-center gap-2 rounded-md bg-surface-2 px-2.5 py-1">
+                                {group.picture && uploadedImages[group.picture]?.url ? (
+                                  <img
+                                    src={uploadedImages[group.picture]?.url}
+                                    alt={group.name}
+                                    className="h-10 max-w-[120px] w-auto rounded object-contain"
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                    }}
+                                  />
+                                ) : group.picture ? (
+                                  <>
+                                    <ImagePlus className="h-3.5 w-3.5 text-ink-3" />
+                                    <span className="text-xs text-ink-3">
+                                      {group.picture}（未上传）
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="text-xs text-ink-3">无图片</span>
+                                )}
+                              </div>
+                            </div>
+                            {/* 连接线 */}
+                            {group.children && group.children.length > 0 && (
+                              <div className="ml-5 mt-2 space-y-2 border-l-2 border-line pl-5">
+                                {group.children.map((member) => (
+                                  <div key={member.name} className="flex items-center gap-3">
+                                    <div
+                                      className="h-3 w-3 shrink-0 rounded-full"
+                                      style={{ backgroundColor: member.color }}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-sm text-foreground">{member.name}</p>
+                                      {member.aliases && member.aliases.length > 0 && (
+                                        <p className="truncate text-xs text-ink-3">
+                                          {member.aliases.join(' / ')}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 rounded-md bg-surface-2 px-2.5 py-1">
+                                      {member.picture && uploadedImages[member.picture]?.url ? (
+                                        <img
+                                          src={uploadedImages[member.picture]?.url}
+                                          alt={member.name}
+                                          className="h-10 max-w-[120px] w-auto rounded object-contain"
+                                          onError={(e) => {
+                                            (e.target as HTMLImageElement).style.display = 'none';
+                                          }}
+                                        />
+                                      ) : member.picture ? (
+                                        <>
+                                          <ImagePlus className="h-3.5 w-3.5 text-ink-3" />
+                                          <span className="text-xs text-ink-3">
+                                            {member.picture}（未上传）
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <span className="text-xs text-ink-3">无图片</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* 协议声明 */}
+              <p className="mt-6 text-center text-xs text-ink-3">
+                上传即表示同意
+                <button type="button" className="text-primary hover:underline">
+                  《AMLLHub使用协议》
+                </button>
+                与
+                <button type="button" className="text-primary hover:underline">
+                  《社区公约》
+                </button>
+              </p>
+
+              {/* 提交提示消息 */}
+              {submitMsg && (
+                <div
+                  className={`mt-4 rounded-md px-4 py-3 text-sm ${
+                    submitMsg.type === 'success'
+                      ? 'border border-success/30 bg-success/5 text-success'
+                      : 'border border-error/30 bg-error/5 text-error'
+                  }`}
+                >
+                  {submitMsg.text}
+                </div>
+              )}
+
+              {/* 底部操作按钮 */}
+              <div className="mt-6 flex items-center justify-start gap-3 border-t border-line pt-6">
+                <motion.button
+                  type="button"
+                  {...buttonTap}
+                  disabled={!selectedFile || submitting}
+                  className="inline-flex h-11 items-center justify-center rounded-md border border-line bg-card px-6 text-sm font-semibold text-ink-2 transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  存草稿
+                </motion.button>
+                <motion.button
+                  type="button"
+                  {...buttonTap}
+                  onClick={handleSubmit}
+                  disabled={!selectedFile || submitting}
+                  className={primaryBtnClass}
+                >
+                  {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {submitting ? '提交中...' : '立即投稿'}
+                </motion.button>
+              </div>
             </div>
-          )}
-
-          {/* 协议声明 */}
-          <p className="mt-6 text-center text-xs text-ink-3">
-            上传即表示同意
-            <button type="button" className="text-primary hover:underline">
-              《AMLLHub使用协议》
-            </button>
-            与
-            <button type="button" className="text-primary hover:underline">
-              《社区公约》
-            </button>
-          </p>
-
-          {/* 提交提示消息 */}
-          {submitMsg && (
-            <div
-              className={`mt-4 rounded-md px-4 py-3 text-sm ${
-                submitMsg.type === 'success'
-                  ? 'border border-success/30 bg-success/5 text-success'
-                  : 'border border-error/30 bg-error/5 text-error'
-              }`}
-            >
-              {submitMsg.text}
-            </div>
-          )}
-
-          {/* 底部操作按钮 */}
-          <div className="mt-6 flex items-center justify-start gap-3 border-t border-line pt-6">
-            <motion.button
-              type="button"
-              {...buttonTap}
-              disabled={!selectedFile || submitting}
-              className="inline-flex h-11 items-center justify-center rounded-md border border-line bg-card px-6 text-sm font-semibold text-ink-2 transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              存草稿
-            </motion.button>
-            <motion.button
-              type="button"
-              {...buttonTap}
-              onClick={handleSubmit}
-              disabled={!selectedFile || submitting}
-              className={primaryBtnClass}
-            >
-              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {submitting ? '提交中...' : '立即投稿'}
-            </motion.button>
-          </div>
-        </div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -76,10 +76,7 @@ const waitForReady = (el: HTMLAudioElement, timeoutMs: number) =>
     };
     const onCanPlay = () => done(true);
     const onError = () => done(false);
-    const timer = window.setTimeout(
-      () => done(el.readyState >= el.HAVE_FUTURE_DATA),
-      timeoutMs
-    );
+    const timer = window.setTimeout(() => done(el.readyState >= el.HAVE_FUTURE_DATA), timeoutMs);
     el.addEventListener('canplay', onCanPlay);
     el.addEventListener('error', onError);
   });
@@ -220,9 +217,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // 绑定 audio 事件
   useEffect(() => {
-    const els = [audioARef.current, audioBRef.current].filter(
-      (el): el is HTMLAudioElement => !!el
-    );
+    const els = [audioARef.current, audioBRef.current].filter((el): el is HTMLAudioElement => !!el);
     const onTime = (e: Event) => {
       const el = e.target as HTMLAudioElement;
       if (el !== activeElRef.current) return;
@@ -603,25 +598,28 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (transitionCleanupRef.current !== null) {
         window.clearTimeout(transitionCleanupRef.current);
       }
-      transitionCleanupRef.current = window.setTimeout(() => {
-        const c = audioContextRef.current;
-        if (c) {
-          resetFilterParam(activeFilterRef.current, c);
-          resetFilterParam(standbyFilterRef.current, c);
-          // send 归零
-          activeSendRef.current?.gain.setValueAtTime(0, c.currentTime);
-          standbySendRef.current?.gain.setValueAtTime(0, c.currentTime);
-        }
-        oldEl.pause();
-        oldEl.removeAttribute('src');
-        oldEl.load();
-        transitionRef.current = false;
-        transitionCleanupRef.current = null;
-        if (pendingPreloadRef.current) {
-          pendingPreloadRef.current = false;
-          void preloadNext();
-        }
-      }, dur * 1000 + 100);
+      transitionCleanupRef.current = window.setTimeout(
+        () => {
+          const c = audioContextRef.current;
+          if (c) {
+            resetFilterParam(activeFilterRef.current, c);
+            resetFilterParam(standbyFilterRef.current, c);
+            // send 归零
+            activeSendRef.current?.gain.setValueAtTime(0, c.currentTime);
+            standbySendRef.current?.gain.setValueAtTime(0, c.currentTime);
+          }
+          oldEl.pause();
+          oldEl.removeAttribute('src');
+          oldEl.load();
+          transitionRef.current = false;
+          transitionCleanupRef.current = null;
+          if (pendingPreloadRef.current) {
+            pendingPreloadRef.current = false;
+            void preloadNext();
+          }
+        },
+        dur * 1000 + 100
+      );
     },
     [preloadNext]
   );
@@ -701,7 +699,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const bands = sp.process(buffer);
         let sum = 0;
         for (let i = 0; i < DRUM_BANDS; i++) sum += bands[i] ?? 0;
-        const volume = Math.min(1, ((sum / DRUM_BANDS) / 255) * 6);
+        const volume = Math.min(1, (sum / DRUM_BANDS / 255) * 6);
         store.set(lowFreqVolumeAtom, volume);
         rafId = requestAnimationFrame(onFrame);
       };
@@ -904,40 +902,42 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         startCrossfade(isAuto ? CROSSFADE_NATURAL : CROSSFADE_MANUAL);
         return;
       }
-    if (list.length === 1) {
-      // 只有一首：all 则重播，off 则停止
-      if (repeatModeRef.current === 'all' && activeElRef.current) {
-        activeElRef.current.currentTime = 0;
-        void activeElRef.current.play().catch(() => setPlaying(false));
+      if (list.length === 1) {
+        // 只有一首：all 则重播，off 则停止
+        if (repeatModeRef.current === 'all' && activeElRef.current) {
+          activeElRef.current.currentTime = 0;
+          void activeElRef.current.play().catch(() => setPlaying(false));
+        }
+        return;
       }
-      return;
-    }
-    let nextIdx: number;
-    if (plannedNextIdxRef.current >= 0) {
-      // 与预加载一致的预定下一首（shuffle 时为当前歌开始播放时随机选定的结果）
-      nextIdx = plannedNextIdxRef.current;
-    } else if (shuffleRef.current) {
-      do {
-        nextIdx = Math.floor(Math.random() * list.length);
-      } while (nextIdx === idx);
-    } else {
-      nextIdx = idx + 1;
-      if (nextIdx >= list.length) {
-        if (repeatModeRef.current === 'all') nextIdx = 0;
-        else {
-          setPlaying(false);
-          return;
+      let nextIdx: number;
+      if (plannedNextIdxRef.current >= 0) {
+        // 与预加载一致的预定下一首（shuffle 时为当前歌开始播放时随机选定的结果）
+        nextIdx = plannedNextIdxRef.current;
+      } else if (shuffleRef.current) {
+        do {
+          nextIdx = Math.floor(Math.random() * list.length);
+        } while (nextIdx === idx);
+      } else {
+        nextIdx = idx + 1;
+        if (nextIdx >= list.length) {
+          if (repeatModeRef.current === 'all') nextIdx = 0;
+          else {
+            setPlaying(false);
+            return;
+          }
         }
       }
-    }
-    setCurrentIndex(nextIdx);
-    currentIndexRef.current = nextIdx;
-    const item = list[nextIdx];
-    if (!item) return;
-    void resolveAndPlay(item.songId, {
-      meta: { name: item.name, artists: item.artists, cover: item.cover },
-    });
-  }, [resolveAndPlay, startCrossfade]);
+      setCurrentIndex(nextIdx);
+      currentIndexRef.current = nextIdx;
+      const item = list[nextIdx];
+      if (!item) return;
+      void resolveAndPlay(item.songId, {
+        meta: { name: item.name, artists: item.artists, cover: item.cover },
+      });
+    },
+    [resolveAndPlay, startCrossfade]
+  );
   // 同步到 ref，供 onEnd 闭包调用（auto=true 表示自然续播）
   playNextRef.current = (auto = false) => playNext(auto);
 

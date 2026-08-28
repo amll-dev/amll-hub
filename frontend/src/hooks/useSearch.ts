@@ -38,14 +38,18 @@ export function useSearch() {
   // 请求序号：仅最新一次请求的结果允许写入 state，防止慢的旧响应覆盖新结果
   const reqSeq = useRef(0);
 
+  const hasQueryRef = useRef(false);
+
   // 实际执行搜索（请求指定页的数据）
   const executeSearch = useCallback((q: string, f: SearchField, p: number) => {
     const trimmed = q.trim();
     if (!trimmed) {
+      hasQueryRef.current = false;
       setHasQuery(false);
       setState({ hits: [], loading: false, error: null, totalHits: 0 });
       return;
     }
+    hasQueryRef.current = true;
     setHasQuery(true);
     setState((s) => ({ ...s, loading: true, error: null }));
     const seq = ++reqSeq.current;
@@ -82,9 +86,10 @@ export function useSearch() {
       // 退出搜索模式时（首页）：morph 回 Hero 前先瞬时回顶。
       // layoutId morph 按页面坐标测量，滚动位置 ≠ 0 时旧快照与新测量的
       // 滚动差会被误判为位移（搜索框飞出屏幕）。非首页无 morph 配对，不处理
-      if (hasQuery && window.location.pathname === '/') {
+      if (hasQueryRef.current && window.location.pathname === '/') {
         window.scrollTo(0, 0);
       }
+      hasQueryRef.current = false;
       setHasQuery(false);
       setState({ hits: [], loading: false, error: null, totalHits: 0 });
       return;

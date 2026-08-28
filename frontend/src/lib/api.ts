@@ -670,10 +670,9 @@ export const api = {
 
   /** 移除审核员 */
   removeReviewer(username: string): Promise<void> {
-    return request<void>(
-      `/api/v1/admin/reviewers/${encodeURIComponent(username)}`,
-      { method: 'DELETE' },
-    );
+    return request<void>(`/api/v1/admin/reviewers/${encodeURIComponent(username)}`, {
+      method: 'DELETE',
+    });
   },
 
   // ===== 每日推荐 =====
@@ -819,7 +818,9 @@ export const api = {
 
   /** 获取歌曲详情 GET /api/v1/online/songs/:platform/:songId */
   getOnlineSong(platform: OnlinePlatform, songId: string): Promise<OnlineSongDetail> {
-    return request<OnlineSongDetail>(`/api/v1/online/songs/${platform}/${encodeURIComponent(songId)}`);
+    return request<OnlineSongDetail>(
+      `/api/v1/online/songs/${platform}/${encodeURIComponent(songId)}`
+    );
   },
 
   /** 获取歌词 GET /api/v1/online/lyrics/:platform/:songId */

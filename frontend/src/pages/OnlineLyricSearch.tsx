@@ -110,7 +110,9 @@ export function OnlineLyricSearch() {
     <div className="mx-auto max-w-[1200px] px-6 py-12">
       <motion.div initial="hidden" animate="show" variants={fadeUp}>
         <h1 className="text-3xl font-bold tracking-tight">平台歌词搜索</h1>
-        <p className="mt-2 text-sm text-ink-2">搜索歌曲并查看各平台歌词，支持网易云、QQ音乐、酷狗音乐。</p>
+        <p className="mt-2 text-sm text-ink-2">
+          搜索歌曲并查看各平台歌词，支持网易云、QQ音乐、酷狗音乐。
+        </p>
       </motion.div>
 
       {/* 搜索栏 */}
@@ -279,12 +281,7 @@ function SearchResultList({
   const btnActive = 'bg-primary-tint text-primary';
 
   return (
-    <motion.ul
-      variants={staggerContainer}
-      initial="hidden"
-      animate="show"
-      className="space-y-2"
-    >
+    <motion.ul variants={staggerContainer} initial="hidden" animate="show" className="space-y-2">
       {hits.map((hit) => {
         const key = `${hit.platform}-${hit.platformId}`;
         const isPlaying = hit.platform === 'ncm' && playingId === hit.platformId;
@@ -360,9 +357,7 @@ function SearchResultList({
                   onClick={() => onDownload(hit)}
                   disabled={downloadingKey !== null}
                   title={hitDlError ? `下载失败：${hitDlError}` : '下载歌词'}
-                  className={`${btnBase} ${
-                    hitDlError ? 'text-error hover:bg-error/10' : btnIdle
-                  }`}
+                  className={`${btnBase} ${hitDlError ? 'text-error hover:bg-error/10' : btnIdle}`}
                 >
                   {isDownloading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

@@ -122,6 +122,8 @@ export function LyricViewer({
   // 平台模式：原始 LRC 文本与下载文件名（其他模式为 null）
   const [onlineRaw, setOnlineRaw] = useState<string | null>(null);
   const [onlineDlName, setOnlineDlName] = useState<string | null>(null);
+  const onlinePlatform = online?.platform;
+  const onlineSongId = online?.songId;
 
   useEffect(() => {
     let cancelled = false;
@@ -134,8 +136,8 @@ export function LyricViewer({
       ? api.viewLyric(filename)
       : ttml
         ? api.parseLyric(ttml)
-        : online
-          ? fetchOnlineView(online.platform, online.songId).then((r) => {
+        : onlinePlatform && onlineSongId
+          ? fetchOnlineView(onlinePlatform, onlineSongId).then((r) => {
               if (!cancelled) {
                 setOnlineRaw(r.rawLyric);
                 setOnlineDlName(r.downloadName);
@@ -164,7 +166,7 @@ export function LyricViewer({
     return () => {
       cancelled = true;
     };
-  }, [filename, ttml, online?.platform, online?.songId]);
+  }, [filename, ttml, onlinePlatform, onlineSongId]);
 
   if (loading) {
     return (

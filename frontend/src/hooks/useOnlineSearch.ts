@@ -1,5 +1,11 @@
 import { useCallback, useRef, useState } from 'react';
-import type { OnlineLyric, OnlinePlatform, OnlineSearchHit, OnlineSearchResult, OnlineSongDetail } from '@/lib/types';
+import type {
+  OnlineLyric,
+  OnlinePlatform,
+  OnlineSearchHit,
+  OnlineSearchResult,
+  OnlineSongDetail,
+} from '@/lib/types';
 import { api } from '@/lib/api';
 
 export interface OnlineSearchContextValue {
@@ -81,39 +87,36 @@ export function useOnlineSearch(): OnlineSearchContextValue {
         if (seq === searchSeq.current) setSearchLoading(false);
       }
     },
-    [query, platform],
+    [query, platform]
   );
 
-  const selectSong = useCallback(
-    async (hit: OnlineSearchHit) => {
-      const seq = ++songSeq.current;
-      setSongLoading(true);
-      setSongError(null);
-      setLyricLoading(true);
-      setLyric(null);
-      setLyricError(null);
-      setSelectedSong(null);
+  const selectSong = useCallback(async (hit: OnlineSearchHit) => {
+    const seq = ++songSeq.current;
+    setSongLoading(true);
+    setSongError(null);
+    setLyricLoading(true);
+    setLyric(null);
+    setLyricError(null);
+    setSelectedSong(null);
 
-      try {
-        const [song, lyricData] = await Promise.all([
-          api.getOnlineSong(hit.platform, hit.platformId),
-          api.getOnlineLyric(hit.platform, hit.platformId).catch(() => null),
-        ]);
-        if (seq !== songSeq.current) return;
-        setSelectedSong(song);
-        setLyric(lyricData);
-      } catch (err) {
-        if (seq !== songSeq.current) return;
-        setSongError(err instanceof Error ? err.message : '获取歌曲详情失败');
-      } finally {
-        if (seq === songSeq.current) {
-          setSongLoading(false);
-          setLyricLoading(false);
-        }
+    try {
+      const [song, lyricData] = await Promise.all([
+        api.getOnlineSong(hit.platform, hit.platformId),
+        api.getOnlineLyric(hit.platform, hit.platformId).catch(() => null),
+      ]);
+      if (seq !== songSeq.current) return;
+      setSelectedSong(song);
+      setLyric(lyricData);
+    } catch (err) {
+      if (seq !== songSeq.current) return;
+      setSongError(err instanceof Error ? err.message : '获取歌曲详情失败');
+    } finally {
+      if (seq === songSeq.current) {
+        setSongLoading(false);
+        setLyricLoading(false);
       }
-    },
-    [],
-  );
+    }
+  }, []);
 
   return {
     inputValue,

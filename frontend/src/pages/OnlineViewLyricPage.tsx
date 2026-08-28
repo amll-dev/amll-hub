@@ -18,7 +18,10 @@ export function OnlineViewLyricPage() {
       <div className="mx-auto max-w-[900px] px-6 py-16 text-center">
         <h1 className="text-xl font-bold text-error">参数错误</h1>
         <p className="mt-2 text-sm text-ink-2">平台或歌曲 ID 无效</p>
-        <Link to="/lyrics-search" className="mt-6 inline-block text-sm text-primary hover:underline">
+        <Link
+          to="/lyrics-search"
+          className="mt-6 inline-block text-sm text-primary hover:underline"
+        >
           返回平台搜索
         </Link>
       </div>
@@ -44,7 +47,10 @@ export function OnlineViewLyricPage() {
         </Link>
       </div>
 
-      <LyricViewer online={{ platform: validPlatform, songId: decodeURIComponent(songId) }} showHeader />
+      <LyricViewer
+        online={{ platform: validPlatform, songId: decodeURIComponent(songId) }}
+        showHeader
+      />
     </motion.div>
   );
 }

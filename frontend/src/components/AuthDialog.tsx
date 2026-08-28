@@ -17,16 +17,17 @@ function PlaceholderQR() {
   useEffect(() => {
     let cancelled = false;
     void import('qrcode')
-      .then((QRCode) => QRCode.default.toDataURL('amll-hub-login-placeholder', {
-        width: 176,
-        margin: 1,
-        color: { dark: '#1d1d1f', light: '#ffffff' },
-      }))
+      .then((QRCode) =>
+        QRCode.default.toDataURL('amll-hub-login-placeholder', {
+          width: 176,
+          margin: 1,
+          color: { dark: '#1d1d1f', light: '#ffffff' },
+        })
+      )
       .then((url) => {
         if (!cancelled) setDataUrl(url);
       })
-      .catch(() => {
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };

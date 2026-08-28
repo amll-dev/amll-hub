@@ -6,9 +6,7 @@ export const OnlineSearchContext = createContext<OnlineSearchContextValue | null
 
 export function OnlineSearchProvider({ children }: { children: ReactNode }) {
   const value = useOnlineSearch();
-  return (
-    <OnlineSearchContext.Provider value={value}>{children}</OnlineSearchContext.Provider>
-  );
+  return <OnlineSearchContext.Provider value={value}>{children}</OnlineSearchContext.Provider>;
 }
 
 /** 读取平台歌词搜索状态 */

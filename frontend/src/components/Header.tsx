@@ -70,7 +70,11 @@ export function Header() {
             }}
             className="relative flex items-center gap-2"
           >
-            <img src="/logo.png" alt="AMLLHub" className="h-8 w-8 shrink-0 rounded-md object-contain" />
+            <img
+              src="/logo.png"
+              alt="AMLLHub"
+              className="h-8 w-8 shrink-0 rounded-md object-contain"
+            />
             <span className="text-lg font-bold tracking-tight">AMLLHub</span>
             <span className="absolute inset-x-0 top-full mt-0.5 whitespace-nowrap text-center text-[9px] leading-none text-ink-3">
               测试版本，不代表最终品质

@@ -833,12 +833,7 @@ function LyricView({
 
   return (
     <div className="max-h-[480px] overflow-y-auto pr-2">
-      <motion.ul
-        variants={listContainer}
-        initial="hidden"
-        animate="show"
-        className="space-y-2"
-      >
+      <motion.ul variants={listContainer} initial="hidden" animate="show" className="space-y-2">
         {lines.map((line, i) => (
           <motion.li key={i} variants={indexedListItem(i)}>
             <p className="text-sm leading-relaxed text-foreground">

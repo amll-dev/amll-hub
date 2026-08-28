@@ -24,11 +24,7 @@ import { LyricSubmitForm } from '@/components/creator/LyricSubmitForm';
 import { DailyRecommendForm } from '@/components/creator/DailyRecommendForm';
 import { SearchIpForm } from '@/components/creator/SearchIpForm';
 import { SearchIpDetail } from '@/components/creator/SearchIpDetail';
-import type {
-  DailyRecommendation,
-  DailyRecListItem,
-  SubmissionListItem,
-} from '@/lib/types';
+import type { DailyRecommendation, DailyRecListItem, SubmissionListItem } from '@/lib/types';
 
 type View = 'home' | 'content' | 'submit';
 type SubmitTab = 'lyrics' | 'daily' | 'search-ip';

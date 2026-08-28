@@ -52,10 +52,11 @@ export function SearchProvider({ children }: { children: ReactNode }) {
   }, [search.hasQuery]);
 
   // 提交搜索
+  const { submit: searchSubmit } = search;
   const submit = useCallback(() => {
     if (location.pathname !== '/') navigate('/');
-    search.submit();
-  }, [location.pathname, navigate, search.submit]);
+    searchSubmit();
+  }, [location.pathname, navigate, searchSubmit]);
 
   // 把 registerInput 和 inputRef 暴露给需要聚焦恢复的组件
   return (
