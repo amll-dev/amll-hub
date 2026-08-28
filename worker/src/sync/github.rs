@@ -9,7 +9,7 @@ use crate::config::GitHubConfig;
 const RETRY_BASE_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// 下载重试退避上限
-const RETRY_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(60);
+const RETRY_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// 带指数退避的无限重试包装：不成功不返回，阻断流程直到下载成功
 async fn with_retry<T, F, Fut>(ctx: &str, f: F) -> Result<T>

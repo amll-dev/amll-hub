@@ -38,16 +38,23 @@ async fn ensure_index(client: &Client, name: &str) -> Result<()> {
     let searchable: Vec<&str> = vec![
         "musicNames",
         "musicNamesPinyin",
+        "musicNamesInitials",
         "artists",
         "artistsPinyin",
+        "artistsInitials",
         "albums",
         "albumsPinyin",
+        "albumsInitials",
         "lyricText",
         "platformIds_ncm",
         "platformIds_qq",
         "platformIds_spotify",
         "platformIds_apple",
+        "ttmlAuthorGithub",
+        "ttmlAuthorGithubLogin",
     ];
+    // filterable 需覆盖后端 searchByExactID 的 filter 表达式引用的全部字段
+    // （含 ttmlAuthorGithubLogin，否则按 ID 搜索报 502）
     let filterable: Vec<&str> = vec![
         "platformIds_ncm",
         "platformIds_qq",
@@ -56,6 +63,7 @@ async fn ensure_index(client: &Client, name: &str) -> Result<()> {
         "artists",
         "albums",
         "ttmlAuthorGithub",
+        "ttmlAuthorGithubLogin",
     ];
 
     let settings = Settings::new()
