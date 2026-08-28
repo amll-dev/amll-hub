@@ -1,0 +1,54 @@
+{
+  "name": "amll-hub-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint src",
+    "format": "prettier --write src",
+    "lint:fix": "eslint src --fix",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@applemusic-like-lyrics/core": "^0.5.2",
+    "@applemusic-like-lyrics/lyric": "^1.0.1",
+    "@applemusic-like-lyrics/react-full": "^0.4.2",
+    "browser-id3-writer": "^4.4.0",
+    "framer-motion": "^11.15.0",
+    "jotai": "^2.12.0",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.469.0",
+    "marked": "^15.0.0",
+    "modern-screenshot": "^4.4.39",
+    "music-metadata": "^11.0.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.1.0",
+    "sound-processor": "^1.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^10.8.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.4",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.67.0",
+    "vite": "^7.0.0",
+    "vitest": "^4.1.10"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true
+  }
+}
