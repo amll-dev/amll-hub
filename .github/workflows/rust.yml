@@ -43,30 +43,55 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux x64 - musl
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact_name: ttml-worker-linux-x64-musl
+            binary_path: worker/target/x86_64-unknown-linux-musl/release/ttml-worker
+            install_deps: sudo apt-get update && sudo apt-get install -y musl-tools
+          
+          # Linux x64 - gnu
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: ttml-worker-linux-x64
+            artifact_name: ttml-worker-linux-x64-gnu
             binary_path: worker/target/x86_64-unknown-linux-gnu/release/ttml-worker
+            install_deps: ""
+          
+          # Linux ARM64
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             artifact_name: ttml-worker-linux-arm64
             binary_path: worker/target/aarch64-unknown-linux-gnu/release/ttml-worker
+            install_deps: ""
+          
+          # Windows x64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: ttml-worker-windows-x64
             binary_path: worker/target/x86_64-pc-windows-msvc/release/ttml-worker.exe
+            install_deps: ""
+          
+          # Windows ARM64
           - os: windows-11-arm
             target: aarch64-pc-windows-msvc
             artifact_name: ttml-worker-windows-arm64
             binary_path: worker/target/aarch64-pc-windows-msvc/release/ttml-worker.exe
+            install_deps: ""
+          
+          # macOS x64
           - os: macos-15-intel
             target: x86_64-apple-darwin
             artifact_name: ttml-worker-macos-x64
             binary_path: worker/target/x86_64-apple-darwin/release/ttml-worker
+            install_deps: ""
+          
+          # macOS ARM64
           - os: macos-latest
             target: aarch64-apple-darwin
             artifact_name: ttml-worker-macos-arm64
             binary_path: worker/target/aarch64-apple-darwin/release/ttml-worker
+            install_deps: ""
+
     defaults:
       run:
         working-directory: ./worker
@@ -74,6 +99,10 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v7
+
+      - name: 安装系统依赖（musl）
+        if: matrix.install_deps != ''
+        run: ${{ matrix.install_deps }}
 
       - name: 配置 Rust
         uses: dtolnay/rust-toolchain@stable
@@ -89,6 +118,7 @@ jobs:
         run: cargo build --release --bin ttml-worker --target ${{ matrix.target }}
 
       - name: 测试
+        if: matrix.target != 'x86_64-unknown-linux-musl'
         run: cargo test --release --target ${{ matrix.target }}
 
       - name: 上传产物
