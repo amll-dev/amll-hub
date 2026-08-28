@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { ChangeEvent, CompositionEvent, FormEvent, KeyboardEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown, Loader2, Search } from 'lucide-react';
 import type { SearchField } from '@/lib/types';
@@ -108,10 +108,54 @@ export function SearchBar({
   compact = false,
 }: Props) {
   const { registerInput, hasQuery } = useSearchContext();
+
+  // 显示文本
+  const [draft, setDraft] = useState(query);
+  // 是否在选择词语
+  const composing = useRef(false);
+
+  useEffect(() => {
+    if (composing.current) {
+      return;
+    }
+    setDraft(query);
+  }, [query]);
+
+  const handleCompositionStart = () => {
+    composing.current = true;
+  };
+
+  const handleCompositionEnd = (e: CompositionEvent<HTMLInputElement>) => {
+    composing.current = false;
+    const value = e.currentTarget.value;
+    setDraft(value);
+    onQueryChange(value);
+  };
+
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setDraft(value);
+    if (composing.current) {
+      return;
+    }
+    onQueryChange(value);
+  };
+
+  // 选择候选词的时候拦截回车避免错误提交
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && (composing.current || e.nativeEvent.isComposing)) {
+      e.preventDefault();
+    }
+  };
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    if (composing.current) {
+      return;
+    }
     onSubmit();
   };
+
   return (
     <form onSubmit={handleSubmit} className="flex items-center gap-2 h-11">
       <FieldSelect value={field} onChange={onFieldChange} />
@@ -121,8 +165,11 @@ export function SearchBar({
         <input
           ref={registerInput}
           type="text"
-          value={query}
-          onChange={(e) => onQueryChange(e.target.value)}
+          value={draft}
+          onChange={handleChange}
+          onCompositionStart={handleCompositionStart}
+          onCompositionEnd={handleCompositionEnd}
+          onKeyDown={handleKeyDown}
           placeholder="搜索歌曲、歌手、专辑或歌词…"
           autoFocus={compact}
           className="w-full h-11 rounded-md border border-input bg-card pl-10 pr-4 text-sm text-foreground transition-colors placeholder:text-ink-3 focus:border-primary focus:outline-none focus:ring-[3px] focus:ring-[var(--amll-primary-soft)]"
