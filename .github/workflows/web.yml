@@ -22,30 +22,33 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+
       - name: 配置 Node 环境
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: 安装依赖
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: 类型检查
         run: npx tsc --noEmit
 
       - name: ESLint
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Prettier 格式检查
         run: npx prettier --check src
 
       - name: 单元测试
-        run: npm run test
+        run: pnpm run test
 
       - name: 构建
-        run: npm run build
+        run: pnpm run build
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v7
