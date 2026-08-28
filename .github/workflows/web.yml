@@ -46,3 +46,11 @@ jobs:
 
       - name: 构建
         run: npm run build
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+          retention-days: 7
