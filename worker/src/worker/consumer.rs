@@ -11,7 +11,7 @@ use super::sync_task::SyncTaskRunner;
 /// 重试基础退避
 const RETRY_BASE_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
 /// 重试退避上限（指数增长到此封顶）
-const RETRY_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(60);
+const RETRY_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// 启动 RabbitMQ 消费循环
 ///
