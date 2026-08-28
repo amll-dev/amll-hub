@@ -57,7 +57,7 @@ export function Hero() {
                 transition={{ duration: 0.6, ease: [0.2, 0.8, 0.2, 1] }}
                 className="text-center text-[clamp(40px,7vw,72px)] font-bold leading-tight tracking-[-0.03em]"
               >
-                AMLLHub
+                AMLL Hub
               </motion.h1>
 
               <motion.p

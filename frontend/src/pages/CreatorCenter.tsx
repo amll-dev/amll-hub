@@ -610,10 +610,10 @@ export function CreatorCenter() {
           <div className="flex items-center gap-4">
             <div className="relative flex items-center gap-4">
               <Link to="/">
-                <img src="/logo.png" alt="AMLLHub" className="h-8 w-8 rounded-md object-contain" />
+                <img src="/logo.png" alt="AMLL-Hub" className="h-8 w-8 rounded-md object-contain" />
               </Link>
               <span className="text-lg font-bold tracking-tight text-foreground">
-                AMLLHub 创作中心
+                AMLL Hub 创作中心
               </span>
               <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
                 测试版

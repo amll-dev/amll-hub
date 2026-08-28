@@ -324,7 +324,7 @@ export function AuthDialog() {
                 <h4 className="text-base font-semibold text-foreground">扫描二维码登录</h4>
                 <PlaceholderQR />
                 <p className="text-center text-xs leading-relaxed text-ink-2">
-                  请使用 AMLLHub 客户端
+                  请使用 AMLL Hub 客户端
                   <br />
                   扫码登录或扫码下载 APP
                 </p>
