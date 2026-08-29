@@ -30,8 +30,9 @@ describe('api.request 管道', () => {
   });
 
   it('业务码非 200 抛 ApiError（含 code）', async () => {
-    vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValue(res(200, { code: 500, message: '服务器错误' }) as never);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      res(200, { code: 500, message: '服务器错误' }) as never
+    );
     await expect(api.getStats()).rejects.toMatchObject({
       name: 'ApiError',
       code: 500,
