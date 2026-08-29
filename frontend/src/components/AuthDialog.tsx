@@ -61,7 +61,7 @@ function PlaceholderQR() {
     let cancelled = false;
     void import('qrcode')
       .then((QRCode) =>
-        QRCode.default.toDataURL('amll-hub-login-placeholder', {
+        QRCode.default.toDataURL('居然真的有人来扫这个码o(〃＾▽＾〃)o，此功能暂未上线，敬请期待~', {
           width: 176,
           margin: 1,
           color: { dark: '#1d1d1f', light: '#ffffff' },
