@@ -54,8 +54,9 @@ describe('api.request 管道', () => {
     setToken('tk');
     const events: string[] = [];
     window.addEventListener('auth:unauthorized', () => events.push('fired'));
-    vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValue(res(401, { code: 401, message: 'token 过期' }) as never);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      res(401, { code: 401, message: 'token 过期' }) as never
+    );
     await expect(api.getStats()).rejects.toBeInstanceOf(ApiError);
     expect(getToken()).toBeNull();
     expect(events).toEqual(['fired']);
@@ -71,12 +72,11 @@ describe('api.request 管道', () => {
   });
 
   it('响应体非 JSON 抛"请求失败"', async () => {
-    vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValue({
-        ok: true,
-        status: 502,
-        json: async () => Promise.reject(new Error('x')),
-      } as never);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 502,
+      json: async () => Promise.reject(new Error('x')),
+    } as never);
     await expect(api.getStats()).rejects.toThrow('请求失败：HTTP 502');
   });
 });
