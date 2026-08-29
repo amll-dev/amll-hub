@@ -141,6 +141,8 @@ export function SearchIpDetail({
                     <img
                       src={imgUrl(group.pictures)}
                       alt={groupName}
+                      loading="lazy"
+                      decoding="async"
                       className="h-12 w-auto rounded bg-surface-2 object-contain"
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = 'none';
@@ -175,6 +177,8 @@ export function SearchIpDetail({
                           <img
                             src={imgUrl(member.pictures)}
                             alt={member.authors[0] ?? ''}
+                            loading="lazy"
+                            decoding="async"
                             className="h-10 w-10 shrink-0 rounded-full object-contain"
                             onError={(e) => {
                               (e.target as HTMLImageElement).style.display = 'none';

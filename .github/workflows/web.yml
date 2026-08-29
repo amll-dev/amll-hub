@@ -53,6 +53,31 @@ jobs:
       - name: 构建
         run: pnpm run build
 
+      - name: 安装 Playwright 浏览器
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: E2E 冒烟测试
+        run: pnpm run test:e2e
+
+      - name: 上传 E2E 失败痕迹
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces
+          path: frontend/test-results
+          if-no-files-found: ignore
+
+      - name: Lighthouse CI
+        run: pnpm run lighthouse
+
+      - name: 上传 Lighthouse 报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-report
+          path: frontend/.lighthouseci
+          if-no-files-found: ignore
+
       - name: 上传构建产物
         uses: actions/upload-artifact@v7
         with:

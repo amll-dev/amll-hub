@@ -12,6 +12,9 @@
 /frontend/coverage
 /frontend/*.local
 /frontend/tsconfig.tsbuildinfo
+/frontend/playwright-report
+/frontend/test-results
+/frontend/.lighthouseci
 .eslintcache
 npm-debug.log*
 yarn-debug.log*

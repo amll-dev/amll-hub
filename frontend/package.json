@@ -10,7 +10,10 @@
     "lint": "eslint src",
     "format": "prettier --write src",
     "lint:fix": "eslint src --fix",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "lighthouse": "lhci autorun"
   },
   "dependencies": {
     "@applemusic-like-lyrics/core": "^0.5.2",
@@ -56,15 +59,20 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@lhci/cli": "^0.15.0",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/vite": "^4.0.0",
+    "@types/dompurify": "^3.2.0",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "4.1.10",
     "eslint": "^10.8.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.4",
     "globals": "^17.11.0",
+    "jsdom": "^30.0.1",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.0",

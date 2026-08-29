@@ -12,6 +12,7 @@ import {
   PaginationLink,
 } from '@/components/ui/pagination';
 import { SimpleTooltip } from '@/components/ui/tooltip';
+import { PageContainer } from '@/components/PageContainer';
 
 const PAGE_SIZE = 20;
 const FETCH_LIMIT = 50;
@@ -79,7 +80,7 @@ export function Ranking() {
   };
 
   return (
-    <div className="mx-auto max-w-[1100px] px-6 py-12">
+    <PageContainer width="sm">
       <div id="ranking-anchor" className="-mt-20 pt-20" />
 
       {/* 标题区 */}
@@ -244,7 +245,7 @@ export function Ranking() {
           )}
         </>
       )}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -263,6 +264,7 @@ function Cover({ cover }: { cover: string }) {
       src={cover}
       alt=""
       loading="lazy"
+      decoding="async"
       onError={() => setFailed(true)}
       className="h-12 w-12 shrink-0 rounded object-cover"
     />

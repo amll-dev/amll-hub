@@ -36,6 +36,7 @@ import { useSentinel } from '@/hooks/useSentinel';
 import { parseMarkupText } from '@/lib/markup';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
 import { NavItem } from '@/components/NavItem';
+import { PageContainer } from '@/components/PageContainer';
 import { buttonVariants } from '@/components/ui/button';
 import { CardDetailSkeleton, ListSkeleton } from '@/components/ui/Skeleton';
 import { LyricSubmitForm } from '@/components/creator/LyricSubmitForm';
@@ -474,6 +475,8 @@ function DailyRecommendDetail({ id, onBack }: { id: number; onBack: () => void }
           <img
             src={coverUrl}
             alt={detail.songName}
+            loading="lazy"
+            decoding="async"
             className="mt-4 h-40 w-40 rounded-md border border-line object-cover"
           />
         )}
@@ -595,7 +598,7 @@ export function CreatorCenter() {
   // 未登录拦截
   if (!user) {
     return (
-      <div className="mx-auto max-w-[1200px] px-6 py-32 text-center">
+      <PageContainer className="py-32 text-center">
         <h1 className="text-2xl font-bold tracking-tight">请先登录</h1>
         <p className="mt-3 text-ink-2">登录后可进入创作中心</p>
         <motion.button
@@ -606,7 +609,7 @@ export function CreatorCenter() {
         >
           去登录
         </motion.button>
-      </div>
+      </PageContainer>
     );
   }
 
@@ -659,6 +662,7 @@ export function CreatorCenter() {
                   <img
                     src={user.avatar}
                     alt={user.displayName || user.name}
+                    decoding="async"
                     className="h-9 w-9 rounded-full object-cover"
                   />
                 ) : (

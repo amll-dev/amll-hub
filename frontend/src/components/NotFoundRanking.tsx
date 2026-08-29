@@ -90,6 +90,7 @@ function Cover({ cover }: { cover: string }) {
       src={cover}
       alt=""
       loading="lazy"
+      decoding="async"
       onError={() => setFailed(true)}
       className="h-10 w-10 shrink-0 rounded object-cover"
     />

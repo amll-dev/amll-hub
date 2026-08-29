@@ -1,11 +1,12 @@
-import { Suspense, useEffect } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { useAtomValue } from 'jotai';
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
+import { loginOpenAtom } from '@/atoms/auth';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { Player } from '@/components/Player';
-import { AuthDialog } from '@/components/AuthDialog';
 import { AuthBoot } from '@/boot/AuthBoot';
 import { SearchBoot } from '@/boot/SearchBoot';
 import { PlayerBoot } from '@/boot/PlayerBoot';
@@ -43,6 +44,25 @@ function AnimatedOutlet() {
   );
 }
 
+/** 登录弹窗懒加载：首次打开时才拉取 chunk，加载后常驻（关闭复位逻辑不变） */
+const AuthDialog = lazy(() =>
+  import('@/components/AuthDialog').then((m) => ({ default: m.AuthDialog }))
+);
+
+function LazyAuthDialog() {
+  const loginOpen = useAtomValue(loginOpenAtom);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (loginOpen) setLoaded(true);
+  }, [loginOpen]);
+  if (!loaded) return null;
+  return (
+    <Suspense fallback={null}>
+      <AuthDialog />
+    </Suspense>
+  );
+}
+
 /** 全局布局：Provider 层 + Header/Footer + 全局播放器 + 登录弹窗 */
 export function Layout() {
   const location = useLocation();
@@ -62,7 +82,7 @@ export function Layout() {
         {!useCustomHeader && <Footer />}
       </div>
       <Player />
-      <AuthDialog />
+      <LazyAuthDialog />
       <Toaster />
     </TooltipProvider>
   );

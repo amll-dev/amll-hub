@@ -21,6 +21,7 @@ import { api } from '@/lib/api';
 import { downloadText, sanitizeFileName } from '@/lib/download';
 import { buttonTap, fadeUp, listItem, staggerContainer } from '@/lib/motion';
 import { ONLINE_LYRIC_EXT } from '@/components/LyricViewer';
+import { PageContainer } from '@/components/PageContainer';
 import type { OnlinePlatform, OnlineSearchHit } from '@/lib/types';
 
 const PLATFORM_OPTIONS: { value: OnlinePlatform; label: string }[] = [
@@ -107,7 +108,7 @@ export function OnlineLyricSearch() {
   };
 
   return (
-    <div className="mx-auto max-w-[1200px] px-6 py-12">
+    <PageContainer>
       <motion.div initial="hidden" animate="show" variants={fadeUp}>
         <h1 className="text-3xl font-bold tracking-tight">平台歌词搜索</h1>
         <p className="mt-2 text-sm text-ink-2">
@@ -165,7 +166,7 @@ export function OnlineLyricSearch() {
           onDownload={handleDownload}
         />
       </div>
-    </div>
+    </PageContainer>
   );
 }
 
@@ -382,6 +383,7 @@ function SongCover({ src, alt }: { src?: string; alt: string }) {
         src={src}
         alt={alt}
         loading="lazy"
+        decoding="async"
         className="h-12 w-12 shrink-0 rounded-md object-cover shadow-sm"
       />
     );

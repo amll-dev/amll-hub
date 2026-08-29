@@ -8,6 +8,7 @@ import { queryKeys } from '@/lib/query';
 import type { DailyRecommendation } from '@/lib/types';
 import { DailyCalendar } from '@/components/DailyCalendar';
 import { RecommendCard, SkeletonCard, EmptyState } from '@/components/RecommendCard';
+import { PageContainer } from '@/components/PageContainer';
 import { whileInViewProps } from '@/lib/motion';
 
 /** 格式化日期为 YYYY-MM-DD */
@@ -79,7 +80,7 @@ export function DailyRecommend() {
         </Link>
       </div>
 
-      <div className="mx-auto max-w-[1200px] px-6 pb-16 pt-8">
+      <PageContainer className="pb-16 pt-8">
         <motion.div {...whileInViewProps} className="mb-8">
           <h1 className="m-0 text-[32px] font-semibold text-foreground">每日推荐</h1>
           <p className="mt-1 text-base text-ink-2">发现每日精选音乐推荐</p>
@@ -114,7 +115,7 @@ export function DailyRecommend() {
             </motion.div>
           </div>
         )}
-      </div>
+      </PageContainer>
     </motion.div>
   );
 }
