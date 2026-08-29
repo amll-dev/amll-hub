@@ -7,7 +7,9 @@ describe('cn', () => {
   });
 
   it('过滤假值条件 class', () => {
-    expect(cn('a', false && 'b', undefined, null, 'c')).toBe('a c');
+    // 用变量传假值条件，避免字面量触发 no-constant-binary-expression
+    const disabled = false;
+    expect(cn('a', disabled && 'b', undefined, null, 'c')).toBe('a c');
   });
 
   it('尾部 class 覆盖前面的冲突工具类（twMerge）', () => {
