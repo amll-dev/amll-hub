@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { TargetAndTransition, Variants } from 'framer-motion';
 import {
   buttonTap,
   cardHover,
@@ -10,15 +11,19 @@ import {
   whileInViewProps,
 } from '@/lib/motion';
 
+// Variant 是 TargetAndTransition | TargetResolver 联合类型，
+// 业务常量均为静态目标对象，统一收窄后即可安全访问 transition
+const show = (v: Variants): TargetAndTransition => v.show as TargetAndTransition;
+
 describe('motion 动效常量', () => {
   it('fadeUp：hidden 隐藏 + show 复位（带缓动配置）', () => {
     expect(fadeUp.hidden).toEqual({ opacity: 0, y: 24 });
     expect(fadeUp.show).toMatchObject({ opacity: 1, y: 0 });
-    expect(fadeUp.show?.transition).toEqual({ duration: 0.5, ease: [0.2, 0.8, 0.2, 1] });
+    expect(show(fadeUp).transition).toEqual({ duration: 0.5, ease: [0.2, 0.8, 0.2, 1] });
   });
 
   it('staggerContainer：子元素错峰入场参数', () => {
-    expect(staggerContainer.show?.transition).toEqual({
+    expect(show(staggerContainer).transition).toEqual({
       staggerChildren: 0.08,
       delayChildren: 0.05,
     });
@@ -29,9 +34,9 @@ describe('motion 动效常量', () => {
   });
 
   it('indexedListItem：延迟随索引增长且封顶 0.9s', () => {
-    expect(indexedListItem(0).show?.transition?.delay).toBe(0);
-    expect(indexedListItem(3).show?.transition?.delay).toBeCloseTo(0.21);
-    expect(indexedListItem(100).show?.transition?.delay).toBe(0.9);
+    expect(show(indexedListItem(0)).transition?.delay).toBe(0);
+    expect(show(indexedListItem(3)).transition?.delay).toBeCloseTo(0.21);
+    expect(show(indexedListItem(100)).transition?.delay).toBe(0.9);
   });
 
   it('listItem：入场位移 16px', () => {
