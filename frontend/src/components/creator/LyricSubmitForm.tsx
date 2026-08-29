@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useMutation } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, ChevronDown, CloudUpload, FileText, Loader2, Upload, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
+import { useFormDraft } from '@/hooks/useFormDraft';
 import type { TtmlValidationResult } from '@/lib/types';
+import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 // 从 TTML 元数据自动推断语言代码（模块级常量，保持引用稳定）
 const LANG_MAP: Record<string, string> = {
@@ -31,20 +35,72 @@ const LANG_MAP: Record<string, string> = {
 export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
-  const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<TtmlValidationResult | null>(null);
   const [validateError, setValidateError] = useState('');
-  const [notes, setNotes] = useState('');
-  const [language, setLanguage] = useState('');
-  const [tags, setTags] = useState<string[]>([]);
+  // 表单草稿：刷新/关页后自动恢复（文件本体无法持久化，重选后需重新校验）
+  const {
+    restored: draft,
+    set: setDraft,
+    clearDraft,
+  } = useFormDraft<{
+    notes: string;
+    language: string;
+    tags: string[];
+  }>('lyric-submit');
+  const [notes, setNotes] = useState(draft?.notes ?? '');
+  const [language, setLanguage] = useState(draft?.language ?? '');
+  const [tags, setTags] = useState<string[]>(draft?.tags ?? []);
   const [tagInput, setTagInput] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
   const [dragOver, setDragOver] = useState(false);
   const [showTtml, setShowTtml] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 选择文件后立即校验
+  const validateMutation = useMutation({
+    mutationFn: async (f: File) => api.validateTtml(await f.text()),
+    onSuccess: (result) => setValidation(result),
+    onError: (err) => setValidateError(err instanceof Error ? err.message : '校验请求失败'),
+  });
+  const validating = validateMutation.isPending;
+
+  // 上传文件并创建投稿（status: pending=提交审核 / draft=存草稿）
+  const submitMutation = useMutation({
+    mutationFn: async (params: { file: File; status: 'pending' | 'draft' }) => {
+      const { fileName } = await api.uploadTtml(params.file, params.file.name);
+      const title = validation?.metadata?.title?.[0] ?? params.file.name.replace(/\.ttml$/i, '');
+      return api.createSubmission({
+        title,
+        metadata: (validation?.metadata ?? {}) as Record<string, unknown>,
+        fileName,
+        notes: notes.trim() || undefined,
+        language: language || undefined,
+        tags: tags.length > 0 ? tags : undefined,
+        status: params.status,
+      });
+    },
+    onMutate: () => setSubmitMsg(null),
+    onSuccess: (result, { status }) => {
+      setSubmitMsg({
+        type: 'success',
+        text: status === 'draft' ? '草稿已保存，正在跳转…' : '投稿成功，正在跳转…',
+      });
+      reset();
+      setTimeout(() => {
+        setSubmitMsg(null);
+        onSuccess?.();
+        if (result?.id) {
+          navigate(`/creator/lyrics/detail?id=${result.id}`, { replace: true });
+        }
+      }, 1200);
+    },
+    onError: (err) => {
+      setSubmitMsg({ type: 'error', text: err instanceof Error ? err.message : '提交失败' });
+    },
+  });
+  const submitting = submitMutation.isPending;
 
   const reset = () => {
     setFile(null);
@@ -56,8 +112,15 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     setTags([]);
     setTagInput('');
     setShowTtml(false);
+    clearDraft();
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
+
+  // 草稿自动保存：空表单不写
+  useEffect(() => {
+    if (!notes && !language && tags.length === 0) return;
+    setDraft({ notes, language, tags });
+  }, [notes, language, tags, setDraft, clearDraft]);
 
   const addTag = () => {
     const t = tagInput.trim();
@@ -71,7 +134,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     setTags(tags.filter((x) => x !== t));
   };
 
-  const handleFile = async (f: File) => {
+  const handleFile = (f: File) => {
     if (!f.name.toLowerCase().endsWith('.ttml')) {
       setValidateError('请选择 .ttml 格式的文件');
       return;
@@ -80,16 +143,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     setValidation(null);
     setValidateError('');
     setSubmitMsg(null);
-    setValidating(true);
-    try {
-      const content = await f.text();
-      const result = await api.validateTtml(content);
-      setValidation(result);
-    } catch (err) {
-      setValidateError(err instanceof Error ? err.message : '校验请求失败');
-    } finally {
-      setValidating(false);
-    }
+    validateMutation.mutate(f);
   };
 
   const onDrop = (e: React.DragEvent) => {
@@ -116,39 +170,9 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     }
   }, [validation]);
 
-  const doSubmit = async (status: 'pending' | 'draft') => {
+  const doSubmit = (status: 'pending' | 'draft') => {
     if (!file || !validation?.valid) return;
-    setSubmitting(true);
-    setSubmitMsg(null);
-    try {
-      const { fileName } = await api.uploadTtml(file, file.name);
-      const title = validation.metadata?.title?.[0] ?? file.name.replace(/\.ttml$/i, '');
-      const result = await api.createSubmission({
-        title,
-        metadata: (validation.metadata ?? {}) as Record<string, unknown>,
-        fileName,
-        notes: notes.trim() || undefined,
-        language: language || undefined,
-        tags: tags.length > 0 ? tags : undefined,
-        status,
-      });
-      setSubmitMsg({
-        type: 'success',
-        text: status === 'draft' ? '草稿已保存，正在跳转…' : '投稿成功，正在跳转…',
-      });
-      reset();
-      setTimeout(() => {
-        setSubmitMsg(null);
-        onSuccess?.();
-        if (result?.id) {
-          navigate(`/creator/lyrics/detail?id=${result.id}`, { replace: true });
-        }
-      }, 1200);
-    } catch (err) {
-      setSubmitMsg({ type: 'error', text: err instanceof Error ? err.message : '提交失败' });
-    } finally {
-      setSubmitting(false);
-    }
+    submitMutation.mutate({ file, status });
   };
 
   const canSubmit = file !== null && validation?.valid === true && !submitting;
@@ -222,23 +246,23 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
 
             {/* 校验失败 */}
             {validateError && (
-              <div className="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">
-                {validateError}
-              </div>
+              <Alert variant="destructive" className="mt-3">
+                <AlertDescription>{validateError}</AlertDescription>
+              </Alert>
             )}
 
             {validation && !validation.valid && (
-              <div className="mt-3 space-y-1 rounded bg-red-50 px-3 py-2">
-                <p className="text-sm font-medium text-red-600">校验未通过</p>
-                {validation.parseError && (
-                  <p className="text-xs text-red-500">{validation.parseError}</p>
-                )}
-                {validation.errors.map((err, i) => (
-                  <p key={i} className="text-xs text-red-500">
-                    • {err}
-                  </p>
-                ))}
-              </div>
+              <Alert variant="destructive" className="mt-3">
+                <AlertTitle>校验未通过</AlertTitle>
+                <AlertDescription>
+                  {validation.parseError && <p className="text-xs">{validation.parseError}</p>}
+                  {validation.errors.map((err, i) => (
+                    <p key={i} className="text-xs">
+                      • {err}
+                    </p>
+                  ))}
+                </AlertDescription>
+              </Alert>
             )}
 
             {/* 校验成功 */}
@@ -356,12 +380,12 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
       {validation?.valid && (
         <motion.div variants={fadeUp}>
           <label className="mb-1.5 block text-sm font-medium text-ink-2">备注（可选）</label>
-          <textarea
+          <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
             placeholder="给审核员的留言，如特殊处理说明等"
-            className="w-full resize-none rounded-md border border-input bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-primary"
+            className="w-full resize-none bg-surface-2 px-4 py-2.5"
           />
         </motion.div>
       )}
@@ -407,13 +431,9 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
 
       {/* 提交消息 */}
       {submitMsg && (
-        <div
-          className={`rounded-md px-4 py-2.5 text-sm ${
-            submitMsg.type === 'success' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
-          }`}
-        >
-          {submitMsg.text}
-        </div>
+        <Alert variant={submitMsg.type === 'success' ? 'success' : 'destructive'}>
+          <AlertDescription>{submitMsg.text}</AlertDescription>
+        </Alert>
       )}
 
       {/* 操作按钮 */}

@@ -1,12 +1,15 @@
-import { useCallback, useRef, useState } from 'react';
-import type {
-  OnlineLyric,
-  OnlinePlatform,
-  OnlineSearchHit,
-  OnlineSearchResult,
-  OnlineSongDetail,
-} from '@/lib/types';
+import { useCallback } from 'react';
+import { useAtom, useAtomValue } from 'jotai';
+import { useQuery } from '@tanstack/react-query';
+import type { OnlinePlatform, OnlineSearchResult } from '@/lib/types';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query';
+import {
+  onlineInputValueAtom,
+  onlineQueryAtom,
+  onlinePlatformAtom,
+  onlineCommittedAtom,
+} from '@/atoms/onlineSearch';
 
 export interface OnlineSearchContextValue {
   // 搜索
@@ -22,40 +25,20 @@ export interface OnlineSearchContextValue {
   searchResults: OnlineSearchResult | null;
   /** @param overrideQ 覆盖搜索词 @param overridePlatform 覆盖平台（切换平台立即重搜时传入，避免闭包旧值） */
   doSearch: (q?: string, overridePlatform?: OnlinePlatform) => Promise<void>;
-
-  // 歌曲详情
-  selectedSong: OnlineSongDetail | null;
-  songLoading: boolean;
-  songError: string | null;
-
-  // 歌词
-  lyric: OnlineLyric | null;
-  lyricLoading: boolean;
-  lyricError: string | null;
-
-  // 选中搜索结果（触发加载详情 + 歌词）
-  selectSong: (hit: OnlineSearchHit) => Promise<void>;
 }
 
+/**
+ * 平台歌词搜索状态（jotai atoms，全局可用，无需 Provider）。
+ * 搜索请求由 TanStack Query 按 {关键词, 平台} 缓存去重，竞态由 queryKey 隔离。
+ * 歌曲详情与歌词不在此维护选中态：查看页（LyricViewer 的 online 模式）
+ * 用自己的 queryKey 独立加载并渲染错误态，语义与旧"失败降级为无歌词"一致。
+ */
 export function useOnlineSearch(): OnlineSearchContextValue {
-  const [inputValue, setInputValue] = useState('');
-  const [query, setQuery] = useState('');
-  const [platform, setPlatform] = useState<OnlinePlatform>('ncm');
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState<string | null>(null);
-  const [searchResults, setSearchResults] = useState<OnlineSearchResult | null>(null);
-
-  const [selectedSong, setSelectedSong] = useState<OnlineSongDetail | null>(null);
-  const [songLoading, setSongLoading] = useState(false);
-  const [songError, setSongError] = useState<string | null>(null);
-
-  const [lyric, setLyric] = useState<OnlineLyric | null>(null);
-  const [lyricLoading, setLyricLoading] = useState(false);
-  const [lyricError, setLyricError] = useState<string | null>(null);
-
-  // 请求序号，防止竞态
-  const searchSeq = useRef(0);
-  const songSeq = useRef(0);
+  const [inputValue, setInputValue] = useAtom(onlineInputValueAtom);
+  const [query, setQuery] = useAtom(onlineQueryAtom);
+  const [platform, setPlatform] = useAtom(onlinePlatformAtom);
+  const committed = useAtomValue(onlineCommittedAtom);
+  const [, setCommitted] = useAtom(onlineCommittedAtom);
 
   const doSearch = useCallback(
     async (overrideQ?: string, overridePlatform?: OnlinePlatform) => {
@@ -65,58 +48,17 @@ export function useOnlineSearch(): OnlineSearchContextValue {
 
       // 同步已提交搜索词（页面不再单独调 setQuery）
       setQuery(q);
-
-      const seq = ++searchSeq.current;
-      setSearchLoading(true);
-      setSearchError(null);
-      setSearchResults(null);
-      // 切换搜索时清空详情
-      setSelectedSong(null);
-      setSongError(null);
-      setLyric(null);
-      setLyricError(null);
-
-      try {
-        const result = await api.onlineSearch(q, p);
-        if (seq !== searchSeq.current) return;
-        setSearchResults(result);
-      } catch (err) {
-        if (seq !== searchSeq.current) return;
-        setSearchError(err instanceof Error ? err.message : '搜索失败');
-      } finally {
-        if (seq === searchSeq.current) setSearchLoading(false);
-      }
+      setCommitted({ q, platform: p });
     },
-    [query, platform]
+    [query, platform, setQuery, setCommitted]
   );
 
-  const selectSong = useCallback(async (hit: OnlineSearchHit) => {
-    const seq = ++songSeq.current;
-    setSongLoading(true);
-    setSongError(null);
-    setLyricLoading(true);
-    setLyric(null);
-    setLyricError(null);
-    setSelectedSong(null);
-
-    try {
-      const [song, lyricData] = await Promise.all([
-        api.getOnlineSong(hit.platform, hit.platformId),
-        api.getOnlineLyric(hit.platform, hit.platformId).catch(() => null),
-      ]);
-      if (seq !== songSeq.current) return;
-      setSelectedSong(song);
-      setLyric(lyricData);
-    } catch (err) {
-      if (seq !== songSeq.current) return;
-      setSongError(err instanceof Error ? err.message : '获取歌曲详情失败');
-    } finally {
-      if (seq === songSeq.current) {
-        setSongLoading(false);
-        setLyricLoading(false);
-      }
-    }
-  }, []);
+  const searchQuery = useQuery({
+    queryKey: queryKeys.onlineSearch(committed?.q ?? '', committed?.platform ?? 'ncm'),
+    queryFn: () => api.onlineSearch(committed!.q, committed!.platform),
+    enabled: !!committed?.q,
+    staleTime: 60_000,
+  });
 
   return {
     inputValue,
@@ -125,16 +67,13 @@ export function useOnlineSearch(): OnlineSearchContextValue {
     setQuery,
     platform,
     setPlatform,
-    searchLoading,
-    searchError,
-    searchResults,
+    searchLoading: searchQuery.isFetching,
+    searchError: searchQuery.error
+      ? searchQuery.error instanceof Error
+        ? searchQuery.error.message
+        : '搜索失败'
+      : null,
+    searchResults: committed ? (searchQuery.data ?? null) : null,
     doSearch,
-    selectedSong,
-    songLoading,
-    songError,
-    lyric,
-    lyricLoading,
-    lyricError,
-    selectSong,
   };
 }

@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
   Bold,
@@ -19,11 +20,14 @@ import {
   Send,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query';
+import { useAuth } from '@/hooks/useAuth';
 import { buttonTap } from '@/lib/motion';
 import { renderMarkdown, type ActivityEntry } from '@/components/submission/shared';
 import { ActivityTimelineItem } from '@/components/submission/ActivityTimelineItem';
 import { CommentItem } from '@/components/submission/CommentItem';
 import type { ReviewAction, SubmissionComment } from '@/lib/types';
+import { Textarea } from '@/components/ui/textarea';
 
 const reviewActions: { key: ReviewAction; label: string; color: string; icon: typeof Check }[] = [
   {
@@ -105,15 +109,109 @@ export function CommentSection({
   canReview,
   onReviewed,
 }: CommentSectionProps) {
-  const [comments, setComments] = useState(initialComments);
   const [text, setText] = useState('');
-  const [posting, setPosting] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
   const [reviewMsg, setReviewMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
   const [mode, setMode] = useState<'write' | 'preview'>('write');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  // 评论列表：以父级详情数据为初值，发评论后 invalidate 刷新
+  const commentsQuery = useQuery({
+    queryKey: queryKeys.submissionComments(submissionId),
+    queryFn: () => api.listSubmissionComments(submissionId),
+    initialData: initialComments,
+    staleTime: 15_000,
+  });
+  const comments = useMemo(() => commentsQuery.data ?? [], [commentsQuery.data]);
+
+  /** 评论 queryKey（onMutate/onError/onSettled 共用） */
+  const commentsKey = queryKeys.submissionComments(submissionId);
+
+  /**
+   * 乐观插入临时评论（API 返回 void 无新建对象，真实 id/时间
+   * 由 onSettled 的 invalidate 拉服务端数据覆盖）。返回插入前列表供回滚。
+   */
+  const optimisticInsert = (content: string): SubmissionComment[] => {
+    void queryClient.cancelQueries({ queryKey: commentsKey });
+    const prev = queryClient.getQueryData<SubmissionComment[]>(commentsKey) ?? [];
+    queryClient.setQueryData(commentsKey, [
+      ...prev,
+      {
+        id: -Date.now(), // 负数临时 id，避免与服务端 id 撞 key
+        submissionId,
+        author: user ?? { username: '', displayName: '我', avatar: '' },
+        content,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    return prev;
+  };
+
+  /** 失败回滚：恢复列表与输入框内容 */
+  const rollback = (prevComments: SubmissionComment[], content: string) => {
+    queryClient.setQueryData(commentsKey, prevComments);
+    setText(content);
+    setMode('write');
+  };
+
+  const postMutation = useMutation({
+    mutationFn: (content: string) => api.addSubmissionComment(submissionId, content),
+    onMutate: (content) => {
+      const prevComments = optimisticInsert(content);
+      // 乐观清空输入，失败时在 onError 恢复
+      setText('');
+      setMode('write');
+      return { prevComments, content };
+    },
+    onError: (_e, _content, ctx) => {
+      if (ctx) rollback(ctx.prevComments, ctx.content);
+      setReviewMsg({ type: 'error', text: '评论发送失败，请重试' });
+    },
+    // 成功与失败都拉服务端数据：替换临时 id、修正精确时间
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: commentsKey });
+    },
+  });
+
+  const reviewMutation = useMutation({
+    // 有评论内容时先发评论再执行审核
+    mutationFn: async (actionKey: ReviewAction) => {
+      const content = text.trim();
+      if (content) {
+        await api.addSubmissionComment(submissionId, content);
+      }
+      await api.reviewSubmission(submissionId, actionKey, content);
+      return content;
+    },
+    onMutate: () => {
+      setReviewMsg(null);
+      const content = text.trim();
+      if (content) {
+        const prevComments = optimisticInsert(content);
+        setText('');
+        setMode('write');
+        return { prevComments, content };
+      }
+      return undefined;
+    },
+    onSuccess: (content) => {
+      if (content) void queryClient.invalidateQueries({ queryKey: commentsKey });
+      setReviewMsg({ type: 'success', text: '审核完成' });
+      onReviewed();
+    },
+    onError: (err, _action, ctx) => {
+      // 评论可能已成功而审核失败：回滚临时项后 invalidate 拉回真实列表
+      if (ctx) rollback(ctx.prevComments, ctx.content);
+      setReviewMsg({ type: 'error', text: err instanceof Error ? err.message : '审核失败' });
+      void queryClient.invalidateQueries({ queryKey: commentsKey });
+    },
+  });
+
+  const posting = postMutation.isPending;
+  const reviewing = reviewMutation.isPending;
 
   const previewHtml = useMemo(() => renderMarkdown(text), [text]);
 
@@ -146,54 +244,22 @@ export function CommentSection({
       ]
     : null;
 
-  const refreshComments = async () => {
-    const list = await api.listSubmissionComments(submissionId);
-    setComments(list ?? []);
-  };
-
-  const post = async () => {
+  /** 评论 */
+  const post = () => {
     const content = text.trim();
     if (!content) return;
-    setPosting(true);
-    try {
-      await api.addSubmissionComment(submissionId, content);
-      setText('');
-      setMode('write');
-      await refreshComments();
-    } catch {
-      // 静默
-    } finally {
-      setPosting(false);
-    }
+    postMutation.mutate(content);
   };
 
   /** 审核 */
-  const doReview = async (actionKey: ReviewAction) => {
+  const doReview = (actionKey: ReviewAction) => {
     const content = text.trim();
     // 需修改必须输入理由
     if (actionKey === 'revision' && !content) {
       setReviewMsg({ type: 'error', text: '选择「需修改」时必须输入理由' });
       return;
     }
-    setReviewing(true);
-    setReviewMsg(null);
-    try {
-      // 如果有评论内容，先发评论
-      if (content) {
-        await api.addSubmissionComment(submissionId, content);
-        setText('');
-        setMode('write');
-        await refreshComments();
-      }
-      // 执行审核
-      await api.reviewSubmission(submissionId, actionKey, content);
-      setReviewMsg({ type: 'success', text: '审核完成' });
-      onReviewed();
-    } catch (err) {
-      setReviewMsg({ type: 'error', text: err instanceof Error ? err.message : '审核失败' });
-    } finally {
-      setReviewing(false);
-    }
+    reviewMutation.mutate(actionKey);
   };
 
   /** 在光标处插入 Markdown 标记 */
@@ -312,13 +378,13 @@ export function CommentSection({
 
         {/* 编写区 */}
         {mode === 'write' ? (
-          <textarea
+          <Textarea
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={4}
             placeholder="在此添加您的评论...（支持 Markdown 格式）"
-            className="w-full resize-y border-none bg-transparent px-4 py-3 text-sm outline-none"
+            className="w-full resize-y rounded-none border-0 bg-transparent px-4 py-3 shadow-none focus-visible:ring-0"
           />
         ) : (
           <div

@@ -15,7 +15,7 @@ import {
   Search,
   User,
 } from 'lucide-react';
-import { useOnlineSearchContext } from '@/context/OnlineSearchContext';
+import { useOnlineSearch } from '@/hooks/useOnlineSearch';
 import { usePlayer } from '@/hooks/usePlayer';
 import { api } from '@/lib/api';
 import { downloadText, sanitizeFileName } from '@/lib/download';
@@ -47,7 +47,7 @@ export function OnlineLyricSearch() {
     searchError,
     searchResults,
     doSearch,
-  } = useOnlineSearchContext();
+  } = useOnlineSearch();
   const { playNcmSong, loading: playerLoading, track } = usePlayer();
   const navigate = useNavigate();
 

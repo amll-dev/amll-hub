@@ -5,6 +5,13 @@ import { useNotFoundRanking } from '@/hooks/useNotFoundRanking';
 import { usePlayer } from '@/hooks/usePlayer';
 import { listItem, staggerContainer, whileInViewProps } from '@/lib/motion';
 import type { NotFoundRankingItem } from '@/lib/types';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+} from '@/components/ui/pagination';
+import { SimpleTooltip } from '@/components/ui/tooltip';
 
 const PAGE_SIZE = 20;
 const FETCH_LIMIT = 50;
@@ -115,7 +122,11 @@ export function Ranking() {
       ) : error ? (
         <div className="py-16 text-center">
           <p className="text-error">{error}</p>
-          <button type="button" onClick={refresh} className={`${btnBase} ${btnIdle} mt-4`}>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            className={`${btnBase} ${btnIdle} mt-4`}
+          >
             重试
           </button>
         </div>
@@ -180,36 +191,50 @@ export function Ranking() {
 
           {/* 分页 */}
           {totalPages > 1 && (
-            <div className="mt-8 flex items-center justify-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => goPage(page - 1)}
-                disabled={page <= 1}
-                className={`${btnBase} ${btnIdle}`}
-                aria-label="上一页"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => goPage(p)}
-                  className={`${btnBase} ${p === page ? btnActive : btnIdle}`}
-                >
-                  {p}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => goPage(page + 1)}
-                disabled={page >= totalPages}
-                className={`${btnBase} ${btnIdle}`}
-                aria-label="下一页"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
+            <Pagination className="mt-8">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationLink
+                    href="#ranking-anchor"
+                    aria-label="上一页"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      goPage(page - 1);
+                    }}
+                    className={page <= 1 ? 'pointer-events-none opacity-40' : ''}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </PaginationLink>
+                </PaginationItem>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                  <PaginationItem key={p}>
+                    <PaginationLink
+                      href="#ranking-anchor"
+                      isActive={p === page}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        goPage(p);
+                      }}
+                    >
+                      {p}
+                    </PaginationLink>
+                  </PaginationItem>
+                ))}
+                <PaginationItem>
+                  <PaginationLink
+                    href="#ranking-anchor"
+                    aria-label="下一页"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      goPage(page + 1);
+                    }}
+                    className={page >= totalPages ? 'pointer-events-none opacity-40' : ''}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </PaginationLink>
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
           )}
 
           {total > items.length && (
@@ -270,23 +295,24 @@ function PlayButton({
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={playerLoading}
-      title={isCurrent ? '正在播放' : '播放'}
-      className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors disabled:opacity-50 ${
-        isCurrent
-          ? 'bg-primary-tint text-primary'
-          : 'text-ink-3 hover:bg-surface-2 hover:text-primary'
-      }`}
-    >
-      {playerLoading && isCurrent ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <Play className="h-4 w-4" />
-      )}
-    </button>
+    <SimpleTooltip label={isCurrent ? '正在播放' : '播放'}>
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={playerLoading}
+        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors disabled:opacity-50 ${
+          isCurrent
+            ? 'bg-primary-tint text-primary'
+            : 'text-ink-3 hover:bg-surface-2 hover:text-primary'
+        }`}
+      >
+        {playerLoading && isCurrent ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Play className="h-4 w-4" />
+        )}
+      </button>
+    </SimpleTooltip>
   );
 }
 

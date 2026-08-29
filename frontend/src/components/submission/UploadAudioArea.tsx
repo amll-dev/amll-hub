@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { Check, Loader2, Music, X } from 'lucide-react';
 import { parseBlob } from 'music-metadata';
 import { api } from '@/lib/api';
 import { buttonTap } from '@/lib/motion';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 /** 解析音频文件的 ID3/原子容器元数据 */
 async function parseAudioMeta(file: File): Promise<{
@@ -55,11 +57,42 @@ export function UploadAudioArea({ submissionId, onClose, onSuccess }: UploadAudi
   const [album, setAlbum] = useState('');
   const [platform, setPlatform] = useState('');
   const [platformId, setPlatformId] = useState('');
-  const [uploading, setUploading] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+
+  // 上传音频（含可选封面/元数据）
+  const uploadMutation = useMutation({
+    mutationFn: (vars: { audio: File; cover?: File }) =>
+      // title/artist/album 留空时后端会自动从音频 ID3 元数据解析回填
+      api.uploadAudio(submissionId, vars.audio, vars.cover, {
+        title: title || undefined,
+        artist: artist || undefined,
+        album: album || undefined,
+        platform: platform || undefined,
+        platformId: platformId || undefined,
+      }),
+    onMutate: () => setMsg(null),
+    onSuccess: () => {
+      setMsg({ type: 'success', text: '音频已上传，可继续上传或关闭' });
+      // 刷新详情但保持表单打开，允许继续上传
+      onSuccess();
+      // 重置表单以便上传下一个
+      setAudioFile(null);
+      setCoverFile(null);
+      setTitle('');
+      setArtist('');
+      setAlbum('');
+      setPlatform('');
+      setPlatformId('');
+      if (audioInputRef.current) audioInputRef.current.value = '';
+      if (coverInputRef.current) coverInputRef.current.value = '';
+    },
+    onError: (err) =>
+      setMsg({ type: 'error', text: err instanceof Error ? err.message : '上传失败' }),
+  });
+  const uploading = uploadMutation.isPending;
 
   // 封面预览：coverFile 变化时生成 / 清理 ObjectURL
   useEffect(() => {
@@ -102,41 +135,12 @@ export function UploadAudioArea({ submissionId, onClose, onSuccess }: UploadAudi
     }
   };
 
-  const submit = async () => {
+  const submit = () => {
     if (!audioFile) {
       setMsg({ type: 'error', text: '请选择音频文件' });
       return;
     }
-    setUploading(true);
-    setMsg(null);
-    try {
-      // title/artist/album 留空时后端会自动从音频 ID3 元数据解析回填
-      await api.uploadAudio(submissionId, audioFile, coverFile ?? undefined, {
-        title: title || undefined,
-        artist: artist || undefined,
-        album: album || undefined,
-        platform: platform || undefined,
-        platformId: platformId || undefined,
-      });
-
-      setMsg({ type: 'success', text: '音频已上传，可继续上传或关闭' });
-      // 刷新详情但保持表单打开，允许继续上传
-      onSuccess();
-      // 重置表单以便上传下一个
-      setAudioFile(null);
-      setCoverFile(null);
-      setTitle('');
-      setArtist('');
-      setAlbum('');
-      setPlatform('');
-      setPlatformId('');
-      if (audioInputRef.current) audioInputRef.current.value = '';
-      if (coverInputRef.current) coverInputRef.current.value = '';
-    } catch (err) {
-      setMsg({ type: 'error', text: err instanceof Error ? err.message : '上传失败' });
-    } finally {
-      setUploading(false);
-    }
+    uploadMutation.mutate({ audio: audioFile, cover: coverFile ?? undefined });
   };
 
   return (
@@ -276,13 +280,9 @@ export function UploadAudioArea({ submissionId, onClose, onSuccess }: UploadAudi
         </div>
 
         {msg && (
-          <div
-            className={`rounded-md px-4 py-2 text-sm ${
-              msg.type === 'success' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
-            }`}
-          >
-            {msg.text}
-          </div>
+          <Alert variant={msg.type === 'success' ? 'success' : 'destructive'}>
+            <AlertDescription>{msg.text}</AlertDescription>
+          </Alert>
         )}
 
         <div className="flex justify-end gap-2">

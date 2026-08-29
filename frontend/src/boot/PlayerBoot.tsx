@@ -1,34 +1,56 @@
-import type { LyricLine } from '@applemusic-like-lyrics/lyric';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useStore } from 'jotai';
+// type-only 导入不产生运行时依赖，AMLL 运行时代码全部动态导入：
+// 本文件是全局 Boot（首屏必加载），若顶层 import AMLL 包（含 WebGL 渲染器
+// ~360KB），纯浏览的访客也要为歌词页功能买单。
+// react-full 内部经 globalThis.jotaiAtomCache 创建 atom 单例，
+// 动态导入与歌词页（LyricsPage）拿到的是同一实例，状态互通。
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAtom, useStore } from 'jotai';
 import { api } from '@/lib/api';
 import type { SearchHit } from '@/lib/types';
 import {
   NCM_QUALITY_ORDER,
-  PlayerContext,
+  trackAtom,
+  playingAtom,
+  currentAtom,
+  durationAtom,
+  loadingAtom,
+  errorAtom,
+  selectRequestAtom,
+  shuffleAtom,
+  repeatModeAtom,
+  volumeAtom,
+  mutedAtom,
+  lyricDataAtom,
+  lyricLoadingAtom,
+  lyricErrorAtom,
+  qualityAtom,
+  playlistAtom,
+  currentIndexAtom,
+  showPlaylistPanelAtom,
   type NcmQuality,
-  type PlayerContextValue,
-  type PlaylistItem,
   type PlayerTrack,
-  type RepeatMode,
-  type SelectRequest,
-} from '@/hooks/usePlayer';
+  type PlaylistItem,
+} from '@/atoms/player';
 
-/** 背景鼓点跳动开关 */
+// ===== 代码级开关 =====
+/** 背景鼓点跳动开关（true=低频能量驱动背景随音乐律动，false=完全关闭） */
 const BEAT_ENABLED = true;
 
+// ===== 无缝播放（Crossfade）常量 =====
 /** 自然播完续播的交叉淡化秒数 */
 const CROSSFADE_NATURAL = 6;
 /** 手动切歌的快速淡化秒数 */
-const CROSSFADE_MANUAL = 0.6;
-/** 转场时旧轨送入混响的量 */
+const CROSSFADE_MANUAL = 2;
+/** 转场时旧轨送入混响的量（DJ "甩出去"的余韵） */
 const REVERB_SEND_LEVEL = 0.3;
-/** 转场前段保持透明的比例：此区间内纯 crossfade，扫频/混响之后才渐入 */
+/** 转场前段保持透明的比例：此区间内纯 crossfade，扫频/混响之后才渐入，
+ * 避免处理痕迹一开始就砸下来（听感"先自然重叠、后逐渐分离"） */
 const TRANSITION_HOLD_RATIO = 0.4;
-/** 预加载 URL 新鲜度阈值：超过该时长且距曲目结束不足 60s 时重新解析 */
+/** 预加载 URL 新鲜度阈值：超过该时长且距曲目结束不足 60s 时重新解析（网易云 CDN URL 会过期） */
 const PRELOAD_REFRESH_MS = 10 * 60_000;
 
-// 恒功率淡化曲线
+// 恒功率淡化曲线（cos/sin，同 SeamlessDJPlayer 的恒功率交叉淡化；
+// 相比 linear 曲线中点不失真，总能量恒定）
 const POWER_CURVE_STEPS = 64;
 const POWER_DOWN_CURVE = new Float32Array(POWER_CURVE_STEPS);
 const POWER_UP_CURVE = new Float32Array(POWER_CURVE_STEPS);
@@ -38,7 +60,7 @@ for (let i = 0; i < POWER_CURVE_STEPS; i++) {
   POWER_UP_CURVE[i] = Math.sin(angle);
 }
 
-// 复位扫频滤波器为透明
+// 复位扫频滤波器为透明（lowpass@22050，人耳听感无衰减）
 const resetFilterParam = (filter: BiquadFilterNode | null, ctx: AudioContext) => {
   if (!filter) return;
   filter.frequency.cancelScheduledValues(ctx.currentTime);
@@ -46,7 +68,7 @@ const resetFilterParam = (filter: BiquadFilterNode | null, ctx: AudioContext) =>
   filter.type = 'lowpass';
 };
 
-// 程序生成混响脉冲响应
+// 程序生成混响脉冲响应（指数衰减噪声，同参考实现的 createReverbIR）
 const createReverbIR = (ctx: AudioContext): AudioBuffer => {
   const rate = ctx.sampleRate;
   const length = Math.floor(rate * 2.5);
@@ -61,7 +83,7 @@ const createReverbIR = (ctx: AudioContext): AudioBuffer => {
   return impulse;
 };
 
-// 等待 audio 元素缓冲就绪，用于上一曲即时混音切换
+// 等待 audio 元素缓冲就绪（canplay / error / 超时），用于上一曲即时混音切换
 const waitForReady = (el: HTMLAudioElement, timeoutMs: number) =>
   new Promise<boolean>((resolve) => {
     if (el.readyState >= el.HAVE_FUTURE_DATA) {
@@ -82,21 +104,24 @@ const waitForReady = (el: HTMLAudioElement, timeoutMs: number) =>
   });
 
 // 扫描 AudioBuffer 首尾静音：以 50ms 窗口计算峰值，低于阈值视为静音
+// （用于 DJ 转场：跳过新歌开头静音、旧歌提前转场盖过尾部静音）
 const SILENCE_WIN = 0.05;
 const SILENCE_THRESHOLD = 0.01; // ~-40dB
 const SILENCE_MAX_SCAN = 15; // 最多扫描首/尾各 15 秒
 const detectSilence = (buffer: AudioBuffer): { leading: number; trailing: number } => {
   const ch = buffer.getChannelData(0);
   const sr = buffer.sampleRate;
-  const win = Math.max(1, Math.floor(sr * SILENCE_WIN));
+  const win = Math.floor(sr * SILENCE_WIN);
   const isSilent = (from: number, to: number) => {
-    for (let i = from; i < to; i++) {
-      if (Math.abs(ch[i] ?? 0) > SILENCE_THRESHOLD) return false;
+    let peak = 0;
+    for (let i = from; i < to && i < ch.length; i++) {
+      const v = Math.abs(ch[i] ?? 0);
+      if (v > peak) peak = v;
     }
-    return true;
+    return peak < SILENCE_THRESHOLD;
   };
   let leading = 0;
-  const leadingLimit = Math.min(buffer.length, sr * SILENCE_MAX_SCAN);
+  const leadingLimit = Math.min(ch.length, sr * SILENCE_MAX_SCAN);
   for (let i = 0; i + win <= leadingLimit; i += win) {
     if (!isSilent(i, i + win)) break;
     leading = (i + win) / sr;
@@ -126,7 +151,61 @@ interface PreloadedNext {
   trailingSilence: number;
 }
 
-export function PlayerProvider({ children }: { children: ReactNode }) {
+/** 播放器命令式动作集合（由 PlayerBoot 每次渲染同步填充，usePlayer 展开给消费方） */
+export interface PlayerActions {
+  toggle: () => void;
+  seek: (sec: number) => void;
+  playHit: (hit: SearchHit) => Promise<void>;
+  playNcmSong: (
+    songId: string,
+    meta: {
+      name?: string;
+      artists?: string;
+      cover?: string;
+      skipTtml?: boolean;
+      customTtml?: string;
+    }
+  ) => Promise<void>;
+  playDirect: (opts: {
+    audioUrl: string;
+    title: string;
+    artists?: string;
+    cover?: string;
+    customTtml?: string;
+  }) => void;
+  close: () => void;
+  resolveSelect: (songId: string | null) => void;
+  toggleShuffle: () => void;
+  cycleRepeatMode: () => void;
+  setVolume: (v: number) => void;
+  toggleMute: () => void;
+  openLyricsPage: () => void;
+  setQuality: (q: NcmQuality) => void;
+  cycleQuality: () => void;
+  reloadWithQuality: (q: NcmQuality) => Promise<void>;
+  togglePlaylistPanel: () => void;
+  closePlaylistPanel: () => void;
+  playAll: (items: PlaylistItem[]) => void;
+  playNext: (auto?: boolean) => void;
+  playPrev: () => void;
+  playAtIndex: (index: number) => void;
+  removeFromPlaylist: (index: number) => void;
+  clearPlaylist: () => void;
+}
+
+/**
+ * 播放器动作的模块级载体：Boot 渲染期间同步赋值。
+ * usePlayer() 展开后消费方拿到的永远是最新引用，无需 Context。
+ */
+export const playerActions = {} as PlayerActions;
+
+/**
+ * 播放器引擎 Boot（替代原 PlayerProvider）：
+ * 持有双 audio 元素、Web Audio 转场图、FFT 采集与全部播放动作。
+ * 状态存放在 atoms/player（jotai 全局 store），本组件只承载引擎副作用，
+ * 渲染 null，挂在 Layout 顶层一次即可。
+ */
+export function PlayerBoot() {
   const store = useStore();
   // 双 audio 元素 A/B 轮换：active 播放当前曲目，standby 预加载下一首，
   const audioARef = useRef<HTMLAudioElement | null>(null);
@@ -159,27 +238,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     standbyElRef.current = audioBRef.current;
   }
 
-  const [track, setTrack] = useState<PlayerTrack | null>(null);
+  const [track, setTrack] = useAtom(trackAtom);
   // track 的 ref 镜像
   const trackRef = useRef<PlayerTrack | null>(null);
   trackRef.current = track;
-  const [playing, setPlaying] = useState(false);
-  const [current, setCurrent] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [selectRequest, setSelectRequest] = useState<SelectRequest | null>(null);
-  const [shuffle, setShuffle] = useState(false);
-  const [repeatMode, setRepeatMode] = useState<RepeatMode>('off');
-  const [volume, setVolumeState] = useState(1);
-  const [muted, setMuted] = useState(false);
-  const [lyricData, setLyricData] = useState<LyricLine[] | null>(null);
-  const [lyricLoading, setLyricLoading] = useState(false);
-  const [lyricError, setLyricError] = useState<string | null>(null);
-  const [quality, setQuality] = useState<NcmQuality>('exhigh');
-  const [playlist, setPlaylist] = useState<PlaylistItem[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(-1);
-  const [showPlaylistPanel, setShowPlaylistPanel] = useState(false);
+  const [, setPlaying] = useAtom(playingAtom);
+  const [, setCurrent] = useAtom(currentAtom);
+  const [, setDuration] = useAtom(durationAtom);
+  const [, setLoading] = useAtom(loadingAtom);
+  const [, setError] = useAtom(errorAtom);
+  const [, setSelectRequest] = useAtom(selectRequestAtom);
+  const [shuffle, setShuffle] = useAtom(shuffleAtom);
+  const [repeatMode, setRepeatMode] = useAtom(repeatModeAtom);
+  const [volume, setVolumeState] = useAtom(volumeAtom);
+  const [muted, setMuted] = useAtom(mutedAtom);
+  const [, setLyricData] = useAtom(lyricDataAtom);
+  const [, setLyricLoading] = useAtom(lyricLoadingAtom);
+  const [, setLyricError] = useAtom(lyricErrorAtom);
+  const [quality, setQuality] = useAtom(qualityAtom);
+  const [playlist, setPlaylist] = useAtom(playlistAtom);
+  const [currentIndex, setCurrentIndex] = useAtom(currentIndexAtom);
+  const [, setShowPlaylistPanel] = useAtom(showPlaylistPanelAtom);
   // 保存 playHit 调用时的 resolver，弹窗选择后继续播放流程
   const selectResolverRef = useRef<((songId: string | null) => void) | null>(null);
 
@@ -275,7 +354,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         el.removeEventListener('error', onError);
       }
     };
-  }, []);
+    // jotai setter 引用稳定，列入 deps 无行为影响（满足 exhaustive-deps）
+  }, [setCurrent, setDuration, setPlaying]);
 
   // 切换曲目时设置 src 并播放
   const pendingSeekRef = useRef<number | null>(null);
@@ -327,7 +407,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       standbySendRef.current?.gain.cancelScheduledValues(ctx.currentTime);
       standbySendRef.current?.gain.setValueAtTime(0, ctx.currentTime);
     }
-  }, [track]);
+  }, [track, setCurrent, setDuration, setError, setPlaying]);
 
   // 初始化 AudioContext + AnalyserNode
   const [analyserReady, setAnalyserReady] = useState(false);
@@ -385,7 +465,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       standbyGainRef.current.gain.value = 0;
       setAnalyserReady(true);
     } catch (e) {
-      console.warn('[PlayerContext] AudioContext 初始化失败，背景跳动与交叉淡化将不可用:', e);
+      console.warn('[PlayerBoot] AudioContext 初始化失败，背景跳动与交叉淡化将不可用:', e);
     }
   }, []);
 
@@ -403,7 +483,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // 淡变中暂停
       if (transitionRef.current) standbyElRef.current?.pause();
     }
-  }, [track, ensureAudioContext]);
+  }, [track, ensureAudioContext, setPlaying]);
 
   // 预解析并预加载预定下一首到 standby 元素
   const preloadNext = useCallback(async () => {
@@ -621,7 +701,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         dur * 1000 + 100
       );
     },
-    [preloadNext]
+    [preloadNext, setCurrent, setCurrentIndex, setDuration, setPlaying, setTrack]
   );
 
   // timeupdate 驱动：临近结束触发转场
@@ -657,7 +737,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.currentTime = sec;
       setCurrent(sec);
     },
-    [abortTransition]
+    [abortTransition, setCurrent]
   );
 
   // FFT 数据采集 + 低频能量提取
@@ -774,7 +854,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     },
-    [quality, ensureAudioContext, abortTransition]
+    [
+      quality,
+      ensureAudioContext,
+      abortTransition,
+      setCurrentIndex,
+      setError,
+      setLoading,
+      setLyricData,
+      setLyricError,
+      setTrack,
+    ]
   );
 
   // 搜索命中播放
@@ -822,7 +912,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       });
       setPlaying(true);
     },
-    [abortTransition]
+    [abortTransition, setCurrent, setDuration, setError, setLoading, setPlaying, setTrack]
   );
 
   // 切换到下一个音质
@@ -832,14 +922,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const next = NCM_QUALITY_ORDER[(idx + 1) % NCM_QUALITY_ORDER.length];
       return next ?? q;
     });
-  }, []);
+  }, [setQuality]);
 
   // 用指定音质重新加载当前曲目，保持当前播放进度
   const reloadWithQuality = useCallback(
     async (q: NcmQuality) => {
       if (!track) return;
       // 记录当前进度，track 更新后恢复
-      pendingSeekRef.current = current;
+      pendingSeekRef.current = activeElRef.current?.currentTime ?? null;
       setQuality(q);
       await resolveAndPlay(
         track.ncmSongId ?? '',
@@ -848,7 +938,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           : { meta: { name: track.title, artists: track.artists, cover: track.cover }, q }
       );
     },
-    [track, current, resolveAndPlay]
+    [track, resolveAndPlay, setQuality]
   );
 
   // 对外入口：处理多 ncm id 选择
@@ -876,7 +966,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setSelectRequest({ ids: ncmIds, hit });
       });
     },
-    [playBySongId]
+    [playBySongId, setError, setSelectRequest]
   );
 
   const resolveSelect = useCallback((songId: string | null) => {
@@ -936,7 +1026,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         meta: { name: item.name, artists: item.artists, cover: item.cover },
       });
     },
-    [resolveAndPlay, startCrossfade]
+    [resolveAndPlay, startCrossfade, setCurrentIndex, setPlaying]
   );
   // 同步到 ref，供 onEnd 闭包调用（auto=true 表示自然续播）
   playNextRef.current = (auto = false) => playNext(auto);
@@ -1000,6 +1090,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     },
     [resolveAndPlay, startCrossfade]
   );
+  // crossfadeToIndex 体内未直接调用 jotai setter（经 startCrossfade 间接），deps 已完整
 
   // 播放上一首：即时混音切换
   const playPrev = useCallback(() => {
@@ -1024,7 +1115,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const item = list[prevIdx];
     if (!item) return;
     void crossfadeToIndex(prevIdx);
-  }, [crossfadeToIndex]);
+  }, [crossfadeToIndex, setCurrentIndex]);
 
   // 播放整个列表：设置列表并从第一首开始
   const playAll = useCallback(
@@ -1041,7 +1132,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         meta: { name: first.name, artists: first.artists, cover: first.cover },
       });
     },
-    [resolveAndPlay]
+    [resolveAndPlay, setCurrentIndex, setPlaylist]
   );
 
   // 播放列表中指定索引
@@ -1057,32 +1148,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         meta: { name: item.name, artists: item.artists, cover: item.cover },
       });
     },
-    [resolveAndPlay]
+    [resolveAndPlay, setCurrentIndex]
   );
 
   // 从列表移除
-  const removeFromPlaylist = useCallback((index: number) => {
-    const list = playlistRef.current;
-    if (index < 0 || index >= list.length) return;
-    const newList = list.filter((_, i) => i !== index);
-    setPlaylist(newList);
-    playlistRef.current = newList;
-    const curIdx = currentIndexRef.current;
-    if (index < curIdx) {
-      setCurrentIndex(curIdx - 1);
-      currentIndexRef.current = curIdx - 1;
-    } else if (index === curIdx) {
-      setCurrentIndex(-1);
-      currentIndexRef.current = -1;
-    }
-  }, []);
+  const removeFromPlaylist = useCallback(
+    (index: number) => {
+      const list = playlistRef.current;
+      if (index < 0 || index >= list.length) return;
+      const newList = list.filter((_, i) => i !== index);
+      setPlaylist(newList);
+      playlistRef.current = newList;
+      const curIdx = currentIndexRef.current;
+      if (index < curIdx) {
+        setCurrentIndex(curIdx - 1);
+        currentIndexRef.current = curIdx - 1;
+      } else if (index === curIdx) {
+        setCurrentIndex(-1);
+        currentIndexRef.current = -1;
+      }
+    },
+    [setPlaylist, setCurrentIndex]
+  );
 
   const clearPlaylist = useCallback(() => {
     setPlaylist([]);
     setCurrentIndex(-1);
     playlistRef.current = [];
     currentIndexRef.current = -1;
-  }, []);
+  }, [setPlaylist, setCurrentIndex]);
 
   // 预加载预定下一首：曲目/列表/模式/音质变化时重算并失效旧预加载
   useEffect(() => {
@@ -1107,8 +1201,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (nextIdx >= 0) void preloadNext();
   }, [track, playlist, currentIndex, shuffle, repeatMode, quality, preloadNext]);
 
-  const togglePlaylistPanel = useCallback(() => setShowPlaylistPanel((v) => !v), []);
-  const closePlaylistPanel = useCallback(() => setShowPlaylistPanel(false), []);
+  const togglePlaylistPanel = useCallback(
+    () => setShowPlaylistPanel((v) => !v),
+    [setShowPlaylistPanel]
+  );
+  const closePlaylistPanel = useCallback(() => setShowPlaylistPanel(false), [setShowPlaylistPanel]);
 
   // 音量或静音变化时同步到两个 audio 元素
   useEffect(() => {
@@ -1118,11 +1215,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, [volume, muted]);
 
-  const toggleShuffle = useCallback(() => setShuffle((v) => !v), []);
+  const toggleShuffle = useCallback(() => setShuffle((v) => !v), [setShuffle]);
 
   const cycleRepeatMode = useCallback(() => {
     setRepeatMode((m) => (m === 'off' ? 'all' : m === 'all' ? 'one' : 'off'));
-  }, []);
+  }, [setRepeatMode]);
 
   const setVolume = useCallback(
     (v: number) => {
@@ -1131,10 +1228,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // 调高音量时自动取消静音
       if (clamped > 0 && muted) setMuted(false);
     },
-    [muted]
+    [muted, setMuted, setVolumeState]
   );
 
-  const toggleMute = useCallback(() => setMuted((v) => !v), []);
+  const toggleMute = useCallback(() => setMuted((v) => !v), [setMuted]);
 
   // 自动获取歌词
   useEffect(() => {
@@ -1194,7 +1291,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [track]);
+  }, [track, setLyricData, setLyricError, setLyricLoading]);
 
   // 打开歌词页面
   const openLyricsPage = useCallback(() => {
@@ -1234,96 +1331,53 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     playlistRef.current = [];
     currentIndexRef.current = -1;
     currentTrailingSilenceRef.current = 0;
-  }, [store, abortTransition]);
+  }, [
+    store,
+    abortTransition,
+    setCurrent,
+    setCurrentIndex,
+    setDuration,
+    setError,
+    setLyricData,
+    setLyricError,
+    setLyricLoading,
+    setMuted,
+    setPlaying,
+    setPlaylist,
+    setRepeatMode,
+    setShowPlaylistPanel,
+    setShuffle,
+    setTrack,
+    setVolumeState,
+  ]);
 
-  const value = useMemo<PlayerContextValue>(
-    () => ({
-      track,
-      playing,
-      current,
-      duration,
-      loading,
-      error,
-      toggle,
-      seek,
-      playHit,
-      playNcmSong,
-      playDirect,
-      close,
-      selectRequest,
-      resolveSelect,
-      shuffle,
-      toggleShuffle,
-      repeatMode,
-      cycleRepeatMode,
-      volume,
-      setVolume,
-      muted,
-      toggleMute,
-      lyricData,
-      lyricLoading,
-      lyricError,
-      openLyricsPage,
-      quality,
-      setQuality,
-      cycleQuality,
-      reloadWithQuality,
-      playlist,
-      currentIndex,
-      showPlaylistPanel,
-      togglePlaylistPanel,
-      closePlaylistPanel,
-      playAll,
-      playNext,
-      playPrev,
-      playAtIndex,
-      removeFromPlaylist,
-      clearPlaylist,
-    }),
-    [
-      track,
-      playing,
-      current,
-      duration,
-      loading,
-      error,
-      toggle,
-      seek,
-      playHit,
-      playNcmSong,
-      playDirect,
-      close,
-      selectRequest,
-      resolveSelect,
-      shuffle,
-      toggleShuffle,
-      repeatMode,
-      cycleRepeatMode,
-      volume,
-      setVolume,
-      muted,
-      toggleMute,
-      lyricData,
-      lyricLoading,
-      lyricError,
-      openLyricsPage,
-      quality,
-      setQuality,
-      cycleQuality,
-      reloadWithQuality,
-      playlist,
-      currentIndex,
-      showPlaylistPanel,
-      togglePlaylistPanel,
-      closePlaylistPanel,
-      playAll,
-      playNext,
-      playPrev,
-      playAtIndex,
-      removeFromPlaylist,
-      clearPlaylist,
-    ]
-  );
+  // 暴露动作到模块级对象：usePlayer() 展开读取，消费方无需 Context。
+  // 渲染期间同步赋值（先于同级消费组件的渲染），始终写入最新闭包
+  Object.assign(playerActions, {
+    toggle,
+    seek,
+    playHit,
+    playNcmSong,
+    playDirect,
+    close,
+    resolveSelect,
+    toggleShuffle,
+    cycleRepeatMode,
+    setVolume,
+    toggleMute,
+    openLyricsPage,
+    setQuality,
+    cycleQuality,
+    reloadWithQuality,
+    togglePlaylistPanel,
+    closePlaylistPanel,
+    playAll,
+    playNext,
+    playPrev,
+    playAtIndex,
+    removeFromPlaylist,
+    clearPlaylist,
+  });
 
-  return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
+  return null;
 }

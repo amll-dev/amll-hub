@@ -1,5 +1,17 @@
-import { createContext, useContext } from 'react';
+import { useAtomValue } from 'jotai';
 import type { UserProfile } from '@/lib/auth';
+import {
+  userAtom,
+  loginOpenAtom,
+  loginRedirectAtom,
+  login,
+  logout,
+  openLogin,
+  closeLogin,
+  clearLoginRedirect,
+  refreshUser,
+} from '@/atoms/auth';
+import { useAuthLoading } from '@/boot/AuthBoot';
 
 export interface AuthContextValue {
   user: UserProfile | null;
@@ -20,14 +32,18 @@ export interface AuthContextValue {
   refreshUser: () => Promise<void>;
 }
 
-/** 登录态 Context 实例（Provider 在 context/AuthContext.tsx） */
-export const AuthContext = createContext<AuthContextValue | null>(null);
-
-/** 读取登录态 Context，必须在 AuthProvider 内使用 */
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return ctx;
+/** 读取登录态（jotai atoms，全局可用，无需 Provider） */
+export function useAuth(): AuthContextValue {
+  return {
+    user: useAtomValue(userAtom),
+    loading: useAuthLoading(),
+    loginOpen: useAtomValue(loginOpenAtom),
+    loginRedirect: useAtomValue(loginRedirectAtom),
+    login,
+    logout,
+    openLogin,
+    closeLogin,
+    clearLoginRedirect,
+    refreshUser,
+  };
 }

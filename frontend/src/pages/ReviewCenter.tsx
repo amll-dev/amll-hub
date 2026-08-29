@@ -1,15 +1,37 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from '@tanstack/react-query';
+import { useAtom } from 'jotai';
+import {
+  resetReviewCenterState,
+  reviewSearchAtom,
+  reviewTabAtom,
+  reviewViewAtom,
+  searchIpDetailIdAtom,
+  searchIpTabAtom,
+  type ReviewTab,
+  type SearchIpTab,
+} from '@/atoms/reviewCenter';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, Bell, FolderOpen, Home, LayoutDashboard, Search, Shield } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { fadeUp, staggerContainer } from '@/lib/motion';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
+import { useSentinel } from '@/hooks/useSentinel';
 import { NavItem } from '@/components/NavItem';
 import { ListSkeleton } from '@/components/ui/Skeleton';
 import { SearchIpDetail } from '@/components/creator/SearchIpDetail';
-import type { SearchIpListItem, SubmissionListItem } from '@/lib/types';
+import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 
 // 状态 → 展示文案 + 颜色
 const statusMeta: Record<string, { label: string; className: string }> = {
@@ -36,16 +58,6 @@ function langText(code?: string): string {
   return langLabel[code] ?? code;
 }
 
-type ReviewTab =
-  | 'all'
-  | 'pending'
-  | 'reviewing'
-  | 'need_revision'
-  | 'missing_audio'
-  | 'approved'
-  | 'rejected'
-  | 'closed';
-
 const reviewTabs: { key: ReviewTab; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'pending', label: '待审核' },
@@ -57,11 +69,10 @@ const reviewTabs: { key: ReviewTab; label: string }[] = [
   { key: 'closed', label: '已关闭' },
 ];
 
-type View = 'home' | 'content' | 'search-ip';
+/** 审核列表分页大小（无限滚动） */
+const LIST_PAGE_SIZE = 20;
 
-// 搜索IP投稿状态筛选
-type SearchIpTab = 'all' | 'pending' | 'approved' | 'rejected';
-
+// 搜索IP投稿状态筛选选项
 const searchIpTabs: { key: SearchIpTab; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'pending', label: '待审核' },
@@ -79,46 +90,73 @@ function formatTime(iso: string): string {
   });
 }
 
-/** 审核中心列表 */
+/** 审核中心列表（无限滚动：每页 20 条，滚动到底自动加载下一页） */
 function ReviewList() {
-  const [tab, setTab] = useState<ReviewTab>('all');
-  const [search, setSearch] = useState('');
-  const [items, setItems] = useState<SubmissionListItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const queryClient = useQueryClient();
+  // 列表筛选状态存全局 atoms（页面卸载时统一复位）
+  const [tab, setTab] = useAtom(reviewTabAtom);
+  const [search, setSearch] = useAtom(reviewSearchAtom);
+  const trimmedSearch = search.trim() || undefined;
+  const listKey = queryKeys.submissions({
+    mode: 'review',
+    status: tab,
+    search: trimmedSearch,
+    limit: LIST_PAGE_SIZE,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    api
-      .listAllSubmissions({ status: tab, search: search.trim() || undefined, page: 1, limit: 50 })
-      .then((res) => {
-        if (cancelled) return;
-        setItems(res.items ?? []);
-        setTotal(res.total ?? 0);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : '加载失败');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tab, search]);
+  const listQuery = useInfiniteQuery({
+    queryKey: listKey,
+    queryFn: ({ pageParam }) =>
+      api.listAllSubmissions({
+        status: tab,
+        search: trimmedSearch,
+        page: pageParam,
+        limit: LIST_PAGE_SIZE,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: (last, all) => {
+      const fetched = all.reduce((n, p) => n + (p.items?.length ?? 0), 0);
+      if (typeof last.total === 'number' && last.total > 0) {
+        return fetched < last.total ? all.length + 1 : undefined;
+      }
+      return (last.items?.length ?? 0) < LIST_PAGE_SIZE ? undefined : all.length + 1;
+    },
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
+  });
+  const items = useMemo(
+    () => listQuery.data?.pages.flatMap((p) => p.items ?? []) ?? [],
+    [listQuery.data]
+  );
+  const total = listQuery.data?.pages[0]?.total ?? 0;
+  const errorMsg =
+    listQuery.error instanceof Error ? listQuery.error.message : listQuery.error ? '加载失败' : '';
 
-  // 订阅全局投稿状态变更（审核员进入详情页标记审核中等场景）
+  const loadMore = () => {
+    if (listQuery.hasNextPage && !listQuery.isFetchingNextPage) {
+      void listQuery.fetchNextPage();
+    }
+  };
+  const sentinelRef = useSentinel(loadMore, listQuery.hasNextPage === true && !errorMsg);
+
+  // 订阅全局投稿状态变更（审核员进入详情页标记审核中等场景）：补丁所有已加载页
   useSubmissionListSync((payload) => {
     const id = payload.id ?? payload.submissionId;
     if (!id || !payload.status) return;
-    setItems((prev) =>
-      prev.map((it) =>
-        it.id === id ? { ...it, status: payload.status as SubmissionListItem['status'] } : it
-      )
+    queryClient.setQueryData<InfiniteData<SubmissionListResult>>(listKey, (prev) =>
+      prev
+        ? {
+            ...prev,
+            pages: prev.pages.map((p) => ({
+              ...p,
+              items: (p.items ?? []).map((it) =>
+                it.id === id
+                  ? { ...it, status: payload.status as SubmissionListItem['status'] }
+                  : it
+              ),
+            })),
+          }
+        : prev
     );
   });
 
@@ -158,10 +196,10 @@ function ReviewList() {
       </motion.div>
 
       <motion.div variants={fadeUp}>
-        {loading ? (
+        {listQuery.isPending ? (
           <ListSkeleton rows={6} />
-        ) : error ? (
-          <p className="py-12 text-center text-sm text-red-600">{error}</p>
+        ) : errorMsg ? (
+          <p className="py-12 text-center text-sm text-red-600">{errorMsg}</p>
         ) : items.length === 0 ? (
           <div className="py-12 text-center">
             <FolderOpen className="mx-auto h-10 w-10 text-ink-3" />
@@ -169,7 +207,10 @@ function ReviewList() {
           </div>
         ) : (
           <>
-            <p className="mb-3 text-xs text-ink-3">共 {total} 条</p>
+            <p className="mb-3 text-xs text-ink-3">
+              已加载 {items.length}
+              {total > items.length ? ` / 共 ${total} 条` : ' 条'}
+            </p>
             <ul className="space-y-2">
               {items.map((item) => {
                 const meta = statusMeta[item.status] ?? {
@@ -193,11 +234,12 @@ function ReviewList() {
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
                           <span>{formatTime(item.createdAt)}</span>
                           <span className="text-line">|</span>
-                          <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${meta.className}`}
+                          <Badge
+                            variant="outline"
+                            className={`shrink-0 border-transparent inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`}
                           >
                             {meta.label}
-                          </span>
+                          </Badge>
                           <span className="text-line">|</span>
                           <span>语言：{langText(item.language)}</span>
                         </div>
@@ -207,6 +249,20 @@ function ReviewList() {
                 );
               })}
             </ul>
+
+            {/* 无限滚动：哨兵进入视口自动加载下一页，按钮兜底 */}
+            {(listQuery.hasNextPage || listQuery.isFetchingNextPage) && (
+              <div ref={sentinelRef} className="pt-2 text-center">
+                <button
+                  type="button"
+                  onClick={loadMore}
+                  disabled={!listQuery.hasNextPage || listQuery.isFetchingNextPage}
+                  className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-card px-5 text-sm text-ink-2 transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {listQuery.isFetchingNextPage ? '加载中…' : '加载更多'}
+                </button>
+              </div>
+            )}
           </>
         )}
       </motion.div>
@@ -216,35 +272,19 @@ function ReviewList() {
 
 /** 搜索IP显示投稿审核列表 */
 function SearchIpReviewList() {
-  const [tab, setTab] = useState<SearchIpTab>('all');
-  const [items, setItems] = useState<SearchIpListItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [detailId, setDetailId] = useState<number | null>(null);
+  // 列表筛选与选中详情存全局 atoms（页面卸载时统一复位）
+  const [tab, setTab] = useAtom(searchIpTabAtom);
+  const [detailId, setDetailId] = useAtom(searchIpDetailIdAtom);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    api
-      .listAllSearchIpSubmissions(tab)
-      .then((res) => {
-        if (cancelled) return;
-        setItems(res.items ?? []);
-        setTotal(res.total ?? 0);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : '加载失败');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [tab]);
+  const { data, isPending, error } = useQuery({
+    queryKey: queryKeys.searchIpSubmissions('all', tab),
+    queryFn: () => api.listAllSearchIpSubmissions(tab),
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
+  });
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const errorMsg = error instanceof Error ? error.message : error ? '加载失败' : '';
 
   // 点击进入详情
   if (detailId !== null) {
@@ -272,10 +312,10 @@ function SearchIpReviewList() {
       </motion.div>
 
       <motion.div variants={fadeUp}>
-        {loading ? (
+        {isPending ? (
           <ListSkeleton rows={6} />
-        ) : error ? (
-          <p className="py-12 text-center text-sm text-red-600">{error}</p>
+        ) : errorMsg ? (
+          <p className="py-12 text-center text-sm text-red-600">{errorMsg}</p>
         ) : items.length === 0 ? (
           <div className="py-12 text-center">
             <Search className="mx-auto h-10 w-10 text-ink-3" />
@@ -307,11 +347,12 @@ function SearchIpReviewList() {
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
                           <span>{item.createdAt}</span>
                           <span className="text-line">|</span>
-                          <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${meta.className}`}
+                          <Badge
+                            variant="outline"
+                            className={`shrink-0 border-transparent inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`}
                           >
                             {meta.label}
-                          </span>
+                          </Badge>
                           <span className="text-line">|</span>
                           <span>投稿人：{item.submitter}</span>
                         </div>
@@ -331,7 +372,10 @@ function SearchIpReviewList() {
 /** 审核中心主页面 */
 export function ReviewCenter() {
   const { user, openLogin } = useAuth();
-  const [view, setView] = useState<View>('home');
+  // 页面状态存全局 atoms（卸载时复位，语义同原 useState）
+  const [view, setView] = useAtom(reviewViewAtom);
+  // 页面卸载时复位全部审核中心状态
+  useEffect(() => () => resetReviewCenterState(), []);
 
   if (!user) {
     return (
@@ -391,7 +435,7 @@ export function ReviewCenter() {
                 测试版本，不代表最终品质
               </span>
             </div>
-            <span className="mx-1 h-5 w-px bg-line" />
+            <Separator orientation="vertical" className="mx-1 h-5" />
             <Link
               to="/"
               className="flex items-center gap-1 text-sm text-ink-2 transition-colors hover:text-primary"
@@ -410,7 +454,7 @@ export function ReviewCenter() {
               <Bell className="h-5 w-5" />
               <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
             </button>
-            <span className="mx-1 h-5 w-px bg-line" />
+            <Separator orientation="vertical" className="mx-1 h-5" />
             <div className="flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-semibold text-primary-foreground">
                 {user.avatar ? (

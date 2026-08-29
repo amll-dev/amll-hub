@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
   AlertCircle,
@@ -13,6 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query';
 import { downloadBlobFile, downloadText, sanitizeFileName } from '@/lib/download';
 import { listItem, staggerContainer } from '@/lib/motion';
 import type { LyricViewLine, LyricViewResponse, OnlinePlatform } from '@/lib/types';
@@ -107,6 +109,13 @@ function MetaChip({ icon: Icon, children }: { icon: LucideIcon; children: ReactN
   );
 }
 
+/** TTML 文本不做 queryKey 原文存储，用 djb2 + 长度生成短指纹（仅用于缓存定位） */
+function hashString(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return `${(h >>> 0).toString(36)}:${s.length.toString(36)}`;
+}
+
 export function LyricViewer({
   filename,
   ttml,
@@ -115,58 +124,45 @@ export function LyricViewer({
   showActions = true,
   rawLyricFile,
 }: LyricViewerProps) {
-  const [data, setData] = useState<LyricViewResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [dlError, setDlError] = useState('');
-  // 平台模式：原始 LRC 文本与下载文件名（其他模式为 null）
-  const [onlineRaw, setOnlineRaw] = useState<string | null>(null);
-  const [onlineDlName, setOnlineDlName] = useState<string | null>(null);
   const onlinePlatform = online?.platform;
   const onlineSongId = online?.songId;
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    setOnlineRaw(null);
-    setOnlineDlName(null);
+  // 三种数据源模式：本地文件名 / TTML 文本 / 平台在线
+  const mode = filename ? 'file' : ttml ? 'ttml' : onlinePlatform && onlineSongId ? 'online' : null;
 
-    const promise = filename
-      ? api.viewLyric(filename)
-      : ttml
-        ? api.parseLyric(ttml)
-        : onlinePlatform && onlineSongId
-          ? fetchOnlineView(onlinePlatform, onlineSongId).then((r) => {
-              if (!cancelled) {
-                setOnlineRaw(r.rawLyric);
-                setOnlineDlName(r.downloadName);
-              }
-              return r;
-            })
-          : null;
+  // 请求由 Query 接管：按数据源缓存去重，竞态由 queryKey 隔离
+  const viewQuery = useQuery({
+    queryKey:
+      mode === 'file'
+        ? queryKeys.viewLyric(filename!)
+        : mode === 'online'
+          ? queryKeys.onlineViewLyric(onlinePlatform!, onlineSongId!)
+          : queryKeys.parseLyric(ttml ? hashString(ttml) : ''),
+    queryFn: () => {
+      if (mode === 'file') return api.viewLyric(filename!);
+      if (mode === 'online') return fetchOnlineView(onlinePlatform!, onlineSongId!);
+      return api.parseLyric(ttml!);
+    },
+    enabled: mode !== null,
+    staleTime: 5 * 60_000,
+  });
 
-    if (!promise) {
-      setLoading(false);
-      setError('缺少歌词数据');
-      return;
-    }
-
-    promise
-      .then((resp) => {
-        if (!cancelled) setData(resp);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : '加载失败');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [filename, ttml, onlinePlatform, onlineSongId]);
+  const { data, isPending, error } = viewQuery;
+  const loading = mode !== null && isPending;
+  const errorMsg =
+    mode === null
+      ? '缺少歌词数据'
+      : error instanceof Error
+        ? error.message
+        : error
+          ? '加载失败'
+          : '';
+  // 平台模式：原始 LRC 文本与下载文件名（其他模式为 null）。
+  // OnlineViewResult 是 LyricViewResponse 的扩展，联合类型会被收窄，需显式还原
+  const onlineData = mode === 'online' ? (data as OnlineViewResult | undefined) : undefined;
+  const onlineRaw = onlineData?.rawLyric ?? null;
+  const onlineDlName = onlineData?.downloadName ?? null;
 
   if (loading) {
     return (
@@ -177,12 +173,12 @@ export function LyricViewer({
     );
   }
 
-  if (error) {
+  if (errorMsg) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border border-line bg-surface-2 py-12 text-center">
         <AlertCircle className="h-8 w-8 text-error" />
         <h3 className="mt-3 text-base font-semibold text-error">加载歌词失败</h3>
-        <p className="mt-1 text-sm text-ink-2">{error}</p>
+        <p className="mt-1 text-sm text-ink-2">{errorMsg}</p>
       </div>
     );
   }

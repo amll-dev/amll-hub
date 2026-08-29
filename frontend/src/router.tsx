@@ -1,5 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom';
 import { Layout } from '@/App';
+import { RouteErrorBoundary } from '@/components/ErrorBoundary';
 import {
   CreatorCenter,
   DailyRecommend,
@@ -22,6 +23,8 @@ import {
 export const router = createBrowserRouter([
   {
     element: <Layout />,
+    // 懒加载页面抛错 / chunk 加载失败时整树兜底，避免白屏
+    errorElement: <RouteErrorBoundary />,
     children: [
       { path: '/', element: <Home /> },
       { path: '/ncm', element: <NcmParse /> },
@@ -30,7 +33,6 @@ export const router = createBrowserRouter([
       { path: '/daily', element: <DailyRecommend /> },
       { path: '/lyric/:filename', element: <ViewLyricPage /> },
       { path: '/online-lyric/:platform/:songId', element: <OnlineViewLyricPage /> },
-      { path: '/submit', element: <Placeholder title="投稿" /> },
       { path: '/stats', element: <Placeholder title="统计" /> },
       { path: '/docs', element: <Placeholder title="文档" /> },
       { path: '/profile', element: <Profile /> },

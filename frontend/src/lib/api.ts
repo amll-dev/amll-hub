@@ -31,6 +31,29 @@ import { clearAuth, getToken } from './auth';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 
+/** 请求超时（毫秒）：防止挂起的连接卡死 UI */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * 后端业务错误（响应体 code !== 200 或 401）。
+ * 区别于网络层错误：TanStack Query 据此跳过重试。
+ */
+export class ApiError extends Error {
+  readonly code: number;
+  constructor(message: string, code: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.code = code;
+  }
+}
+
+/**
+ * 统一请求管道（所有 JSON API 的唯一入口，等价于 axios 拦截器）：
+ * 1. 注入 Authorization（有 token 时）
+ * 2. 401 统一处理：清登录态 + 派发 auth:unauthorized（AuthProvider 弹登录窗）
+ * 3. 业务码/HTTP 状态统一转换为 ApiError
+ * 4. dev 环境统一请求日志（方法/路径/耗时/状态）
+ */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -41,7 +64,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const startedAt = performance.now();
+  const method = init?.method ?? 'GET';
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('请求超时，请稍后重试', { cause: err });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (import.meta.env.DEV) {
+    console.debug(
+      `[api] ${method} ${path} → ${res.status} (${Math.round(performance.now() - startedAt)}ms)`
+    );
+  }
 
   // 401：若是带 token 的请求，说明 token 失效，清登录态并弹登录窗；
   // 若未带 token（如找回密码接口验证码错误），仅抛错，不触发登录窗
@@ -57,7 +100,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       clearAuth();
       window.dispatchEvent(new Event('auth:unauthorized'));
     }
-    throw new Error(msg);
+    throw new ApiError(msg, 401);
   }
 
   let json: ApiResponse<T>;
@@ -68,7 +111,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (json.code !== 200) {
-    throw new Error(json.message || `请求失败：HTTP ${res.status}`);
+    throw new ApiError(json.message || `请求失败：HTTP ${res.status}`, json.code);
   }
   return json.data as T;
 }

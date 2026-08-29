@@ -1,47 +1,90 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Loader2, Plus, ShieldCheck, Trash2, UserRound } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { fadeUp, staggerContainer } from '@/lib/motion';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query';
 import { ListSkeleton } from '@/components/ui/Skeleton';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+
+type ReviewerList = { items: string[]; total: number };
 
 /** 审核员管理页 */
 export function ReviewerManagePage() {
   const { user, openLogin } = useAuth();
-  const [items, setItems] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const queryClient = useQueryClient();
   const [username, setUsername] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState('');
   const [removing, setRemoving] = useState<string | null>(null);
 
-  const load = () => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    api
-      .listReviewers()
-      .then((res) => {
-        if (!cancelled) setItems(res.items ?? []);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : '加载失败');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+  const reviewersQuery = useQuery({
+    queryKey: queryKeys.reviewers,
+    queryFn: () => api.listReviewers(),
+    enabled: !!user?.isAdmin,
+    staleTime: 30_000,
+  });
+  const items = reviewersQuery.data?.items ?? [];
+  const errorMsg =
+    reviewersQuery.error instanceof Error
+      ? reviewersQuery.error.message
+      : reviewersQuery.error
+        ? '加载失败'
+        : '';
+
+  const addMutation = useMutation({
+    mutationFn: (name: string) => api.addReviewer(name),
+    onSuccess: (_d, name) => {
+      queryClient.setQueryData<ReviewerList>(queryKeys.reviewers, (prev) =>
+        prev
+          ? {
+              items: prev.items.includes(name) ? prev.items : [...prev.items, name].sort(),
+              total: prev.total,
+            }
+          : prev
+      );
+      setUsername('');
+      setMsg(`已添加审核员 ${name}`);
+    },
+    onError: (e) => setMsg(e instanceof Error ? e.message : '添加失败'),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (name: string) => api.removeReviewer(name),
+    onMutate: (name) => setRemoving(name),
+    onSuccess: (_d, name) => {
+      queryClient.setQueryData<ReviewerList>(queryKeys.reviewers, (prev) =>
+        prev ? { items: prev.items.filter((n) => n !== name), total: prev.total - 1 } : prev
+      );
+      setMsg(`已移除审核员 ${name}`);
+    },
+    onError: (e) => setMsg(e instanceof Error ? e.message : '移除失败'),
+    onSettled: () => setRemoving(null),
+  });
+
+  const doAdd = () => {
+    const name = username.trim();
+    if (!name || addMutation.isPending) return;
+    addMutation.mutate(name);
   };
 
-  useEffect(() => {
-    if (user?.isAdmin) return load();
-    setLoading(false);
-  }, [user?.isAdmin]);
+  const doRemove = (name: string) => {
+    if (removing !== null) return;
+    removeMutation.mutate(name);
+  };
+
+  const loading = !!user?.isAdmin && reviewersQuery.isPending;
+  const submitting = addMutation.isPending;
 
   // 非超管不可见
   if (!user) {
@@ -73,38 +116,6 @@ export function ReviewerManagePage() {
       </div>
     );
   }
-
-  const doAdd = async () => {
-    const name = username.trim();
-    if (!name || submitting) return;
-    setSubmitting(true);
-    setMsg('');
-    try {
-      await api.addReviewer(name);
-      setItems((prev) => (prev.includes(name) ? prev : [...prev, name].sort()));
-      setUsername('');
-      setMsg(`已添加审核员 ${name}`);
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : '添加失败');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const doRemove = async (name: string) => {
-    if (removing !== null) return;
-    setRemoving(name);
-    setMsg('');
-    try {
-      await api.removeReviewer(name);
-      setItems((prev) => prev.filter((n) => n !== name));
-      setMsg(`已移除审核员 ${name}`);
-    } catch (e) {
-      setMsg(e instanceof Error ? e.message : '移除失败');
-    } finally {
-      setRemoving(null);
-    }
-  };
 
   return (
     <motion.div
@@ -163,46 +174,54 @@ export function ReviewerManagePage() {
         </p>
         {loading ? (
           <ListSkeleton rows={4} />
-        ) : error ? (
-          <p className="py-6 text-center text-sm text-error">{error}</p>
+        ) : errorMsg ? (
+          <p className="py-6 text-center text-sm text-error">{errorMsg}</p>
         ) : items.length === 0 ? (
           <div className="py-8 text-center">
             <UserRound className="mx-auto h-10 w-10 text-ink-3" />
             <p className="mt-3 text-sm text-ink-3">暂无审核员，请在上方添加</p>
           </div>
         ) : (
-          <ul className="space-y-2">
-            {items.map((name) => (
-              <motion.li
-                key={name}
-                variants={fadeUp}
-                className="flex items-center justify-between gap-3 rounded-md border border-line bg-background px-4 py-3"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
-                  <span className="truncate font-medium text-foreground">{name}</span>
-                  {name === user.name && (
-                    <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-xs text-ink-2">
-                      我
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => doRemove(name)}
-                  disabled={removing !== null}
-                  className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-line px-2.5 text-xs text-ink-2 transition-colors hover:border-red-300 hover:text-red-600 disabled:opacity-50"
-                >
-                  {removing === name ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-3.5 w-3.5" />
-                  )}
-                  移除
-                </button>
-              </motion.li>
-            ))}
-          </ul>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>审核员</TableHead>
+                <TableHead className="w-24 text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((name) => (
+                <TableRow key={name}>
+                  <TableCell>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
+                      <span className="truncate font-medium text-foreground">{name}</span>
+                      {name === user.name && (
+                        <Badge variant="secondary" className="shrink-0">
+                          我
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <button
+                      type="button"
+                      onClick={() => doRemove(name)}
+                      disabled={removing !== null}
+                      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-line px-2.5 text-xs text-ink-2 transition-colors hover:border-red-300 hover:text-red-600 disabled:opacity-50"
+                    >
+                      {removing === name ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                      移除
+                    </button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
       </motion.div>
     </motion.div>
