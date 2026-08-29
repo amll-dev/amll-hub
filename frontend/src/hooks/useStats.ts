@@ -1,40 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { Stats } from '@/lib/types';
-
-interface State {
-  data: Stats | null;
-  loading: boolean;
-  error: string | null;
-}
+import { queryKeys } from '@/lib/query';
 
 export function useStats() {
-  const [state, setState] = useState<State>({
-    data: null,
-    loading: true,
-    error: null,
+  const { data, isPending, error } = useQuery({
+    queryKey: queryKeys.stats,
+    queryFn: () => api.getStats(),
+    staleTime: 60_000,
   });
 
-  useEffect(() => {
-    let active = true;
-    setState((s) => ({ ...s, loading: true, error: null }));
-    api
-      .getStats()
-      .then((data) => {
-        if (active) setState({ data, loading: false, error: null });
-      })
-      .catch((err: unknown) => {
-        if (active)
-          setState((s) => ({
-            ...s,
-            loading: false,
-            error: err instanceof Error ? err.message : '加载失败',
-          }));
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  return state;
+  return {
+    data: data ?? null,
+    loading: isPending,
+    error: error ? (error instanceof Error ? error.message : '加载失败') : null,
+  };
 }

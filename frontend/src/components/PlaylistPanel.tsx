@@ -1,20 +1,17 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { ListMusic, Music, Play, Trash2, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { usePlayer } from '@/hooks/usePlayer';
+import { useAtomValue } from 'jotai';
+import { playerActions } from '@/boot/PlayerBoot';
+import { playlistAtom, currentIndexAtom, showPlaylistPanelAtom, loadingAtom } from '@/atoms/player';
 
 /** 播放列表浮窗*/
 export function PlaylistPanel() {
-  const {
-    playlist,
-    currentIndex,
-    showPlaylistPanel,
-    closePlaylistPanel,
-    playAtIndex,
-    removeFromPlaylist,
-    clearPlaylist,
-    loading,
-  } = usePlayer();
+  const playlist = useAtomValue(playlistAtom);
+  const currentIndex = useAtomValue(currentIndexAtom);
+  const showPlaylistPanel = useAtomValue(showPlaylistPanelAtom);
+  const loading = useAtomValue(loadingAtom);
+  const { closePlaylistPanel, playAtIndex, removeFromPlaylist, clearPlaylist } = playerActions;
 
   const listContainerRef = useRef<HTMLDivElement>(null);
   const currentItemRef = useRef<HTMLLIElement>(null);

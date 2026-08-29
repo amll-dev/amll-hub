@@ -1,5 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useAtom } from 'jotai';
+import {
+  contentTabAtom,
+  resetCreatorCenter,
+  submitTabAtom,
+  viewAtom,
+  type ContentMainTab,
+  type SubmitTab,
+} from '@/atoms/creatorCenter';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -15,19 +31,23 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query';
+import { useSentinel } from '@/hooks/useSentinel';
 import { parseMarkupText } from '@/lib/markup';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
 import { NavItem } from '@/components/NavItem';
-import { primaryBtnClass } from '@/components/ui';
+import { buttonVariants } from '@/components/ui/button';
 import { CardDetailSkeleton, ListSkeleton } from '@/components/ui/Skeleton';
 import { LyricSubmitForm } from '@/components/creator/LyricSubmitForm';
 import { DailyRecommendForm } from '@/components/creator/DailyRecommendForm';
 import { SearchIpForm } from '@/components/creator/SearchIpForm';
 import { SearchIpDetail } from '@/components/creator/SearchIpDetail';
-import type { DailyRecommendation, DailyRecListItem, SubmissionListItem } from '@/lib/types';
+import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 
-type View = 'home' | 'content' | 'submit';
-type SubmitTab = 'lyrics' | 'daily' | 'search-ip';
+/** 歌词管理列表分页大小（无限滚动） */
+const LIST_PAGE_SIZE = 20;
 
 const submitTabs: { key: SubmitTab; label: string }[] = [
   { key: 'lyrics', label: '歌词投稿' },
@@ -42,8 +62,6 @@ const submitMenuOptions: { key: SubmitTab; label: string; icon: typeof FileText 
 ];
 
 // 内容管理主 tab
-type ContentMainTab = 'lyrics' | 'daily' | 'search-ip';
-
 const contentMainTabs: { key: ContentMainTab; label: string }[] = [
   { key: 'lyrics', label: '歌词管理' },
   { key: 'daily', label: '每日推荐管理' },
@@ -142,7 +160,7 @@ function ContentManagement({ initialTab = 'lyrics' }: { initialTab?: ContentMain
   );
 }
 
-/** 歌词管理列表 */
+/** 歌词管理列表（无限滚动：每页 20 条，滚动到底自动加载下一页） */
 function LyricsList({
   statusTab,
   setStatusTab,
@@ -150,42 +168,55 @@ function LyricsList({
   statusTab: LyricsStatusTab;
   setStatusTab: (t: LyricsStatusTab) => void;
 }) {
-  const [items, setItems] = useState<SubmissionListItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const queryClient = useQueryClient();
+  const listKey = queryKeys.submissions({ mode: 'creator', status: statusTab, limit: LIST_PAGE_SIZE });
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    api
-      .listSubmissions({ status: statusTab, page: 1, limit: 50 })
-      .then((res) => {
-        if (cancelled) return;
-        setItems(res.items ?? []);
-        setTotal(res.total ?? 0);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : '加载失败');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [statusTab]);
+  const listQuery = useInfiniteQuery({
+    queryKey: listKey,
+    queryFn: ({ pageParam }) =>
+      api.listSubmissions({ status: statusTab, page: pageParam, limit: LIST_PAGE_SIZE }),
+    initialPageParam: 1,
+    getNextPageParam: (last, all) => {
+      const fetched = all.reduce((n, p) => n + (p.items?.length ?? 0), 0);
+      if (typeof last.total === 'number' && last.total > 0) {
+        return fetched < last.total ? all.length + 1 : undefined;
+      }
+      return (last.items?.length ?? 0) < LIST_PAGE_SIZE ? undefined : all.length + 1;
+    },
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
+  });
+  const items = useMemo(
+    () => listQuery.data?.pages.flatMap((p) => p.items ?? []) ?? [],
+    [listQuery.data]
+  );
+  const total = listQuery.data?.pages[0]?.total ?? 0;
+  const errorMsg =
+    listQuery.error instanceof Error ? listQuery.error.message : listQuery.error ? '加载失败' : '';
 
-  // 订阅全局投稿状态变更
+  const loadMore = () => {
+    if (listQuery.hasNextPage && !listQuery.isFetchingNextPage) {
+      void listQuery.fetchNextPage();
+    }
+  };
+  const sentinelRef = useSentinel(loadMore, listQuery.hasNextPage === true && !errorMsg);
+
+  // 订阅全局投稿状态变更：直接补丁缓存里的所有已加载页
   useSubmissionListSync((payload) => {
     const id = payload.id ?? payload.submissionId;
     if (!id || !payload.status) return;
-    setItems((prev) =>
-      prev.map((it) =>
-        it.id === id ? { ...it, status: payload.status as SubmissionListItem['status'] } : it
-      )
+    queryClient.setQueryData<InfiniteData<SubmissionListResult>>(listKey, (prev) =>
+      prev
+        ? {
+            ...prev,
+            pages: prev.pages.map((p) => ({
+              ...p,
+              items: (p.items ?? []).map((it) =>
+                it.id === id ? { ...it, status: payload.status as SubmissionListItem['status'] } : it
+              ),
+            })),
+          }
+        : prev
     );
   });
 
@@ -213,10 +244,10 @@ function LyricsList({
         ))}
       </motion.div>
 
-      {loading ? (
+      {listQuery.isPending ? (
         <ListSkeleton rows={6} />
-      ) : error ? (
-        <p className="py-12 text-center text-sm text-red-600">{error}</p>
+      ) : errorMsg ? (
+        <p className="py-12 text-center text-sm text-red-600">{errorMsg}</p>
       ) : items.length === 0 ? (
         <div className="py-12 text-center">
           <FolderOpen className="mx-auto h-10 w-10 text-ink-3" />
@@ -224,7 +255,9 @@ function LyricsList({
         </div>
       ) : (
         <>
-          <p className="mb-3 text-xs text-ink-3">共 {total} 条</p>
+          <p className="mb-3 text-xs text-ink-3">
+            已加载 {items.length}{total > items.length ? ` / 共 ${total} 条` : ' 条'}
+          </p>
           <ul className="space-y-2">
             {items.map((item) => {
               const meta = statusMeta[item.status] ?? {
@@ -256,11 +289,7 @@ function LyricsList({
                           })}
                         </span>
                         <span className="text-line">|</span>
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${meta.className}`}
-                        >
-                          {meta.label}
-                        </span>
+                        <Badge variant="outline" className={`shrink-0 border-transparent inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`}>{meta.label}</Badge>
                         <span className="text-line">|</span>
                         <span>语言：{langText(item.language)}</span>
                       </div>
@@ -270,6 +299,20 @@ function LyricsList({
               );
             })}
           </ul>
+
+          {/* 无限滚动：哨兵进入视口自动加载下一页，按钮兜底 */}
+          {(listQuery.hasNextPage || listQuery.isFetchingNextPage) && (
+            <div ref={sentinelRef} className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={loadMore}
+                disabled={!listQuery.hasNextPage || listQuery.isFetchingNextPage}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-card px-5 text-sm text-ink-2 transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {listQuery.isFetchingNextPage ? '加载中…' : '加载更多'}
+              </button>
+            </div>
+          )}
         </>
       )}
     </motion.div>
@@ -278,34 +321,15 @@ function LyricsList({
 
 /** 每日推荐管理列表 */
 function DailyRecommendList() {
-  const [items, setItems] = useState<DailyRecListItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { data, isPending, error } = useQuery({
+    queryKey: queryKeys.dailySubmissions,
+    queryFn: () => api.listDailySubmissions(),
+    staleTime: 15_000,
+  });
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const errorMsg = error instanceof Error ? error.message : error ? '加载失败' : '';
   const [detailId, setDetailId] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    api
-      .listDailySubmissions()
-      .then((res) => {
-        if (cancelled) return;
-        setItems(res.items ?? []);
-        setTotal(res.total ?? 0);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : '加载失败');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   if (detailId !== null) {
     return <DailyRecommendDetail id={detailId} onBack={() => setDetailId(null)} />;
@@ -313,10 +337,10 @@ function DailyRecommendList() {
 
   return (
     <>
-      {loading ? (
+      {isPending ? (
         <ListSkeleton rows={6} />
-      ) : error ? (
-        <p className="py-12 text-center text-sm text-error">{error}</p>
+      ) : errorMsg ? (
+        <p className="py-12 text-center text-sm text-error">{errorMsg}</p>
       ) : items.length === 0 ? (
         <div className="py-12 text-center">
           <CalendarDays className="mx-auto h-10 w-10 text-ink-3" />
@@ -342,11 +366,7 @@ function DailyRecommendList() {
                     <span className="truncate font-medium text-foreground">
                       {item.songName} - {item.artist}
                     </span>
-                    <span
-                      className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs ${meta.className}`}
-                    >
-                      {meta.label}
-                    </span>
+                    <Badge variant="outline" className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}>{meta.label}</Badge>
                   </div>
                   <p className="mt-1 text-xs text-ink-3">
                     提交于{' '}
@@ -370,37 +390,20 @@ function DailyRecommendList() {
 
 /** 每日推荐投稿详情 */
 function DailyRecommendDetail({ id, onBack }: { id: number; onBack: () => void }) {
-  const [detail, setDetail] = useState<DailyRecommendation | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const { data: detail, isPending, error } = useQuery({
+    queryKey: queryKeys.dailySubmission(id),
+    queryFn: () => api.getDailySubmission(id),
+    staleTime: 15_000,
+  });
+  const errorMsg = error instanceof Error ? error.message : error ? '加载失败' : '';
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    api
-      .getDailySubmission(id)
-      .then((res) => {
-        if (!cancelled) setDetail(res);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : '加载失败');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
-
-  if (loading) {
+  if (isPending) {
     return <CardDetailSkeleton />;
   }
-  if (error || !detail) {
+  if (errorMsg || !detail) {
     return (
       <div className="py-12 text-center">
-        <p className="text-sm text-error">{error || '未找到该投稿'}</p>
+        <p className="text-sm text-error">{errorMsg || '未找到该投稿'}</p>
         <button
           type="button"
           onClick={onBack}
@@ -436,11 +439,7 @@ function DailyRecommendDetail({ id, onBack }: { id: number; onBack: () => void }
             {detail.date}
           </span>
           <h3 className="text-lg font-semibold text-foreground">{detail.songName}</h3>
-          <span
-            className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs ${meta.className}`}
-          >
-            {meta.label}
-          </span>
+          <Badge variant="outline" className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}>{meta.label}</Badge>
         </div>
         <p className="mt-1 text-sm text-ink-2">{detail.artist}</p>
         {detail.ncmId && <p className="mt-1 text-xs text-ink-3">网易云ID：{detail.ncmId}</p>}
@@ -478,36 +477,15 @@ function DailyRecommendDetail({ id, onBack }: { id: number; onBack: () => void }
 
 /** 搜索IP管理列表 */
 function SearchIpList() {
-  const [items, setItems] = useState<
-    { id: number; title: string; status: string; createdAt: string }[]
-  >([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { data, isPending, error } = useQuery({
+    queryKey: queryKeys.searchIpSubmissions('mine'),
+    queryFn: () => api.listSearchIpSubmissions(),
+    staleTime: 15_000,
+  });
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const errorMsg = error instanceof Error ? error.message : error ? '加载失败' : '';
   const [detailId, setDetailId] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    api
-      .listSearchIpSubmissions()
-      .then((res) => {
-        if (cancelled) return;
-        setItems(res.items ?? []);
-        setTotal(res.total ?? 0);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : '加载失败');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // 点击进入详情
   if (detailId !== null) {
@@ -516,10 +494,10 @@ function SearchIpList() {
 
   return (
     <>
-      {loading ? (
+      {isPending ? (
         <ListSkeleton rows={6} />
-      ) : error ? (
-        <p className="py-12 text-center text-sm text-error">{error}</p>
+      ) : errorMsg ? (
+        <p className="py-12 text-center text-sm text-error">{errorMsg}</p>
       ) : items.length === 0 ? (
         <div className="py-12 text-center">
           <Search className="mx-auto h-10 w-10 text-ink-3" />
@@ -544,11 +522,7 @@ function SearchIpList() {
                     <span className="truncate font-medium text-foreground">
                       {item.title || '未命名'}
                     </span>
-                    <span
-                      className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs ${meta.className}`}
-                    >
-                      {meta.label}
-                    </span>
+                    <Badge variant="outline" className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}>{meta.label}</Badge>
                   </div>
                   <p className="mt-1 text-xs text-ink-3">{item.createdAt}</p>
                 </li>
@@ -567,10 +541,16 @@ export function CreatorCenter() {
   const { user, openLogin } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [view, setView] = useState<View>('home');
-  const [submitTab, setSubmitTab] = useState<SubmitTab>('lyrics');
-  const [contentTab, setContentTab] = useState<ContentMainTab>('lyrics');
+  // 页面状态存全局 atoms（卸载时复位，语义同原 useState）
+  const [view, setView] = useAtom(viewAtom);
+  const [submitTab, setSubmitTab] = useAtom(submitTabAtom);
+  const [contentTab, setContentTab] = useAtom(contentTabAtom);
+
+  // 投稿下拉菜单 hover 开关：纯局部一次性 UI 状态，保留 useState
   const [submitMenuOpen, setSubmitMenuOpen] = useState(false);
+
+  // 离开页面时复位
+  useEffect(() => () => resetCreatorCenter(), []);
 
   // 支持 ?tab=lyrics|daily|search-ip 直达对应投稿表单（主页投稿按钮等外部入口用）
   useEffect(() => {
@@ -579,7 +559,7 @@ export function CreatorCenter() {
       setSubmitTab(tab);
       setView('submit');
     }
-  }, [searchParams]);
+  }, [searchParams, setSubmitTab, setView]);
 
   // 未登录拦截
   if (!user) {
@@ -591,7 +571,7 @@ export function CreatorCenter() {
           type="button"
           onClick={() => openLogin()}
           {...buttonTap}
-          className={`mt-8 ${primaryBtnClass}`}
+          className={buttonVariants({ className: 'mt-8' })}
         >
           去登录
         </motion.button>
@@ -622,7 +602,7 @@ export function CreatorCenter() {
                 测试版本，不代表最终品质
               </span>
             </div>
-            <span className="mx-1 h-5 w-px bg-line" />
+            <Separator orientation="vertical" className="mx-1 h-5" />
             <Link
               to="/"
               className="flex items-center gap-1 text-sm text-ink-2 transition-colors hover:text-primary"
@@ -641,7 +621,7 @@ export function CreatorCenter() {
               <Bell className="h-5 w-5" />
               <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
             </button>
-            <span className="mx-1 h-5 w-px bg-line" />
+            <Separator orientation="vertical" className="mx-1 h-5" />
             <div className="flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-semibold text-primary-foreground">
                 {user.avatar ? (

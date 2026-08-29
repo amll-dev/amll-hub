@@ -1,4 +1,29 @@
 @import 'tailwindcss';
+/* tw-animate-css：shadcn 组件（Dialog/DropdownMenu 等）data-[state] 动画依赖的 utility */
+@import 'tw-animate-css';
+
+/* Radix Accordion 展开动画（shadcn accordion 依赖 --animate-accordion-*） */
+@theme {
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+}
 
 /* 设计 token — 迁移自 amllhub-homepage/colors_and_type.css */
 :root {

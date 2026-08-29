@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query';
 import type { DailyRecommendation } from '@/lib/types';
 import { DailyCalendar } from '@/components/DailyCalendar';
 import { RecommendCard, SkeletonCard, EmptyState } from '@/components/RecommendCard';
@@ -34,9 +36,6 @@ export function DailyRecommend() {
     return d && isValidDateKey(d) ? d : todayKey;
   }, [searchParams, todayKey]);
 
-  const [recommendations, setRecommendations] = useState<DailyRecommendation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [selectedDate, setSelectedDate] = useState(initialDate);
 
   // URL ?date 变化时同步 selectedDate
@@ -44,27 +43,13 @@ export function DailyRecommend() {
     setSelectedDate(initialDate);
   }, [initialDate]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    api
-      .listDailyRecommendations()
-      .then((recs) => {
-        if (cancelled) return;
-        setRecommendations(recs ?? []);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : '加载失败');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data, isPending, error } = useQuery({
+    queryKey: queryKeys.dailyList,
+    queryFn: () => api.listDailyRecommendations(),
+    staleTime: 60_000,
+  });
+  const recommendations = useMemo(() => data ?? [], [data]);
+  const errorMsg = error instanceof Error ? error.message : error ? '加载失败' : '';
 
   const recommendMap = useMemo(() => {
     const map = new Map<string, DailyRecommendation>();
@@ -100,9 +85,9 @@ export function DailyRecommend() {
           <p className="mt-1 text-base text-ink-2">发现每日精选音乐推荐</p>
         </motion.div>
 
-        {error ? (
+        {errorMsg ? (
           <div className="py-20 text-center">
-            <p className="text-sm text-error">{error}</p>
+            <p className="text-sm text-error">{errorMsg}</p>
           </div>
         ) : (
           <div
@@ -118,7 +103,7 @@ export function DailyRecommend() {
             </motion.div>
 
             <motion.div {...whileInViewProps} className="flex w-full justify-center">
-              {loading ? (
+              {isPending ? (
                 <SkeletonCard />
               ) : selectedRec ? (
                 // key 绑定推荐 id：切换日期时重新挂载，点赞状态/计数随之刷新

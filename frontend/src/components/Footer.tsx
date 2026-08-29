@@ -7,7 +7,7 @@ import { fadeUp, whileInViewProps } from '@/lib/motion';
 const resourceLinks = [
   { label: '音乐解析', to: '/ncm' },
   { label: '排行榜', to: '/ranking' },
-  { label: '投稿', to: '/submit' },
+  { label: '投稿', to: '/creator' },
 ];
 
 const ecosystemLinks = [{ label: 'GitHub 仓库', href: 'https://github.com/amll-dev/amll-hub' }];

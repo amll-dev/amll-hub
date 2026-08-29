@@ -1,69 +1,38 @@
-import { createContext, useContext } from 'react';
+import { useAtomValue } from 'jotai';
 import type { LyricLine } from '@applemusic-like-lyrics/lyric';
 import type { SearchHit } from '@/lib/types';
+import {
+  NCM_QUALITY_LABEL,
+  NCM_QUALITY_ORDER,
+  trackAtom,
+  playingAtom,
+  currentAtom,
+  durationAtom,
+  loadingAtom,
+  errorAtom,
+  selectRequestAtom,
+  shuffleAtom,
+  repeatModeAtom,
+  volumeAtom,
+  mutedAtom,
+  lyricDataAtom,
+  lyricLoadingAtom,
+  lyricErrorAtom,
+  qualityAtom,
+  playlistAtom,
+  currentIndexAtom,
+  showPlaylistPanelAtom,
+  type NcmQuality,
+  type PlayerTrack,
+  type PlaylistItem,
+  type RepeatMode,
+  type SelectRequest,
+} from '@/atoms/player';
+import { playerActions } from '@/boot/PlayerBoot';
 
-// 正在播放的曲目信息
-export interface PlayerTrack {
-  title: string;
-  artists: string;
-  cover?: string;
-  audioUrl: string;
-  // 关联的搜索命中
-  hit?: SearchHit;
-  // 当前播放使用的网易云歌曲 ID
-  ncmSongId?: string;
-  // 网易云解析返回的 LRC 主歌词
-  ncmLyric?: string;
-  // 网易云解析返回的 LRC 翻译
-  ncmTLyric?: string;
-  skipTtml?: boolean;
-  // 外部直接传入的 TTML 文本
-  customTtml?: string;
-}
-
-// 多 ncm id 选择弹窗的请求
-export interface SelectRequest {
-  // 待选择的 ncm id 列表
-  ids: string[];
-  // 关联的搜索命中
-  hit: SearchHit;
-}
-
-// 播放列表项
-export interface PlaylistItem {
-  songId: string;
-  name: string;
-  artists: string;
-  cover?: string;
-}
-
-export type RepeatMode = 'off' | 'all' | 'one';
-
-// 网易云音质等级
-export type NcmQuality =
-  'standard' | 'exhigh' | 'lossless' | 'hires' | 'jyeffect' | 'jymaster' | 'sky' | 'dolby';
-
-export const NCM_QUALITY_LABEL: Record<NcmQuality, string> = {
-  standard: '标准',
-  exhigh: '极高',
-  lossless: '无损',
-  hires: 'Hi-Res',
-  jyeffect: '高清臻音',
-  jymaster: '超清母带',
-  sky: '沉浸环绕声',
-  dolby: '杜比全景声',
-};
-
-export const NCM_QUALITY_ORDER: NcmQuality[] = [
-  'standard',
-  'exhigh',
-  'lossless',
-  'hires',
-  'jyeffect',
-  'jymaster',
-  'sky',
-  'dolby',
-];
+// 类型与常量从 atoms/player re-export，消费方导入路径不变
+export { NCM_QUALITY_LABEL, NCM_QUALITY_ORDER };
+export type { NcmQuality, PlayerTrack, PlaylistItem, RepeatMode, SelectRequest };
 
 export interface PlayerContextValue {
   /** 当前播放曲目（无则 null） */
@@ -165,14 +134,33 @@ export interface PlayerContextValue {
   clearPlaylist: () => void;
 }
 
-/** 播放器 Context 实例（Provider 在 context/PlayerContext.tsx） */
-export const PlayerContext = createContext<PlayerContextValue | null>(null);
-
-/** 读取播放器 Context，必须在 PlayerProvider 内使用 */
-export function usePlayer() {
-  const ctx = useContext(PlayerContext);
-  if (!ctx) {
-    throw new Error('usePlayer must be used within PlayerProvider');
-  }
-  return ctx;
+/**
+ * 播放器状态（jotai atoms + playerActions，全局可用，无需 Provider）。
+ * 引擎副作用在 boot/PlayerBoot（Layout 挂一次）。
+ * 注意：本 hook 订阅全部播放器 atoms，任一变化都会触发重渲染（含 timeupdate
+ * 级的 current）；仅需局部状态的组件（Player/PlaylistPanel 等）应直接
+ * useAtomValue 单个 atom。
+ */
+export function usePlayer(): PlayerContextValue {
+  return {
+    track: useAtomValue(trackAtom),
+    playing: useAtomValue(playingAtom),
+    current: useAtomValue(currentAtom),
+    duration: useAtomValue(durationAtom),
+    loading: useAtomValue(loadingAtom),
+    error: useAtomValue(errorAtom),
+    selectRequest: useAtomValue(selectRequestAtom),
+    shuffle: useAtomValue(shuffleAtom),
+    repeatMode: useAtomValue(repeatModeAtom),
+    volume: useAtomValue(volumeAtom),
+    muted: useAtomValue(mutedAtom),
+    lyricData: useAtomValue(lyricDataAtom),
+    lyricLoading: useAtomValue(lyricLoadingAtom),
+    lyricError: useAtomValue(lyricErrorAtom),
+    quality: useAtomValue(qualityAtom),
+    playlist: useAtomValue(playlistAtom),
+    currentIndex: useAtomValue(currentIndexAtom),
+    showPlaylistPanel: useAtomValue(showPlaylistPanelAtom),
+    ...playerActions,
+  };
 }

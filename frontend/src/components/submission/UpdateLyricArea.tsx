@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { Check, Loader2, UploadCloud, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { buttonTap } from '@/lib/motion';
 import type { TtmlValidationResult } from '@/lib/types';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export interface UpdateLyricAreaProps {
   submissionId: number;
@@ -14,17 +16,41 @@ export interface UpdateLyricAreaProps {
 /** 更新歌词区 */
 export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyricAreaProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [validating, setValidating] = useState(false);
   const [validation, setValidation] = useState<TtmlValidationResult | null>(null);
   const [validateError, setValidateError] = useState('');
-  const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const joinArr = (arr?: string[]) => arr?.filter(Boolean).join('、') || '—';
   const meta = validation?.metadata;
 
-  const handleFile = async (f: File) => {
+  // 选择文件后立即校验
+  const validateMutation = useMutation({
+    mutationFn: async (f: File) => api.validateTtml(await f.text()),
+    onSuccess: (result) => setValidation(result),
+    onError: (err) => setValidateError(err instanceof Error ? err.message : '校验请求失败'),
+  });
+  const validating = validateMutation.isPending;
+
+  // 上传文件并挂到投稿
+  const uploadMutation = useMutation({
+    mutationFn: async (f: File) => {
+      const { fileName } = await api.uploadTtml(f, f.name);
+      await api.updateSubmissionFile(submissionId, { fileName });
+    },
+    onMutate: () => setMsg(null),
+    onSuccess: () => {
+      setMsg({ type: 'success', text: '歌词已更新' });
+      setTimeout(() => {
+        onSuccess();
+        onClose();
+      }, 1200);
+    },
+    onError: (err) => setMsg({ type: 'error', text: err instanceof Error ? err.message : '上传失败' }),
+  });
+  const uploading = uploadMutation.isPending;
+
+  const handleFile = (f: File) => {
     if (!f.name.toLowerCase().endsWith('.ttml')) {
       setValidateError('请选择 .ttml 格式的文件');
       setFile(null);
@@ -35,16 +61,7 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
     setValidation(null);
     setValidateError('');
     setMsg(null);
-    setValidating(true);
-    try {
-      const content = await f.text();
-      const result = await api.validateTtml(content);
-      setValidation(result);
-    } catch (err) {
-      setValidateError(err instanceof Error ? err.message : '校验请求失败');
-    } finally {
-      setValidating(false);
-    }
+    validateMutation.mutate(f);
   };
 
   const reset = () => {
@@ -55,23 +72,9 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
     if (inputRef.current) inputRef.current.value = '';
   };
 
-  const submit = async () => {
+  const submit = () => {
     if (!file || !validation?.valid) return;
-    setUploading(true);
-    setMsg(null);
-    try {
-      const { fileName } = await api.uploadTtml(file, file.name);
-      await api.updateSubmissionFile(submissionId, { fileName });
-      setMsg({ type: 'success', text: '歌词已更新' });
-      setTimeout(() => {
-        onSuccess();
-        onClose();
-      }, 1200);
-    } catch (err) {
-      setMsg({ type: 'error', text: err instanceof Error ? err.message : '上传失败' });
-    } finally {
-      setUploading(false);
-    }
+    uploadMutation.mutate(file);
   };
 
   return (
@@ -118,20 +121,24 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
 
       {/* 校验请求失败 */}
       {validateError && (
-        <div className="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">{validateError}</div>
+        <Alert variant="destructive" className="mt-3">
+        <AlertDescription>{validateError}</AlertDescription>
+      </Alert>
       )}
 
       {/* 校验未通过 */}
       {validation && !validation.valid && (
-        <div className="mt-3 space-y-1 rounded bg-red-50 px-3 py-2">
-          <p className="text-sm font-medium text-red-600">校验未通过</p>
+        <Alert variant="destructive" className="mt-3">
+          <AlertTitle>校验未通过</AlertTitle>
+          <AlertDescription>
           {validation.parseError && <p className="text-xs text-red-500">{validation.parseError}</p>}
           {validation.errors.map((err, i) => (
-            <p key={i} className="text-xs text-red-500">
+            <p key={i} className="text-xs">
               • {err}
             </p>
           ))}
-        </div>
+          </AlertDescription>
+        </Alert>
       )}
 
       {/* 校验通过 */}
@@ -171,13 +178,9 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
       )}
 
       {msg && (
-        <div
-          className={`mt-3 rounded-md px-4 py-2 text-sm ${
-            msg.type === 'success' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
-          }`}
-        >
-          {msg.text}
-        </div>
+        <Alert variant={msg.type === 'success' ? 'success' : 'destructive'} className="mt-3">
+          <AlertDescription>{msg.text}</AlertDescription>
+        </Alert>
       )}
 
       <div className="mt-4 flex justify-end gap-2">

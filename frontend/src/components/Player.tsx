@@ -17,13 +17,28 @@ import {
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazy } from 'react';
 import { PlaylistPanel } from '@/components/PlaylistPanel';
-import { usePlayer } from '@/hooks/usePlayer';
+import { useAtomValue } from 'jotai';
+import { playerActions } from '@/boot/PlayerBoot';
 import {
   NCM_QUALITY_LABEL,
   NCM_QUALITY_ORDER,
+  trackAtom,
+  playingAtom,
+  currentAtom,
+  durationAtom,
+  loadingAtom,
+  errorAtom,
+  selectRequestAtom,
+  shuffleAtom,
+  repeatModeAtom,
+  volumeAtom,
+  mutedAtom,
+  lyricDataAtom,
+  playlistAtom,
+  qualityAtom,
   type NcmQuality,
   type RepeatMode,
-} from '@/hooks/usePlayer';
+} from '@/atoms/player';
 
 const LyricsPage = lazy(() =>
   import('@/components/LyricsPage').then((m) => ({ default: m.LyricsPage }))
@@ -78,7 +93,8 @@ const ctrlBtn =
 
 /** 多网易云 ID 选择弹窗 */
 export function NcmSelectDialog() {
-  const { selectRequest, resolveSelect } = usePlayer();
+  const selectRequest = useAtomValue(selectRequestAtom);
+  const { resolveSelect } = playerActions;
   return (
     <AnimatePresence>
       {selectRequest && (
@@ -133,7 +149,9 @@ export function NcmSelectDialog() {
 
 /** 音量控制 */
 function VolumeControl() {
-  const { volume, setVolume, muted, toggleMute } = usePlayer();
+  const volume = useAtomValue(volumeAtom);
+  const muted = useAtomValue(mutedAtom);
+  const { setVolume, toggleMute } = playerActions;
   const [hovering, setHovering] = useState(false);
   const [dragging, setDragging] = useState(false);
   const sliderRef = useRef<HTMLDivElement | null>(null);
@@ -214,7 +232,9 @@ function VolumeControl() {
 
 /** 音质选择按钮：点击弹出下拉菜单选择音质，切换后保持进度 */
 function QualityControl() {
-  const { quality, reloadWithQuality, track } = usePlayer();
+  const quality = useAtomValue(qualityAtom);
+  const track = useAtomValue(trackAtom);
+  const { reloadWithQuality } = playerActions;
   const [open, setOpen] = useState(false);
   if (!track) return null;
   return (
@@ -266,27 +286,28 @@ function QualityControl() {
 
 /** 播放器底栏（浅色主题） */
 export function PlayerBar() {
+  // 按需订阅各自 atom：current 高频更新（timeupdate），不再连带重渲染无关组件
+  const track = useAtomValue(trackAtom);
+  const playing = useAtomValue(playingAtom);
+  const current = useAtomValue(currentAtom);
+  const duration = useAtomValue(durationAtom);
+  const loading = useAtomValue(loadingAtom);
+  const error = useAtomValue(errorAtom);
+  const shuffle = useAtomValue(shuffleAtom);
+  const repeatMode = useAtomValue(repeatModeAtom);
+  const lyricData = useAtomValue(lyricDataAtom);
+  const playlist = useAtomValue(playlistAtom);
   const {
-    track,
-    playing,
-    current,
-    duration,
-    loading,
-    error,
     toggle,
     seek,
     close,
-    shuffle,
     toggleShuffle,
-    repeatMode,
     cycleRepeatMode,
     openLyricsPage,
-    lyricData,
-    playlist,
     playNext,
     playPrev,
     togglePlaylistPanel,
-  } = usePlayer();
+  } = playerActions;
   const drag = useDragListeners();
 
   const progress = duration > 0 ? (current / duration) * 100 : 0;

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { Heart, Download, Play, Pause, Loader2 } from 'lucide-react';
 import QRCode from 'qrcode';
@@ -6,8 +7,10 @@ import { domToPng } from 'modern-screenshot';
 import type { DailyRecommendation } from '@/lib/types';
 import { parseMarkupText } from '@/lib/markup';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query';
 import { usePlayer } from '@/hooks/usePlayer';
 import { useAuth } from '@/hooks/useAuth';
+import { AspectRatio } from '@/components/ui/aspect-ratio';
 
 const MONTH_ABBR = [
   'Jan',
@@ -79,56 +82,64 @@ export function RecommendCard({
   const { user, openLogin } = useAuth();
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(recommendation.likeCount ?? 0);
-  const [likePending, setLikePending] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [coverLoaded, setCoverLoaded] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // 登录用户进入卡片时拉取服务端点赞状态
+  // 登录用户进入卡片时拉取服务端点赞状态（Query 去重：同卡片重复挂载只发一次）
+  const likeStatusQuery = useQuery({
+    queryKey: queryKeys.dailyLikeStatus(recommendation.id),
+    queryFn: () => api.getDailyLikeStatus(recommendation.id),
+    enabled: !!user && !!recommendation.id,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  });
+
+  // 切换推荐时重置本地点赞状态
   useEffect(() => {
     setLiked(false);
     setLikeCount(recommendation.likeCount ?? 0);
-    if (!user || !recommendation.id) return;
-    let cancelled = false;
-    api
-      .getDailyLikeStatus(recommendation.id)
-      .then((s) => {
-        if (cancelled) return;
-        setLiked(s.liked);
-        setLikeCount(s.likeCount);
-      })
-      .catch(() => {
-        /* 拉取失败保持本地默认值 */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [recommendation.id, recommendation.likeCount, user]);
+  }, [recommendation.id, recommendation.likeCount]);
 
-  const handleLike = async () => {
-    if (likePending) return;
+  // 服务端状态到达后覆盖本地默认值
+  useEffect(() => {
+    if (likeStatusQuery.data) {
+      setLiked(likeStatusQuery.data.liked);
+      setLikeCount(likeStatusQuery.data.likeCount);
+    }
+  }, [likeStatusQuery.data]);
+
+  const likeMutation = useMutation({
+    mutationFn: () => api.toggleDailyLike(recommendation.id),
+    // 乐观更新，失败回滚
+    onMutate: () => {
+      const prev = { liked, count: likeCount };
+      setLiked(!prev.liked);
+      setLikeCount(prev.liked ? Math.max(0, prev.count - 1) : prev.count + 1);
+      return prev;
+    },
+    onSuccess: (s) => {
+      setLiked(s.liked);
+      setLikeCount(s.likeCount);
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx) {
+        setLiked(ctx.liked);
+        setLikeCount(ctx.count);
+      }
+    },
+  });
+
+  const handleLike = () => {
+    if (likeMutation.isPending) return;
     // 未登录：弹登录窗，登录成功后回到当前页面
     if (!user) {
       openLogin();
       return;
     }
     if (!recommendation.id) return;
-    setLikePending(true);
-    // 乐观更新，失败回滚
-    const prevLiked = liked;
-    const prevCount = likeCount;
-    setLiked(!prevLiked);
-    setLikeCount(prevLiked ? Math.max(0, prevCount - 1) : prevCount + 1);
-    try {
-      const s = await api.toggleDailyLike(recommendation.id);
-      setLiked(s.liked);
-      setLikeCount(s.likeCount);
-    } catch {
-      setLiked(prevLiked);
-      setLikeCount(prevCount);
-    } finally {
-      setLikePending(false);
-    }
+    likeMutation.mutate();
   };
 
   // 封面预加载
@@ -277,7 +288,7 @@ export function RecommendCard({
           }`}
           style={{ minHeight: compact ? 'auto' : 'calc(100% - 32px)' }}
         >
-          <div className="relative mb-3 block aspect-square w-full overflow-hidden rounded-[12px]">
+          <AspectRatio ratio={1} className="relative mb-3 block w-full overflow-hidden rounded-[12px]">
             {!coverLoaded && (
               <div
                 className="amll-skeleton inset-0 rounded-[12px]"
@@ -291,7 +302,7 @@ export function RecommendCard({
                 coverLoaded ? 'opacity-100' : 'opacity-0'
               }`}
             />
-          </div>
+          </AspectRatio>
 
           <div className="mb-3 flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Check,
@@ -12,7 +13,11 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { buttonTap } from '@/lib/motion';
-import { primaryBtnClass } from '@/components/ui';
+import { buttonVariants } from '@/components/ui/button';
+import { useFormDraft } from '@/hooks/useFormDraft';
+import { Progress } from '@/components/ui/progress';
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 type SearchIpSubTab = 'manual' | 'json';
 
@@ -69,13 +74,44 @@ export function SearchIpForm() {
   const [uploadListCollapsed, setUploadListCollapsed] = useState(false);
   // 单张图片更换目标：记录要替换的图片文件名
   const [replaceTarget, setReplaceTarget] = useState<string | null>(null);
-  // 搜索IP投稿标题
-  const [ipTitle, setIpTitle] = useState('');
+  // 搜索IP投稿标题（草稿自动保存，清空也会覆盖保存）
+  const { restored: draft, set: setDraft, clearDraft } = useFormDraft<{ ipTitle: string }>(
+    'search-ip'
+  );
+  const [ipTitle, setIpTitleState] = useState(draft?.ipTitle ?? '');
+  const setIpTitle = (v: string) => {
+    setIpTitleState(v);
+    setDraft({ ipTitle: v });
+  };
   // 投稿提交状态
-  const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
+
+  const submitMutation = useMutation({
+    mutationFn: (vars: { title: string; tempKeys: Record<string, string> }) =>
+      api.createSearchIpSubmission({ title: vars.title, jsonData: parsedData!, tempKeys: vars.tempKeys }),
+    onMutate: () => setSubmitMsg(null),
+    onSuccess: (result) => {
+      setSubmitMsg({
+        type: 'success',
+        text: `投稿成功！共上传 ${result.imageCount} 张图片`,
+      });
+      // 投稿成功后重置状态
+      clearDraft();
+      clearUploadedImages();
+      setSelectedFile(null);
+      setParsedData(null);
+      setParseError('');
+      setIpTitleState('');
+      const input = document.getElementById('search-ip-json-input') as HTMLInputElement | null;
+      if (input) input.value = '';
+    },
+    onError: (err) => {
+      setSubmitMsg({ type: 'error', text: err instanceof Error ? err.message : '投稿失败' });
+    },
+  });
+  const submitting = submitMutation.isPending;
 
   // 处理用户上传的图片文件
   // 上传单张图片到临时区，并更新状态
@@ -157,7 +193,7 @@ export function SearchIpForm() {
   };
 
   // 提交搜索IP投稿
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!parsedData || submitting) return;
 
     if (!ipTitle.trim()) {
@@ -183,34 +219,7 @@ export function SearchIpForm() {
       if (item.tempKey) tempKeys[fileName] = item.tempKey;
     }
 
-    setSubmitting(true);
-    setSubmitMsg(null);
-    try {
-      const result = await api.createSearchIpSubmission({
-        title: ipTitle.trim(),
-        jsonData: parsedData,
-        tempKeys,
-      });
-      setSubmitMsg({
-        type: 'success',
-        text: `投稿成功！共上传 ${result.imageCount} 张图片`,
-      });
-      // 投稿成功后重置状态
-      clearUploadedImages();
-      setSelectedFile(null);
-      setParsedData(null);
-      setParseError('');
-      setIpTitle('');
-      const input = document.getElementById('search-ip-json-input') as HTMLInputElement | null;
-      if (input) input.value = '';
-    } catch (err) {
-      setSubmitMsg({
-        type: 'error',
-        text: err instanceof Error ? err.message : '投稿失败',
-      });
-    } finally {
-      setSubmitting(false);
-    }
+    submitMutation.mutate({ title: ipTitle.trim(), tempKeys });
   };
 
   // 解析 JSON 文件
@@ -357,7 +366,7 @@ export function SearchIpForm() {
                     type="button"
                     {...buttonTap}
                     onClick={() => document.getElementById('search-ip-json-input')?.click()}
-                    className={`mt-6 ${primaryBtnClass}`}
+                    className={buttonVariants({ className: 'mt-6' })}
                   >
                     选择文件
                   </motion.button>
@@ -366,9 +375,9 @@ export function SearchIpForm() {
 
               {/* 解析错误提示 */}
               {parseError && (
-                <div className="mt-4 rounded-md border border-error/30 bg-error/5 px-4 py-3 text-sm text-error">
-                  {parseError}
-                </div>
+                <Alert variant="destructive" className="mt-4">
+                  <AlertDescription>{parseError}</AlertDescription>
+                </Alert>
               )}
 
               {/* 已选文件 - 管理区 */}
@@ -485,15 +494,8 @@ export function SearchIpForm() {
                       </div>
                     </button>
                     {/* 内容区 */}
-                    <AnimatePresence initial={false}>
-                      {!uploadListCollapsed && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.2, ease: 'easeOut' }}
-                          className="overflow-hidden"
-                        >
+                    <Collapsible open={!uploadListCollapsed}>
+                      <CollapsibleContent>
                           <div className="space-y-3 border-t border-line px-4 py-3">
                             {/* JSON 文件项 */}
                             <div className="flex items-center gap-3">
@@ -560,14 +562,10 @@ export function SearchIpForm() {
                                       </span>
                                     )}
                                   </div>
-                                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
-                                    <div
-                                      className={`h-full rounded-full transition-all ${
-                                        item.error ? 'bg-error' : 'bg-success'
-                                      }`}
-                                      style={{ width: `${item.progress}%` }}
-                                    />
-                                  </div>
+                                  <Progress
+                                    value={item.progress}
+                                    indicatorColor={item.error ? 'error' : 'success'}
+                                  />
                                   {item.error && (
                                     <p className="mt-1 text-[10px] text-error">{item.error}</p>
                                   )}
@@ -595,9 +593,8 @@ export function SearchIpForm() {
                               </div>
                             ))}
                           </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                      </CollapsibleContent>
+                    </Collapsible>
                   </div>
 
                   {/* 文件指向显示区 */}
@@ -710,15 +707,12 @@ export function SearchIpForm() {
 
               {/* 提交提示消息 */}
               {submitMsg && (
-                <div
-                  className={`mt-4 rounded-md px-4 py-3 text-sm ${
-                    submitMsg.type === 'success'
-                      ? 'border border-success/30 bg-success/5 text-success'
-                      : 'border border-error/30 bg-error/5 text-error'
-                  }`}
+                <Alert
+                  variant={submitMsg.type === 'success' ? 'success' : 'destructive'}
+                  className="mt-4"
                 >
-                  {submitMsg.text}
-                </div>
+                  <AlertDescription>{submitMsg.text}</AlertDescription>
+                </Alert>
               )}
 
               {/* 底部操作按钮 */}
@@ -736,7 +730,7 @@ export function SearchIpForm() {
                   {...buttonTap}
                   onClick={handleSubmit}
                   disabled={!selectedFile || submitting}
-                  className={primaryBtnClass}
+                  className={buttonVariants()}
                 >
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                   {submitting ? '提交中...' : '立即投稿'}

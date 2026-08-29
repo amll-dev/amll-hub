@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check, ImagePlus, Loader2, Music, Search } from 'lucide-react';
 import { DatePicker } from '@/components/DatePicker';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query';
 import { insertMarkup, MARKUP_BUTTONS, parseMarkupText } from '@/lib/markup';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
+import { useFormDraft } from '@/hooks/useFormDraft';
 import type { NcmSong } from '@/lib/types';
+import { Textarea } from '@/components/ui/textarea';
+import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 /** 格式化日期为 YYYY-MM-DD */
 function formatDateKey(date: Date): string {
@@ -20,20 +26,44 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
   const today = useMemo(() => new Date(), []);
   const todayKey = formatDateKey(today);
 
-  // 表单字段
+  // 表单字段（草稿自动保存：刷新/关页后恢复已填文字）
+  const { restored: draft, set: setDraft, clearDraft } = useFormDraft<{
+    songName: string;
+    artist: string;
+    ncmId: string;
+    comment: string;
+  }>('daily-recommend');
   const [date, setDate] = useState(todayKey);
-  const [songName, setSongName] = useState('');
-  const [artist, setArtist] = useState('');
-  const [ncmId, setNcmId] = useState('');
-  const [comment, setComment] = useState('');
+  const [songName, setSongName] = useState(draft?.songName ?? '');
+  const [artist, setArtist] = useState(draft?.artist ?? '');
+  const [ncmId, setNcmId] = useState(draft?.ncmId ?? '');
+  const [comment, setComment] = useState(draft?.comment ?? '');
   // 搜索结果选中后，递增 key 触发输入框文字淡入动画
   const [flashKey, setFlashKey] = useState(0);
 
-  // 网易云搜索
+  // 网易云搜索：已提交关键词驱动 Query（缓存去重，重复搜索不发请求）
+  const [committedQ, setCommittedQ] = useState('');
   const [ncmQuery, setNcmQuery] = useState('');
-  const [ncmResults, setNcmResults] = useState<NcmSong[]>([]);
-  const [ncmSearching, setNcmSearching] = useState(false);
-  const [ncmError, setNcmError] = useState('');
+  // ID 解析路径的独立 loading 与错误（搜索 loading/错误由 Query 提供）
+  const [parseSearching, setParseSearching] = useState(false);
+  const [parseError, setParseError] = useState('');
+  const ncmSearchQuery = useQuery({
+    queryKey: queryKeys.ncmSearch(committedQ),
+    queryFn: () => api.searchNcm(committedQ, 8),
+    enabled: !!committedQ,
+    staleTime: 60_000,
+  });
+  const ncmSearching = ncmSearchQuery.isFetching || parseSearching;
+  const ncmResults: NcmSong[] = committedQ ? (ncmSearchQuery.data?.data ?? []) : [];
+  const ncmError =
+    parseError ||
+    (ncmSearchQuery.error
+      ? ncmSearchQuery.error instanceof Error
+        ? ncmSearchQuery.error.message
+        : '搜索失败'
+      : committedQ && !ncmSearchQuery.isFetching && ncmResults.length === 0
+        ? '没有找到相关歌曲'
+        : '');
 
   // 封面上传
   const [cover, setCover] = useState<{
@@ -52,40 +82,72 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
     setCoverImgLoaded(false);
   }, [cover?.url]);
 
-  // 日期查重
-  const [dateStatus, setDateStatus] = useState<{
-    checked: boolean;
-    available: boolean;
-    checking: boolean;
-  }>({ checked: false, available: true, checking: false });
+  // 日期查重：随 date 变化自动请求（Query 去重，切回已查过的日期直接出结果）
+  const dateQuery = useQuery({
+    queryKey: queryKeys.dailyDateCheck(date),
+    queryFn: () => api.checkDailyDate(date),
+    enabled: !!date,
+    staleTime: 10_000,
+    retry: false,
+  });
+  // 旧行为：查重失败视为可用且不提示
+  const dateStatus = {
+    checking: !!date && dateQuery.isFetching,
+    checked: dateQuery.isSuccess,
+    available: dateQuery.isError ? true : (dateQuery.data?.available ?? true),
+  };
 
   // 提交状态
-  const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState<{
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+  const submitMutation = useMutation({
+    mutationFn: (vars: {
+      songName: string;
+      artist: string;
+      coverTempKey: string;
+      date: string;
+      comment: string;
+      ncmId?: string;
+    }) => api.createDailyRecommendation(vars),
+    onMutate: () => setSubmitMsg(null),
+    onSuccess: (_d, vars) => {
+      setSubmitMsg({ type: 'success', text: '投稿成功！' });
+      const submittedDate = vars.date;
+      // 重置
+      setDate(todayKey);
+      setSongName('');
+      setArtist('');
+      setNcmId('');
+      setComment('');
+      removeCover();
+      clearDraft();
+      // 0.5s 后跳转到每日推荐页面对应日期
+      setTimeout(() => {
+        setSubmitMsg(null);
+        onSuccess?.(submittedDate);
+      }, 500);
+    },
+    onError: (err) => {
+      setSubmitMsg({ type: 'error', text: err instanceof Error ? err.message : '投稿失败' });
+    },
+  });
+  const submitting = submitMutation.isPending;
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // 草稿自动保存：空表单不写
+  useEffect(() => {
+    if (!songName && !artist && !ncmId && !comment) return;
+    setDraft({ songName, artist, ncmId, comment });
+  }, [songName, artist, ncmId, comment, setDraft]);
+
   // 网易云搜索
-  const doNcmSearch = async () => {
+  const doNcmSearch = () => {
     const q = ncmQuery.trim();
     if (!q) return;
-    setNcmSearching(true);
-    setNcmError('');
-    try {
-      const res = await api.searchNcm(q, 8);
-      setNcmResults(res.data ?? []);
-      if (!res.data || res.data.length === 0) {
-        setNcmError('没有找到相关歌曲');
-      }
-    } catch (e) {
-      setNcmError(e instanceof Error ? e.message : '搜索失败');
-      setNcmResults([]);
-    } finally {
-      setNcmSearching(false);
-    }
+    setCommittedQ(q);
   };
 
   // 从搜索结果中选中一首，回填表单
@@ -93,9 +155,9 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
     setSongName(song.name);
     setArtist(song.artists.map((a) => a.name).join(' / '));
     setNcmId(String(song.id));
-    setNcmResults([]);
+    setCommittedQ('');
     setNcmQuery('');
-    setNcmError('');
+    setParseError('');
     setSubmitMsg(null);
     setFlashKey((k) => k + 1);
     // 自动下载并上传封面
@@ -164,11 +226,11 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
   const fetchNcmById = async () => {
     const id = parseNcmId(ncmId);
     if (!id) {
-      setNcmError('请输入有效的网易云ID或歌曲链接');
+      setParseError('请输入有效的网易云ID或歌曲链接');
       return;
     }
-    setNcmSearching(true);
-    setNcmError('');
+    setParseSearching(true);
+    setParseError('');
     try {
       const info = await api.parseNcmMusic(id, 'standard');
       if (info.name) setSongName(info.name);
@@ -180,9 +242,9 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
         fetchCoverFromUrl(info.cover);
       }
     } catch (e) {
-      setNcmError(e instanceof Error ? e.message : '解析失败');
+      setParseError(e instanceof Error ? e.message : '解析失败');
     } finally {
-      setNcmSearching(false);
+      setParseSearching(false);
     }
   };
 
@@ -228,29 +290,6 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
     if (coverInputRef.current) coverInputRef.current.value = '';
   };
 
-  // 日期变化时查重
-  useEffect(() => {
-    if (!date) {
-      setDateStatus({ checked: false, available: true, checking: false });
-      return;
-    }
-    let cancelled = false;
-    setDateStatus({ checked: false, available: true, checking: true });
-    api
-      .checkDailyDate(date)
-      .then((res) => {
-        if (cancelled) return;
-        setDateStatus({ checked: true, available: res.available, checking: false });
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setDateStatus({ checked: false, available: true, checking: false });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [date]);
-
   // 卸载时清理 objectURL
   const coverRef = useRef(cover);
   coverRef.current = cover;
@@ -275,41 +314,16 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
     dateStatus.available &&
     !submitting;
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!canSubmit || !cover) return;
-    setSubmitting(true);
-    setSubmitMsg(null);
-    try {
-      await api.createDailyRecommendation({
-        songName: songName.trim(),
-        artist: artist.trim(),
-        coverTempKey: cover.tempKey,
-        date,
-        comment,
-        ncmId: ncmId.trim() || undefined,
-      });
-      setSubmitMsg({ type: 'success', text: '投稿成功！' });
-      const submittedDate = date;
-      // 重置
-      setDate(todayKey);
-      setSongName('');
-      setArtist('');
-      setNcmId('');
-      setComment('');
-      removeCover();
-      // 0.5s 后跳转到每日推荐页面对应日期
-      setTimeout(() => {
-        setSubmitMsg(null);
-        onSuccess?.(submittedDate);
-      }, 500);
-    } catch (err) {
-      setSubmitMsg({
-        type: 'error',
-        text: err instanceof Error ? err.message : '投稿失败',
-      });
-    } finally {
-      setSubmitting(false);
-    }
+    submitMutation.mutate({
+      songName: songName.trim(),
+      artist: artist.trim(),
+      coverTempKey: cover.tempKey,
+      date,
+      comment,
+      ncmId: ncmId.trim() || undefined,
+    });
   };
 
   return (
@@ -537,12 +551,7 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
                       exit={{ opacity: 0, y: -4 }}
                       transition={{ duration: 0.2 }}
                     >
-                      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
-                        <div
-                          className="h-full bg-success transition-all"
-                          style={{ width: `${cover.progress}%` }}
-                        />
-                      </div>
+                      <Progress value={cover.progress} indicatorColor="success" className="mt-2" />
                       <p className="mt-1 text-xs text-ink-3">
                         {cover.file ? `上传中 ${cover.progress}%` : '上传中…'}
                       </p>
@@ -660,14 +669,14 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
             </button>
           ))}
         </div>
-        <textarea
+        <Textarea
           ref={textareaRef}
           value={comment}
           onChange={(e) => setComment(e.target.value)}
           maxLength={7000}
           rows={8}
           placeholder="输入推荐语，可使用上方标记按钮排版"
-          className="w-full rounded-md border border-input bg-background px-4 py-3 text-sm outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/20"
+          className="w-full bg-background px-4 py-3"
         />
         <p className="mt-1 text-right text-xs text-ink-3">{comment.length} / 7000</p>
 
@@ -697,15 +706,10 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
 
       {/* 提交提示 */}
       {submitMsg && (
-        <motion.div
-          variants={fadeUp}
-          className={`rounded-md px-4 py-3 text-sm ${
-            submitMsg.type === 'success'
-              ? 'border border-success/30 bg-success/5 text-success'
-              : 'border border-error/30 bg-error/5 text-error'
-          }`}
-        >
-          {submitMsg.text}
+        <motion.div variants={fadeUp}>
+          <Alert variant={submitMsg.type === 'success' ? 'success' : 'destructive'}>
+            <AlertDescription>{submitMsg.text}</AlertDescription>
+          </Alert>
         </motion.div>
       )}
 

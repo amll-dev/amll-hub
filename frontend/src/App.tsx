@@ -6,11 +6,11 @@ import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { Player } from '@/components/Player';
 import { AuthDialog } from '@/components/AuthDialog';
-import { AuthProvider } from '@/context/AuthContext';
-import { SearchProvider } from '@/context/SearchContext';
-import { PlayerProvider } from '@/context/PlayerContext';
-import { NcmParseProvider } from '@/context/NcmParseContext';
-import { OnlineSearchProvider } from '@/context/OnlineSearchContext';
+import { AuthBoot } from '@/boot/AuthBoot';
+import { SearchBoot } from '@/boot/SearchBoot';
+import { PlayerBoot } from '@/boot/PlayerBoot';
+import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 /** 路由懒加载期间的全屏 loading */
 function PageLoading() {
@@ -49,24 +49,21 @@ export function Layout() {
   const useCustomHeader =
     location.pathname.startsWith('/creator') || location.pathname.startsWith('/review');
   return (
-    <AuthProvider>
-      <SearchProvider>
-        <PlayerProvider>
-          <NcmParseProvider>
-            <OnlineSearchProvider>
-              <div className="flex min-h-screen flex-col">
-                {!useCustomHeader && <Header />}
-                <main className="flex-1">
-                  <AnimatedOutlet />
-                </main>
-                {!useCustomHeader && <Footer />}
-              </div>
-              <Player />
-            </OnlineSearchProvider>
-          </NcmParseProvider>
-        </PlayerProvider>
-      </SearchProvider>
+    <TooltipProvider delayDuration={300}>
+      {/* 全局状态引导：atoms 副作用宿主（渲染 null，各挂一次） */}
+      <AuthBoot />
+      <SearchBoot />
+      <PlayerBoot />
+      <div className="flex min-h-screen flex-col">
+        {!useCustomHeader && <Header />}
+        <main className="flex-1">
+          <AnimatedOutlet />
+        </main>
+        {!useCustomHeader && <Footer />}
+      </div>
+      <Player />
       <AuthDialog />
-    </AuthProvider>
+      <Toaster />
+    </TooltipProvider>
   );
 }

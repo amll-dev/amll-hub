@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query';
 import { buttonTap } from '@/lib/motion';
 import { UserAvatar } from '@/components/submission/UserAvatar';
 import { UserDisplayName } from '@/components/submission/UserDisplayName';
 import { CardDetailSkeleton } from '@/components/ui/Skeleton';
 import type { SearchIpSubmissionDetail } from '@/lib/types';
+import { Badge } from '@/components/ui/badge';
 
 const statusMeta: Record<string, { label: string; className: string }> = {
   pending: { label: '待审核', className: 'bg-amber-100 text-amber-700' },
@@ -24,31 +27,39 @@ export function SearchIpDetail({
   onBack: () => void;
   isReviewer?: boolean;
 }) {
-  const [detail, setDetail] = useState<SearchIpSubmissionDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const queryClient = useQueryClient();
   const [reviewing, setReviewing] = useState<'approve' | 'reject' | null>(null);
   const [reviewMsg, setReviewMsg] = useState('');
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-    api
-      .getSearchIpSubmission(id)
-      .then((res) => {
-        if (!cancelled) setDetail(res);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : '加载失败');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+  const { data: detail, isPending: loading, error } = useQuery({
+    queryKey: queryKeys.searchIpSubmission(id),
+    queryFn: () => api.getSearchIpSubmission(id),
+    staleTime: 15_000,
+  });
+  const errorMsg =
+    error instanceof Error ? error.message : error ? '加载失败' : '';
+
+  const reviewMutation = useMutation({
+    mutationFn: (action: 'approve' | 'reject') => api.reviewSearchIpSubmission(id, action),
+    onMutate: (action) => {
+      setReviewing(action);
+      setReviewMsg('');
+    },
+    onSuccess: (_d, action) => {
+      queryClient.setQueryData<SearchIpSubmissionDetail>(
+        queryKeys.searchIpSubmission(id),
+        (prev) =>
+          prev ? { ...prev, status: action === 'approve' ? 'approved' : 'rejected' } : prev
+      );
+      setReviewMsg(action === 'approve' ? '已通过，将公开展示' : '已标记为不通过');
+    },
+    onError: (e) => setReviewMsg(e instanceof Error ? e.message : '操作失败'),
+    onSettled: () => setReviewing(null),
+  });
+  const doReview = (action: 'approve' | 'reject') => {
+    if (!detail || reviewing) return;
+    reviewMutation.mutate(action);
+  };
 
   // 通过文件名获取图片 URL
   const imgUrl = (fileName?: string) => {
@@ -56,22 +67,6 @@ export function SearchIpDetail({
     const key = detail.imageKeys?.[fileName];
     if (!key) return '';
     return api.searchIpImageUrl(key);
-  };
-
-  // 审核
-  const doReview = async (action: 'approve' | 'reject') => {
-    if (!detail || reviewing) return;
-    setReviewing(action);
-    setReviewMsg('');
-    try {
-      await api.reviewSearchIpSubmission(id, action);
-      setDetail({ ...detail, status: action === 'approve' ? 'approved' : 'rejected' });
-      setReviewMsg(action === 'approve' ? '已通过，将公开展示' : '已标记为不通过');
-    } catch (e) {
-      setReviewMsg(e instanceof Error ? e.message : '操作失败');
-    } finally {
-      setReviewing(null);
-    }
   };
 
   return (
@@ -86,8 +81,8 @@ export function SearchIpDetail({
 
       {loading ? (
         <CardDetailSkeleton />
-      ) : error ? (
-        <p className="py-12 text-center text-sm text-error">{error}</p>
+      ) : errorMsg ? (
+        <p className="py-12 text-center text-sm text-error">{errorMsg}</p>
       ) : detail ? (
         <div className="rounded-lg border border-line bg-card p-6">
           {/* 标题与基本信息 */}
@@ -102,11 +97,7 @@ export function SearchIpDetail({
                 className: 'bg-surface-2 text-ink-2',
               };
               return (
-                <span
-                  className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs ${meta.className}`}
-                >
-                  {meta.label}
-                </span>
+                <Badge variant="outline" className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}>{meta.label}</Badge>
               );
             })()}
           </div>

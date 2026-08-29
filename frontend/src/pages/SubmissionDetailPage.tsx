@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAtom } from 'jotai';
+import {
+  detailTabAtom,
+  fileViewAtom,
+  resetSubmissionDetailState,
+  showUpdateLyricAtom,
+  showUploadAudioAtom,
+  type DetailTab,
+} from '@/atoms/submissionDetail';
+import { motion } from 'framer-motion';
 import { ArrowLeft, Check, Copy, Download, Loader2, Music, Upload, Users, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query';
 import { LyricViewer } from '@/components/LyricViewer';
 import { LyricDetailSkeleton } from '@/components/ui/Skeleton';
 import { useViewers, type Viewer } from '@/hooks/useViewers';
@@ -23,9 +35,22 @@ import { NcmSongCard } from '@/components/submission/NcmSongCard';
 import { AudioCard } from '@/components/submission/AudioCard';
 import { fadeUp, staggerContainer } from '@/lib/motion';
 import type { SubmissionDetail, SubmissionAudio } from '@/lib/types';
-
-type DetailTab = 'info' | 'song' | 'file';
-type FileView = 'effect' | 'raw';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 /** 详情页顶栏：左侧 logo + 标题 + 返回，右侧在线观看者指示器 */
 function DetailTopBar({
@@ -65,7 +90,7 @@ function DetailTopBar({
               测试版本，不代表最终品质
             </span>
           </div>
-          <span className="mx-1 hidden h-5 w-px shrink-0 bg-line sm:block" />
+          <Separator orientation="vertical" className="mx-1 hidden h-5 sm:block" />
           <button
             type="button"
             onClick={() => navigate(backPath)}
@@ -87,7 +112,7 @@ function DetailTopBar({
   );
 }
 
-/** 在线观看者指示器 */
+/** 在线观看者指示器（Popover + ScrollArea） */
 function ViewersIndicator({
   count,
   viewers,
@@ -100,67 +125,57 @@ function ViewersIndicator({
   setShowModal: (v: boolean) => void;
 }) {
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setShowModal(!showModal)}
-        className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-2 px-3 py-1.5 text-xs text-ink-2 transition-colors hover:border-primary/40 hover:text-primary"
-      >
-        <Users className="h-3.5 w-3.5" />
-        {count > 0 ? `${count} 人正在看` : '当前无人观看'}
-      </button>
-      <AnimatePresence>
-        {showModal && (
-          <>
-            {/* 透明遮罩：点击关闭 */}
-            <div className="fixed inset-0 z-40" onClick={() => setShowModal(false)} />
-            {/* 下拉面板：定位在按钮右下方 */}
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              className="absolute right-0 top-full z-50 mt-2 w-64 rounded-lg border border-line bg-card p-4 shadow-xl"
-            >
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-foreground">正在查看（{count}）</h3>
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="text-ink-3 hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              {viewers.length === 0 ? (
-                <p className="py-4 text-center text-xs text-ink-3">暂无其他人在看</p>
-              ) : (
-                <ul className="max-h-72 space-y-2 overflow-y-auto">
-                  {viewers.map((v) => (
-                    <li key={v.username} className="flex items-center gap-2">
-                      {v.avatar ? (
-                        <img
-                          src={v.avatar}
-                          alt=""
-                          className="h-6 w-6 rounded-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-surface-2 text-xs text-ink-3">
-                          {(v.displayName || v.username).slice(0, 1).toUpperCase()}
-                        </div>
-                      )}
-                      <span className="text-sm text-foreground">{v.displayName || v.username}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </motion.div>
-          </>
+    <Popover open={showModal} onOpenChange={setShowModal}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-2 px-3 py-1.5 text-xs text-ink-2 transition-colors hover:border-primary/40 hover:text-primary"
+        >
+          <Users className="h-3.5 w-3.5" />
+          {count > 0 ? `${count} 人正在看` : '当前无人观看'}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-64 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-foreground">正在查看（{count}）</h3>
+          <button
+            type="button"
+            onClick={() => setShowModal(false)}
+            className="text-ink-3 hover:text-foreground"
+            aria-label="关闭"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {viewers.length === 0 ? (
+          <p className="py-4 text-center text-xs text-ink-3">暂无其他人在看</p>
+        ) : (
+          <ScrollArea className="max-h-72">
+            <ul className="space-y-2 pr-2">
+              {viewers.map((v) => (
+                <li key={v.username} className="flex items-center gap-2">
+                  {v.avatar ? (
+                    <img
+                      src={v.avatar}
+                      alt=""
+                      className="h-6 w-6 rounded-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-surface-2 text-xs text-ink-3">
+                      {(v.displayName || v.username).slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="text-sm text-foreground">{v.displayName || v.username}</span>
+                </li>
+              ))}
+            </ul>
+          </ScrollArea>
         )}
-      </AnimatePresence>
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -177,73 +192,78 @@ function SubmissionDetailContent({
   backLabel: string;
 }) {
   const navigate = useNavigate();
-  const [detail, setDetail] = useState<SubmissionDetail | null>(null);
+  const queryClient = useQueryClient();
   // 用 ref 跟踪最新状态，供组件卸载时判断是否需要释放审核占用
   const statusRef = useRef<string>('');
-  useEffect(() => {
-    statusRef.current = detail?.status ?? '';
-  }, [detail]);
-  const [ttml, setTtml] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [tab, setTab] = useState<DetailTab>('info');
-  const [fileView, setFileView] = useState<FileView>('effect');
+  // 页面状态存全局 atoms（卸载时复位，语义同原 useState）
+  const [tab, setTab] = useAtom(detailTabAtom);
+  const [fileView, setFileView] = useAtom(fileViewAtom);
+  // 复制成功反馈：2 秒自动复位的局部临时状态，保留 useState
   const [copied, setCopied] = useState(false);
 
   // 操作区
-  const [showUpdateLyric, setShowUpdateLyric] = useState(false);
-  const [showUploadAudio, setShowUploadAudio] = useState(false);
-  const [closing, setClosing] = useState(false);
+  const [showUpdateLyric, setShowUpdateLyric] = useAtom(showUpdateLyricAtom);
+  const [showUploadAudio, setShowUploadAudio] = useAtom(showUploadAudioAtom);
 
-  // 加载详情（id/审核身份变化时重新拉取）。useCallback 保证下方 effect 依赖完整
-  const loadDetail = useCallback(() => {
-    setLoading(true);
-    setError('');
-    api
-      .getSubmissionDetail(id)
-      .then(async (d) => {
-        setDetail(d);
-        // 审核员进入 pending 状态投稿时自动标记为审核中，并广播给列表页实时同步
-        if (isReviewer && d.status === 'pending') {
-          // 乐观更新 statusRef，防止用户在 markReviewing 返回前离开页面
-          // 导致 release 因 statusRef 仍为 "pending" 而不执行，状态卡在审核中
-          statusRef.current = 'reviewing';
-          api
-            .markReviewing(id)
-            .then(() => {
-              setDetail((prev) =>
-                prev ? { ...prev, status: 'reviewing' as SubmissionDetail['status'] } : prev
-              );
-            })
-            .catch(() => {
-              // 标记失败：回退 statusRef，避免离开时误发 release 请求
-              statusRef.current = d.status;
-            });
-        }
-        try {
-          const t = await api.getSubmissionTtml(id);
-          setTtml(t);
-        } catch {
-          setTtml('');
-        }
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : '加载失败'))
-      .finally(() => setLoading(false));
-  }, [id, isReviewer]);
+  // 页面卸载时复位全部详情页状态
+  useEffect(() => () => resetSubmissionDetailState(), []);
 
-  // 初次进入 / 参数变化时加载详情
+  // 详情与 TTML 由 Query 接管：按 id 缓存，loadDetail = refetch
+  const detailQuery = useQuery({
+    queryKey: queryKeys.submission(id),
+    queryFn: () => api.getSubmissionDetail(id),
+    staleTime: 15_000,
+  });
+  const ttmlQuery = useQuery({
+    queryKey: queryKeys.submissionTtml(id),
+    queryFn: () => api.getSubmissionTtml(id),
+    // 旧行为：TTML 拉取失败静默降级为空文本
+    retry: false,
+    staleTime: 15_000,
+  });
+  const detail = detailQuery.data ?? null;
+  const ttml = ttmlQuery.data ?? '';
+  const loading = detailQuery.isPending;
+  const loadError = detailQuery.error instanceof Error
+    ? detailQuery.error.message
+    : detailQuery.error
+      ? '加载失败'
+      : '';
+
   useEffect(() => {
-    loadDetail();
-  }, [loadDetail]);
+    statusRef.current = detail?.status ?? '';
+  }, [detail?.status]);
 
-  // WS 状态更新
+  // 审核员进入 pending 状态投稿时自动标记为审核中，并广播给列表页实时同步
+  const markedDetailRef = useRef<SubmissionDetail | null>(null);
+  useEffect(() => {
+    if (!detail || !isReviewer || detail.status !== 'pending') return;
+    if (markedDetailRef.current === detail) return;
+    markedDetailRef.current = detail;
+    // 乐观更新 statusRef，防止 markReviewing 返回前离开页面
+    // 导致 release 因 statusRef 仍为 "pending" 而不执行，状态卡在审核中
+    statusRef.current = 'reviewing';
+    api
+      .markReviewing(id)
+      .then(() => {
+        queryClient.setQueryData<SubmissionDetail>(queryKeys.submission(id), (prev) =>
+          prev ? { ...prev, status: 'reviewing' as SubmissionDetail['status'] } : prev
+        );
+      })
+      .catch(() => {
+        // 标记失败：回退 statusRef，避免离开时误发 release 请求
+        statusRef.current = 'pending';
+      });
+  }, [detail, isReviewer, id, queryClient]);
+
+  // WS 状态更新：直接补丁缓存里的详情
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<unknown>).detail;
-      const obj = typeof detail === 'object' && detail ? (detail as Record<string, unknown>) : null;
-      const newStatus = typeof detail === 'string' ? detail : (obj?.status as string | undefined);
+      const payload = (e as CustomEvent<unknown>).detail;
+      const obj = typeof payload === 'object' && payload ? (payload as Record<string, unknown>) : null;
+      const newStatus = typeof payload === 'string' ? payload : (obj?.status as string | undefined);
       if (!newStatus) return;
-      setDetail((prev) =>
+      queryClient.setQueryData<SubmissionDetail>(queryKeys.submission(id), (prev) =>
         prev
           ? {
               ...prev,
@@ -261,7 +281,7 @@ function SubmissionDetailContent({
     };
     window.addEventListener('submission:status-update', handler);
     return () => window.removeEventListener('submission:status-update', handler);
-  }, []);
+  }, [id, queryClient]);
 
   // 审核员离开详情页时，若状态仍为自己标记的“审核中”，释放占用恢复为“待审核”。
   // 通过 beforeunload + useEffect cleanup
@@ -284,17 +304,21 @@ function SubmissionDetailContent({
     };
   }, [id, isReviewer]);
 
-  const doClose = async () => {
-    setClosing(true);
-    try {
-      await api.closeSubmission(id);
+  // 详情刷新（审核操作/更新歌词/上传音频成功后调用）
+  const loadDetail = useCallback(() => {
+    void detailQuery.refetch();
+    void ttmlQuery.refetch();
+  }, [detailQuery, ttmlQuery]);
+
+  const closeMutation = useMutation({
+    mutationFn: () => api.closeSubmission(id),
+    onSuccess: () => {
+      toast.success('投稿已关闭');
       loadDetail();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '关闭失败');
-    } finally {
-      setClosing(false);
-    }
-  };
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : '关闭失败'),
+  });
+  const closing = closeMutation.isPending;
 
   const copyTtml = async () => {
     try {
@@ -326,10 +350,10 @@ function SubmissionDetailContent({
     return <LyricDetailSkeleton />;
   }
 
-  if (error) {
+  if (loadError) {
     return (
       <div className="py-20 text-center">
-        <p className="text-sm text-red-600">{error}</p>
+        <p className="text-sm text-red-600">{loadError}</p>
         <button
           type="button"
           onClick={() => navigate(backPath)}
@@ -369,11 +393,7 @@ function SubmissionDetailContent({
             {detail.title || '未命名'}
             <span className="ml-2 text-base font-normal text-ink-3">#{detail.id}</span>
           </h1>
-          <span
-            className={`inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium ${meta.className}`}
-          >
-            {meta.label}
-          </span>
+          <Badge variant="outline" className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium`}>{meta.label}</Badge>
         </div>
         {/* meta 信息行 */}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-ink-3">
@@ -399,22 +419,19 @@ function SubmissionDetailContent({
         <motion.div variants={fadeUp} className="min-w-0 flex-1 space-y-5">
           {/* 标签栏 + 操作按钮 */}
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex gap-1">
-              {(['info', 'song', 'file'] as DetailTab[]).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setTab(t)}
-                  className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-                    tab === t
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-surface-2 text-ink-2 hover:text-foreground'
-                  }`}
-                >
-                  {t === 'info' ? '信息' : t === 'song' ? '歌曲' : '文件'}
-                </button>
-              ))}
-            </div>
+            <Tabs value={tab} onValueChange={(v) => setTab(v as DetailTab)}>
+              <TabsList className="w-auto gap-1 border-none">
+                {(['info', 'song', 'file'] as DetailTab[]).map((t) => (
+                  <TabsTrigger
+                    key={t}
+                    value={t}
+                    className="rounded-md bg-surface-2 px-3 py-1.5 after:hidden data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                  >
+                    {t === 'info' ? '信息' : t === 'song' ? '歌曲' : '文件'}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
             <div className="flex flex-wrap gap-2">
               {canUpdateLyric && (
                 <button
@@ -437,19 +454,36 @@ function SubmissionDetailContent({
                 </button>
               )}
               {canClose && (
-                <button
-                  type="button"
-                  onClick={doClose}
-                  disabled={closing}
-                  className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-3 py-1.5 text-xs text-ink-2 hover:text-foreground disabled:opacity-50"
-                >
-                  {closing ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <X className="h-3.5 w-3.5" />
-                  )}
-                  关闭投稿
-                </button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={closing}
+                      className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-3 py-1.5 text-xs text-ink-2 hover:text-foreground disabled:opacity-50"
+                    >
+                      {closing ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <X className="h-3.5 w-3.5" />
+                      )}
+                      关闭投稿
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>确认关闭该投稿？</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        关闭后投稿将结束审核流程，且不可再更新歌词与音频。
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>取消</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => closeMutation.mutate()}>
+                        确认关闭
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </div>
           </div>
@@ -659,11 +693,7 @@ function SubmissionDetailContent({
               <div className="border-t border-line pt-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs text-ink-3">当前状态</span>
-                  <span
-                    className={`inline-flex items-center rounded px-2 py-0.5 text-xs ${meta.className}`}
-                  >
-                    {meta.label}
-                  </span>
+                  <Badge variant="outline" className={`shrink-0 border-transparent inline-flex items-center rounded px-2 py-0.5 text-xs`}>{meta.label}</Badge>
                 </div>
               </div>
             </div>
@@ -693,11 +723,7 @@ function SubmissionDetailContent({
                                   ? `@${h.reviewer}`
                                   : ''}
                               </span>
-                              <span
-                                className={`inline-flex items-center rounded px-1.5 py-0.5 ${m.className}`}
-                              >
-                                {m.label}
-                              </span>
+                              <Badge variant="outline" className={`border-transparent inline-flex items-center rounded px-1.5 py-0.5`}>{m.label}</Badge>
                               <span className="ml-auto shrink-0 text-ink-3">
                                 {formatTime(h.reviewedAt)}
                               </span>
