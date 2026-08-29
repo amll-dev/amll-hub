@@ -58,7 +58,7 @@ test.describe('首页', () => {
 
   test('统计徽章渲染 mock 数据', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('100')).first().toBeVisible();
+    await expect(page.getByText('100').first()).toBeVisible();
   });
 
   test('搜索栏可输入并跳转搜索结果', async ({ page }) => {
