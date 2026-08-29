@@ -7,6 +7,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // e2e/ 是 Playwright 用例，不属于 Vitest 收集范围
+    exclude: ['**/e2e/**', '**/node_modules/**', '**/dist/**'],
     // 覆盖率只统计纯逻辑层（lib/），组件测试另行补充
     coverage: {
       provider: 'v8',
