@@ -544,6 +544,8 @@ export function SearchIpForm() {
                                 <img
                                   src={item.url}
                                   alt={name}
+                                  loading="lazy"
+                                  decoding="async"
                                   className="h-full w-full object-cover"
                                 />
                               </div>
@@ -632,6 +634,8 @@ export function SearchIpForm() {
                                   <img
                                     src={uploadedImages[group.picture]?.url}
                                     alt={group.name}
+                                    loading="lazy"
+                                    decoding="async"
                                     className="h-10 max-w-[120px] w-auto rounded object-contain"
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).style.display = 'none';
@@ -671,6 +675,8 @@ export function SearchIpForm() {
                                         <img
                                           src={uploadedImages[member.picture]?.url}
                                           alt={member.name}
+                                          loading="lazy"
+                                          decoding="async"
                                           className="h-10 max-w-[120px] w-auto rounded object-contain"
                                           onError={(e) => {
                                             (e.target as HTMLImageElement).style.display = 'none';

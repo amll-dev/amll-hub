@@ -1,0 +1,50 @@
+{
+  "ci": {
+    "collect": {
+      "staticDistDir": false,
+      "numberOfRuns": 3,
+      "startServerCommand": "pnpm exec vite preview --port 4173 --strictPort",
+      "url": [
+        "http://localhost:4173/",
+        "http://localhost:4173/lyrics-search",
+        "http://localhost:4173/ranking"
+      ]
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["error", { "minScore": 0.6 }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.12 }],
+        "first-contentful-paint": ["warn", { "maxNumericValue": 3000 }],
+        "largest-contentful-paint": ["warn", { "maxNumericValue": 4000 }],
+        "interactive": ["warn", { "maxNumericValue": 4000 }],
+        "total-byte-weight": ["warn", { "maxNumericValue": 3000000 }],
+        "categories:accessibility": ["warn", { "minScore": 0.85 }],
+        "categories:best-practices": "warn",
+        "categories:seo": "warn",
+
+        "button-name": "off",
+        "color-contrast": "off",
+        "crawlable-anchors": "off",
+        "errors-in-console": "off",
+        "forced-reflow-insight": "off",
+        "heading-order": "off",
+        "image-delivery-insight": "off",
+        "network-dependency-tree-insight": "off",
+        "unused-javascript": "off",
+        "uses-passive-event-listeners": "off",
+        "uses-responsive-images": "off",
+        "valid-source-maps": "off",
+        "max-potential-fid": "off",
+        "modern-image-formats": "off",
+        "render-blocking-insight": "off",
+        "render-blocking-resources": "off",
+        "speed-index": "off"
+      }
+    },
+    "upload": {
+      "target": "filesystem",
+      "outputDir": ".lighthouseci",
+      "reportFilenamePattern": "report-%%DATETIME%%-%%PATHNAME%%.%%EXTENSION%%"
+    }
+  }
+}

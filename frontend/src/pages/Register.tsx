@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/form';
 import type { Control, FieldPath } from 'react-hook-form';
 import type { ReactNode } from 'react';
+import { PageContainer } from '@/components/PageContainer';
 
 /** 注册表单 schema：字段必填 + 密码长度 + 两次密码一致 */
 const registerSchema = z
@@ -272,7 +273,7 @@ export function Register() {
       : '获取验证码';
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-12">
+    <PageContainer width="form">
       <div className="rounded-xl border border-line bg-card p-8 shadow-sm">
         <h1 className="mb-6 text-center text-2xl font-bold tracking-tight text-foreground">
           注册账号
@@ -460,7 +461,7 @@ export function Register() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </PageContainer>
   );
 }
 

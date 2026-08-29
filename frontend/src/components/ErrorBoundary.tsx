@@ -16,17 +16,17 @@ interface State {
  * errorElement 内部再抛错），避免整页白屏。
  */
 export class GlobalErrorBoundary extends Component<Props, State> {
-  state: State = { error: null };
+  override state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {
     return { error };
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo) {
+  override componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[GlobalErrorBoundary]', error, info.componentStack);
   }
 
-  render() {
+  override render() {
     if (!this.state.error) return this.props.children;
     return (
       <FallbackUI

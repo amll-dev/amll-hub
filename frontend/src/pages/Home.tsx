@@ -6,6 +6,7 @@ import { SubmitCta } from '@/components/SubmitCta';
 import { PetitionList } from '@/components/PetitionList';
 import { NotFoundRanking } from '@/components/NotFoundRanking';
 import { SearchResults } from '@/components/SearchResults';
+import { PageContainer } from '@/components/PageContainer';
 import { useSearchContext } from '@/hooks/useSearchContext';
 
 /**
@@ -38,7 +39,7 @@ export function Home() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25 }}
           >
-            <div className="mx-auto max-w-[1200px] px-6">
+            <PageContainer className="py-0">
               <div className="grid gap-8 py-16 md:grid-cols-[380px_1fr]">
                 <TodayRecommend />
                 <LatestEntries />
@@ -55,7 +56,7 @@ export function Home() {
               <div className="py-16">
                 <NotFoundRanking />
               </div>
-            </div>
+            </PageContainer>
           </motion.div>
         )}
       </AnimatePresence>

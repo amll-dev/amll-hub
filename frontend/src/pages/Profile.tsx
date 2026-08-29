@@ -26,6 +26,7 @@ import { queryKeys } from '@/lib/query';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
 import type { CaptchaConfig } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
+import { PageContainer } from '@/components/PageContainer';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import {
@@ -295,13 +296,13 @@ export function Profile() {
   // 未登录
   if (!user) {
     return (
-      <div className="mx-auto max-w-[1200px] px-6 py-32 text-center">
+      <PageContainer className="py-32 text-center">
         <h1 className="text-2xl font-bold tracking-tight">请先登录</h1>
         <p className="mt-3 text-ink-2">登录后可查看和管理个人资料</p>
         <Button {...buttonTap} onClick={() => openLogin()} className="mt-8">
           去登录
         </Button>
-      </div>
+      </PageContainer>
     );
   }
 
@@ -393,6 +394,7 @@ export function Profile() {
                   <img
                     src={user.avatar}
                     alt={user.displayName || user.name}
+                    decoding="async"
                     className="h-20 w-20 rounded-full object-cover"
                   />
                 ) : (

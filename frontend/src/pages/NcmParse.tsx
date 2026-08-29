@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useNcmParse } from '@/hooks/useNcmParse';
 import { useAuth } from '@/hooks/useAuth';
+import { PageContainer } from '@/components/PageContainer';
 import {
   usePlayer,
   NCM_QUALITY_LABEL,
@@ -56,7 +57,7 @@ export function NcmParse() {
 
   if (!user) {
     return (
-      <div className="mx-auto max-w-[1200px] px-6 py-32 text-center">
+      <PageContainer className="py-32 text-center">
         <h1 className="text-2xl font-bold tracking-tight">音乐解析需要登录</h1>
         <p className="mt-3 text-ink-2">登录后即可搜索歌曲并解析歌词</p>
         <motion.button
@@ -67,12 +68,12 @@ export function NcmParse() {
         >
           立即登录
         </motion.button>
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="mx-auto max-w-[1200px] px-6 py-12">
+    <PageContainer>
       <motion.div initial="hidden" animate="show" variants={fadeUp}>
         <h1 className="text-3xl font-bold tracking-tight">音乐解析</h1>
         <p className="mt-2 text-sm text-ink-2">搜索歌曲并点击解析，或通过歌单 ID 批量解析。</p>
@@ -88,7 +89,7 @@ export function NcmParse() {
       </motion.div>
 
       <ParseResultSection />
-    </div>
+    </PageContainer>
   );
 }
 
@@ -865,6 +866,7 @@ function Cover({
       src={src}
       alt={alt}
       loading="lazy"
+      decoding="async"
       className={`${dim} shrink-0 rounded-md object-cover shadow-sm`}
     />
   ) : (

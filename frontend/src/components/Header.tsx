@@ -7,6 +7,7 @@ import { UserMenu } from './UserMenu';
 import { useAuth } from '@/hooks/useAuth';
 import { useSearchContext } from '@/hooks/useSearchContext';
 import { buttonTap } from '@/lib/motion';
+import { preloadRoute } from '@/routes';
 
 const baseNavItems = [
   { to: '/ncm', label: '音乐解析', requireLogin: true },
@@ -117,6 +118,8 @@ export function Header() {
             <NavLink
               key={item.to}
               to={item.to}
+              onMouseEnter={() => preloadRoute(item.to)}
+              onFocus={() => preloadRoute(item.to)}
               onClick={(e) => {
                 if (item.requireLogin && !user) {
                   e.preventDefault();

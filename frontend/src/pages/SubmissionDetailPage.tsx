@@ -17,6 +17,7 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { LyricViewer } from '@/components/LyricViewer';
 import { LyricDetailSkeleton } from '@/components/ui/Skeleton';
+import { PageContainer } from '@/components/PageContainer';
 import { useViewers, type Viewer } from '@/hooks/useViewers';
 import {
   buildActivityEntries,
@@ -786,7 +787,7 @@ export function SubmissionDetailPage({
           showModal={showModal}
           setShowModal={setShowModal}
         />
-        <div className="mx-auto max-w-[1280px] px-6 py-20 text-center">
+        <PageContainer width="lg" className="py-20 text-center">
           <p className="text-sm text-red-600">无效的稿件 ID</p>
           <button
             type="button"
@@ -795,7 +796,7 @@ export function SubmissionDetailPage({
           >
             {backLabel}
           </button>
-        </div>
+        </PageContainer>
       </div>
     );
   }
@@ -811,14 +812,14 @@ export function SubmissionDetailPage({
         showModal={showModal}
         setShowModal={setShowModal}
       />
-      <div className="mx-auto max-w-[1280px] px-6 py-6">
+      <PageContainer width="lg" className="py-6">
         <SubmissionDetailContent
           id={id}
           isReviewer={isReviewer}
           backPath={backPath}
           backLabel={backLabel}
         />
-      </div>
+      </PageContainer>
 
       {/* 底部提示 */}
       <footer className="flex items-center justify-center gap-2 border-t border-line py-4">

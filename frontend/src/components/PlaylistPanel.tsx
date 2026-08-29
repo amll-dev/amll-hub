@@ -102,6 +102,7 @@ export function PlaylistPanel() {
                               src={item.cover}
                               alt={item.name}
                               loading="lazy"
+                              decoding="async"
                               className={`h-full w-full object-cover transition-opacity ${
                                 isCurrent ? 'opacity-70' : 'opacity-100'
                               }`}

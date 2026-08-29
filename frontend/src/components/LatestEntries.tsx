@@ -71,6 +71,7 @@ export function LatestEntries() {
                   alt={e.title}
                   className="h-12 w-12 shrink-0 rounded-md object-cover"
                   loading="lazy"
+                  decoding="async"
                 />
               ) : (
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary-tint to-muted text-base font-bold text-primary">

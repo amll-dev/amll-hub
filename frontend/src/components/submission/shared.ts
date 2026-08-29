@@ -1,4 +1,5 @@
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { Check, Eye, FileText, Music, Pencil, Upload, X } from 'lucide-react';
 import { escapeHtml } from '@/lib/markup';
 import type { SubmissionDetail } from '@/lib/types';
@@ -206,11 +207,17 @@ export function buildActivityEntries(detail: SubmissionDetail): ActivityEntry[] 
 // 配置 marked
 marked.setOptions({ breaks: true, gfm: true });
 
-/** 将 Markdown 文本渲染为 HTML */
+/**
+ * 将 Markdown 文本渲染为 HTML。
+ * escapeHtml 挡住原始 HTML 标签，但 [text](javascript:alert(1)) 这类链接协议
+ * 不含可转义字符仍会穿透 marked，故末尾用 DOMPurify 兜底（默认拦截 javascript: 等危险协议）
+ */
 export function renderMarkdown(text: string): string {
   if (!text) return '';
   try {
-    return marked.parse(escapeHtml(text)) as string;
+    return DOMPurify.sanitize(marked.parse(escapeHtml(text)) as string, {
+      USE_PROFILES: { html: true },
+    });
   } catch {
     return escapeHtml(text).replace(/\n/g, '<br>');
   }
