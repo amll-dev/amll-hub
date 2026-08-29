@@ -3,7 +3,7 @@
  * 断言失败即 CI 步骤失败（= 告警）；报告写入 .lighthouseci/ 供 artifact 留档。
  * 阈值可按基线实测调整，宁松勿抖（CI 共享 runner 有噪声）。
  */
-module.exports = {
+export default {
   ci: {
     collect: {
       numberOfRuns: 3, // 多次取中位数，降低单次抖动
