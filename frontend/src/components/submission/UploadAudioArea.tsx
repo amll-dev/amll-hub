@@ -89,7 +89,8 @@ export function UploadAudioArea({ submissionId, onClose, onSuccess }: UploadAudi
       if (audioInputRef.current) audioInputRef.current.value = '';
       if (coverInputRef.current) coverInputRef.current.value = '';
     },
-    onError: (err) => setMsg({ type: 'error', text: err instanceof Error ? err.message : '上传失败' }),
+    onError: (err) =>
+      setMsg({ type: 'error', text: err instanceof Error ? err.message : '上传失败' }),
   });
   const uploading = uploadMutation.isPending;
 

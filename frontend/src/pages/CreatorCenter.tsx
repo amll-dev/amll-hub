@@ -169,7 +169,11 @@ function LyricsList({
   setStatusTab: (t: LyricsStatusTab) => void;
 }) {
   const queryClient = useQueryClient();
-  const listKey = queryKeys.submissions({ mode: 'creator', status: statusTab, limit: LIST_PAGE_SIZE });
+  const listKey = queryKeys.submissions({
+    mode: 'creator',
+    status: statusTab,
+    limit: LIST_PAGE_SIZE,
+  });
 
   const listQuery = useInfiniteQuery({
     queryKey: listKey,
@@ -212,7 +216,9 @@ function LyricsList({
             pages: prev.pages.map((p) => ({
               ...p,
               items: (p.items ?? []).map((it) =>
-                it.id === id ? { ...it, status: payload.status as SubmissionListItem['status'] } : it
+                it.id === id
+                  ? { ...it, status: payload.status as SubmissionListItem['status'] }
+                  : it
               ),
             })),
           }
@@ -256,7 +262,8 @@ function LyricsList({
       ) : (
         <>
           <p className="mb-3 text-xs text-ink-3">
-            已加载 {items.length}{total > items.length ? ` / 共 ${total} 条` : ' 条'}
+            已加载 {items.length}
+            {total > items.length ? ` / 共 ${total} 条` : ' 条'}
           </p>
           <ul className="space-y-2">
             {items.map((item) => {
@@ -289,7 +296,12 @@ function LyricsList({
                           })}
                         </span>
                         <span className="text-line">|</span>
-                        <Badge variant="outline" className={`shrink-0 border-transparent inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`}>{meta.label}</Badge>
+                        <Badge
+                          variant="outline"
+                          className={`shrink-0 border-transparent inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`}
+                        >
+                          {meta.label}
+                        </Badge>
                         <span className="text-line">|</span>
                         <span>语言：{langText(item.language)}</span>
                       </div>
@@ -366,7 +378,12 @@ function DailyRecommendList() {
                     <span className="truncate font-medium text-foreground">
                       {item.songName} - {item.artist}
                     </span>
-                    <Badge variant="outline" className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}>{meta.label}</Badge>
+                    <Badge
+                      variant="outline"
+                      className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}
+                    >
+                      {meta.label}
+                    </Badge>
                   </div>
                   <p className="mt-1 text-xs text-ink-3">
                     提交于{' '}
@@ -390,7 +407,11 @@ function DailyRecommendList() {
 
 /** 每日推荐投稿详情 */
 function DailyRecommendDetail({ id, onBack }: { id: number; onBack: () => void }) {
-  const { data: detail, isPending, error } = useQuery({
+  const {
+    data: detail,
+    isPending,
+    error,
+  } = useQuery({
     queryKey: queryKeys.dailySubmission(id),
     queryFn: () => api.getDailySubmission(id),
     staleTime: 15_000,
@@ -439,7 +460,12 @@ function DailyRecommendDetail({ id, onBack }: { id: number; onBack: () => void }
             {detail.date}
           </span>
           <h3 className="text-lg font-semibold text-foreground">{detail.songName}</h3>
-          <Badge variant="outline" className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}>{meta.label}</Badge>
+          <Badge
+            variant="outline"
+            className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}
+          >
+            {meta.label}
+          </Badge>
         </div>
         <p className="mt-1 text-sm text-ink-2">{detail.artist}</p>
         {detail.ncmId && <p className="mt-1 text-xs text-ink-3">网易云ID：{detail.ncmId}</p>}
@@ -522,7 +548,12 @@ function SearchIpList() {
                     <span className="truncate font-medium text-foreground">
                       {item.title || '未命名'}
                     </span>
-                    <Badge variant="outline" className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}>{meta.label}</Badge>
+                    <Badge
+                      variant="outline"
+                      className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}
+                    >
+                      {meta.label}
+                    </Badge>
                   </div>
                   <p className="mt-1 text-xs text-ink-3">{item.createdAt}</p>
                 </li>

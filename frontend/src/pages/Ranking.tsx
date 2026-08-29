@@ -122,7 +122,11 @@ export function Ranking() {
       ) : error ? (
         <div className="py-16 text-center">
           <p className="text-error">{error}</p>
-          <button type="button" onClick={() => void refresh()} className={`${btnBase} ${btnIdle} mt-4`}>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            className={`${btnBase} ${btnIdle} mt-4`}
+          >
             重试
           </button>
         </div>

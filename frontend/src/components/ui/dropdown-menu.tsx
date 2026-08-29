@@ -35,7 +35,7 @@ function DropdownMenuItem({
       className={cn(
         'relative flex cursor-default select-none items-center gap-2 rounded-sm px-3 py-2 text-sm text-ink-2 outline-none transition-colors',
         'focus:bg-surface-2 focus:text-primary data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-        "[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-current",
+        '[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-current',
         className
       )}
       {...props}
@@ -60,7 +60,10 @@ function DropdownMenuSeparator({
   ...props
 }: ComponentProps<typeof DropdownMenuPrimitive.Separator>) {
   return (
-    <DropdownMenuPrimitive.Separator className={cn('-mx-1 my-1 h-px bg-line', className)} {...props} />
+    <DropdownMenuPrimitive.Separator
+      className={cn('-mx-1 my-1 h-px bg-line', className)}
+      {...props}
+    />
   );
 }
 

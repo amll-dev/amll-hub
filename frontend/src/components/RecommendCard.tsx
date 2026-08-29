@@ -288,7 +288,10 @@ export function RecommendCard({
           }`}
           style={{ minHeight: compact ? 'auto' : 'calc(100% - 32px)' }}
         >
-          <AspectRatio ratio={1} className="relative mb-3 block w-full overflow-hidden rounded-[12px]">
+          <AspectRatio
+            ratio={1}
+            className="relative mb-3 block w-full overflow-hidden rounded-[12px]"
+          >
             {!coverLoaded && (
               <div
                 className="amll-skeleton inset-0 rounded-[12px]"

@@ -292,7 +292,11 @@ export function ResetPassword() {
                 autoFocus
               />
               {error && <p className="text-sm text-error">{error}</p>}
-              <motion.button type="submit" {...buttonTap} className={buttonVariants({ className: 'w-full' })}>
+              <motion.button
+                type="submit"
+                {...buttonTap}
+                className={buttonVariants({ className: 'w-full' })}
+              >
                 下一步
               </motion.button>
               <Link
@@ -316,7 +320,10 @@ export function ResetPassword() {
               className="space-y-4"
             >
               <Form {...form}>
-                <form onSubmit={form.handleSubmit((v) => resetMutation.mutate(v))} className="space-y-4">
+                <form
+                  onSubmit={form.handleSubmit((v) => resetMutation.mutate(v))}
+                  className="space-y-4"
+                >
                   {/* 新密码 */}
                   <FormField
                     control={form.control}
@@ -460,8 +467,8 @@ export function ResetPassword() {
           )}
         </AnimatePresence>
       </div>
-
-      {/* 人机验证弹窗 */}      <AnimatePresence>
+      {/* 人机验证弹窗 */}{' '}
+      <AnimatePresence>
         {captchaModalOpen && (
           <motion.div
             initial={{ opacity: 0 }}

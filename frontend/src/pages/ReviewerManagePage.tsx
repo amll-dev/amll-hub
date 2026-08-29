@@ -35,18 +35,22 @@ export function ReviewerManagePage() {
     staleTime: 30_000,
   });
   const items = reviewersQuery.data?.items ?? [];
-  const errorMsg = reviewersQuery.error instanceof Error
-    ? reviewersQuery.error.message
-    : reviewersQuery.error
-      ? '加载失败'
-      : '';
+  const errorMsg =
+    reviewersQuery.error instanceof Error
+      ? reviewersQuery.error.message
+      : reviewersQuery.error
+        ? '加载失败'
+        : '';
 
   const addMutation = useMutation({
     mutationFn: (name: string) => api.addReviewer(name),
     onSuccess: (_d, name) => {
       queryClient.setQueryData<ReviewerList>(queryKeys.reviewers, (prev) =>
         prev
-          ? { items: prev.items.includes(name) ? prev.items : [...prev.items, name].sort(), total: prev.total }
+          ? {
+              items: prev.items.includes(name) ? prev.items : [...prev.items, name].sort(),
+              total: prev.total,
+            }
           : prev
       );
       setUsername('');

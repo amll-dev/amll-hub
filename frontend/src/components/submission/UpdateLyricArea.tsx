@@ -46,7 +46,8 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
         onClose();
       }, 1200);
     },
-    onError: (err) => setMsg({ type: 'error', text: err instanceof Error ? err.message : '上传失败' }),
+    onError: (err) =>
+      setMsg({ type: 'error', text: err instanceof Error ? err.message : '上传失败' }),
   });
   const uploading = uploadMutation.isPending;
 
@@ -122,8 +123,8 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
       {/* 校验请求失败 */}
       {validateError && (
         <Alert variant="destructive" className="mt-3">
-        <AlertDescription>{validateError}</AlertDescription>
-      </Alert>
+          <AlertDescription>{validateError}</AlertDescription>
+        </Alert>
       )}
 
       {/* 校验未通过 */}
@@ -131,12 +132,14 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
         <Alert variant="destructive" className="mt-3">
           <AlertTitle>校验未通过</AlertTitle>
           <AlertDescription>
-          {validation.parseError && <p className="text-xs text-red-500">{validation.parseError}</p>}
-          {validation.errors.map((err, i) => (
-            <p key={i} className="text-xs">
-              • {err}
-            </p>
-          ))}
+            {validation.parseError && (
+              <p className="text-xs text-red-500">{validation.parseError}</p>
+            )}
+            {validation.errors.map((err, i) => (
+              <p key={i} className="text-xs">
+                • {err}
+              </p>
+            ))}
           </AlertDescription>
         </Alert>
       )}

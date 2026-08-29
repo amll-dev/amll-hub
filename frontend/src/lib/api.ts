@@ -81,7 +81,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     clearTimeout(timeout);
   }
   if (import.meta.env.DEV) {
-    console.debug(`[api] ${method} ${path} → ${res.status} (${Math.round(performance.now() - startedAt)}ms)`);
+    console.debug(
+      `[api] ${method} ${path} → ${res.status} (${Math.round(performance.now() - startedAt)}ms)`
+    );
   }
 
   // 401：若是带 token 的请求，说明 token 失效，清登录态并弹登录窗；

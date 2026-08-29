@@ -19,7 +19,10 @@ function TableBody({ className, ...props }: ComponentProps<'tbody'>) {
 
 function TableFooter({ className, ...props }: ComponentProps<'tfoot'>) {
   return (
-    <tfoot className={cn('border-t border-line bg-surface-2/50 font-medium', className)} {...props} />
+    <tfoot
+      className={cn('border-t border-line bg-surface-2/50 font-medium', className)}
+      {...props}
+    />
   );
 }
 
@@ -48,22 +51,11 @@ function TableHead({ className, ...props }: ComponentProps<'th'>) {
 }
 
 function TableCell({ className, ...props }: ComponentProps<'td'>) {
-  return (
-    <td className={cn('px-3 py-2.5 align-middle', className)} {...props} />
-  );
+  return <td className={cn('px-3 py-2.5 align-middle', className)} {...props} />;
 }
 
 function TableCaption({ className, ...props }: ComponentProps<'caption'>) {
   return <caption className={cn('mt-4 text-sm text-ink-3', className)} {...props} />;
 }
 
-export {
-  Table,
-  TableHeader,
-  TableBody,
-  TableFooter,
-  TableRow,
-  TableHead,
-  TableCell,
-  TableCaption,
-};
+export { Table, TableHeader, TableBody, TableFooter, TableRow, TableHead, TableCell, TableCaption };

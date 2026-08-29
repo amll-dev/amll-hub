@@ -43,14 +43,7 @@ export type RepeatMode = 'off' | 'all' | 'one';
 
 /** 网易云音质等级 */
 export type NcmQuality =
-  | 'standard'
-  | 'exhigh'
-  | 'lossless'
-  | 'hires'
-  | 'jyeffect'
-  | 'jymaster'
-  | 'sky'
-  | 'dolby';
+  'standard' | 'exhigh' | 'lossless' | 'hires' | 'jyeffect' | 'jymaster' | 'sky' | 'dolby';
 
 export const NCM_QUALITY_LABEL: Record<NcmQuality, string> = {
   standard: '标准',

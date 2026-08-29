@@ -43,12 +43,17 @@ function AlertDialogContent({
 }
 
 function AlertDialogHeader({ className, ...props }: ComponentProps<'div'>) {
-  return <div className={cn('flex flex-col gap-2 text-center sm:text-left', className)} {...props} />;
+  return (
+    <div className={cn('flex flex-col gap-2 text-center sm:text-left', className)} {...props} />
+  );
 }
 
 function AlertDialogFooter({ className, ...props }: ComponentProps<'div'>) {
   return (
-    <div className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)} {...props} />
+    <div
+      className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)}
+      {...props}
+    />
   );
 }
 
@@ -69,10 +74,7 @@ function AlertDialogDescription({
   ...props
 }: ComponentProps<typeof AlertDialogPrimitive.Description>) {
   return (
-    <AlertDialogPrimitive.Description
-      className={cn('text-sm text-ink-3', className)}
-      {...props}
-    />
+    <AlertDialogPrimitive.Description className={cn('text-sm text-ink-3', className)} {...props} />
   );
 }
 

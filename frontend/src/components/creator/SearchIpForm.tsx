@@ -75,9 +75,11 @@ export function SearchIpForm() {
   // 单张图片更换目标：记录要替换的图片文件名
   const [replaceTarget, setReplaceTarget] = useState<string | null>(null);
   // 搜索IP投稿标题（草稿自动保存，清空也会覆盖保存）
-  const { restored: draft, set: setDraft, clearDraft } = useFormDraft<{ ipTitle: string }>(
-    'search-ip'
-  );
+  const {
+    restored: draft,
+    set: setDraft,
+    clearDraft,
+  } = useFormDraft<{ ipTitle: string }>('search-ip');
   const [ipTitle, setIpTitleState] = useState(draft?.ipTitle ?? '');
   const setIpTitle = (v: string) => {
     setIpTitleState(v);
@@ -90,7 +92,11 @@ export function SearchIpForm() {
 
   const submitMutation = useMutation({
     mutationFn: (vars: { title: string; tempKeys: Record<string, string> }) =>
-      api.createSearchIpSubmission({ title: vars.title, jsonData: parsedData!, tempKeys: vars.tempKeys }),
+      api.createSearchIpSubmission({
+        title: vars.title,
+        jsonData: parsedData!,
+        tempKeys: vars.tempKeys,
+      }),
     onMutate: () => setSubmitMsg(null),
     onSuccess: (result) => {
       setSubmitMsg({
@@ -496,103 +502,103 @@ export function SearchIpForm() {
                     {/* 内容区 */}
                     <Collapsible open={!uploadListCollapsed}>
                       <CollapsibleContent>
-                          <div className="space-y-3 border-t border-line px-4 py-3">
-                            {/* JSON 文件项 */}
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary text-white">
-                                <FileText className="h-5 w-5" />
+                        <div className="space-y-3 border-t border-line px-4 py-3">
+                          {/* JSON 文件项 */}
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary text-white">
+                              <FileText className="h-5 w-5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate text-sm font-medium text-foreground">
+                                  {selectedFile.name}
+                                </span>
+                                <span className="shrink-0 text-[10px] text-ink-3">
+                                  {(selectedFile.size / 1024).toFixed(1)} KB
+                                </span>
+                                <span className="flex shrink-0 items-center gap-1 text-xs text-success">
+                                  <Check className="h-3 w-3" />
+                                  上传完成
+                                </span>
+                              </div>
+                              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+                                <div className="h-full w-full rounded-full bg-success" />
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                document.getElementById('search-ip-json-input')?.click()
+                              }
+                              className="flex shrink-0 items-center gap-1 text-xs text-primary transition-colors hover:underline"
+                              aria-label="更换 JSON 文件"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                              更换
+                            </button>
+                          </div>
+                          {/* 图片文件项 */}
+                          {Object.entries(uploadedImages).map(([name, item]) => (
+                            <div key={name} className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface-2">
+                                <img
+                                  src={item.url}
+                                  alt={name}
+                                  className="h-full w-full object-cover"
+                                />
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2">
                                   <span className="truncate text-sm font-medium text-foreground">
-                                    {selectedFile.name}
+                                    {name}
                                   </span>
                                   <span className="shrink-0 text-[10px] text-ink-3">
-                                    {(selectedFile.size / 1024).toFixed(1)} KB
+                                    {(item.file.size / 1024).toFixed(1)} KB
                                   </span>
-                                  <span className="flex shrink-0 items-center gap-1 text-xs text-success">
-                                    <Check className="h-3 w-3" />
-                                    上传完成
-                                  </span>
+                                  {item.uploading ? (
+                                    <span className="shrink-0 text-xs text-ink-3">
+                                      {item.progress}%
+                                    </span>
+                                  ) : item.error ? (
+                                    <span className="shrink-0 text-xs text-error">失败</span>
+                                  ) : (
+                                    <span className="flex shrink-0 items-center gap-1 text-xs text-success">
+                                      <Check className="h-3 w-3" />
+                                      上传完成
+                                    </span>
+                                  )}
                                 </div>
-                                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
-                                  <div className="h-full w-full rounded-full bg-success" />
-                                </div>
+                                <Progress
+                                  value={item.progress}
+                                  indicatorColor={item.error ? 'error' : 'success'}
+                                />
+                                {item.error && (
+                                  <p className="mt-1 text-[10px] text-error">{item.error}</p>
+                                )}
                               </div>
                               <button
                                 type="button"
-                                onClick={() =>
-                                  document.getElementById('search-ip-json-input')?.click()
-                                }
+                                onClick={() => {
+                                  setReplaceTarget(name);
+                                  document.getElementById('search-ip-images-input')?.click();
+                                }}
                                 className="flex shrink-0 items-center gap-1 text-xs text-primary transition-colors hover:underline"
-                                aria-label="更换 JSON 文件"
+                                aria-label="更换图片"
                               >
                                 <RefreshCw className="h-3.5 w-3.5" />
                                 更换
                               </button>
+                              <button
+                                type="button"
+                                onClick={() => removeImage(name)}
+                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-error/5 hover:text-error"
+                                aria-label="移除图片"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
                             </div>
-                            {/* 图片文件项 */}
-                            {Object.entries(uploadedImages).map(([name, item]) => (
-                              <div key={name} className="flex items-center gap-3">
-                                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface-2">
-                                  <img
-                                    src={item.url}
-                                    alt={name}
-                                    className="h-full w-full object-cover"
-                                  />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="truncate text-sm font-medium text-foreground">
-                                      {name}
-                                    </span>
-                                    <span className="shrink-0 text-[10px] text-ink-3">
-                                      {(item.file.size / 1024).toFixed(1)} KB
-                                    </span>
-                                    {item.uploading ? (
-                                      <span className="shrink-0 text-xs text-ink-3">
-                                        {item.progress}%
-                                      </span>
-                                    ) : item.error ? (
-                                      <span className="shrink-0 text-xs text-error">失败</span>
-                                    ) : (
-                                      <span className="flex shrink-0 items-center gap-1 text-xs text-success">
-                                        <Check className="h-3 w-3" />
-                                        上传完成
-                                      </span>
-                                    )}
-                                  </div>
-                                  <Progress
-                                    value={item.progress}
-                                    indicatorColor={item.error ? 'error' : 'success'}
-                                  />
-                                  {item.error && (
-                                    <p className="mt-1 text-[10px] text-error">{item.error}</p>
-                                  )}
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setReplaceTarget(name);
-                                    document.getElementById('search-ip-images-input')?.click();
-                                  }}
-                                  className="flex shrink-0 items-center gap-1 text-xs text-primary transition-colors hover:underline"
-                                  aria-label="更换图片"
-                                >
-                                  <RefreshCw className="h-3.5 w-3.5" />
-                                  更换
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => removeImage(name)}
-                                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-3 transition-colors hover:bg-error/5 hover:text-error"
-                                  aria-label="移除图片"
-                                >
-                                  <X className="h-4 w-4" />
-                                </button>
-                              </div>
-                            ))}
-                          </div>
+                          ))}
+                        </div>
                       </CollapsibleContent>
                     </Collapsible>
                   </div>

@@ -8,10 +8,7 @@ const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal = DialogPrimitive.Portal;
 const DialogClose = DialogPrimitive.Close;
 
-function DialogOverlay({
-  className,
-  ...props
-}: ComponentProps<typeof DialogPrimitive.Overlay>) {
+function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (
     <DialogPrimitive.Overlay
       className={cn(
@@ -51,12 +48,17 @@ function DialogContent({
 }
 
 function DialogHeader({ className, ...props }: ComponentProps<'div'>) {
-  return <div className={cn('flex flex-col gap-1.5 text-center sm:text-left', className)} {...props} />;
+  return (
+    <div className={cn('flex flex-col gap-1.5 text-center sm:text-left', className)} {...props} />
+  );
 }
 
 function DialogFooter({ className, ...props }: ComponentProps<'div'>) {
   return (
-    <div className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)} {...props} />
+    <div
+      className={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)}
+      {...props}
+    />
   );
 }
 
@@ -73,12 +75,7 @@ function DialogDescription({
   className,
   ...props
 }: ComponentProps<typeof DialogPrimitive.Description>) {
-  return (
-    <DialogPrimitive.Description
-      className={cn('text-sm text-ink-3', className)}
-      {...props}
-    />
-  );
+  return <DialogPrimitive.Description className={cn('text-sm text-ink-3', className)} {...props} />;
 }
 
 export {

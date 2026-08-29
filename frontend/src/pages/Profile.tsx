@@ -143,8 +143,7 @@ export function Profile() {
       await refreshUser();
       setAvatarMsg({ ok: true, text: '头像更新成功' });
     },
-    onError: (err: Error) =>
-      setAvatarMsg({ ok: false, text: err.message || '头像更新失败' }),
+    onError: (err: Error) => setAvatarMsg({ ok: false, text: err.message || '头像更新失败' }),
     onSettled: () => {
       if (fileInputRef.current) fileInputRef.current.value = '';
     },
@@ -287,12 +286,11 @@ export function Profile() {
   });
   const editSaving = saveEditMutation.isPending;
 
-  const editSendBtnLabel =
-    editCountdown.running
-      ? `${editCountdown.count}s`
-      : editSendingCode
-        ? '发送中…'
-        : '获取验证码';
+  const editSendBtnLabel = editCountdown.running
+    ? `${editCountdown.count}s`
+    : editSendingCode
+      ? '发送中…'
+      : '获取验证码';
 
   // 未登录
   if (!user) {
@@ -446,7 +444,12 @@ export function Profile() {
                     <FormItem>
                       <FormLabel className="text-sm font-medium text-ink-2">昵称</FormLabel>
                       <FormControl>
-                        <Input type="text" placeholder="输入昵称" className={fieldClass} {...field} />
+                        <Input
+                          type="text"
+                          placeholder="输入昵称"
+                          className={fieldClass}
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

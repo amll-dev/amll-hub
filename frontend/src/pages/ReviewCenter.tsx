@@ -150,7 +150,9 @@ function ReviewList() {
             pages: prev.pages.map((p) => ({
               ...p,
               items: (p.items ?? []).map((it) =>
-                it.id === id ? { ...it, status: payload.status as SubmissionListItem['status'] } : it
+                it.id === id
+                  ? { ...it, status: payload.status as SubmissionListItem['status'] }
+                  : it
               ),
             })),
           }
@@ -232,7 +234,12 @@ function ReviewList() {
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
                           <span>{formatTime(item.createdAt)}</span>
                           <span className="text-line">|</span>
-                          <Badge variant="outline" className={`shrink-0 border-transparent inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`}>{meta.label}</Badge>
+                          <Badge
+                            variant="outline"
+                            className={`shrink-0 border-transparent inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`}
+                          >
+                            {meta.label}
+                          </Badge>
                           <span className="text-line">|</span>
                           <span>语言：{langText(item.language)}</span>
                         </div>
@@ -340,7 +347,12 @@ function SearchIpReviewList() {
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
                           <span>{item.createdAt}</span>
                           <span className="text-line">|</span>
-                          <Badge variant="outline" className={`shrink-0 border-transparent inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`}>{meta.label}</Badge>
+                          <Badge
+                            variant="outline"
+                            className={`shrink-0 border-transparent inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`}
+                          >
+                            {meta.label}
+                          </Badge>
                           <span className="text-line">|</span>
                           <span>投稿人：{item.submitter}</span>
                         </div>

@@ -259,19 +259,17 @@ export function Register() {
     (checkUserMutation.isPending && captchaTarget === 'email') ||
     (sendCodeMutation.isPending && sendCodeMutation.variables?.target === 'email');
 
-  const phoneBtnLabel =
-    phoneCountdown.running
-      ? `${phoneCountdown.count}s`
-      : sendingPhoneCode
-        ? '发送中…'
-        : '获取验证码';
+  const phoneBtnLabel = phoneCountdown.running
+    ? `${phoneCountdown.count}s`
+    : sendingPhoneCode
+      ? '发送中…'
+      : '获取验证码';
 
-  const emailBtnLabel =
-    emailCountdown.running
-      ? `${emailCountdown.count}s`
-      : sendingEmailCode
-        ? '发送中…'
-        : '获取验证码';
+  const emailBtnLabel = emailCountdown.running
+    ? `${emailCountdown.count}s`
+    : sendingEmailCode
+      ? '发送中…'
+      : '获取验证码';
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-12">
@@ -281,7 +279,10 @@ export function Register() {
         </h1>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((v) => registerMutation.mutate(v))} className="space-y-5">
+          <form
+            onSubmit={form.handleSubmit((v) => registerMutation.mutate(v))}
+            className="space-y-5"
+          >
             {/* 头像（可选）*/}
             <div className="flex justify-center">
               <input
@@ -310,8 +311,18 @@ export function Register() {
 
             {/* 两列布局：用户名 + 显示名称 */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormFields control={form.control} name="username" label="用户名" fieldClass={fieldClass} />
-              <FormFields control={form.control} name="displayName" label="显示名称" fieldClass={fieldClass} />
+              <FormFields
+                control={form.control}
+                name="username"
+                label="用户名"
+                fieldClass={fieldClass}
+              />
+              <FormFields
+                control={form.control}
+                name="displayName"
+                label="显示名称"
+                fieldClass={fieldClass}
+              />
             </div>
 
             {/* 两列布局：密码 + 确认密码 */}

@@ -31,13 +31,16 @@ export function SearchIpDetail({
   const [reviewing, setReviewing] = useState<'approve' | 'reject' | null>(null);
   const [reviewMsg, setReviewMsg] = useState('');
 
-  const { data: detail, isPending: loading, error } = useQuery({
+  const {
+    data: detail,
+    isPending: loading,
+    error,
+  } = useQuery({
     queryKey: queryKeys.searchIpSubmission(id),
     queryFn: () => api.getSearchIpSubmission(id),
     staleTime: 15_000,
   });
-  const errorMsg =
-    error instanceof Error ? error.message : error ? '加载失败' : '';
+  const errorMsg = error instanceof Error ? error.message : error ? '加载失败' : '';
 
   const reviewMutation = useMutation({
     mutationFn: (action: 'approve' | 'reject') => api.reviewSearchIpSubmission(id, action),
@@ -97,7 +100,12 @@ export function SearchIpDetail({
                 className: 'bg-surface-2 text-ink-2',
               };
               return (
-                <Badge variant="outline" className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}>{meta.label}</Badge>
+                <Badge
+                  variant="outline"
+                  className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}
+                >
+                  {meta.label}
+                </Badge>
               );
             })()}
           </div>

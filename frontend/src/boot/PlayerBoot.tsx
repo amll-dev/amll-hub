@@ -98,10 +98,7 @@ const waitForReady = (el: HTMLAudioElement, timeoutMs: number) =>
     };
     const onCanPlay = () => done(true);
     const onError = () => done(false);
-    const timer = window.setTimeout(
-      () => done(el.readyState >= el.HAVE_FUTURE_DATA),
-      timeoutMs
-    );
+    const timer = window.setTimeout(() => done(el.readyState >= el.HAVE_FUTURE_DATA), timeoutMs);
     el.addEventListener('canplay', onCanPlay);
     el.addEventListener('error', onError);
   });
@@ -1155,21 +1152,24 @@ export function PlayerBoot() {
   );
 
   // 从列表移除
-  const removeFromPlaylist = useCallback((index: number) => {
-    const list = playlistRef.current;
-    if (index < 0 || index >= list.length) return;
-    const newList = list.filter((_, i) => i !== index);
-    setPlaylist(newList);
-    playlistRef.current = newList;
-    const curIdx = currentIndexRef.current;
-    if (index < curIdx) {
-      setCurrentIndex(curIdx - 1);
-      currentIndexRef.current = curIdx - 1;
-    } else if (index === curIdx) {
-      setCurrentIndex(-1);
-      currentIndexRef.current = -1;
-    }
-  }, [setPlaylist, setCurrentIndex]);
+  const removeFromPlaylist = useCallback(
+    (index: number) => {
+      const list = playlistRef.current;
+      if (index < 0 || index >= list.length) return;
+      const newList = list.filter((_, i) => i !== index);
+      setPlaylist(newList);
+      playlistRef.current = newList;
+      const curIdx = currentIndexRef.current;
+      if (index < curIdx) {
+        setCurrentIndex(curIdx - 1);
+        currentIndexRef.current = curIdx - 1;
+      } else if (index === curIdx) {
+        setCurrentIndex(-1);
+        currentIndexRef.current = -1;
+      }
+    },
+    [setPlaylist, setCurrentIndex]
+  );
 
   const clearPlaylist = useCallback(() => {
     setPlaylist([]);
@@ -1201,7 +1201,10 @@ export function PlayerBoot() {
     if (nextIdx >= 0) void preloadNext();
   }, [track, playlist, currentIndex, shuffle, repeatMode, quality, preloadNext]);
 
-  const togglePlaylistPanel = useCallback(() => setShowPlaylistPanel((v) => !v), [setShowPlaylistPanel]);
+  const togglePlaylistPanel = useCallback(
+    () => setShowPlaylistPanel((v) => !v),
+    [setShowPlaylistPanel]
+  );
   const closePlaylistPanel = useCallback(() => setShowPlaylistPanel(false), [setShowPlaylistPanel]);
 
   // 音量或静音变化时同步到两个 audio 元素

@@ -224,11 +224,12 @@ function SubmissionDetailContent({
   const detail = detailQuery.data ?? null;
   const ttml = ttmlQuery.data ?? '';
   const loading = detailQuery.isPending;
-  const loadError = detailQuery.error instanceof Error
-    ? detailQuery.error.message
-    : detailQuery.error
-      ? '加载失败'
-      : '';
+  const loadError =
+    detailQuery.error instanceof Error
+      ? detailQuery.error.message
+      : detailQuery.error
+        ? '加载失败'
+        : '';
 
   useEffect(() => {
     statusRef.current = detail?.status ?? '';
@@ -260,7 +261,8 @@ function SubmissionDetailContent({
   useEffect(() => {
     const handler = (e: Event) => {
       const payload = (e as CustomEvent<unknown>).detail;
-      const obj = typeof payload === 'object' && payload ? (payload as Record<string, unknown>) : null;
+      const obj =
+        typeof payload === 'object' && payload ? (payload as Record<string, unknown>) : null;
       const newStatus = typeof payload === 'string' ? payload : (obj?.status as string | undefined);
       if (!newStatus) return;
       queryClient.setQueryData<SubmissionDetail>(queryKeys.submission(id), (prev) =>
@@ -393,7 +395,12 @@ function SubmissionDetailContent({
             {detail.title || '未命名'}
             <span className="ml-2 text-base font-normal text-ink-3">#{detail.id}</span>
           </h1>
-          <Badge variant="outline" className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium`}>{meta.label}</Badge>
+          <Badge
+            variant="outline"
+            className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium`}
+          >
+            {meta.label}
+          </Badge>
         </div>
         {/* meta 信息行 */}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-ink-3">
@@ -693,7 +700,12 @@ function SubmissionDetailContent({
               <div className="border-t border-line pt-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-xs text-ink-3">当前状态</span>
-                  <Badge variant="outline" className={`shrink-0 border-transparent inline-flex items-center rounded px-2 py-0.5 text-xs`}>{meta.label}</Badge>
+                  <Badge
+                    variant="outline"
+                    className={`shrink-0 border-transparent inline-flex items-center rounded px-2 py-0.5 text-xs`}
+                  >
+                    {meta.label}
+                  </Badge>
                 </div>
               </div>
             </div>
@@ -723,7 +735,12 @@ function SubmissionDetailContent({
                                   ? `@${h.reviewer}`
                                   : ''}
                               </span>
-                              <Badge variant="outline" className={`border-transparent inline-flex items-center rounded px-1.5 py-0.5`}>{m.label}</Badge>
+                              <Badge
+                                variant="outline"
+                                className={`border-transparent inline-flex items-center rounded px-1.5 py-0.5`}
+                              >
+                                {m.label}
+                              </Badge>
                               <span className="ml-auto shrink-0 text-ink-3">
                                 {formatTime(h.reviewedAt)}
                               </span>

@@ -29,7 +29,11 @@ export class GlobalErrorBoundary extends Component<Props, State> {
   render() {
     if (!this.state.error) return this.props.children;
     return (
-      <FallbackUI title="页面出错了" message={this.state.error.message} onReload={() => window.location.reload()} />
+      <FallbackUI
+        title="页面出错了"
+        message={this.state.error.message}
+        onReload={() => window.location.reload()}
+      />
     );
   }
 }

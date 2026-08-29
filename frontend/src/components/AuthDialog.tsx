@@ -45,7 +45,10 @@ type PasswordFormValues = z.infer<typeof passwordSchema>;
 /** 验证码登录表单 schema（dest 类型随 codeType 变化，仅做非空校验，格式由后端校验） */
 const makeCodeSchema = (codeType: 'phone' | 'email') =>
   z.object({
-    dest: z.string().trim().min(1, codeType === 'phone' ? '请输入手机号' : '请输入邮箱'),
+    dest: z
+      .string()
+      .trim()
+      .min(1, codeType === 'phone' ? '请输入手机号' : '请输入邮箱'),
     code: z.string().trim().min(1, '请输入验证码'),
   });
 type CodeFormValues = z.infer<ReturnType<typeof makeCodeSchema>>;
@@ -141,7 +144,16 @@ export function AuthDialog() {
     setError('');
     setCaptchaModalOpen(false);
     countdown.reset();
-  }, [passwordForm, codeForm, countdown, setTab, setForgotOpen, setCodeType, setError, setCaptchaModalOpen]);
+  }, [
+    passwordForm,
+    codeForm,
+    countdown,
+    setTab,
+    setForgotOpen,
+    setCodeType,
+    setError,
+    setCaptchaModalOpen,
+  ]);
 
   const handleClose = useCallback(() => {
     closeLogin();
@@ -459,7 +471,12 @@ export function AuthDialog() {
                           >
                             注册
                           </Button>
-                          <Button type="submit" disabled={submitting} {...buttonTap} className="flex-1">
+                          <Button
+                            type="submit"
+                            disabled={submitting}
+                            {...buttonTap}
+                            className="flex-1"
+                          >
                             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                             {submitting ? '登录中…' : '登录'}
                           </Button>
@@ -511,9 +528,7 @@ export function AuthDialog() {
                                   />
                                   <button
                                     type="button"
-                                    disabled={
-                                      countdown.running || sendingCode || !destValue.trim()
-                                    }
+                                    disabled={countdown.running || sendingCode || !destValue.trim()}
                                     onClick={handleSendCode}
                                     className="shrink-0 whitespace-nowrap text-xs font-medium text-primary transition-colors hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                                   >
@@ -567,7 +582,12 @@ export function AuthDialog() {
                           >
                             注册
                           </Button>
-                          <Button type="submit" disabled={submitting} {...buttonTap} className="flex-1">
+                          <Button
+                            type="submit"
+                            disabled={submitting}
+                            {...buttonTap}
+                            className="flex-1"
+                          >
                             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                             {submitting ? '登录中…' : '登录'}
                           </Button>
@@ -665,13 +685,7 @@ export function AuthDialog() {
 }
 
 /** 密码输入框：带显示/隐藏切换（RHF 受控） */
-function PasswordInput({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
+function PasswordInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [show, setShow] = useState(false);
   return (
     <>

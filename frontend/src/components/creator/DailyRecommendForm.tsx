@@ -27,7 +27,11 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
   const todayKey = formatDateKey(today);
 
   // 表单字段（草稿自动保存：刷新/关页后恢复已填文字）
-  const { restored: draft, set: setDraft, clearDraft } = useFormDraft<{
+  const {
+    restored: draft,
+    set: setDraft,
+    clearDraft,
+  } = useFormDraft<{
     songName: string;
     artist: string;
     ncmId: string;

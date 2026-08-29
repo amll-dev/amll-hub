@@ -38,7 +38,11 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   const [validation, setValidation] = useState<TtmlValidationResult | null>(null);
   const [validateError, setValidateError] = useState('');
   // 表单草稿：刷新/关页后自动恢复（文件本体无法持久化，重选后需重新校验）
-  const { restored: draft, set: setDraft, clearDraft } = useFormDraft<{
+  const {
+    restored: draft,
+    set: setDraft,
+    clearDraft,
+  } = useFormDraft<{
     notes: string;
     language: string;
     tags: string[];
@@ -66,8 +70,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   const submitMutation = useMutation({
     mutationFn: async (params: { file: File; status: 'pending' | 'draft' }) => {
       const { fileName } = await api.uploadTtml(params.file, params.file.name);
-      const title =
-        validation?.metadata?.title?.[0] ?? params.file.name.replace(/\.ttml$/i, '');
+      const title = validation?.metadata?.title?.[0] ?? params.file.name.replace(/\.ttml$/i, '');
       return api.createSubmission({
         title,
         metadata: (validation?.metadata ?? {}) as Record<string, unknown>,
