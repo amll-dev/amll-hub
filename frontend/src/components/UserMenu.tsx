@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { LayoutDashboard, LogOut, Shield, ShieldCheck, User } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { preloadRoute } from '@/routes';
 
 /**
  * 用户头像下拉菜单（Radix DropdownMenu：悬停/点击展开、焦点管理、点击外部关闭）。
@@ -73,20 +74,35 @@ export function UserMenu() {
         {/* 菜单项 */}
         <div className="py-1">
           <DropdownMenuItem asChild>
-            <Link to="/profile" onClick={nav} className="cursor-pointer">
+            <Link
+              to="/profile"
+              onClick={nav}
+              onMouseEnter={() => preloadRoute('/profile')}
+              className="cursor-pointer"
+            >
               <User className="h-4 w-4" />
               个人资料
             </Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <Link to="/creator" onClick={nav} className="cursor-pointer">
+            <Link
+              to="/creator"
+              onClick={nav}
+              onMouseEnter={() => preloadRoute('/creator')}
+              className="cursor-pointer"
+            >
               <LayoutDashboard className="h-4 w-4" />
               创作中心
             </Link>
           </DropdownMenuItem>
           {user.isReviewer && (
             <DropdownMenuItem asChild>
-              <Link to="/review" onClick={nav} className="cursor-pointer">
+              <Link
+                to="/review"
+                onClick={nav}
+                onMouseEnter={() => preloadRoute('/review')}
+                className="cursor-pointer"
+              >
                 <Shield className="h-4 w-4" />
                 审核中心
               </Link>
@@ -94,7 +110,12 @@ export function UserMenu() {
           )}
           {user.isAdmin && (
             <DropdownMenuItem asChild>
-              <Link to="/admin/reviewers" onClick={nav} className="cursor-pointer">
+              <Link
+                to="/admin/reviewers"
+                onClick={nav}
+                onMouseEnter={() => preloadRoute('/admin/reviewers')}
+                className="cursor-pointer"
+              >
                 <ShieldCheck className="h-4 w-4" />
                 审核员管理
               </Link>
