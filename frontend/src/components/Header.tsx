@@ -57,7 +57,7 @@ export function Header() {
         headerHighZ ? 'z-[110]' : 'z-50'
       }`}
       style={{
-        backgroundColor: scrolled ? 'rgba(251, 251, 253, 0.85)' : 'rgba(251, 251, 253, 0.7)',
+        backgroundColor: scrolled ? 'var(--amll-header-bg-scrolled)' : 'var(--amll-header-bg)',
         boxShadow: scrolled ? '0 1px 0 0 var(--amll-line)' : 'none',
       }}
     >
