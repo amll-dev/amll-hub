@@ -678,9 +678,9 @@ export function CreatorCenter() {
       </header>
 
       {/* 主体：侧边栏 + 主内容区（底部留出固定 footer 的空间） */}
-      <div className="flex w-full flex-1 gap-6 py-6 pb-[76px]">
+      <div className="flex w-full flex-1 gap-6 px-6 py-6 pb-[76px]">
         {/* 左侧边栏 */}
-        <aside className="hidden w-56 shrink-0 pl-6 md:block">
+        <aside className="hidden w-56 shrink-0 md:block">
           {/* 投稿按钮区 */}
           <div
             className="relative"
@@ -748,7 +748,7 @@ export function CreatorCenter() {
         </aside>
 
         {/* 主内容区：grid 重叠布局，新旧视图交叉淡入淡出 */}
-        <main className="grid min-w-0 flex-1 pr-6">
+        <main className="grid min-w-0 flex-1 grid-rows-[1fr]">
           <AnimatePresence>
             {/* 首页占位 */}
             {view === 'home' && (
@@ -758,7 +758,7 @@ export function CreatorCenter() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="col-start-1 row-start-1 rounded-lg border border-line bg-card p-12 text-center"
+                className="col-start-1 row-start-1 flex flex-col items-center justify-center rounded-lg border border-line bg-card p-12 text-center"
               >
                 <LayoutDashboard className="mx-auto h-12 w-12 text-ink-3" />
                 <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">

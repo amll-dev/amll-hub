@@ -476,9 +476,9 @@ export function ReviewCenter() {
       </header>
 
       {/* 主体：侧边栏 + 主内容区 */}
-      <div className="flex w-full flex-1 gap-6 py-6 pb-[76px]">
+      <div className="flex w-full flex-1 gap-6 px-6 py-6 pb-[76px]">
         {/* 左侧边栏 */}
-        <aside className="hidden w-56 shrink-0 pl-6 md:block">
+        <aside className="hidden w-56 shrink-0 md:block">
           {/* 导航菜单 */}
           <nav className="space-y-1">
             <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-ink-3">
@@ -506,17 +506,17 @@ export function ReviewCenter() {
         </aside>
 
         {/* 主内容区 */}
-        <main className="min-w-0 flex-1 pr-6">
-          <AnimatePresence mode="wait">
+        <main className="grid min-w-0 flex-1">
+          <AnimatePresence>
             {/* 首页占位 */}
             {view === 'home' && (
               <motion.div
                 key="home"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="rounded-lg border border-line bg-card p-12 text-center"
+                className="col-start-1 row-start-1 rounded-lg border border-line bg-card p-12 text-center"
               >
                 <LayoutDashboard className="mx-auto h-12 w-12 text-ink-3" />
                 <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">
@@ -534,9 +534,9 @@ export function ReviewCenter() {
                 key="content"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="rounded-lg border border-line bg-card p-6"
+                className="col-start-1 row-start-1 rounded-lg border border-line bg-card p-6"
               >
                 <h2 className="mb-4 text-xl font-bold tracking-tight text-foreground">歌词审核</h2>
                 <ReviewList />
@@ -549,9 +549,9 @@ export function ReviewCenter() {
                 key="search-ip"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
+                exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="rounded-lg border border-line bg-card p-6"
+                className="col-start-1 row-start-1 rounded-lg border border-line bg-card p-6"
               >
                 <h2 className="mb-4 text-xl font-bold tracking-tight text-foreground">
                   IP显示投稿审核

@@ -1,15 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAtomValue } from 'jotai';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { LayoutDashboard, LogOut, Shield, ShieldCheck, User } from 'lucide-react';
+import {
+  LayoutDashboard,
+  LogOut,
+  Monitor,
+  Moon,
+  Palette,
+  Shield,
+  ShieldCheck,
+  Sun,
+  User,
+} from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { themeAtom, setTheme, type ThemePreference } from '@/atoms/theme';
 import { preloadRoute } from '@/routes';
 
 /**
@@ -19,6 +36,7 @@ import { preloadRoute } from '@/routes';
  */
 export function UserMenu() {
   const { user, logout } = useAuth();
+  const theme = useAtomValue(themeAtom);
   const [open, setOpen] = useState(false);
   const closeTimer = useRef(0);
 
@@ -61,7 +79,7 @@ export function UserMenu() {
         align="end"
         onMouseEnter={openNow}
         onMouseLeave={scheduleClose}
-        className="w-52 p-0"
+        className="z-[120] w-52 p-0"
       >
         {/* 用户信息 */}
         <div className="border-b border-line px-3 py-2.5">
@@ -84,6 +102,38 @@ export function UserMenu() {
               个人资料
             </Link>
           </DropdownMenuItem>
+
+          {/* 主题二级菜单 */}
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger className="cursor-pointer">
+              <Palette className="h-4 w-4" />
+              主题
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent
+              className="z-[120] w-36"
+              onMouseEnter={openNow}
+              onMouseLeave={scheduleClose}
+            >
+              <DropdownMenuRadioGroup
+                value={theme}
+                onValueChange={(v) => setTheme(v as ThemePreference)}
+              >
+                <DropdownMenuRadioItem value="system" className="cursor-pointer">
+                  <Monitor className="h-4 w-4" />
+                  跟随系统
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="light" className="cursor-pointer">
+                  <Sun className="h-4 w-4" />
+                  浅色
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="dark" className="cursor-pointer">
+                  <Moon className="h-4 w-4" />
+                  深色
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+
           <DropdownMenuItem asChild>
             <Link
               to="/creator"

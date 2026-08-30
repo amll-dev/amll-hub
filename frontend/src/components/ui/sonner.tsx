@@ -1,10 +1,13 @@
+import { useAtomValue } from 'jotai';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
+import { resolvedThemeAtom } from '@/atoms/theme';
 
-/** 全局 toast 容器（sonner），配色走项目设计 token */
+/** 全局 toast 容器（sonner），配色走项目设计 token（深浅色随 CSS 变量自动切换） */
 function Toaster(props: ToasterProps) {
+  const resolved = useAtomValue(resolvedThemeAtom);
   return (
     <Sonner
-      theme="light"
+      theme={resolved}
       position="top-center"
       style={
         {

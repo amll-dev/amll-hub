@@ -25,6 +25,147 @@
   }
 }
 
+@property --amll-background {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #fbfbfd;
+}
+@property --amll-foreground {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1d1d1f;
+}
+@property --amll-card {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ffffff;
+}
+@property --amll-card-foreground {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1d1d1f;
+}
+@property --amll-popover {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ffffff;
+}
+@property --amll-popover-foreground {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1d1d1f;
+}
+@property --amll-primary {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #e0303f;
+}
+@property --amll-primary-hover {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #c82836;
+}
+@property --amll-primary-foreground {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ffffff;
+}
+@property --amll-muted {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #f2f2f5;
+}
+@property --amll-muted-foreground {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #6e6e73;
+}
+@property --amll-border {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #e6e6eb;
+}
+@property --amll-input {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #e6e6eb;
+}
+@property --amll-ring {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #e0303f;
+}
+@property --amll-surface {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ffffff;
+}
+@property --amll-surface-2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #f7f7f9;
+}
+@property --amll-ink {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1d1d1f;
+}
+@property --amll-ink-2 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #535359;
+}
+@property --amll-ink-3 {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #8a8a90;
+}
+@property --amll-line {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #ededf1;
+}
+@property --amll-primary-soft {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(224, 48, 63, 0.08);
+}
+@property --amll-primary-tint {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #fbe7e9;
+}
+@property --amll-header-bg {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(251, 251, 253, 0.7);
+}
+@property --amll-header-bg-scrolled {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(251, 251, 253, 0.85);
+}
+@property --amll-state-success {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #1a9e5e;
+}
+@property --amll-state-warning {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #c97a0e;
+}
+@property --amll-state-error {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #d12d2d;
+}
+@property --amll-state-info {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #2a7ab8;
+}
+
 /* 设计 token — 迁移自 amllhub-homepage/colors_and_type.css */
 :root {
   --amll-background: #fbfbfd;
@@ -63,6 +204,10 @@
   --amll-primary-soft: rgba(224, 48, 63, 0.08);
   --amll-primary-tint: #fbe7e9;
 
+  /* 顶栏毛玻璃底色 */
+  --amll-header-bg: rgba(251, 251, 253, 0.7);
+  --amll-header-bg-scrolled: rgba(251, 251, 253, 0.85);
+
   --amll-state-success: #1a9e5e;
   --amll-state-warning: #c97a0e;
   --amll-state-error: #d12d2d;
@@ -72,6 +217,50 @@
     'Inter', 'PingFang SC', 'Noto Sans SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', system-ui,
     sans-serif;
   --amll-font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', ui-monospace, monospace;
+}
+
+/* 深色主题 */
+html.dark {
+  --amll-background: #101014;
+  --amll-foreground: #f5f5f7;
+
+  --amll-card: #1a1a1f;
+  --amll-card-foreground: #f5f5f7;
+
+  --amll-popover: #1a1a1f;
+  --amll-popover-foreground: #f5f5f7;
+
+  /* 品牌红在深色底上略提亮，保证对比度 */
+  --amll-primary: #f0424f;
+  --amll-primary-hover: #ff5763;
+  --amll-primary-foreground: #ffffff;
+
+  --amll-muted: #26262c;
+  --amll-muted-foreground: #9a9aa2;
+
+  --amll-border: #2c2c33;
+  --amll-input: #2c2c33;
+  --amll-ring: #f0424f;
+
+  --amll-surface: #1a1a1f;
+  --amll-surface-2: #232329;
+
+  --amll-ink: #f5f5f7;
+  --amll-ink-2: #a8a8b0;
+  --amll-ink-3: #71717a;
+
+  --amll-line: #2c2c33;
+
+  --amll-primary-soft: rgba(240, 66, 79, 0.16);
+  --amll-primary-tint: rgba(240, 66, 79, 0.1);
+
+  --amll-header-bg: rgba(16, 16, 20, 0.7);
+  --amll-header-bg-scrolled: rgba(16, 16, 20, 0.85);
+
+  --amll-state-success: #2ebd74;
+  --amll-state-warning: #e09a33;
+  --amll-state-error: #ef4444;
+  --amll-state-info: #4d9fe0;
 }
 
 /* 桥接 --amll-* 到 Tailwind v4 语义 utility（bg-background / text-foreground / bg-primary 等） */
@@ -127,8 +316,36 @@ html {
      导致页面宽度抖动（如歌词加载后页面变高出现滚动条） */
   scrollbar-gutter: stable;
   /* 让浏览器原生控件（select 下拉、滚动条等）使用浅色主题，
-     避免在浅色背景下下拉列表透明看不清 */
+     避免在浅色背景下下拉列表透明看不清；
+     深色时由 atoms/theme 写内联 color-scheme + 下方 html.dark 兜底 */
   color-scheme: light;
+}
+
+/* 主题切换过渡 */
+html.theme-transitioning {
+  transition-property:
+    --amll-background, --amll-foreground, --amll-card, --amll-card-foreground, --amll-popover,
+    --amll-popover-foreground, --amll-primary, --amll-primary-hover, --amll-primary-foreground,
+    --amll-muted, --amll-muted-foreground, --amll-border, --amll-input, --amll-ring, --amll-surface,
+    --amll-surface-2, --amll-ink, --amll-ink-2, --amll-ink-3, --amll-line, --amll-primary-soft,
+    --amll-primary-tint, --amll-header-bg, --amll-header-bg-scrolled, --amll-state-success,
+    --amll-state-warning, --amll-state-error, --amll-state-info;
+  transition-duration: 300ms;
+  transition-timing-function: ease;
+}
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition: none !important;
+}
+html.dark {
+  color-scheme: dark;
+}
+/* 深色下日历/时钟指示器反向提亮 */
+html.dark input[type='date']::-webkit-calendar-picker-indicator,
+html.dark input[type='time']::-webkit-calendar-picker-indicator,
+html.dark input[type='datetime-local']::-webkit-calendar-picker-indicator {
+  filter: invert(0.85);
 }
 html body[data-scroll-locked] {
   padding-right: 0 !important;
@@ -193,6 +410,11 @@ input[type='datetime-local']::-webkit-calendar-picker-indicator:hover {
   transform: translateX(-100%);
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
   animation: amll-shimmer 1.6s infinite;
+}
+
+/* 深色下 shimmer 高光减弱 */
+html.dark .amll-skeleton::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

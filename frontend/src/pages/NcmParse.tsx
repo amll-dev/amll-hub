@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Check,
@@ -32,6 +32,32 @@ import {
 import type { LyricLine } from '@applemusic-like-lyrics/lyric';
 import { downloadMusicWithMeta, downloadAllAsZip, type BatchProgress } from '@/lib/download';
 import { api } from '@/lib/api';
+
+function AutoHeight({ children, className }: { children: React.ReactNode; className?: string }) {
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | 'auto'>('auto');
+
+  useLayoutEffect(() => {
+    const el = innerRef.current;
+    if (!el) return;
+    setHeight(el.offsetHeight);
+    const ro = new ResizeObserver(() => setHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <motion.div
+      initial={false}
+      animate={{ height }}
+      transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
+      className={className}
+      style={{ overflow: 'hidden' }}
+    >
+      <div ref={innerRef}>{children}</div>
+    </motion.div>
+  );
+}
 
 /** 毫秒 -> mm:ss */
 function formatMs(ms: number): string {
@@ -172,9 +198,24 @@ function SearchSection() {
         <QualitySelect />
       </form>
 
-      <div className="mt-4">
-        {mode === 'search' ? <SearchModeContent /> : <PlaylistResultsList />}
-      </div>
+      {/* 切换歌单/搜索 */}
+      <AutoHeight className="mt-4">
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.div
+            key={mode}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{
+              opacity: 0,
+              y: -12,
+              transition: { duration: 0.18, ease: [0.2, 0.8, 0.2, 1] },
+            }}
+            transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1] }}
+          >
+            {mode === 'search' ? <SearchModeContent /> : <PlaylistResultsList />}
+          </motion.div>
+        </AnimatePresence>
+      </AutoHeight>
     </div>
   );
 }
@@ -210,10 +251,26 @@ function SearchModeContent() {
   }
 
   return (
-    <div className="space-y-6">
-      {listNode}
+    // 高度动画统一交给外层 AutoHeight
+    <div>
+      <AnimatePresence initial={false} mode="popLayout">
+        {listNode && (
+          <motion.div
+            key="ncm-search-list"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8, transition: { duration: 0.18 } }}
+            transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
+            className="pb-6"
+          >
+            {listNode}
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* 下方：通过歌曲 ID 或分享链接解析 */}
-      <SongIdParsePanel />
+      <motion.div layout transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}>
+        <SongIdParsePanel />
+      </motion.div>
     </div>
   );
 }
@@ -269,7 +326,7 @@ function SongIdParsePanel() {
   const { parseSong, parseLoading, songIdInput, setSongIdInput } = useNcmParse();
 
   return (
-    <div className="rounded-xl border border-line bg-surface-1 p-4">
+    <div className="rounded-xl border border-line bg-surface-2 p-4">
       <div className="mb-2 flex items-center gap-2 text-sm font-medium text-ink-2">
         <Link2 className="h-4 w-4" />
         通过歌曲 ID 或分享链接解析
@@ -446,7 +503,7 @@ function PlaylistResultsList() {
               onClick={handleDownloadAll}
               disabled={batchDownloading}
               {...buttonTap}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-card px-3.5 py-1.5 text-xs font-medium text-ink-1 transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-card px-3.5 py-1.5 text-xs font-medium text-ink transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
             >
               {batchDownloading ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -466,7 +523,7 @@ function PlaylistResultsList() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="mb-3 overflow-hidden rounded-xl border border-line bg-surface-1 px-4 py-3"
+            className="mb-3 overflow-hidden rounded-xl border border-line bg-surface-2 px-4 py-3"
           >
             <div className="flex items-center justify-between text-xs text-ink-2">
               <span className="truncate">
@@ -632,33 +689,51 @@ function DownloadIconButton({
   );
 }
 
-// ===== 解析结果区：大卡片 + 歌词 =====
+// ===== 解析结果区 =====
 function ParseResultSection() {
   const { parsedSong, parseLoading, parseError } = useNcmParse();
 
-  if (parseError) {
-    return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="mt-6 rounded-2xl border border-line bg-card p-6 text-center text-sm text-red-500"
-      >
-        {parseError}
-      </motion.div>
-    );
-  }
+  // 状态键
+  const stateKey = parseError
+    ? 'error'
+    : parsedSong
+      ? `song-${parsedSong.songId}`
+      : parseLoading
+        ? 'loading'
+        : 'empty';
 
-  if (parseLoading && !parsedSong) {
-    return (
-      <div className="mt-6">
-        <CardSkeleton />
+  return (
+    // AutoHeight 负责整块高度补间
+    <AutoHeight>
+      <div className={stateKey === 'empty' ? undefined : 'pt-6'}>
+        <AnimatePresence mode="popLayout" initial={false}>
+          {stateKey !== 'empty' && (
+            <motion.div
+              key={stateKey}
+              initial={{ opacity: 0, y: 32 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{
+                opacity: 0,
+                y: -32,
+                transition: { duration: 0.22, ease: [0.2, 0.8, 0.2, 1] },
+              }}
+              transition={{ duration: 0.34, ease: [0.2, 0.8, 0.2, 1] }}
+            >
+              {parseError ? (
+                <div className="rounded-2xl border border-line bg-card p-6 text-center text-sm text-red-500">
+                  {parseError}
+                </div>
+              ) : parseLoading && !parsedSong ? (
+                <CardSkeleton />
+              ) : parsedSong ? (
+                <ParseResultCard parsedSong={parsedSong} loading={parseLoading} />
+              ) : null}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-    );
-  }
-
-  if (!parsedSong) return null;
-
-  return <ParseResultCard parsedSong={parsedSong} loading={parseLoading} />;
+    </AutoHeight>
+  );
 }
 
 function ParseResultCard({
@@ -699,12 +774,7 @@ function ParseResultCard({
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
-      className="mt-6 overflow-hidden rounded-2xl border border-line bg-card"
-    >
+    <div className="overflow-hidden rounded-2xl border border-line bg-card">
       {/* 上半：封面 + 歌曲信息 */}
       <div className="flex flex-col gap-6 p-6 sm:flex-row">
         <motion.div
@@ -778,7 +848,7 @@ function ParseResultCard({
                 onClick={handleDownload}
                 disabled={downloading}
                 {...buttonTap}
-                className="inline-flex items-center gap-2 rounded-lg border border-line bg-card px-5 py-2.5 text-sm font-medium text-ink-1 transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-line bg-card px-5 py-2.5 text-sm font-medium text-ink transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
               >
                 {downloading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -793,11 +863,11 @@ function ParseResultCard({
       </div>
 
       {/* 下半：歌词 */}
-      <div className="border-t border-line bg-surface-1 p-6">
+      <div className="border-t border-line bg-surface-2 p-6">
         <h3 className="mb-3 text-sm font-semibold text-ink-2">歌词</h3>
         <LyricView lines={lyricLines} loading={loading} error={lyricError} />
       </div>
-    </motion.div>
+    </div>
   );
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { useAtomValue } from 'jotai';
 import { motion } from 'framer-motion';
 import { Heart, Download, Play, Pause, Loader2 } from 'lucide-react';
 import QRCode from 'qrcode';
@@ -8,6 +9,7 @@ import type { DailyRecommendation } from '@/lib/types';
 import { parseMarkupText } from '@/lib/markup';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
+import { resolvedThemeAtom } from '@/atoms/theme';
 import { usePlayer } from '@/hooks/usePlayer';
 import { useAuth } from '@/hooks/useAuth';
 import { AspectRatio } from '@/components/ui/aspect-ratio';
@@ -60,14 +62,15 @@ async function roundImageCorners(dataUrl: string, radiusPx: number): Promise<str
 }
 
 /** 点状分隔线 */
-function SeparatorDots() {
-  const dotCount = Math.floor(420 / 13);
+function SeparatorDots({ className = '' }: { className?: string }) {
   return (
-    <>
-      {Array.from({ length: dotCount }).map((_, i) => (
-        <div key={i} className="h-[3px] w-[3px] shrink-0 rounded-full bg-[#D0D0D0]" />
-      ))}
-    </>
+    <div
+      className={`h-[3px] w-full rounded-full bg-repeat-x opacity-50 ${className}`}
+      style={{
+        backgroundImage: 'radial-gradient(circle, var(--amll-ink-3) 1.5px, transparent 1.6px)',
+        backgroundSize: '13px 3px',
+      }}
+    />
   );
 }
 
@@ -80,6 +83,7 @@ export function RecommendCard({
 }) {
   const { playNcmSong, toggle, playing, loading: playerLoading, track } = usePlayer();
   const { user, openLogin } = useAuth();
+  const resolvedTheme = useAtomValue(resolvedThemeAtom);
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(recommendation.likeCount ?? 0);
   const [downloading, setDownloading] = useState(false);
@@ -200,11 +204,11 @@ export function RecommendCard({
     QRCode.toString(url, {
       type: 'svg',
       margin: 0,
-      color: { dark: '#000000', light: '#00000000' },
+      color: { dark: resolvedTheme === 'dark' ? '#f5f5f7' : '#000000', light: '#00000000' },
     })
       .then(setQrSvg)
       .catch(() => setQrSvg(''));
-  }, [recommendation.date]);
+  }, [recommendation.date, resolvedTheme]);
 
   const date = useMemo(() => new Date(recommendation.date), [recommendation.date]);
   const monthAbbr = MONTH_ABBR[date.getMonth()] ?? '';
@@ -295,7 +299,7 @@ export function RecommendCard({
             {!coverLoaded && (
               <div
                 className="amll-skeleton inset-0 rounded-[12px]"
-                style={{ position: 'absolute', background: '#e6e6eb' }}
+                style={{ position: 'absolute' }}
               />
             )}
             <img
@@ -362,11 +366,8 @@ export function RecommendCard({
             </div>
 
             <div className="relative min-w-0 flex-1 pr-[50px]">
-              <div
-                className="pointer-events-none absolute bottom-0 right-0 translate-y-2.5 font-serif leading-none text-[#D0D0D0] opacity-60"
-                style={{ fontSize: compact ? '40px' : '50px' }}
-              >
-                ❞
+              <div className="pointer-events-none absolute bottom-0 right-0 translate-y-2.5 font-serif leading-none text-ink-3 opacity-60">
+                <span style={{ fontSize: compact ? '40px' : '50px' }}>❞</span>
               </div>
               <p
                 className={`m-0 break-words leading-[1.6] text-ink-2 ${
@@ -499,13 +500,8 @@ export function SkeletonCard({ compact = false }: { compact?: boolean } = {}) {
           </div>
 
           {/* 分隔点行 */}
-          <div className="my-[15px] mb-5 flex items-center gap-2.5">
-            {Array.from({ length: 32 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-[3px] w-[3px] shrink-0 rounded-full bg-[#D0D0D0] opacity-50"
-              />
-            ))}
+          <div className="my-[15px] mb-5">
+            <SeparatorDots />
           </div>
 
           {/* 日期块 + 评论区 */}
@@ -533,13 +529,8 @@ export function SkeletonCard({ compact = false }: { compact?: boolean } = {}) {
 
           {/* 底部分隔点 + 文字 */}
           <div className="mt-[5px]">
-            <div className="mb-3 flex items-center gap-2.5">
-              {Array.from({ length: 32 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-[3px] w-[3px] shrink-0 rounded-full bg-[#D0D0D0] opacity-50"
-                />
-              ))}
+            <div className="mb-3">
+              <SeparatorDots />
             </div>
             <div className="amll-skeleton mx-auto h-4 w-40 rounded" />
           </div>

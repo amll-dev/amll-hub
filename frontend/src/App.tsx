@@ -10,6 +10,7 @@ import { Player } from '@/components/Player';
 import { AuthBoot } from '@/boot/AuthBoot';
 import { SearchBoot } from '@/boot/SearchBoot';
 import { PlayerBoot } from '@/boot/PlayerBoot';
+import { ThemeBoot } from '@/boot/ThemeBoot';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
@@ -74,6 +75,7 @@ export function Layout() {
       <AuthBoot />
       <SearchBoot />
       <PlayerBoot />
+      <ThemeBoot />
       <div className="flex min-h-screen flex-col">
         {!useCustomHeader && <Header />}
         <main className="flex-1">
