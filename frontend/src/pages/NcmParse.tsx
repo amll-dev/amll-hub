@@ -33,13 +33,7 @@ import type { LyricLine } from '@applemusic-like-lyrics/lyric';
 import { downloadMusicWithMeta, downloadAllAsZip, type BatchProgress } from '@/lib/download';
 import { api } from '@/lib/api';
 
-function AutoHeight({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function AutoHeight({ children, className }: { children: React.ReactNode; className?: string }) {
   const innerRef = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState<number | 'auto'>('auto');
 
@@ -718,7 +712,11 @@ function ParseResultSection() {
               key={stateKey}
               initial={{ opacity: 0, y: 32 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -32, transition: { duration: 0.22, ease: [0.2, 0.8, 0.2, 1] } }}
+              exit={{
+                opacity: 0,
+                y: -32,
+                transition: { duration: 0.22, ease: [0.2, 0.8, 0.2, 1] },
+              }}
               transition={{ duration: 0.34, ease: [0.2, 0.8, 0.2, 1] }}
             >
               {parseError ? (

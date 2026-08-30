@@ -21,8 +21,7 @@ export const themeAtom = atom<ThemePreference>(readStoredPreference());
 
 /** 解析后的实际主题，供 UI 显示当前态 */
 export const resolvedThemeAtom = atom<'light' | 'dark'>(
-  readStoredPreference() === 'dark' ||
-    (readStoredPreference() === 'system' && systemPrefersDark())
+  readStoredPreference() === 'dark' || (readStoredPreference() === 'system' && systemPrefersDark())
     ? 'dark'
     : 'light'
 );
@@ -51,9 +50,7 @@ applyTheme(store.get(resolvedThemeAtom));
 export function setTheme(preference: ThemePreference) {
   localStorage.setItem(STORAGE_KEY, preference);
   const resolved: 'light' | 'dark' =
-    preference === 'dark' || (preference === 'system' && systemPrefersDark())
-      ? 'dark'
-      : 'light';
+    preference === 'dark' || (preference === 'system' && systemPrefersDark()) ? 'dark' : 'light';
   store.set(themeAtom, preference);
   store.set(resolvedThemeAtom, resolved);
   withTransition(() => applyTheme(resolved));
