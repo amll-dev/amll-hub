@@ -22,12 +22,14 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, Bell, FolderOpen, Home, LayoutDashboard, Search, Shield } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { fadeUp, staggerContainer } from '@/lib/motion';
+import { formatDateTime } from '@/lib/format';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
 import { useSentinel } from '@/hooks/useSentinel';
 import { NavItem } from '@/components/NavItem';
 import { ListSkeleton } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { SearchIpDetail } from '@/components/creator/SearchIpDetail';
 import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
@@ -79,16 +81,6 @@ const searchIpTabs: { key: SearchIpTab; label: string }[] = [
   { key: 'approved', label: '已通过' },
   { key: 'rejected', label: '未通过' },
 ];
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 /** 审核中心列表（无限滚动：每页 20 条，滚动到底自动加载下一页） */
 function ReviewList() {
@@ -201,10 +193,7 @@ function ReviewList() {
         ) : errorMsg ? (
           <p className="py-12 text-center text-sm text-red-600">{errorMsg}</p>
         ) : items.length === 0 ? (
-          <div className="py-12 text-center">
-            <FolderOpen className="mx-auto h-10 w-10 text-ink-3" />
-            <p className="mt-3 text-sm text-ink-3">暂无稿件</p>
-          </div>
+          <EmptyState icon={FolderOpen} title="暂无稿件" description="换个筛选条件试试" />
         ) : (
           <>
             <p className="mb-3 text-xs text-ink-3">
@@ -232,7 +221,7 @@ function ReviewList() {
                           <span className="shrink-0 text-xs text-ink-3">#{item.id}</span>
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
-                          <span>{formatTime(item.createdAt)}</span>
+                          <span>{formatDateTime(item.createdAt)}</span>
                           <span className="text-line">|</span>
                           <Badge
                             variant="outline"
@@ -317,10 +306,7 @@ function SearchIpReviewList() {
         ) : errorMsg ? (
           <p className="py-12 text-center text-sm text-red-600">{errorMsg}</p>
         ) : items.length === 0 ? (
-          <div className="py-12 text-center">
-            <Search className="mx-auto h-10 w-10 text-ink-3" />
-            <p className="mt-3 text-sm text-ink-3">暂无搜索IP投稿</p>
-          </div>
+          <EmptyState icon={Search} title="暂无搜索IP投稿" description="换个筛选条件试试" />
         ) : (
           <>
             <p className="mb-3 text-xs text-ink-3">共 {total} 条</p>
@@ -345,7 +331,7 @@ function SearchIpReviewList() {
                           <span className="shrink-0 text-xs text-ink-3">#{item.id}</span>
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
-                          <span>{item.createdAt}</span>
+                          <span>{formatDateTime(item.createdAt)}</span>
                           <span className="text-line">|</span>
                           <Badge
                             variant="outline"
@@ -506,7 +492,7 @@ export function ReviewCenter() {
         </aside>
 
         {/* 主内容区 */}
-        <main className="grid min-w-0 flex-1">
+        <main className="grid min-w-0 flex-1 grid-rows-[1fr]">
           <AnimatePresence>
             {/* 首页占位 */}
             {view === 'home' && (
@@ -516,7 +502,7 @@ export function ReviewCenter() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="col-start-1 row-start-1 rounded-lg border border-line bg-card p-12 text-center"
+                className="col-start-1 row-start-1 flex flex-col items-center justify-center rounded-lg border border-line bg-card p-12 text-center"
               >
                 <LayoutDashboard className="mx-auto h-12 w-12 text-ink-3" />
                 <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">
@@ -536,7 +522,7 @@ export function ReviewCenter() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="col-start-1 row-start-1 rounded-lg border border-line bg-card p-6"
+                className="col-start-1 row-start-1 self-start rounded-lg border border-line bg-card p-6"
               >
                 <h2 className="mb-4 text-xl font-bold tracking-tight text-foreground">歌词审核</h2>
                 <ReviewList />
@@ -551,7 +537,7 @@ export function ReviewCenter() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="col-start-1 row-start-1 rounded-lg border border-line bg-card p-6"
+                className="col-start-1 row-start-1 self-start rounded-lg border border-line bg-card p-6"
               >
                 <h2 className="mb-4 text-xl font-bold tracking-tight text-foreground">
                   IP显示投稿审核

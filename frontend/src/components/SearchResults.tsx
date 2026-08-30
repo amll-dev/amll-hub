@@ -21,6 +21,7 @@ import { usePlayer } from '@/hooks/usePlayer';
 import { api } from '@/lib/api';
 import { downloadBlobFile } from '@/lib/download';
 import { listItem, staggerContainer } from '@/lib/motion';
+import { formatDate, formatNumber } from '@/lib/format';
 import { sanitizeHighlightHtml } from '@/lib/markup';
 import type { SearchHit, SearchIpMatchResult } from '@/lib/types';
 
@@ -406,16 +407,16 @@ export function SearchResults() {
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-3 sm:flex-col sm:items-end sm:gap-1">
                     <div className="flex items-center gap-1">
                       <FileText className="h-3.5 w-3.5" />
-                      {hit.wordCount.toLocaleString('zh-CN')} 字
+                      {formatNumber(hit.wordCount)} 字
                     </div>
                     <div className="flex items-center gap-1">
                       <Music2 className="h-3.5 w-3.5" />
-                      {hit.lineCount.toLocaleString('zh-CN')} 行
+                      {formatNumber(hit.lineCount)} 行
                     </div>
                     {hit.commitTimestamp && (
                       <div className="flex items-center gap-1">
                         <Calendar className="h-3.5 w-3.5" />
-                        {new Date(hit.commitTimestamp).toLocaleDateString('zh-CN')}
+                        {formatDate(hit.commitTimestamp)}
                       </div>
                     )}
                     {(hit.ttmlAuthorGithubLogin || hit.ttmlAuthorGithub) && (

@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { UserAvatar } from '@/components/submission/UserAvatar';
 import { UserDisplayName } from '@/components/submission/UserDisplayName';
-import { formatTime, renderMarkdown } from '@/components/submission/shared';
+import { renderMarkdown } from '@/components/submission/shared';
+import { formatDateTime } from '@/lib/format';
 import type { SubmissionComment } from '@/lib/types';
 
 /** 评论列表项 */
@@ -25,7 +26,7 @@ export function CommentItem({ c, isLast }: { c: SubmissionComment; isLast: boole
             <div className="text-sm font-semibold text-foreground">
               <UserDisplayName displayName={c.author.displayName} username={c.author.username} />
             </div>
-            <div className="text-xs text-ink-3">{formatTime(c.createdAt)}</div>
+            <div className="text-xs text-ink-3">{formatDateTime(c.createdAt)}</div>
           </div>
         </div>
         {/* Markdown 渲染内容 */}

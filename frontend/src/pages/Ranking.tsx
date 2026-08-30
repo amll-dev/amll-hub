@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/pagination';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { PageContainer } from '@/components/PageContainer';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 const PAGE_SIZE = 20;
 const FETCH_LIMIT = 50;
@@ -132,7 +133,7 @@ export function Ranking() {
           </button>
         </div>
       ) : items.length === 0 ? (
-        <div className="py-16 text-center text-ink-2">暂无排行榜数据</div>
+        <EmptyState title="暂无排行榜数据" description="换个时间范围试试" />
       ) : (
         <>
           <motion.ol

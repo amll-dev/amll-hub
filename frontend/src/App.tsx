@@ -13,6 +13,7 @@ import { PlayerBoot } from '@/boot/PlayerBoot';
 import { ThemeBoot } from '@/boot/ThemeBoot';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { OfflineBanner } from '@/components/OfflineBanner';
 
 /** 路由懒加载期间的全屏 loading */
 function PageLoading() {
@@ -76,9 +77,11 @@ export function Layout() {
       <SearchBoot />
       <PlayerBoot />
       <ThemeBoot />
+      <OfflineBanner />
       <div className="flex min-h-screen flex-col">
         {!useCustomHeader && <Header />}
-        <main className="flex-1">
+        {/* min-h 撑满首屏 */}
+        <main className="min-h-[calc(100vh-4rem)] flex-1">
           <AnimatedOutlet />
         </main>
         {!useCustomHeader && <Footer />}

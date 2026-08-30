@@ -22,10 +22,10 @@ import { useViewers, type Viewer } from '@/hooks/useViewers';
 import {
   buildActivityEntries,
   extractPlatformIds,
-  formatTime,
   langText,
   statusMeta,
 } from '@/components/submission/shared';
+import { formatDateTime } from '@/lib/format';
 import { MetaItem } from '@/components/submission/MetaItem';
 import { UserDisplayName } from '@/components/submission/UserDisplayName';
 import { UserAvatar } from '@/components/submission/UserAvatar';
@@ -416,8 +416,8 @@ function SubmissionDetailContent({
               username={detail.submitter}
             />
           </strong>
-          <span>于 {formatTime(detail.createdAt)} 提交</span>
-          {detail.fileUpdatedAt && <span>· 文件更新于 {formatTime(detail.fileUpdatedAt)}</span>}
+          <span>于 {formatDateTime(detail.createdAt)} 提交</span>
+          {detail.fileUpdatedAt && <span>· 文件更新于 {formatDateTime(detail.fileUpdatedAt)}</span>}
         </div>
       </motion.div>
 
@@ -530,9 +530,9 @@ function SubmissionDetailContent({
                 />
                 <MetaItem label="投稿人" value={detail.submitter} />
                 <MetaItem label="语言" value={langText(detail.language)} />
-                <MetaItem label="创建时间" value={formatTime(detail.createdAt)} />
+                <MetaItem label="创建时间" value={formatDateTime(detail.createdAt)} />
                 {detail.fileUpdatedAt && (
-                  <MetaItem label="文件更新" value={formatTime(detail.fileUpdatedAt)} />
+                  <MetaItem label="文件更新" value={formatDateTime(detail.fileUpdatedAt)} />
                 )}
               </dl>
               {detail.notes && (
@@ -668,12 +668,12 @@ function SubmissionDetailContent({
               </div>
               <div className="border-t border-line pt-2">
                 <div className="text-xs text-ink-3">创建时间</div>
-                <div className="text-foreground">{formatTime(detail.createdAt)}</div>
+                <div className="text-foreground">{formatDateTime(detail.createdAt)}</div>
               </div>
               {detail.fileUpdatedAt && (
                 <div>
                   <div className="text-xs text-ink-3">文件更新</div>
-                  <div className="text-foreground">{formatTime(detail.fileUpdatedAt)}</div>
+                  <div className="text-foreground">{formatDateTime(detail.fileUpdatedAt)}</div>
                 </div>
               )}
               {detail.language && (
@@ -743,7 +743,7 @@ function SubmissionDetailContent({
                                 {m.label}
                               </Badge>
                               <span className="ml-auto shrink-0 text-ink-3">
-                                {formatTime(h.reviewedAt)}
+                                {formatDateTime(h.reviewedAt)}
                               </span>
                             </div>
                           </li>

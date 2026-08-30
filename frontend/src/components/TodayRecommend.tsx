@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import type { DailyRecommendation } from '@/lib/types';
 import { RecommendCard, SkeletonCard } from '@/components/RecommendCard';
 import { whileInViewProps } from '@/lib/motion';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 export function TodayRecommend() {
   const [rec, setRec] = useState<DailyRecommendation | null>(null);
@@ -47,16 +48,19 @@ export function TodayRecommend() {
       ) : rec ? (
         <RecommendCard recommendation={rec} compact />
       ) : (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-line bg-card px-6 py-12 text-center">
-          <Music className="h-10 w-10 text-ink-3" />
-          <p className="mt-3 text-sm text-ink-2">今日暂无推荐</p>
-          <Link
-            to="/creator"
-            className="mt-4 inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover"
-          >
-            去投稿
-          </Link>
-        </div>
+        <EmptyState
+          icon={Music}
+          title="今日暂无推荐"
+          description="成为今天第一个投稿的人"
+          action={
+            <Link
+              to="/creator"
+              className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover"
+            >
+              去投稿
+            </Link>
+          }
+        />
       )}
     </motion.section>
   );

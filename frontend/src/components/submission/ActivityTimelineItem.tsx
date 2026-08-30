@@ -1,5 +1,6 @@
 import { UserAvatar } from '@/components/submission/UserAvatar';
-import { formatTime, type ActivityEntry } from '@/components/submission/shared';
+import type { ActivityEntry } from '@/components/submission/shared';
+import { formatDateTime } from '@/lib/format';
 
 /** 活动时间线项 */
 export function ActivityTimelineItem({ entry, isLast }: { entry: ActivityEntry; isLast: boolean }) {
@@ -20,7 +21,9 @@ export function ActivityTimelineItem({ entry, isLast }: { entry: ActivityEntry; 
           </span>
         )}
         <span className="text-sm text-ink-2">{entry.label}</span>
-        <span className="ml-auto shrink-0 text-xs text-ink-3">{formatTime(entry.timestamp)}</span>
+        <span className="ml-auto shrink-0 text-xs text-ink-3">
+          {formatDateTime(entry.timestamp)}
+        </span>
       </div>
     </li>
   );
