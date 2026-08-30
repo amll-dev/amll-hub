@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { buttonTap } from '@/lib/motion';
+import { formatDateTime } from '@/lib/format';
 import { UserAvatar } from '@/components/submission/UserAvatar';
 import { UserDisplayName } from '@/components/submission/UserDisplayName';
 import { CardDetailSkeleton } from '@/components/ui/Skeleton';
@@ -125,8 +126,8 @@ export function SearchIpDetail({
                 <strong className="text-ink-2">
                   <UserDisplayName displayName={si.displayName} username={si.name} />
                 </strong>
-                <span>于 {detail.createdAt} 提交</span>
-                <span>· 更新于 {detail.updatedAt}</span>
+                <span>于 {formatDateTime(detail.createdAt)} 提交</span>
+                <span>· 更新于 {formatDateTime(detail.updatedAt)}</span>
               </div>
             );
           })()}

@@ -96,7 +96,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 	if req.Username == "" || req.Password == "" || req.Phone == "" || req.Code == "" || req.Email == "" || req.EmailCode == "" || req.DisplayName == "" {
-		pkg.BadRequest(c, "用户名、显示名称、密码、手机号、手机验证码、邮箱、邮箱验证码必填")
+		pkg.BadRequest(c, "用户名、昵称、密码、手机号、手机验证码、邮箱、邮箱验证码必填")
 		return
 	}
 

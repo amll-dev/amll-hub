@@ -17,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 type ReviewerList = { items: string[]; total: number };
 
@@ -177,10 +178,7 @@ export function ReviewerManagePage() {
         ) : errorMsg ? (
           <p className="py-6 text-center text-sm text-error">{errorMsg}</p>
         ) : items.length === 0 ? (
-          <div className="py-8 text-center">
-            <UserRound className="mx-auto h-10 w-10 text-ink-3" />
-            <p className="mt-3 text-sm text-ink-3">暂无审核员，请在上方添加</p>
-          </div>
+          <EmptyState icon={UserRound} title="暂无审核员" description="请在上方添加" />
         ) : (
           <Table>
             <TableHeader>

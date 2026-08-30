@@ -30,17 +30,6 @@ export function langText(code?: string): string {
   return langLabel[code] ?? code;
 }
 
-/** 时间戳格式化（YYYY/MM/DD HH:mm） */
-export function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 /** 从投稿 metadata.platform_ids 提取各平台的全部 ID */
 export function extractPlatformIds(metadata?: Record<string, unknown>): {
   ncm: string[];

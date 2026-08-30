@@ -4,6 +4,7 @@ import { Music } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { LatestSongItem } from '@/lib/types';
 import { staggerContainer, whileInViewProps } from '@/lib/motion';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 export function LatestEntries() {
   const [items, setItems] = useState<LatestSongItem[]>([]);
@@ -45,10 +46,7 @@ export function LatestEntries() {
           ))}
         </ul>
       ) : items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-line bg-card py-12 text-center">
-          <Music className="h-10 w-10 text-ink-3" />
-          <p className="mt-3 text-sm text-ink-2">暂无数据</p>
-        </div>
+        <EmptyState icon={Music} title="暂无数据" />
       ) : (
         <ul className="space-y-1">
           {items.map((e, idx) => (

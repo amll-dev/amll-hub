@@ -17,6 +17,7 @@ import {
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lazy } from 'react';
 import { PlaylistPanel } from '@/components/PlaylistPanel';
+import { formatDuration } from '@/lib/format';
 import { useAtomValue } from 'jotai';
 import { playerActions } from '@/boot/PlayerBoot';
 import {
@@ -73,13 +74,6 @@ function useDragListeners() {
   }, []);
 
   return { add };
-}
-
-function formatTime(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) return '0:00';
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 }
 
 function RepeatIcon({ mode }: { mode: RepeatMode }) {
@@ -522,9 +516,10 @@ export function PlayerBar() {
                   </span>
                 ) : (
                   <>
-                    <span>{formatTime(current)}</span>
+                    {/* formatDuration 收毫秒，播放器的 current/duration 是秒 */}
+                    <span>{formatDuration(current * 1000)}</span>
                     <span>/</span>
-                    <span>{formatTime(duration)}</span>
+                    <span>{formatDuration(duration * 1000)}</span>
                   </>
                 )}
               </div>

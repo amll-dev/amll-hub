@@ -274,7 +274,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
                 </div>
 
                 {/* 元数据预览 */}
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded bg-background px-3 py-3 text-sm">
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 break-words rounded bg-background px-3 py-3 text-sm">
                   <div>
                     <dt className="text-xs text-ink-3">标题</dt>
                     <dd className="text-foreground">{joinArr(meta.title)}</dd>
@@ -322,7 +322,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
                 </dl>
 
                 {/* TTML 预览 */}
-                <div>
+                <div className="min-w-0">
                   <button
                     type="button"
                     onClick={() => setShowTtml(!showTtml)}
@@ -333,17 +333,20 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
                     />
                     {showTtml ? '隐藏' : '查看'}重排后 TTML
                   </button>
-                  <AnimatePresence>
+                  <AnimatePresence initial={false}>
                     {showTtml && (
-                      <motion.pre
+                      <motion.div
+                        key="ttml-preview"
                         initial={{ height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.2 }}
-                        className="mt-2 max-h-64 overflow-auto rounded bg-background p-3 text-xs leading-relaxed text-ink-2"
+                        className="overflow-hidden"
                       >
-                        {validation.regeneratedTtml}
-                      </motion.pre>
+                        <pre className="mt-2 max-h-96 overflow-auto overscroll-contain whitespace-pre-wrap break-all rounded bg-background p-3 text-xs leading-relaxed text-ink-2">
+                          {validation.regeneratedTtml}
+                        </pre>
+                      </motion.div>
                     )}
                   </AnimatePresence>
                 </div>

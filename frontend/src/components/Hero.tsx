@@ -3,10 +3,7 @@ import { SearchBar } from './SearchBar';
 import { useStats } from '@/hooks/useStats';
 import { useSearchContext } from '@/hooks/useSearchContext';
 import { listItem, staggerContainer } from '@/lib/motion';
-
-function formatNum(n: number) {
-  return n.toLocaleString('zh-CN');
-}
+import { formatCount } from '@/lib/format';
 
 function StatBadge({ value, label }: { value: string; label: string }) {
   return (
@@ -105,7 +102,7 @@ export function Hero() {
               animate="show"
               exit={{ opacity: 0 }}
               variants={staggerContainer}
-              className="mx-auto mt-10 flex max-w-[640px] flex-wrap items-center justify-center gap-x-10 gap-y-6"
+              className="mx-auto mt-10 flex min-h-[56px] max-w-[640px] flex-wrap items-center justify-center gap-x-10 gap-y-6"
             >
               {loading ? (
                 <>
@@ -119,16 +116,16 @@ export function Hero() {
               ) : (
                 <>
                   <motion.div variants={listItem}>
-                    <StatBadge value={formatNum(stats.totalSongs)} label="歌曲" />
+                    <StatBadge value={formatCount(stats.totalSongs)} label="歌曲" />
                   </motion.div>
                   <motion.div variants={listItem}>
-                    <StatBadge value={formatNum(stats.totalArtists)} label="艺术家" />
+                    <StatBadge value={formatCount(stats.totalArtists)} label="艺术家" />
                   </motion.div>
                   <motion.div variants={listItem}>
-                    <StatBadge value={formatNum(stats.totalLines)} label="歌词行" />
+                    <StatBadge value={formatCount(stats.totalLines)} label="歌词行" />
                   </motion.div>
                   <motion.div variants={listItem}>
-                    <StatBadge value={formatNum(stats.totalWords)} label="歌词字数" />
+                    <StatBadge value={formatCount(stats.totalWords)} label="歌词字数" />
                   </motion.div>
                 </>
               )}

@@ -4,6 +4,8 @@ import { ArrowRight, Music } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useNotFoundRanking } from '@/hooks/useNotFoundRanking';
 import { listItem, staggerContainer, whileInViewProps } from '@/lib/motion';
+import { formatCount } from '@/lib/format';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 const TOP_LIMIT = 5;
 
@@ -42,7 +44,9 @@ export function NotFoundRanking() {
         ) : error ? (
           <li className="p-4 text-sm text-error">{error}</li>
         ) : items.length === 0 ? (
-          <li className="p-6 text-center text-sm text-ink-3">暂无数据</li>
+          <li className="p-2">
+            <EmptyState size="sm" title="暂无数据" description="最近一周没有缺歌词请求" />
+          </li>
         ) : (
           items.map((item, idx) => (
             <motion.li
@@ -65,7 +69,7 @@ export function NotFoundRanking() {
                 )}
               </div>
               <span className="shrink-0 text-sm text-ink-2">
-                {item.requestCount.toLocaleString('zh-CN')} 次请求
+                {formatCount(item.requestCount)} 次请求
               </span>
             </motion.li>
           ))

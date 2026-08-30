@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import {
   AlertCircle,
   Download,
+  FileText,
   Languages,
   Loader2,
   Music as MusicIcon,
@@ -17,7 +18,9 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { downloadBlobFile, downloadText, sanitizeFileName } from '@/lib/download';
 import { listItem, staggerContainer } from '@/lib/motion';
+import { formatLyricTime } from '@/lib/format';
 import type { LyricViewLine, LyricViewResponse, OnlinePlatform } from '@/lib/types';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 export interface LyricViewerProps {
   filename?: string;
@@ -91,14 +94,6 @@ async function fetchOnlineView(
 }
 
 /** 将毫秒（float）格式化为 MM:SS.mmm */
-function formatTime(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return '00:00.000';
-  const totalMs = Math.floor(ms);
-  const mins = Math.floor(totalMs / 60000);
-  const secs = Math.floor((totalMs % 60000) / 1000);
-  const millis = totalMs % 1000;
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
-}
 
 function MetaChip({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
   return (
@@ -184,7 +179,7 @@ export function LyricViewer({
   }
 
   if (!data || data.lines.length === 0) {
-    return <div className="py-12 text-center text-sm text-ink-3">暂无歌词内容</div>;
+    return <EmptyState icon={FileText} title="暂无歌词内容" />;
   }
 
   const md = data.metadata;
@@ -256,7 +251,7 @@ export function LyricViewer({
               }`}
               style={{ minWidth: '72px' }}
             >
-              {formatTime(line.startTime)}
+              {formatLyricTime(line.startTime)}
             </span>
 
             {/* 歌词文本 */}

@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
+import { formatDateTime } from '@/lib/format';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { useSentinel } from '@/hooks/useSentinel';
@@ -46,6 +47,7 @@ import { SearchIpDetail } from '@/components/creator/SearchIpDetail';
 import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { EmptyState } from '@/components/ui/EmptyState';
 
 /** 歌词管理列表分页大小（无限滚动） */
 const LIST_PAGE_SIZE = 20;
@@ -256,10 +258,7 @@ function LyricsList({
       ) : errorMsg ? (
         <p className="py-12 text-center text-sm text-red-600">{errorMsg}</p>
       ) : items.length === 0 ? (
-        <div className="py-12 text-center">
-          <FolderOpen className="mx-auto h-10 w-10 text-ink-3" />
-          <p className="mt-3 text-sm text-ink-3">暂无稿件</p>
-        </div>
+        <EmptyState icon={FolderOpen} title="暂无稿件" description="换个筛选条件试试" />
       ) : (
         <>
           <p className="mb-3 text-xs text-ink-3">
@@ -287,15 +286,7 @@ function LyricsList({
                         <span className="shrink-0 text-xs text-ink-3">#{item.id}</span>
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
-                        <span>
-                          {new Date(item.createdAt).toLocaleString('zh-CN', {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
+                        <span>{formatDateTime(item.createdAt)}</span>
                         <span className="text-line">|</span>
                         <Badge
                           variant="outline"
@@ -355,10 +346,7 @@ function DailyRecommendList() {
       ) : errorMsg ? (
         <p className="py-12 text-center text-sm text-error">{errorMsg}</p>
       ) : items.length === 0 ? (
-        <div className="py-12 text-center">
-          <CalendarDays className="mx-auto h-10 w-10 text-ink-3" />
-          <p className="mt-3 text-sm text-ink-3">暂无每日推荐投稿</p>
-        </div>
+        <EmptyState icon={CalendarDays} title="暂无每日推荐投稿" description="换个筛选条件试试" />
       ) : (
         <>
           <p className="mb-3 text-xs text-ink-3">共 {total} 条</p>
@@ -386,16 +374,7 @@ function DailyRecommendList() {
                       {meta.label}
                     </Badge>
                   </div>
-                  <p className="mt-1 text-xs text-ink-3">
-                    提交于{' '}
-                    {new Date(item.createdAt).toLocaleString('zh-CN', {
-                      year: 'numeric',
-                      month: '2-digit',
-                      day: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </p>
+                  <p className="mt-1 text-xs text-ink-3">提交于 {formatDateTime(item.createdAt)}</p>
                 </li>
               );
             })}
@@ -489,16 +468,7 @@ function DailyRecommendDetail({ id, onBack }: { id: number; onBack: () => void }
           />
         </div>
 
-        <p className="mt-4 text-xs text-ink-3">
-          提交于{' '}
-          {new Date(detail.createdAt).toLocaleString('zh-CN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </p>
+        <p className="mt-4 text-xs text-ink-3">提交于 {formatDateTime(detail.createdAt)}</p>
       </div>
     </div>
   );
@@ -528,10 +498,7 @@ function SearchIpList() {
       ) : errorMsg ? (
         <p className="py-12 text-center text-sm text-error">{errorMsg}</p>
       ) : items.length === 0 ? (
-        <div className="py-12 text-center">
-          <Search className="mx-auto h-10 w-10 text-ink-3" />
-          <p className="mt-3 text-sm text-ink-3">暂无搜索IP投稿</p>
-        </div>
+        <EmptyState icon={Search} title="暂无搜索IP投稿" description="换个筛选条件试试" />
       ) : (
         <>
           <p className="mb-3 text-xs text-ink-3">共 {total} 条</p>
@@ -558,7 +525,7 @@ function SearchIpList() {
                       {meta.label}
                     </Badge>
                   </div>
-                  <p className="mt-1 text-xs text-ink-3">{item.createdAt}</p>
+                  <p className="mt-1 text-xs text-ink-3">{formatDateTime(item.createdAt)}</p>
                 </li>
               );
             })}
@@ -778,7 +745,7 @@ export function CreatorCenter() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="col-start-1 row-start-1"
+                className="col-start-1 row-start-1 self-start"
               >
                 <ContentManagement initialTab={contentTab} />
               </motion.div>
@@ -792,7 +759,7 @@ export function CreatorCenter() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="col-start-1 row-start-1 rounded-lg border border-line bg-card p-6 pb-[100px]"
+                className="col-start-1 row-start-1 self-start rounded-lg border border-line bg-card p-6 pb-[100px]"
               >
                 {/* Tab 栏 */}
                 <div className="flex border-b border-line">

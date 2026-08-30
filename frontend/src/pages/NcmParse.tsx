@@ -32,40 +32,42 @@ import {
 import type { LyricLine } from '@applemusic-like-lyrics/lyric';
 import { downloadMusicWithMeta, downloadAllAsZip, type BatchProgress } from '@/lib/download';
 import { api } from '@/lib/api';
+import { formatBytes, formatDuration } from '@/lib/format';
+import { EmptyState } from '@/components/ui/EmptyState';
 
+const AUTO_HEIGHT_MS = 300;
+const AUTO_HEIGHT_EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+
+/** 高度平滑容器 */
 function AutoHeight({ children, className }: { children: React.ReactNode; className?: string }) {
   const innerRef = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState<number | 'auto'>('auto');
+  const [height, setHeight] = useState<number | undefined>(undefined);
 
   useLayoutEffect(() => {
     const el = innerRef.current;
     if (!el) return;
-    setHeight(el.offsetHeight);
-    const ro = new ResizeObserver(() => setHeight(el.offsetHeight));
+    const measure = () => setHeight(el.getBoundingClientRect().height);
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
   return (
-    <motion.div
-      initial={false}
-      animate={{ height }}
-      transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
+    <div
       className={className}
-      style={{ overflow: 'hidden' }}
+      style={{
+        height,
+        overflow: 'hidden',
+        transition: `height ${AUTO_HEIGHT_MS}ms ${AUTO_HEIGHT_EASE}`,
+      }}
     >
-      <div ref={innerRef}>{children}</div>
-    </motion.div>
+      {/* relative：AnimatePresence popLayout 需要定位祖先，退场元素才不会跑到别处 */}
+      <div ref={innerRef} className="relative flow-root">
+        {children}
+      </div>
+    </div>
   );
-}
-
-/** 毫秒 -> mm:ss */
-function formatMs(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) return '--:--';
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${m}:${r.toString().padStart(2, '0')}`;
 }
 
 export function NcmParse() {
@@ -233,7 +235,9 @@ function SearchModeContent() {
     } else if (searchLoading && searchSongs === null) {
       listNode = <ListSkeleton />;
     } else if (!searchSongs || searchSongs.length === 0) {
-      listNode = <p className="mt-2 text-sm text-ink-3">暂无搜索结果</p>;
+      listNode = (
+        <EmptyState size="sm" icon={Search} title="暂无搜索结果" description="换个关键词试试" />
+      );
     } else {
       listNode = (
         <motion.ul
@@ -440,7 +444,14 @@ function PlaylistResultsList() {
   if (playlistError) return <p className="mt-2 text-sm text-red-500">{playlistError}</p>;
   if (playlistLoading && !playlistDetail) return <ListSkeleton />;
   if (!playlistDetail) {
-    return <p className="mt-2 text-sm text-ink-3">输入歌单 ID 开始解析</p>;
+    return (
+      <EmptyState
+        size="sm"
+        icon={ListMusic}
+        title="输入歌单 ID 开始解析"
+        description="支持歌单 ID 或分享链接"
+      />
+    );
   }
 
   // 构建播放列表项
@@ -568,7 +579,7 @@ function PlaylistResultsList() {
                       {t.al?.name ? ` · ${t.al.name}` : ''}
                     </p>
                   </div>
-                  <span className="shrink-0 text-xs text-ink-3">{formatMs(t.dt)}</span>
+                  <span className="shrink-0 text-xs text-ink-3">{formatDuration(t.dt)}</span>
                   {/* 播放按钮 */}
                   <PlayIconButton
                     songId={String(t.id)}
@@ -589,7 +600,7 @@ function PlaylistResultsList() {
           })}
         </motion.ul>
       ) : (
-        <p className="text-sm text-ink-3">歌单为空</p>
+        <EmptyState size="sm" icon={Music} title="歌单为空" />
       )}
     </div>
   );
@@ -799,12 +810,12 @@ function ParseResultCard({
             </span>
             {durationMs > 0 && (
               <span>
-                时长 <span className="text-ink-2">{formatMs(durationMs)}</span>
+                时长 <span className="text-ink-2">{formatDuration(durationMs)}</span>
               </span>
             )}
             {info.size && info.size > 0 && (
               <span>
-                大小 <span className="text-ink-2">{formatSize(info.size)}</span>
+                大小 <span className="text-ink-2">{formatBytes(info.size)}</span>
               </span>
             )}
             <span>
@@ -871,13 +882,6 @@ function ParseResultCard({
   );
 }
 
-/** 字节数 -> 人类可读（MB） */
-function formatSize(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '--';
-  const mb = bytes / (1024 * 1024);
-  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
-}
-
 /** 歌词显示：三级回退后的 LyricLine[] 静态预览 */
 function LyricView({
   lines,
@@ -899,7 +903,7 @@ function LyricView({
   }
   if (error) return <p className="text-sm text-red-500">{error}</p>;
   if (!lines || lines.length === 0) {
-    return <p className="text-sm text-ink-3">暂无歌词</p>;
+    return <EmptyState size="sm" icon={Music} title="暂无歌词" />;
   }
 
   return (

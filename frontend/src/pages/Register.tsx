@@ -40,7 +40,7 @@ import { PageContainer } from '@/components/PageContainer';
 const registerSchema = z
   .object({
     username: z.string().trim().min(1, '请输入用户名'),
-    displayName: z.string().trim().min(1, '请输入显示名称'),
+    displayName: z.string().trim().min(1, '请输入昵称'),
     password: z.string().min(6, '密码长度至少 6 位'),
     confirmPassword: z.string().min(1, '请再次输入密码'),
     phone: z.string().trim().min(1, '请输入手机号'),
@@ -310,7 +310,7 @@ export function Register() {
             </div>
             <p className="-mt-2 text-center text-xs text-ink-3">头像可选，其余均为必填</p>
 
-            {/* 两列布局：用户名 + 显示名称 */}
+            {/* 两列布局：用户名 + 昵称 */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <FormFields
                 control={form.control}
@@ -321,7 +321,7 @@ export function Register() {
               <FormFields
                 control={form.control}
                 name="displayName"
-                label="显示名称"
+                label="昵称"
                 fieldClass={fieldClass}
               />
             </div>
