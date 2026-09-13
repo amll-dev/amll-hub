@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Clock, Hash, Loader2, Music, Play } from 'lucide-react';
 import { useNotFoundRanking } from '@/hooks/useNotFoundRanking';
 import { usePlayer } from '@/hooks/usePlayer';
-import { listItem, staggerContainer, whileInViewProps } from '@/lib/motion';
+import { listItem, staggerContainer } from '@/lib/motion';
 import type { NotFoundRankingItem } from '@/lib/types';
 import {
   Pagination,
@@ -136,9 +136,13 @@ export function Ranking() {
         <EmptyState title="暂无排行榜数据" description="换个时间范围试试" />
       ) : (
         <>
+          {/* 用 animate 而非 whileInView：榜单是页面主体，无需等滚动进入视口；
+              且 whileInView + once:true 不会把已完成的 show 变体传播给后挂载的子节点，
+              切换时间范围后新出现的行会永久停在 opacity:0 */}
           <motion.ol
-            key={page}
-            {...whileInViewProps}
+            key={`${days}-${page}`}
+            initial="hidden"
+            animate="show"
             variants={staggerContainer}
             className="divide-y divide-line rounded-lg border border-line bg-card"
           >

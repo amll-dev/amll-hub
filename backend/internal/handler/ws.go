@@ -152,3 +152,42 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 
 	// 观众列表广播由 Hub 在 registerClient 内部触发（确保客户端已入 map）
 }
+
+// Notifications GET /ws/notifications?token=
+// 站内消息推送连接（按用户名分组，多标签页各自建连）
+func (h *WSHandler) Notifications(c *gin.Context) {
+	// 鉴权
+	token := extractWSToken(c.Request)
+	if token == "" {
+		pkg.Unauthorized(c)
+		return
+	}
+	claims, err := pkg.ParseJWT(token, h.jwtSecret)
+	if err != nil {
+		pkg.Fail(c, http.StatusUnauthorized, http.StatusUnauthorized, "token 无效或已过期")
+		return
+	}
+	username := claims.Name
+	if username == "" {
+		pkg.Fail(c, http.StatusUnauthorized, http.StatusUnauthorized, "token 中无用户信息")
+		return
+	}
+
+	// 升级为 ws
+	respHeader := http.Header{}
+	if subs := websocket.Subprotocols(c.Request); len(subs) > 0 {
+		respHeader.Set("Sec-WebSocket-Protocol", subs[0])
+	}
+	conn, err := h.upgrader.Upgrade(c.Writer, c.Request, respHeader)
+	if err != nil {
+		return
+	}
+
+	// 创建站内消息客户端并注册到 hub
+	client := ws.NewNotificationClient(conn, h.hub, username)
+	h.hub.Register(client)
+
+	// 启动读写 goroutine
+	go client.ReadPump()
+	go client.WritePump()
+}

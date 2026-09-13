@@ -1,3 +1,6 @@
+-- 完整建表脚本（001 + 002 + 003 合并后的单一初始化文件）
+-- 用法：全新库直接执行本文件；已有库仍走 golang-migrate（make migrate-up）
+
 -- updated_at 触发器函数
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -356,3 +359,41 @@ CREATE TABLE latest_songs (
 );
 
 CREATE INDEX idx_latest_songs_sync ON latest_songs(sync_history_id);
+
+--  消息中心 / 通知表
+--  注意：项目没有 users 表，用户身份来自 Casdoor JWT（claims.name），
+--  因此 username 不建外键，与 submissions.submitter / reviewers.username 同域。
+CREATE TABLE notifications (
+    id            BIGSERIAL PRIMARY KEY,
+    username      VARCHAR(100)  NOT NULL,
+    type          VARCHAR(20)   NOT NULL DEFAULT 'system',
+    title         VARCHAR(200)  NOT NULL DEFAULT '',
+    content       TEXT          NOT NULL DEFAULT '',
+    is_read       BOOLEAN       NOT NULL DEFAULT FALSE,
+    action_path   VARCHAR(500),
+    action_label  VARCHAR(100),
+    created_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    read_at       TIMESTAMPTZ,
+    result        VARCHAR(20)   NOT NULL DEFAULT ''
+);
+
+COMMENT ON TABLE  notifications IS '站内消息/通知中心';
+COMMENT ON COLUMN notifications.username IS '接收者用户名，对应 JWT claims.name';
+COMMENT ON COLUMN notifications.type IS 'system / review / submission / comment';
+COMMENT ON COLUMN notifications.action_path IS '前端跳转路径，如 /review/detail?id=123';
+COMMENT ON COLUMN notifications.action_label IS '跳转按钮文案，如 查看投稿';
+COMMENT ON COLUMN notifications.result IS
+    '审核结果细分：approved / rejected / need_revision / missing_audio / closed（仅 type=review 有值）';
+
+--  主查询：某人消息按时间倒序分页
+CREATE INDEX idx_notifications_user_created ON notifications (username, created_at DESC);
+--  按类型筛选（/messages 页 Tabs）
+CREATE INDEX idx_notifications_user_type ON notifications (username, type, created_at DESC);
+--  未读计数：部分索引，只索引未读行，体积小
+CREATE INDEX idx_notifications_user_unread ON notifications (username) WHERE is_read = FALSE;
+--  运维清理
+CREATE INDEX idx_notifications_created ON notifications (created_at DESC);
+
+ALTER TABLE notifications
+    ADD CONSTRAINT ck_notifications_type
+    CHECK (type IN ('system', 'review', 'submission', 'comment'));

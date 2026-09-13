@@ -34,7 +34,13 @@ type ReviewService struct {
 	files       *FileService
 	github      *GitHubService
 	viewers     *ViewerService
+	notifier    Notifier
 	db          *gorm.DB
+}
+
+// SetNotifier 注入通知服务（main 装配阶段调用）
+func (s *ReviewService) SetNotifier(n Notifier) {
+	s.notifier = n
 }
 
 // NewReviewService 创建审核服务
@@ -110,6 +116,15 @@ func (s *ReviewService) Review(ctx context.Context, user *SubmissionUser, id int
 	// 广播状态
 	if s.viewers != nil {
 		_ = s.viewers.NotifySubmissionChanged(ctx, sub.ID)
+	}
+	// T1：审核结果通知投稿人（通知失败不影响审核流程）
+	if s.notifier != nil {
+		if err := s.notifier.NotifyReviewResult(ctx, sub, comment); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"submission_id": sub.ID,
+				"error":         err,
+			}).Warn("notify review result failed")
+		}
 	}
 	return nil
 }

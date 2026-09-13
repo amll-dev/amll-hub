@@ -19,7 +19,6 @@ import {
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
-  Bell,
   CalendarDays,
   FileText,
   FolderOpen,
@@ -38,6 +37,7 @@ import { parseMarkupText } from '@/lib/markup';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
 import { NavItem } from '@/components/NavItem';
 import { PageContainer } from '@/components/PageContainer';
+import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
 import { buttonVariants } from '@/components/ui/button';
 import { CardDetailSkeleton, ListSkeleton } from '@/components/ui/Skeleton';
 import { LyricSubmitForm } from '@/components/creator/LyricSubmitForm';
@@ -290,7 +290,7 @@ function LyricsList({
                         <span className="text-line">|</span>
                         <Badge
                           variant="outline"
-                          className={`shrink-0 border-transparent inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`}
+                          className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${meta.className} border-transparent`}
                         >
                           {meta.label}
                         </Badge>
@@ -369,7 +369,7 @@ function DailyRecommendList() {
                     </span>
                     <Badge
                       variant="outline"
-                      className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}
+                      className={`shrink-0 inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs ${meta.className} border-transparent`}
                     >
                       {meta.label}
                     </Badge>
@@ -442,7 +442,7 @@ function DailyRecommendDetail({ id, onBack }: { id: number; onBack: () => void }
           <h3 className="text-lg font-semibold text-foreground">{detail.songName}</h3>
           <Badge
             variant="outline"
-            className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}
+            className={`shrink-0 inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs ${meta.className} border-transparent`}
           >
             {meta.label}
           </Badge>
@@ -520,7 +520,7 @@ function SearchIpList() {
                     </span>
                     <Badge
                       variant="outline"
-                      className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}
+                      className={`shrink-0 inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs ${meta.className} border-transparent`}
                     >
                       {meta.label}
                     </Badge>
@@ -614,14 +614,7 @@ export function CreatorCenter() {
           </div>
           {/* 右：消息通知 + 头像 + 欢迎语 */}
           <div className="flex items-center gap-4">
-            <button
-              type="button"
-              className="relative flex h-9 w-9 items-center justify-center rounded-full text-ink-2 transition-colors hover:bg-surface-2 hover:text-foreground"
-              aria-label="消息通知"
-            >
-              <Bell className="h-5 w-5" />
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
-            </button>
+            <NotificationBellResponsive />
             <Separator orientation="vertical" className="mx-1 h-5" />
             <div className="flex items-center gap-2">
               <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-semibold text-primary-foreground">

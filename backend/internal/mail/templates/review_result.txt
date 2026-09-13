@@ -1,0 +1,19 @@
+{{.DisplayName}}，你好：
+
+{{.Lead}}
+
+稿件：《{{.Title}}》{{if .Artist}}（{{.Artist}}）{{end}}
+编号：#{{.SubmissionID}}
+审核结果：{{.ResultLabel}}
+审核时间：{{.ReviewedAt}}
+{{if .Comment}}
+审核意见：
+{{.Comment}}
+{{end}}
+{{.Tip}}
+
+查看详情：{{.DetailURL}}
+
+——
+本邮件由 AMLL Hub 系统自动发送，请勿直接回复；你也会在站内消息中心收到同样通知。
+{{.SiteURL}} · © {{.Year}} AMLL Hub

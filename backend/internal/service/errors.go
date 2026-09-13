@@ -74,3 +74,8 @@ var ErrDailyRecNotFound = errors.New("daily recommendation not found")
 
 // ErrImageNotFound 图片未找到
 var ErrImageNotFound = errors.New("search ip image not found")
+
+// 消息中心模块
+
+// ErrNotificationNotFound 消息不存在或不属于当前用户
+var ErrNotificationNotFound = errors.New("notification not found")

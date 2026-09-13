@@ -591,6 +591,21 @@ func (c *CasdoorClient) GetUser(ctx context.Context, owner, name string) (*Casdo
 	return &user, nil
 }
 
+// GetUserEmail 按用户名查询邮箱
+func (c *CasdoorClient) GetUserEmail(ctx context.Context, username string) (string, error) {
+	if username == "" {
+		return "", nil
+	}
+	u, err := c.GetUser(ctx, c.cfg.Organization, username)
+	if err != nil {
+		return "", err
+	}
+	if u == nil {
+		return "", nil
+	}
+	return u.Email, nil
+}
+
 // 根据邮箱查询用户
 func (c *CasdoorClient) GetUserByEmail(ctx context.Context, email string) (*CasdoorUser, error) {
 	path := fmt.Sprintf("/api/get-users?owner=%s&field=email&value=%s&pageSize=100&p=1", url.QueryEscape(c.cfg.Organization), url.QueryEscape(email))

@@ -14,6 +14,8 @@ const loadViewLyricPage = () =>
 const loadOnlineViewLyricPage = () =>
   import('@/pages/OnlineViewLyricPage').then((m) => ({ default: m.OnlineViewLyricPage }));
 const loadProfile = () => import('@/pages/Profile').then((m) => ({ default: m.Profile }));
+const loadMessagesPage = () =>
+  import('@/pages/MessagesPage').then((m) => ({ default: m.MessagesPage }));
 const loadCreatorCenter = () =>
   import('@/pages/CreatorCenter').then((m) => ({ default: m.CreatorCenter }));
 const loadReviewCenter = () =>
@@ -37,6 +39,7 @@ export const DailyRecommend = lazy(loadDailyRecommend);
 export const ViewLyricPage = lazy(loadViewLyricPage);
 export const OnlineViewLyricPage = lazy(loadOnlineViewLyricPage);
 export const Profile = lazy(loadProfile);
+export const MessagesPage = lazy(loadMessagesPage);
 export const CreatorCenter = lazy(loadCreatorCenter);
 export const ReviewCenter = lazy(loadReviewCenter);
 export const SubmissionDetailPage = lazy(loadSubmissionDetailPage);
@@ -58,6 +61,7 @@ export const pagePreloads: Record<string, () => Promise<unknown>> = {
   '/stats': loadPlaceholder,
   '/docs': loadPlaceholder,
   '/profile': loadProfile,
+  '/messages': loadMessagesPage,
   '/creator': loadCreatorCenter,
   '/creator/lyrics/detail': loadSubmissionDetailPage,
   '/review': loadReviewCenter,

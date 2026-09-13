@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { getToken } from '@/lib/auth';
+import { wsUrl } from '@/lib/ws';
 
 /** 投稿状态变更推送负载 */
 export interface SubmissionChangePayload {
@@ -20,9 +21,11 @@ export function useSubmissionListSync(onChanged: (payload: SubmissionChangePaylo
   cbRef.current = onChanged;
 
   useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const token = getToken();
-    const wsUrl = `${protocol}//${window.location.host}/ws/viewers?listPage=true${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+    // 从 VITE_API_BASE 推导 WS 地址
+    const url = wsUrl(
+      `/ws/viewers?listPage=true${token ? `&token=${encodeURIComponent(token)}` : ''}`
+    );
     let ws: WebSocket | null = null;
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -31,7 +34,7 @@ export function useSubmissionListSync(onChanged: (payload: SubmissionChangePaylo
     const connect = () => {
       if (cancelled) return;
       try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(url);
         ws.onopen = () => {
           retries = 0;
         };

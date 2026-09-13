@@ -11,6 +11,7 @@ import { AuthBoot } from '@/boot/AuthBoot';
 import { SearchBoot } from '@/boot/SearchBoot';
 import { PlayerBoot } from '@/boot/PlayerBoot';
 import { ThemeBoot } from '@/boot/ThemeBoot';
+import { NotificationBoot } from '@/boot/NotificationBoot';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { OfflineBanner } from '@/components/OfflineBanner';
@@ -77,6 +78,7 @@ export function Layout() {
       <SearchBoot />
       <PlayerBoot />
       <ThemeBoot />
+      <NotificationBoot />
       <OfflineBanner />
       <div className="flex min-h-screen flex-col">
         {!useCustomHeader && <Header />}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getToken } from '@/lib/auth';
+import { wsUrl } from '@/lib/ws';
 
 export interface Viewer {
   username: string;
@@ -18,9 +19,11 @@ export function useViewers(submissionId: number) {
 
   useEffect(() => {
     if (!submissionId) return;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const token = getToken();
-    const wsUrl = `${protocol}//${window.location.host}/ws/viewers?submissionId=${submissionId}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+    // 从 VITE_API_BASE 推导 WS 地址
+    const url = wsUrl(
+      `/ws/viewers?submissionId=${submissionId}${token ? `&token=${encodeURIComponent(token)}` : ''}`
+    );
 
     // 用局部变量跟踪本 effect 周期的取消状态，
     // 避免 React StrictMode/重挂载时跨周期污染导致重连产生第二个连接。
@@ -33,7 +36,7 @@ export function useViewers(submissionId: number) {
       if (cancelled) return;
       try {
         // token 通过 query 参数传递
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(url);
         ws.onopen = () => {
           retries = 0;
         };

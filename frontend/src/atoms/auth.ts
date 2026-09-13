@@ -9,6 +9,7 @@ import {
   setToken,
   type UserProfile,
 } from '@/lib/auth';
+import { resetMessages } from '@/atoms/message';
 
 // ===== 登录态 atoms（全局唯一，替代原 AuthContext 的 useState） =====
 
@@ -34,8 +35,10 @@ export function login(token: string, u: UserProfile) {
 export function logout() {
   clearAuth();
   store.set(userAtom, null);
-  // 清掉 profile 缓存，防止下次登录读到旧用户
+  // 清消息中心（atom + query 缓存），防止换账号后串号
+  resetMessages();
   queryClient.removeQueries({ queryKey: queryKeys.profile });
+  queryClient.removeQueries({ queryKey: ['notifications'] });
 }
 
 export function openLogin(redirectTo?: string) {
@@ -62,4 +65,6 @@ export function handleUnauthorized() {
   clearStoredUser();
   store.set(userAtom, null);
   store.set(loginOpenAtom, true);
+  resetMessages();
+  queryClient.removeQueries({ queryKey: ['notifications'] });
 }

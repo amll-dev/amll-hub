@@ -103,7 +103,7 @@ export function SearchIpDetail({
               return (
                 <Badge
                   variant="outline"
-                  className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs`}
+                  className={`shrink-0 inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-xs ${meta.className} border-transparent`}
                 >
                   {meta.label}
                 </Badge>

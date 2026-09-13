@@ -505,3 +505,38 @@ export interface OnlineLyric {
   translation: OnlineLyricLine[];
   romanization: OnlineLyricLine[];
 }
+
+// ===== 消息中心 =====
+
+/** 消息类型（对应 backend notifications.type） */
+export type MessageType = 'system' | 'review' | 'submission' | 'comment';
+
+/** 审核结果细分（对应 backend notifications.result，仅 type=review 有值） */
+export type ReviewResult = 'approved' | 'rejected' | 'need_revision' | 'missing_audio' | 'closed';
+
+/** 跳转动作 */
+export interface MessageAction {
+  path: string;
+  label: string;
+}
+
+/** 单条站内消息（对应 backend service.NotificationDTO） */
+export interface Message {
+  id: number;
+  type: MessageType;
+  /** 审核结果细分，仅 type=review 时后端返回（用于区分图标） */
+  result?: ReviewResult;
+  title: string;
+  content: string;
+  read: boolean;
+  /** RFC3339 */
+  createdAt: string;
+  action?: MessageAction;
+}
+
+/** 消息列表结果（对应 backend service.NotificationListDTO） */
+export interface NotificationListResult {
+  items: Message[];
+  total: number;
+  unread: number;
+}

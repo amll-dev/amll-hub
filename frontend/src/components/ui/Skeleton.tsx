@@ -2,7 +2,7 @@ import type { ComponentProps } from 'react';
 import { cn } from '@/lib/utils';
 
 /** 骨架屏基础块（shadcn Skeleton）：animate-pulse 灰块，尺寸由 className 控制 */
-function Skeleton({ className, ...props }: ComponentProps<'div'>) {
+export function Skeleton({ className, ...props }: ComponentProps<'div'>) {
   return <div className={cn('animate-pulse rounded-md bg-surface-2', className)} {...props} />;
 }
 

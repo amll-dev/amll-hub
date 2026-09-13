@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  Bell,
   LayoutDashboard,
   LogOut,
   Monitor,
@@ -143,6 +144,17 @@ export function UserMenu() {
             >
               <LayoutDashboard className="h-4 w-4" />
               创作中心
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link
+              to="/messages"
+              onClick={nav}
+              onMouseEnter={() => preloadRoute('/messages')}
+              className="cursor-pointer"
+            >
+              <Bell className="h-4 w-4" />
+              消息中心
             </Link>
           </DropdownMenuItem>
           {user.isReviewer && (

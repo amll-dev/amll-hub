@@ -19,8 +19,14 @@ type AutoRejectJob struct {
 	historyRepo *repository.ReviewHistoryRepo
 	files       *service.FileService
 	viewers     *service.ViewerService
+	notifier    service.Notifier
 	after       time.Duration
 	interval    time.Duration
+}
+
+// SetNotifier 注入通知服务（main 装配阶段调用）
+func (j *AutoRejectJob) SetNotifier(n service.Notifier) {
+	j.notifier = n
 }
 
 // NewAutoRejectJob 创建自动拒绝任务
@@ -125,6 +131,15 @@ func (j *AutoRejectJob) runOnce(ctx context.Context) {
 		}
 		if j.viewers != nil {
 			_ = j.viewers.NotifySubmissionChanged(ctx, affected[i].ID)
+		}
+		// T4：超时自动拒绝通知投稿人
+		if j.notifier != nil {
+			if err := j.notifier.NotifyAutoRejected(ctx, &affected[i]); err != nil {
+				logrus.WithFields(logrus.Fields{
+					"submission_id": affected[i].ID,
+					"error":         err,
+				}).Warn("auto-reject: notify submitter failed")
+			}
 		}
 	}
 }

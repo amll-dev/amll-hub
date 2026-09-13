@@ -1,6 +1,7 @@
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ApiError } from './api';
+import type { MessageType } from './types';
 
 function toMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
@@ -104,4 +105,11 @@ export const queryKeys = {
 
   // 审核员管理
   reviewers: ['admin', 'reviewers'] as const,
+
+  // 消息中心（统一前缀，removeQueries(['notifications']) 可一并清除）
+  // 列表单独加一段 'list'：与未读数 query（形状为 { unread }）区分，
+  // 否则按 ['notifications'] 前缀做乐观更新会命中未读数缓存并抛错。
+  notifications: (params: { page: number; limit: number; type?: MessageType | 'all' }) =>
+    ['notifications', 'list', params] as const,
+  notificationUnread: ['notifications', 'unread'] as const,
 } as const;

@@ -18,6 +18,7 @@ import { queryKeys } from '@/lib/query';
 import { LyricViewer } from '@/components/LyricViewer';
 import { LyricDetailSkeleton } from '@/components/ui/Skeleton';
 import { PageContainer } from '@/components/PageContainer';
+import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
 import { useViewers, type Viewer } from '@/hooks/useViewers';
 import {
   buildActivityEntries,
@@ -30,6 +31,7 @@ import { MetaItem } from '@/components/submission/MetaItem';
 import { UserDisplayName } from '@/components/submission/UserDisplayName';
 import { UserAvatar } from '@/components/submission/UserAvatar';
 import { CommentSection } from '@/components/submission/CommentSection';
+import { useAuth } from '@/hooks/useAuth';
 import { UpdateLyricArea } from '@/components/submission/UpdateLyricArea';
 import { UploadAudioArea } from '@/components/submission/UploadAudioArea';
 import { NcmSongCard } from '@/components/submission/NcmSongCard';
@@ -72,6 +74,8 @@ function DetailTopBar({
   setShowModal: (v: boolean) => void;
 }) {
   const navigate = useNavigate();
+  // 详情页用自定义顶栏（全局 Header 被隐藏），这里补回消息入口
+  const { user } = useAuth();
   return (
     <header className="sticky top-0 z-50 border-b border-line bg-card/80 backdrop-blur-xl">
       <div className="flex h-16 items-center justify-between px-6">
@@ -101,13 +105,16 @@ function DetailTopBar({
             <span className="hidden sm:inline">{backLabel}</span>
           </button>
         </div>
-        {/* 右：观看者指示器 */}
-        <ViewersIndicator
-          count={count}
-          viewers={viewers}
-          showModal={showModal}
-          setShowModal={setShowModal}
-        />
+        {/* 右：消息通知 + 观看者指示器 */}
+        <div className="flex shrink-0 items-center gap-2">
+          {user && <NotificationBellResponsive />}
+          <ViewersIndicator
+            count={count}
+            viewers={viewers}
+            showModal={showModal}
+            setShowModal={setShowModal}
+          />
+        </div>
       </div>
     </header>
   );
@@ -398,7 +405,7 @@ function SubmissionDetailContent({
           </h1>
           <Badge
             variant="outline"
-            className={`shrink-0 border-transparent inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium`}
+            className={`shrink-0 inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium ${meta.className} border-transparent`}
           >
             {meta.label}
           </Badge>
@@ -703,7 +710,7 @@ function SubmissionDetailContent({
                   <span className="text-xs text-ink-3">当前状态</span>
                   <Badge
                     variant="outline"
-                    className={`shrink-0 border-transparent inline-flex items-center rounded px-2 py-0.5 text-xs`}
+                    className={`shrink-0 inline-flex items-center rounded px-2 py-0.5 text-xs ${meta.className} border-transparent`}
                   >
                     {meta.label}
                   </Badge>
@@ -738,7 +745,7 @@ function SubmissionDetailContent({
                               </span>
                               <Badge
                                 variant="outline"
-                                className={`border-transparent inline-flex items-center rounded px-1.5 py-0.5`}
+                                className={`inline-flex items-center rounded px-1.5 py-0.5 ${m.className} border-transparent`}
                               >
                                 {m.label}
                               </Badge>

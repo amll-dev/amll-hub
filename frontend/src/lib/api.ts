@@ -5,6 +5,8 @@ import type {
   DailyRecListResult,
   LatestSongItem,
   LyricViewResponse,
+  MessageType,
+  NotificationListResult,
   NcmMusicInfo,
   NcmPlaylistResult,
   NcmSearchResult,
@@ -869,6 +871,59 @@ export const api = {
   /** 获取歌词 GET /api/v1/online/lyrics/:platform/:songId */
   getOnlineLyric(platform: OnlinePlatform, songId: string): Promise<OnlineLyric> {
     return request<OnlineLyric>(`/api/v1/online/lyrics/${platform}/${encodeURIComponent(songId)}`);
+  },
+
+  // ===== 消息中心 =====
+
+  /** 消息列表 GET /api/v1/notifications?page=&limit=&type= */
+  getNotifications(
+    params: {
+      page?: number;
+      limit?: number;
+      type?: MessageType | 'all';
+    } = {}
+  ): Promise<NotificationListResult> {
+    const qs = buildQuery({
+      page: params.page,
+      limit: params.limit,
+      type: params.type && params.type !== 'all' ? params.type : undefined,
+    });
+    return request<NotificationListResult>(`/api/v1/notifications${qs}`);
+  },
+
+  /** 未读数 GET /api/v1/notifications/unread-count */
+  getUnreadCount(): Promise<{ unread: number }> {
+    return request<{ unread: number }>('/api/v1/notifications/unread-count');
+  },
+
+  /** 标记单条已读 POST /api/v1/notifications/:id/read */
+  markNotificationRead(id: number): Promise<{ id: number; read: boolean }> {
+    return request<{ id: number; read: boolean }>(`/api/v1/notifications/${id}/read`, {
+      method: 'POST',
+    });
+  },
+
+  /** 全部已读 POST /api/v1/notifications/read-all */
+  markAllNotificationsRead(): Promise<{ updated: number }> {
+    return request<{ updated: number }>('/api/v1/notifications/read-all', { method: 'POST' });
+  },
+
+  /** 删除单条 DELETE /api/v1/notifications/:id */
+  deleteNotification(id: number): Promise<{ id: number }> {
+    return request<{ id: number }>(`/api/v1/notifications/${id}`, { method: 'DELETE' });
+  },
+
+  /** 系统公告广播 POST /api/v1/admin/notifications/broadcast（仅管理员） */
+  broadcastNotification(params: {
+    title: string;
+    content: string;
+    actionPath?: string;
+    actionLabel?: string;
+  }): Promise<{ title: string }> {
+    return request<{ title: string }>('/api/v1/admin/notifications/broadcast', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
   },
 };
 
