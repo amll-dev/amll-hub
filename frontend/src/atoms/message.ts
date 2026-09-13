@@ -15,9 +15,7 @@ export const unreadCountAtom = atom((get) =>
 export const serverUnreadAtom = atom(0);
 
 /** 铃铛红点：任一来源 > 0 即显示 */
-export const hasUnreadAtom = atom(
-  (get) => get(serverUnreadAtom) > 0 || get(unreadCountAtom) > 0
-);
+export const hasUnreadAtom = atom((get) => get(serverUnreadAtom) > 0 || get(unreadCountAtom) > 0);
 
 /** 消息面板是否展开（抑制 WS 推送 toast 用） */
 export const messagePanelOpenAtom = atom(false);

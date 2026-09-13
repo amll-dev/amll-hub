@@ -38,8 +38,10 @@ function SheetContent({
       <SheetPrimitive.Content
         className={cn(
           'fixed inset-y-0 z-[210] flex h-full w-full flex-col border-line bg-card shadow-lg outline-none',
-          side === 'right' && 'right-0 border-l data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right',
-          side === 'left' && 'left-0 border-r data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left',
+          side === 'right' &&
+            'right-0 border-l data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right',
+          side === 'left' &&
+            'left-0 border-r data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left',
           'transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-400',
           'data-[state=open]:animate-in data-[state=closed]:animate-out',
           className

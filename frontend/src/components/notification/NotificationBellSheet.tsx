@@ -14,12 +14,7 @@ export function NotificationBellSheet() {
       <SheetTrigger asChild>
         <NotificationBell />
       </SheetTrigger>
-      <SheetContent
-        side="right"
-        aria-label="消息中心"
-        hideClose
-        className="w-full p-0 sm:max-w-sm"
-      >
+      <SheetContent side="right" aria-label="消息中心" hideClose className="w-full p-0 sm:max-w-sm">
         {/* Radix Dialog 无障碍要求：提供标题（sr-only，视觉标题在面板头部） */}
         <SheetTitle className="sr-only">消息中心</SheetTitle>
         <NotificationPanel onNavigate={() => setOpen(false)} onClose={() => setOpen(false)} />

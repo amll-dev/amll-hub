@@ -21,9 +21,9 @@ const (
 
 // 消息频道（Redis Pub/Sub）
 const (
-	ChannelViewers       = "submission:viewers"
-	ChannelChanged       = "submission:changed"
-	ChannelNotification  = "user:notification"
+	ChannelViewers      = "submission:viewers"
+	ChannelChanged      = "submission:changed"
+	ChannelNotification = "user:notification"
 )
 
 // 连接模式

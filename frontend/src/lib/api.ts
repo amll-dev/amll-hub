@@ -876,11 +876,13 @@ export const api = {
   // ===== 消息中心 =====
 
   /** 消息列表 GET /api/v1/notifications?page=&limit=&type= */
-  getNotifications(params: {
-    page?: number;
-    limit?: number;
-    type?: MessageType | 'all';
-  } = {}): Promise<NotificationListResult> {
+  getNotifications(
+    params: {
+      page?: number;
+      limit?: number;
+      type?: MessageType | 'all';
+    } = {}
+  ): Promise<NotificationListResult> {
     const qs = buildQuery({
       page: params.page,
       limit: params.limit,

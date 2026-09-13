@@ -23,9 +23,7 @@ export function NotificationBell({ className, ...props }: ComponentProps<'button
       {...props}
     >
       <Bell className="h-5 w-5" />
-      {hasUnread && (
-        <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
-      )}
+      {hasUnread && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />}
     </button>
   );
 }

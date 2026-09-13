@@ -100,9 +100,7 @@ export function NotificationItem({
             {formatRelativeTime(message.createdAt)}
           </span>
         </div>
-        <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-ink-3">
-          {message.content}
-        </p>
+        <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-ink-3">{message.content}</p>
         {message.action && (
           <span className="mt-1 inline-block text-xs font-medium text-primary">
             {message.action.label} →

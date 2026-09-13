@@ -512,12 +512,7 @@ export interface OnlineLyric {
 export type MessageType = 'system' | 'review' | 'submission' | 'comment';
 
 /** 审核结果细分（对应 backend notifications.result，仅 type=review 有值） */
-export type ReviewResult =
-  | 'approved'
-  | 'rejected'
-  | 'need_revision'
-  | 'missing_audio'
-  | 'closed';
+export type ReviewResult = 'approved' | 'rejected' | 'need_revision' | 'missing_audio' | 'closed';
 
 /** 跳转动作 */
 export interface MessageAction {

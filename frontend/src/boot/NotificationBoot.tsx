@@ -57,9 +57,7 @@ export function NotificationBoot() {
     const connect = () => {
       if (cancelled) return;
       try {
-        ws = new WebSocket(
-          wsUrl(`/ws/notifications?token=${encodeURIComponent(token)}`)
-        );
+        ws = new WebSocket(wsUrl(`/ws/notifications?token=${encodeURIComponent(token)}`));
         ws.onopen = () => {
           retries = 0;
         };

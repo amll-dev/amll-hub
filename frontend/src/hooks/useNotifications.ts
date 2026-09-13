@@ -1,10 +1,5 @@
 import { useEffect } from 'react';
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type QueryClient,
-} from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getDefaultStore } from 'jotai';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';

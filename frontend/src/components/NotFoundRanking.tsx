@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { ArrowRight, Music } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useNotFoundRanking } from '@/hooks/useNotFoundRanking';
-import { listItem, staggerContainer, whileInViewProps } from '@/lib/motion';
+import { listItem, staggerContainer } from '@/lib/motion';
 import { formatCount } from '@/lib/format';
 import { EmptyState } from '@/components/ui/EmptyState';
 
@@ -17,7 +17,7 @@ export function NotFoundRanking() {
   const items = data?.items ?? [];
 
   return (
-    <motion.section {...whileInViewProps} variants={staggerContainer}>
+    <motion.section initial="hidden" animate="show" variants={staggerContainer}>
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-2xl font-bold">请求数最高的待补歌词</h2>
         <Link
