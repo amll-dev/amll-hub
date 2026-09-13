@@ -28,6 +28,7 @@ type Config struct {
 	Casdoor      CasdoorConfig
 	Submission   SubmissionConfig
 	Worker       WorkerConfig
+	Email        EmailConfig
 }
 
 type HTTPConfig struct {
@@ -146,6 +147,27 @@ type WorkerConfig struct {
 	BaseURL string
 }
 
+// EmailConfig 邮件通知配置
+type EmailConfig struct {
+	// Enabled 总开关，关闭时不查邮箱也不发信
+	Enabled bool
+	// Host / Port SMTP 服务器；Port 465 走隐式 TLS，其余端口走 STARTTLS
+	Host string
+	Port int
+	// Username / Password SMTP 账号密码（Password 为空则不鉴权）
+	Username string
+	Password string
+	// From 发件地址，FromName 发件人显示名
+	From     string
+	FromName string
+	// SiteURL 站点地址，邮件里的稿件详情链接基于它拼接
+	SiteURL string
+	// EmailCacheTTL 用户名→邮箱的缓存时长，避免每次审核都查 Casdoor
+	EmailCacheTTL time.Duration
+	// TimeoutSec 单次发送超时（秒）
+	TimeoutSec int
+}
+
 // findDotEnv查找 .env 文件
 func findDotEnv() string {
 	dir, err := os.Getwd()
@@ -250,6 +272,18 @@ func Load() (*Config, error) {
 	// Worker
 	v.SetDefault("WORKER_BASE_URL", "http://localhost:9090")
 
+	// Email 邮件通知（审核结果）
+	v.SetDefault("EMAIL_ENABLED", false)
+	v.SetDefault("SMTP_HOST", "")
+	v.SetDefault("SMTP_PORT", 587)
+	v.SetDefault("SMTP_USERNAME", "")
+	v.SetDefault("SMTP_PASSWORD", "")
+	v.SetDefault("EMAIL_FROM", "")
+	v.SetDefault("EMAIL_FROM_NAME", "AMLL Hub")
+	v.SetDefault("SITE_URL", "http://localhost:5173")
+	v.SetDefault("EMAIL_CACHE_TTL", "10m")
+	v.SetDefault("EMAIL_TIMEOUT_SEC", 15)
+
 	cfg := &Config{
 		HTTP: HTTPConfig{
 			Port: v.GetString("PORT"),
@@ -330,6 +364,18 @@ func Load() (*Config, error) {
 		},
 		Worker: WorkerConfig{
 			BaseURL: v.GetString("WORKER_BASE_URL"),
+		},
+		Email: EmailConfig{
+			Enabled:       v.GetBool("EMAIL_ENABLED"),
+			Host:          v.GetString("SMTP_HOST"),
+			Port:          v.GetInt("SMTP_PORT"),
+			Username:      v.GetString("SMTP_USERNAME"),
+			Password:      v.GetString("SMTP_PASSWORD"),
+			From:          v.GetString("EMAIL_FROM"),
+			FromName:      v.GetString("EMAIL_FROM_NAME"),
+			SiteURL:       strings.TrimSuffix(v.GetString("SITE_URL"), "/"),
+			EmailCacheTTL: v.GetDuration("EMAIL_CACHE_TTL"),
+			TimeoutSec:    v.GetInt("EMAIL_TIMEOUT_SEC"),
 		},
 	}
 

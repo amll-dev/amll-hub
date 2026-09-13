@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Loader2, Plus, ShieldCheck, Trash2, UserRound } from 'lucide-react';
+import { ArrowLeft, Loader2, Megaphone, Plus, ShieldCheck, Trash2, UserRound } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { fadeUp, staggerContainer } from '@/lib/motion';
 import { api } from '@/lib/api';
@@ -28,6 +28,13 @@ export function ReviewerManagePage() {
   const [username, setUsername] = useState('');
   const [msg, setMsg] = useState('');
   const [removing, setRemoving] = useState<string | null>(null);
+
+  // 公告广播表单
+  const [bcTitle, setBcTitle] = useState('');
+  const [bcContent, setBcContent] = useState('');
+  const [bcPath, setBcPath] = useState('');
+  const [bcLabel, setBcLabel] = useState('');
+  const [bcMsg, setBcMsg] = useState('');
 
   const reviewersQuery = useQuery({
     queryKey: queryKeys.reviewers,
@@ -77,6 +84,31 @@ export function ReviewerManagePage() {
     const name = username.trim();
     if (!name || addMutation.isPending) return;
     addMutation.mutate(name);
+  };
+
+  // 系统公告广播（T5）：发全体已知用户，成功后清空表单
+  const broadcastMutation = useMutation({
+    mutationFn: () =>
+      api.broadcastNotification({
+        title: bcTitle.trim(),
+        content: bcContent.trim(),
+        actionPath: bcPath.trim() || undefined,
+        actionLabel: bcPath.trim() ? bcLabel.trim() || '查看详情' : undefined,
+      }),
+    onSuccess: () => {
+      setBcTitle('');
+      setBcContent('');
+      setBcPath('');
+      setBcLabel('');
+      setBcMsg('公告已发送');
+    },
+    onError: (e) => setBcMsg(e instanceof Error ? e.message : '发送失败'),
+  });
+
+  const doBroadcast = () => {
+    if (!bcTitle.trim() || !bcContent.trim() || broadcastMutation.isPending) return;
+    setBcMsg('');
+    broadcastMutation.mutate();
   };
 
   const doRemove = (name: string) => {
@@ -137,6 +169,65 @@ export function ReviewerManagePage() {
         <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
           测试版
         </span>
+      </motion.div>
+
+      {/* 系统公告广播 */}
+      <motion.div variants={fadeUp} className="rounded-lg border border-line bg-card p-5">
+        <p className="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+          <Megaphone className="h-4 w-4 text-primary" />
+          发布系统公告
+        </p>
+        <p className="mb-3 text-xs text-ink-3">
+          向全体已知用户（有投稿记录或审核员身份）发送 system 类型站内消息
+        </p>
+        <div className="space-y-2">
+          <input
+            type="text"
+            value={bcTitle}
+            onChange={(e) => setBcTitle(e.target.value)}
+            placeholder="公告标题（必填）"
+            className="h-10 w-full rounded-md border border-input bg-surface-2 px-3 text-sm outline-none focus:border-primary"
+          />
+          <textarea
+            value={bcContent}
+            onChange={(e) => setBcContent(e.target.value)}
+            placeholder="公告内容（必填）"
+            rows={3}
+            className="w-full resize-none rounded-md border border-input bg-surface-2 px-3 py-2 text-sm outline-none focus:border-primary"
+          />
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={bcPath}
+              onChange={(e) => setBcPath(e.target.value)}
+              placeholder="跳转路径（可选，如 /ranking）"
+              className="h-10 flex-1 rounded-md border border-input bg-surface-2 px-3 text-sm outline-none focus:border-primary"
+            />
+            <input
+              type="text"
+              value={bcLabel}
+              onChange={(e) => setBcLabel(e.target.value)}
+              placeholder="按钮文案（默认：查看详情）"
+              className="h-10 w-56 rounded-md border border-input bg-surface-2 px-3 text-sm outline-none focus:border-primary"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-ink-3">{bcMsg}</p>
+            <button
+              type="button"
+              onClick={doBroadcast}
+              disabled={broadcastMutation.isPending || !bcTitle.trim() || !bcContent.trim()}
+              className="inline-flex h-10 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50"
+            >
+              {broadcastMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Megaphone className="h-4 w-4" />
+              )}
+              发送公告
+            </button>
+          </div>
+        </div>
       </motion.div>
 
       {/* 添加审核员 */}

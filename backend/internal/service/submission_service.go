@@ -12,6 +12,7 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/model"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -172,7 +173,13 @@ type SubmissionService struct {
 	fileHistoryRepo *repository.FileHistoryRepo
 	commentRepo     *repository.CommentRepo
 	files           *FileService
+	notifier        Notifier
 	db              *gorm.DB
+}
+
+// SetNotifier 注入通知服务（main 装配阶段调用）
+func (s *SubmissionService) SetNotifier(n Notifier) {
+	s.notifier = n
 }
 
 // NewSubmissionService 创建投稿服务
@@ -482,7 +489,8 @@ func (s *SubmissionService) AddComment(ctx context.Context, user *SubmissionUser
 		return errors.New("评论内容过长")
 	}
 	// 检查投稿是否存在
-	if _, err := s.subRepo.GetByID(ctx, id); err != nil {
+	sub, err := s.subRepo.GetByID(ctx, id)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrSubmissionNotFound
 		}
@@ -497,7 +505,19 @@ func (s *SubmissionService) AddComment(ctx context.Context, user *SubmissionUser
 		},
 		Content: sanitize(content, 2000),
 	}
-	return s.commentRepo.Insert(ctx, c)
+	if err := s.commentRepo.Insert(ctx, c); err != nil {
+		return err
+	}
+	// T3：他人评论时通知投稿人（失败不影响评论）
+	if s.notifier != nil {
+		if err := s.notifier.NotifyNewComment(ctx, sub, user.Name); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"submission_id": id,
+				"error":         err,
+			}).Warn("notify new comment failed")
+		}
+	}
+	return nil
 }
 
 // ListComments 评论列表

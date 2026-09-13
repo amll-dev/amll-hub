@@ -13,6 +13,7 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/handler"
 	"github.com/amll-dev/amll-hub/backend/internal/infrastructure"
 	"github.com/amll-dev/amll-hub/backend/internal/job"
+	"github.com/amll-dev/amll-hub/backend/internal/mail"
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/amll-dev/amll-hub/backend/internal/router"
@@ -91,6 +92,7 @@ func Run() {
 	commentRepo := repository.NewCommentRepo(db)
 	reviewerRepo := repository.NewReviewerRepo(db)
 	adminRepo := repository.NewAdminRepo(db)
+	notifRepo := repository.NewNotificationRepo(db)
 
 	// 搜索IP投稿 repository
 	searchIpRepo := repository.NewSearchIPRepo(db)
@@ -122,6 +124,23 @@ func Run() {
 	submissionSvc := service.NewSubmissionService(subRepo, audioRepo, historyRepo, fileHistoryRepo, commentRepo, fileSvc, db)
 	reviewSvc := service.NewReviewService(subRepo, historyRepo, fileSvc, githubSvc, viewerSvc, db)
 	batchSvc := service.NewBatchService(songRepo)
+
+	// 消息中心 service
+	notifSvc := service.NewNotificationService(notifRepo)
+	// 邮件通知
+	casdoorClient := infrastructure.NewCasdoorClient(cfg.Casdoor)
+	mailSender, err := mail.NewSender(cfg.Email)
+	if err != nil {
+		logrus.Fatalf("init mail sender: %v", err)
+	}
+	if cfg.Email.Enabled {
+		if !mailSender.Enabled() {
+			logrus.Warn("EMAIL_ENABLED=true but SMTP_HOST/EMAIL_FROM is empty, review result mail disabled")
+		} else {
+			logrus.WithField("smtp", cfg.Email.Host).Info("review result email enabled")
+		}
+	}
+	notifSvc.SetEmail(mailSender, mail.NewResolver(casdoorClient, cfg.Email.EmailCacheTTL), cfg.Email.SiteURL)
 
 	// 搜索IP投稿
 	searchIpSvc := service.NewSearchIPService(searchIpRepo, minioClient, cfg.MinIO.Bucket)
@@ -160,6 +179,8 @@ func Run() {
 
 	// 注入 hub 给 viewerSvc
 	viewerSvc.SetHub(hub)
+	// 注入 hub 给 notifSvc
+	notifSvc.SetHub(hub)
 	// 注入观众列表通知回调给 hub
 	hub.SetViewerNotifier(func(submissionID int64) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -167,11 +188,18 @@ func Run() {
 		_ = viewerSvc.NotifyViewers(ctx, submissionID)
 	})
 
+	// 注入通知服务（T1~T3 触发点）
+	submissionSvc.SetNotifier(notifSvc)
+	reviewSvc.SetNotifier(notifSvc)
+	// 90 天历史消息清理
+	notifSvc.StartCleanupTask(appCtx)
+
 	// 4.3 启动投稿自动拒绝任务
 	autoRejectJob := job.NewAutoRejectJob(
 		db, subRepo, historyRepo, fileSvc, viewerSvc,
 		cfg.Submission.AutoRejectAfter, cfg.Submission.AutoRejectInterval,
 	)
+	autoRejectJob.SetNotifier(notifSvc) // T4 触发点
 	go autoRejectJob.Run(appCtx)
 
 	// 4.4 审核员/超级管理员缓存
@@ -199,7 +227,8 @@ func Run() {
 	dailyRecH := handler.NewDailyRecommendationHandler(dailyRecSvc)
 	validateH := handler.NewValidateHandler(validateSvc)
 	latestSongH := handler.NewLatestSongHandler(latestSongSvc)
-	adminH := handler.NewAdminHandler(reviewerRepo, reviewerCache)
+	adminH := handler.NewAdminHandler(reviewerRepo, reviewerCache, notifSvc)
+	notifH := handler.NewNotificationHandler(notifSvc)
 	wsH := handler.NewWSHandler(hub, viewerSvc, reviewerCache, cfg.Casdoor.JWTSecret)
 
 	// 6. 启动 HTTP
@@ -224,6 +253,7 @@ func Run() {
 		Validate:     validateH,
 		LatestSong:   latestSongH,
 		Admin:        adminH,
+		Notification: notifH,
 
 		ReviewerCache: reviewerCache,
 		AdminCache:    adminCache,

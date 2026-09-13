@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useMotionValueEvent, useScroll } from 'framer-
 import { Menu, X } from 'lucide-react';
 import { SearchBar } from './SearchBar';
 import { UserMenu } from './UserMenu';
+import { NotificationBellResponsive } from './notification/NotificationBellResponsive';
 import { useAuth } from '@/hooks/useAuth';
 import { useSearchContext } from '@/hooks/useSearchContext';
 import { buttonTap } from '@/lib/motion';
@@ -163,6 +164,7 @@ export function Header() {
           transition={{ layout: { duration: 0.45, ease: [0.2, 0.8, 0.2, 1] } }}
           className="flex shrink-0 items-center gap-3"
         >
+          {user && <NotificationBellResponsive />}
           {user ? (
             <UserMenu />
           ) : (

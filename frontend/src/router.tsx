@@ -5,6 +5,7 @@ import {
   CreatorCenter,
   DailyRecommend,
   Home,
+  MessagesPage,
   NcmParse,
   NotFound,
   OnlineLyricSearch,
@@ -36,6 +37,7 @@ export const router = createBrowserRouter([
       { path: '/stats', element: <Placeholder title="统计" /> },
       { path: '/docs', element: <Placeholder title="文档" /> },
       { path: '/profile', element: <Profile /> },
+      { path: '/messages', element: <MessagesPage /> },
       { path: '/creator', element: <CreatorCenter /> },
       {
         path: '/creator/lyrics/detail',

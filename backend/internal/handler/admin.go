@@ -7,6 +7,7 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
+	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
 	logrus "github.com/sirupsen/logrus"
 )
@@ -15,11 +16,12 @@ import (
 type AdminHandler struct {
 	repo          *repository.ReviewerRepo
 	reviewerCache *middleware.ReviewerCache
+	notif         *service.NotificationService
 }
 
 // 创建 AdminHandler
-func NewAdminHandler(repo *repository.ReviewerRepo, rc *middleware.ReviewerCache) *AdminHandler {
-	return &AdminHandler{repo: repo, reviewerCache: rc}
+func NewAdminHandler(repo *repository.ReviewerRepo, rc *middleware.ReviewerCache, notif *service.NotificationService) *AdminHandler {
+	return &AdminHandler{repo: repo, reviewerCache: rc, notif: notif}
 }
 
 // 用户名格式：字母数字下划线连字符，2-100 位
@@ -87,4 +89,30 @@ func (h *AdminHandler) RemoveReviewer(c *gin.Context) {
 	}
 	h.reviewerCache.Invalidate()
 	pkg.OK(c, gin.H{"username": username})
+}
+
+// BroadcastNotification POST /api/v1/admin/notifications/broadcast
+// 系统公告：{ title, content, actionPath?, actionLabel? }
+func (h *AdminHandler) BroadcastNotification(c *gin.Context) {
+	var req struct {
+		Title       string `json:"title" binding:"required"`
+		Content     string `json:"content" binding:"required"`
+		ActionPath  string `json:"actionPath"`
+		ActionLabel string `json:"actionLabel"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.BadRequest(c, "title 与 content 必填")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	// 群发全站已知用户可能较多，用 longTimeout
+	if err := h.notif.NotifyAnnouncement(ctx, req.Title, req.Content, req.ActionPath, req.ActionLabel); err != nil {
+		logrus.WithError(err).Error("broadcast notification failed")
+		pkg.InternalError(c, "公告发送失败")
+		return
+	}
+	pkg.OK(c, gin.H{"title": req.Title})
 }

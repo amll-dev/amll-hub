@@ -15,26 +15,36 @@ import (
 const (
 	TypeViewers       = "viewers"            // 观众列表更新
 	TypeSubmissionChg = "submission_changed" // 投稿状态变更（列表页订阅）
+	TypeNotification  = "notification"       // 站内消息推送（按用户路由）
 	TypePing          = "ping"
 )
 
 // 消息频道（Redis Pub/Sub）
 const (
-	ChannelViewers = "submission:viewers"
-	ChannelChanged = "submission:changed"
+	ChannelViewers       = "submission:viewers"
+	ChannelChanged       = "submission:changed"
+	ChannelNotification  = "user:notification"
+)
+
+// 连接模式
+const (
+	ModeViewers       = "viewers"       // 观众/列表页连接（现有行为）
+	ModeNotifications = "notifications" // 站内消息连接（不接收 submission_changed）
 )
 
 // Message WebSocket 推送消息
 type Message struct {
 	Type         string `json:"type"`
 	SubmissionID int64  `json:"submissionId,omitempty"`
+	Username     string `json:"username,omitempty"` // 通知频道：消息归属用户，broadcastLocal 按此路由
 	Data         any    `json:"data,omitempty"`
 }
 
 // Client WebSocket 客户端
 type Client struct {
 	conn         *websocket.Conn
-	submissionID int64 // 0 表示列表页连接
+	mode         string // ModeViewers / ModeNotifications
+	submissionID int64  // 0 表示列表页连接
 	username     string
 	displayName  string
 	avatar       string
@@ -60,9 +70,10 @@ type ViewersPayload struct {
 type Hub struct {
 	rdb *redis.Client
 
-	mu           sync.RWMutex
-	clientsBySub map[int64]map[*Client]struct{} // submissionId -> clients
-	listClients  map[*Client]struct{}
+	mu            sync.RWMutex
+	clientsBySub  map[int64]map[*Client]struct{} // submissionId -> clients
+	listClients   map[*Client]struct{}
+	clientsByUser map[string]map[*Client]struct{} // username -> clients（多标签页 = 多 Client）
 
 	register   chan *Client
 	unregister chan *Client
@@ -74,11 +85,12 @@ type Hub struct {
 // NewHub 创建 Hub
 func NewHub(rdb *redis.Client) *Hub {
 	return &Hub{
-		rdb:          rdb,
-		clientsBySub: make(map[int64]map[*Client]struct{}),
-		listClients:  make(map[*Client]struct{}),
-		register:     make(chan *Client, 64),
-		unregister:   make(chan *Client, 64),
+		rdb:           rdb,
+		clientsBySub:  make(map[int64]map[*Client]struct{}),
+		listClients:   make(map[*Client]struct{}),
+		clientsByUser: make(map[string]map[*Client]struct{}),
+		register:      make(chan *Client, 64),
+		unregister:    make(chan *Client, 64),
 	}
 }
 
@@ -112,7 +124,7 @@ func (h *Hub) Unregister(c *Client) {
 // Run 启动 Hub 主循环：处理本地注册/注销 + 订阅 Redis Pub/Sub
 func (h *Hub) Run(ctx context.Context) {
 	// 1. 订阅 Redis 频道
-	sub := h.rdb.Subscribe(ctx, ChannelViewers, ChannelChanged)
+	sub := h.rdb.Subscribe(ctx, ChannelViewers, ChannelChanged, ChannelNotification)
 	defer func() { _ = sub.Close() }()
 
 	msgCh := sub.Channel()
@@ -136,19 +148,29 @@ func (h *Hub) Run(ctx context.Context) {
 
 func (h *Hub) registerClient(c *Client) {
 	h.mu.Lock()
-	if c.submissionID > 0 {
-		set, ok := h.clientsBySub[c.submissionID]
+	switch c.mode {
+	case ModeNotifications:
+		set, ok := h.clientsByUser[c.username]
 		if !ok {
 			set = make(map[*Client]struct{})
-			h.clientsBySub[c.submissionID] = set
+			h.clientsByUser[c.username] = set
 		}
 		set[c] = struct{}{}
-	} else {
-		h.listClients[c] = struct{}{}
+	default:
+		if c.submissionID > 0 {
+			set, ok := h.clientsBySub[c.submissionID]
+			if !ok {
+				set = make(map[*Client]struct{})
+				h.clientsBySub[c.submissionID] = set
+			}
+			set[c] = struct{}{}
+		} else {
+			h.listClients[c] = struct{}{}
+		}
 	}
 	h.mu.Unlock()
 	// 注册成功后触发观众列表广播（此时客户端已在 map 中，不会漏算）
-	if c.submissionID > 0 && h.viewerNotifier != nil {
+	if c.mode != ModeNotifications && c.submissionID > 0 && h.viewerNotifier != nil {
 		h.viewerNotifier(c.submissionID)
 	}
 }
@@ -159,15 +181,25 @@ func (h *Hub) unregisterClient(c *Client) {
 		"username":      c.username,
 	}).Debug("ws client unregistered")
 	h.mu.Lock()
-	if c.submissionID > 0 {
-		if set, ok := h.clientsBySub[c.submissionID]; ok {
+	switch c.mode {
+	case ModeNotifications:
+		if set, ok := h.clientsByUser[c.username]; ok {
 			delete(set, c)
 			if len(set) == 0 {
-				delete(h.clientsBySub, c.submissionID)
+				delete(h.clientsByUser, c.username)
 			}
 		}
-	} else {
-		delete(h.listClients, c)
+	default:
+		if c.submissionID > 0 {
+			if set, ok := h.clientsBySub[c.submissionID]; ok {
+				delete(set, c)
+				if len(set) == 0 {
+					delete(h.clientsBySub, c.submissionID)
+				}
+			}
+		} else {
+			delete(h.listClients, c)
+		}
 	}
 	safeClose(c.send)
 	subID := c.submissionID
@@ -202,6 +234,15 @@ func (h *Hub) broadcastLocal(channel string, payload []byte) {
 		// 同时推给该投稿详情页客户端
 		if msg.SubmissionID > 0 {
 			if set, ok := h.clientsBySub[msg.SubmissionID]; ok {
+				for c := range set {
+					safeSend(c.send, payload)
+				}
+			}
+		}
+	case ChannelNotification:
+		// 只推给该用户的站内消息连接（多标签页全收）
+		if msg.Username != "" {
+			if set, ok := h.clientsByUser[msg.Username]; ok {
 				for c := range set {
 					safeSend(c.send, payload)
 				}
@@ -253,6 +294,22 @@ func (h *Hub) PublishChanged(ctx context.Context, submissionID int64, data any) 
 	return h.rdb.Publish(ctx, ChannelChanged, dataBytes).Err()
 }
 
+// PublishNotification 发布站内消息到 Redis（按用户路由，data 为通知 DTO）
+func (h *Hub) PublishNotification(ctx context.Context, username string, data any) error {
+	if username == "" {
+		return nil
+	}
+	dataBytes, err := json.Marshal(Message{
+		Type:     TypeNotification,
+		Username: username,
+		Data:     data,
+	})
+	if err != nil {
+		return err
+	}
+	return h.rdb.Publish(ctx, ChannelNotification, dataBytes).Err()
+}
+
 // CollectViewers 收集指定投稿当前实例的在线观众
 func (h *Hub) CollectViewers(submissionID int64) []Viewer {
 	h.mu.RLock()
@@ -272,10 +329,20 @@ func (h *Hub) CollectViewers(submissionID int64) []Viewer {
 	return viewers
 }
 
-// NewClient 创建客户端
+// NewClient 创建客户端（观众/列表页连接，保留原签名）
 func NewClient(conn *websocket.Conn, hub *Hub, submissionID int64, username, displayName, avatar string, onClose func()) *Client {
+	return newClient(conn, hub, ModeViewers, submissionID, username, displayName, avatar, onClose)
+}
+
+// NewNotificationClient 创建站内消息客户端（按 username 分组路由）
+func NewNotificationClient(conn *websocket.Conn, hub *Hub, username string) *Client {
+	return newClient(conn, hub, ModeNotifications, 0, username, "", "", nil)
+}
+
+func newClient(conn *websocket.Conn, hub *Hub, mode string, submissionID int64, username, displayName, avatar string, onClose func()) *Client {
 	return &Client{
 		conn:         conn,
+		mode:         mode,
 		submissionID: submissionID,
 		username:     username,
 		displayName:  displayName,

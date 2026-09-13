@@ -35,6 +35,7 @@ type RouterDeps struct {
 	Validate     *handler.ValidateHandler
 	LatestSong   *handler.LatestSongHandler
 	Admin        *handler.AdminHandler
+	Notification *handler.NotificationHandler
 
 	ReviewerCache *middleware.ReviewerCache
 	AdminCache    *middleware.AdminCache
@@ -63,6 +64,7 @@ func New(deps RouterDeps) *gin.Engine {
 	validateH := deps.Validate
 	latestSongH := deps.LatestSong
 	adminH := deps.Admin
+	notifH := deps.Notification
 	reviewerCache := deps.ReviewerCache
 	adminCache := deps.AdminCache
 	jwtSecret := deps.JWTSecret
@@ -87,7 +89,7 @@ func New(deps RouterDeps) *gin.Engine {
 	r.Use(middleware.Logger())
 	r.Use(middleware.Recovery())
 	corsConfig := cors.Config{
-		AllowMethods:     []string{"GET", "POST", "PUT", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Authorization", "Content-Type", "X-Request-ID"},
 		ExposeHeaders:    []string{"Content-Length", "ETag", "X-Request-ID"},
 		AllowCredentials: false,
@@ -115,6 +117,7 @@ func New(deps RouterDeps) *gin.Engine {
 
 	// ws
 	r.GET("/ws/viewers", wsH.Viewers)
+	r.GET("/ws/notifications", wsH.Notifications)
 
 	api := r.Group("/api/v1")
 	{
@@ -239,7 +242,16 @@ func New(deps RouterDeps) *gin.Engine {
 				adminGrp.GET("/reviewers", adminH.ListReviewers)
 				adminGrp.POST("/reviewers", adminH.AddReviewer)
 				adminGrp.DELETE("/reviewers/:username", adminH.RemoveReviewer)
+				// 系统公告广播
+				adminGrp.POST("/notifications/broadcast", adminH.BroadcastNotification)
 			}
+
+			// 消息中心（静态段优先于 :id 注册）
+			sub.GET("/notifications", notifH.List)
+			sub.GET("/notifications/unread-count", notifH.UnreadCount)
+			sub.POST("/notifications/read-all", notifH.MarkAllRead)
+			sub.POST("/notifications/:id/read", notifH.MarkRead)
+			sub.DELETE("/notifications/:id", notifH.Delete)
 
 			// 每日推荐投稿
 			sub.POST("/daily-recommendations", dailyRecH.Create)
