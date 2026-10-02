@@ -28,6 +28,7 @@ import type {
   SubmissionComment,
   SubmissionDetail,
   SubmissionListResult,
+  UserActivity,
   TtmlValidationResult,
 } from './types';
 import type { CaptchaConfig, LoginResult, UserProfile } from './auth';
@@ -520,6 +521,10 @@ export const api = {
     return request<SubmissionDetail>(`/api/v1/submissions/${id}`);
   },
 
+  /** 个人中心活动统计 GET /api/v1/users/me/activity?year= */
+  getUserActivity(year: number): Promise<UserActivity> {
+    return request<UserActivity>(`/api/v1/users/me/activity?year=${year}`);
+  },
   /**
    * TTML 校验 POST /api/v1/submissions/validate
    * body = 原始 TTML 文本 (text/plain), 经 Go 后端代理到 Worker

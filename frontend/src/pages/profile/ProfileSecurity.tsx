@@ -1,9 +1,9 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
 import { useAtom } from 'jotai';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
 import { KeyRound, Loader2, Mail, Phone } from 'lucide-react';
 import { z } from 'zod';
 import {
@@ -18,7 +18,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCountdown } from '@/hooks/useCountdown';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
-import { buttonTap, staggerContainer } from '@/lib/motion';
+import { buttonTap } from '@/lib/motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -34,7 +34,6 @@ import { CaptchaProvider } from '@/components/profile/CaptchaProvider';
 import { useCaptcha } from '@/components/profile/captchaContext';
 import { IdentityVerifyPanel } from '@/components/profile/IdentityVerifyPanel';
 import { fieldClass, useResetProfileForm } from './shared';
-import { usePlayProfileIntro } from './intro';
 
 /** 倒计时展示成 mm:ss */
 function formatCountdown(seconds: number): string {
@@ -74,7 +73,6 @@ export function ProfileSecurity() {
 function ProfileSecurityContent() {
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
-  const playIntro = usePlayProfileIntro();
   useResetProfileForm();
 
   // 每个字段独立的流程阶段，互不干扰
@@ -261,17 +259,32 @@ function ProfileSecurityContent() {
           </div>
         )}
 
-        {stage === 'verify' && (
-          <IdentityVerifyPanel
-            phone={user.phone}
-            email={user.email}
-            onVerified={() => {
-              startEdit(target);
-              setStage(target, 'edit');
-            }}
-            onCancel={() => setStage(target, 'idle')}
-          />
-        )}
+        {/* 验证面板：点击「修改」后展开，验证通过/取消后收起 */}
+        <AnimatePresence initial={false}>
+          {stage === 'verify' && (
+            <motion.div
+              key="identity-verify"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              {/* -mx-1 px-1 给面板内输入框的 ring 留出空间，避免被 overflow-hidden 裁掉 */}
+              <div className="-mx-1 px-1">
+                <IdentityVerifyPanel
+                  phone={user.phone}
+                  email={user.email}
+                  onVerified={() => {
+                    startEdit(target);
+                    setStage(target, 'edit');
+                  }}
+                  onCancel={() => setStage(target, 'idle')}
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {stage === 'edit' && (
           <div className="space-y-2">
@@ -327,12 +340,7 @@ function ProfileSecurityContent() {
   };
 
   return (
-    <motion.div
-      variants={staggerContainer}
-      initial={playIntro ? 'hidden' : false}
-      animate="show"
-      className="space-y-6"
-    >
+    <div className="space-y-6">
       <SectionCard icon={<Mail />} title="联系方式">
         <div className="space-y-5">
           {renderContactRow('email', '邮箱', Mail)}
@@ -359,12 +367,26 @@ function ProfileSecurityContent() {
           </div>
         )}
 
-        {stages.password === 'verify' && (
-          <IdentityVerifyPanel
-            onVerified={() => setStage('password', 'edit')}
-            onCancel={() => setStage('password', 'idle')}
-          />
-        )}
+        {/* 密码修改的身份验证面板：同样做展开/收起过渡 */}
+        <AnimatePresence initial={false}>
+          {stages.password === 'verify' && (
+            <motion.div
+              key="password-verify"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="-mx-1 px-1">
+                <IdentityVerifyPanel
+                  onVerified={() => setStage('password', 'edit')}
+                  onCancel={() => setStage('password', 'idle')}
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {stages.password === 'edit' && (
           <Form {...passwordForm}>
@@ -437,6 +459,6 @@ function ProfileSecurityContent() {
           </Form>
         )}
       </SectionCard>
-    </motion.div>
+    </div>
   );
 }

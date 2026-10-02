@@ -3,14 +3,13 @@ import { useMutation } from '@tanstack/react-query';
 import { useAtom } from 'jotai';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { motion } from 'framer-motion';
 import { Camera, Loader2, Save } from 'lucide-react';
 import { z } from 'zod';
 import { avatarMsgAtom, profileMsgAtom } from '@/atoms/profileForm';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 import { compressAvatar } from '@/lib/image';
-import { buttonTap, staggerContainer } from '@/lib/motion';
+import { buttonTap } from '@/lib/motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -24,7 +23,6 @@ import {
 import { SectionCard } from '@/components/profile/SectionCard';
 import { AvatarUploadDialog } from '@/components/profile/AvatarUploadDialog';
 import { fieldClass, useResetProfileForm } from './shared';
-import { usePlayProfileIntro } from './intro';
 
 const profileSchema = z.object({
   displayName: z.string().trim().min(1, '昵称不能为空'),
@@ -34,7 +32,6 @@ type ProfileValues = z.infer<typeof profileSchema>;
 /** 我的信息 */
 export function ProfileInfo() {
   const { user, refreshUser } = useAuth();
-  const playIntro = usePlayProfileIntro();
   useResetProfileForm();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -85,12 +82,7 @@ export function ProfileInfo() {
   const initial = (user.displayName || user.name || '?').charAt(0).toUpperCase();
 
   return (
-    <motion.div
-      variants={staggerContainer}
-      initial={playIntro ? 'hidden' : false}
-      animate="show"
-      className="space-y-6"
-    >
+    <div className="space-y-6">
       {/* 头像 */}
       <SectionCard icon={<Camera />} title="头像" description="支持 JPG / PNG / WebP，最大 50MB">
         <div className="flex flex-wrap items-center gap-5">
@@ -199,6 +191,6 @@ export function ProfileInfo() {
           </form>
         </Form>
       </SectionCard>
-    </motion.div>
+    </div>
   );
 }

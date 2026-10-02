@@ -33,6 +33,16 @@ function AnimatedOutlet() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
+
+  const outlet = (
+    <Suspense fallback={<PageLoading />}>
+      <Outlet />
+    </Suspense>
+  );
+
+  // 个人中心自己管动画：ProfileLayout 只让右侧内容区淡入
+  if (location.pathname.startsWith('/profile')) return outlet;
+
   return (
     <motion.div
       key={location.pathname}
@@ -40,9 +50,7 @@ function AnimatedOutlet() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, ease: [0.2, 0.8, 0.2, 1] }}
     >
-      <Suspense fallback={<PageLoading />}>
-        <Outlet />
-      </Suspense>
+      {outlet}
     </motion.div>
   );
 }

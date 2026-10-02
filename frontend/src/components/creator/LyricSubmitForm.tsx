@@ -323,7 +323,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
 
             {/* 未重排 */}
             {isUnrearranged && (
-              <div className="mt-3 flex items-center gap-1.5 text-sm font-medium text-amber-600 dark:text-amber-400">
+              <div className="mt-3 flex items-center gap-1.5 text-sm font-medium text-amber-600 dark:text-amber-300">
                 <AlertTriangle className="h-4 w-4" />
                 未重排模式：元数据照常解析，文件原样上传
               </div>

@@ -1,16 +1,13 @@
-import { motion } from 'framer-motion';
-import { ShieldCheck } from 'lucide-react';
+import { CalendarRange, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { staggerContainer } from '@/lib/motion';
 import { Badge } from '@/components/ui/badge';
 import { SectionCard } from '@/components/profile/SectionCard';
 import { ProfileUserCard } from '@/components/profile/ProfileUserCard';
-import { usePlayProfileIntro } from './intro';
+import { ContributionWall } from '@/components/profile/ContributionWall';
 
 /** 个人中心首页 */
 export function ProfileHome() {
   const { user } = useAuth();
-  const playIntro = usePlayProfileIntro();
   if (!user) return null;
 
   const name = user.displayName || user.name;
@@ -22,12 +19,8 @@ export function ProfileHome() {
   ];
 
   return (
-    <motion.div
-      variants={staggerContainer}
-      initial={playIntro ? 'hidden' : false}
-      animate="show"
-      className="space-y-6"
-    >
+    /* 入场动画由 ProfileLayout 的右侧容器统一处理，这里不再逐项 stagger */
+    <div className="space-y-6">
       <ProfileUserCard user={user} />
 
       <SectionCard icon={<ShieldCheck />} title="账号概览">
@@ -48,6 +41,11 @@ export function ProfileHome() {
           </div>
         </dl>
       </SectionCard>
-    </motion.div>
+
+      {/* 活动绿墙：投稿歌词 / 每日推荐 / 歌词IP / 审核歌词 */}
+      <SectionCard icon={<CalendarRange />} title="活动记录">
+        <ContributionWall username={user.name} />
+      </SectionCard>
+    </div>
   );
 }

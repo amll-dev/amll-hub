@@ -36,6 +36,7 @@ type RouterDeps struct {
 	LatestSong   *handler.LatestSongHandler
 	Admin        *handler.AdminHandler
 	Notification *handler.NotificationHandler
+	UserActivity *handler.UserActivityHandler
 
 	ReviewerCache *middleware.ReviewerCache
 	AdminCache    *middleware.AdminCache
@@ -65,6 +66,7 @@ func New(deps RouterDeps) *gin.Engine {
 	latestSongH := deps.LatestSong
 	adminH := deps.Admin
 	notifH := deps.Notification
+	userActivityH := deps.UserActivity
 	reviewerCache := deps.ReviewerCache
 	adminCache := deps.AdminCache
 	jwtSecret := deps.JWTSecret
@@ -221,6 +223,9 @@ func New(deps RouterDeps) *gin.Engine {
 			// 文件上传
 			sub.POST("/uploads/ttml", uploadH.UploadTTML)
 			sub.POST("/uploads/audio", uploadH.UploadAudio)
+
+			// 个人中心活动统计
+			sub.GET("/users/me/activity", userActivityH.Get)
 
 			// 搜索IP显示投稿
 			sub.POST("/search-ip/submissions", searchIpH.Create)

@@ -85,6 +85,7 @@ export const queryKeys = {
   submission: (id: number) => ['submission', id] as const,
   submissionComments: (id: number) => ['submission', id, 'comments'] as const,
   submissionTtml: (id: number) => ['submission', id, 'ttml'] as const,
+  userActivity: (year: number) => ['user-activity', year] as const,
 
   // 搜索IP投稿
   searchIpSubmissions: (scope: 'mine' | 'all', status?: string) =>

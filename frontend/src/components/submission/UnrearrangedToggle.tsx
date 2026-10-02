@@ -29,21 +29,21 @@ export function UnrearrangedToggle({
           compact ? 'px-3 py-2.5' : 'px-4 py-3'
         } ${
           isUnrearranged
-            ? 'border-amber-500/50 bg-amber-50 dark:bg-amber-950/25'
-            : 'border-line bg-surface-2 hover:border-primary/40'
+            ? 'border-amber-500/60 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-950/30'
+            : 'border-line bg-surface-2 hover:border-primary/40 dark:hover:border-primary/50'
         }`}
       >
         <input
           type="checkbox"
           checked={isUnrearranged}
           onChange={(e) => setUnrearranged(e.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 accent-amber-500"
+          className="mt-0.5 h-4 w-4 shrink-0 accent-amber-500 dark:accent-amber-400"
         />
         <span className="min-w-0">
           <span className="block text-sm font-medium text-foreground">
             上传未重排歌词
             {badge && (
-              <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-xs font-normal text-amber-600 dark:text-amber-400">
+              <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs font-normal text-amber-700 dark:bg-amber-400/20 dark:text-amber-300">
                 {badge}
               </span>
             )}
