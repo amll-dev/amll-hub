@@ -609,6 +609,9 @@ export const api = {
     notes?: string;
     tags?: string[];
     language?: string;
+    languages?: string[];
+    isUnrearranged?: boolean;
+    unrearrangedReason?: string;
     type?: string;
     status?: 'pending' | 'draft';
   }): Promise<{ id: number }> {
@@ -629,6 +632,9 @@ export const api = {
         notes?: string;
         tags?: string[];
         language?: string;
+        languages?: string[];
+        isUnrearranged?: boolean;
+        unrearrangedReason?: string;
         type?: string;
       };
     }

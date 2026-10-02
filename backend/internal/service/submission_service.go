@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
@@ -31,8 +32,14 @@ type CreateSubmissionInput struct {
 	Notes    string         `json:"notes"`
 	Tags     []string       `json:"tags"`
 	Language string         `json:"language"`
-	Type     string         `json:"type"`
-	Status   string         `json:"status"`
+	// Languages 多选语言（含自定义语言名），Language 仍作为主语言保留
+	Languages []string `json:"languages"`
+	// IsUnrearranged 上传的是未经重排的原始歌词
+	IsUnrearranged bool `json:"isUnrearranged"`
+	// UnrearrangedReason 未重排的原因说明（仅 IsUnrearranged 为 true 时有意义）
+	UnrearrangedReason string `json:"unrearrangedReason"`
+	Type               string `json:"type"`
+	Status             string `json:"status"`
 } // Submission 投稿 DTO
 type Submission struct {
 	ID                  int64          `json:"id"`
@@ -48,6 +55,9 @@ type Submission struct {
 	Tags                []string       `json:"tags"`
 	Metadata            map[string]any `json:"metadata"`
 	Language            string         `json:"language"`
+	Languages           []string       `json:"languages"`
+	IsUnrearranged      bool           `json:"isUnrearranged"`
+	UnrearrangedReason  string         `json:"unrearrangedReason"`
 	Status              string         `json:"status"`
 	Submitter           string         `json:"submitter"`
 	SubmitterInfo       UserInfo       `json:"submitterInfo"`
@@ -226,9 +236,14 @@ func (s *SubmissionService) Create(ctx context.Context, user *SubmissionUser, in
 	// 字段清洗
 	title := sanitize(in.Title, 200)
 	notes := sanitize(in.Notes, 2000)
-	language := validLanguage(in.Language)
+	languages, primaryLang := normalizeLanguages(in.Languages, in.Language)
 	artists := extractStrings(in.Metadata, "artist")
 	album := extractStrings(in.Metadata, "album")
+
+	// 未重排原因强制必填：勾了却没写原因就拒绝，避免审核员拿到无说明的例外投稿
+	if in.IsUnrearranged && strings.TrimSpace(in.UnrearrangedReason) == "" {
+		return 0, ErrMissingUnrearrangedReason
+	}
 
 	sub := &model.Submission{
 		Title:         title,
@@ -242,11 +257,18 @@ func (s *SubmissionService) Create(ctx context.Context, user *SubmissionUser, in
 		Notes:         notes,
 		Tags:          normalizeTags(in.Tags),
 		Metadata:      normalizeMetadata(in.Metadata),
-		Language:      language,
+		Language:      primaryLang,
+		Languages:     languages,
 		Status:        status,
 		Submitter:     user.Name,
 		SubmitterInfo: model.UserInfo{Username: user.Name, DisplayName: user.DisplayName, Avatar: user.Avatar},
 		Provider:      "casdoor",
+	}
+
+	// 未重排投稿：记录标记与原因说明
+	if in.IsUnrearranged {
+		sub.IsUnrearranged = true
+		sub.UnrearrangedReason = sanitize(in.UnrearrangedReason, 500)
 	}
 
 	// 事务写入
@@ -434,7 +456,32 @@ func (s *SubmissionService) UpdateFile(ctx context.Context, user *SubmissionUser
 				Metadata:  normalizeMetadata(metadata.Metadata),
 				Language:  validLanguage(metadata.Language),
 			}
+			if metadata.Languages != nil {
+				langs, primary := normalizeLanguages(metadata.Languages, metadata.Language)
+				metaUpdate.Languages = langs
+				metaUpdate.Language = primary
+			}
 		}
+
+		// 更新歌词同样支持「未重排」：客户端勾选后原样上传，这里按传入值写标记。
+		// 不勾选时（走校验+重排流程）清掉旧标记，避免残留。
+		unrearranged, reason := false, ""
+		if metadata != nil && metadata.IsUnrearranged {
+			if strings.TrimSpace(metadata.UnrearrangedReason) == "" {
+				return ErrMissingUnrearrangedReason
+			}
+			unrearranged = true
+			reason = sanitize(metadata.UnrearrangedReason, 500)
+		}
+		if err := tx.Model(&model.Submission{}).
+			Where("id = ?", id).
+			Updates(map[string]any{
+				"is_unrearranged":     unrearranged,
+				"unrearranged_reason": reason,
+			}).Error; err != nil {
+			return err
+		}
+
 		if err := s.subRepo.UpdateFile(ctx, tx, id, fileName, metaUpdate, newStatus); err != nil {
 			return err
 		}
@@ -592,6 +639,51 @@ func validLanguage(lang string) string {
 	return model.LangOthers
 }
 
+// normalizeLanguages 清洗多选语言，返回清洗后的数组, 主语言
+func normalizeLanguages(list []string, legacy string) (model.JSONStringArray, string) {
+	out := make(model.JSONStringArray, 0, model.MaxLanguages)
+	seen := make(map[string]bool, model.MaxLanguages)
+	for _, raw := range list {
+		s := strings.TrimSpace(raw)
+		if s == "" {
+			continue
+		}
+		if utf8.RuneCountInString(s) > model.MaxLanguageLen {
+			s = string([]rune(s)[:model.MaxLanguageLen])
+		}
+		key := strings.ToLower(s)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, s)
+		if len(out) >= model.MaxLanguages {
+			break
+		}
+	}
+	if len(out) == 0 {
+		out = model.JSONStringArray{model.LangOthers}
+	}
+
+	// 主语言必须是合法枚举：数组第一项若不是内置代码，就用老字段的合法值兜底
+	primary := validLanguage(out[0])
+	if !isBuiltinLanguage(out[0]) {
+		if l := validLanguage(legacy); l != model.LangOthers {
+			primary = l
+		}
+	}
+	return out, primary
+}
+
+// isBuiltinLanguage 判断是否内置语言代码
+func isBuiltinLanguage(s string) bool {
+	switch s {
+	case model.LangZh, model.LangEn, model.LangJa, model.LangKo:
+		return true
+	}
+	return false
+}
+
 func extractString(m map[string]any, key string) string {
 	if m == nil {
 		return ""
@@ -710,6 +802,9 @@ func convertSubmission(m model.Submission) Submission {
 		Tags:                ensureStringSlice(m.Tags),
 		Metadata:            map[string]any(m.Metadata),
 		Language:            m.Language,
+		Languages:           ensureStringSlice(m.Languages),
+		IsUnrearranged:      m.IsUnrearranged,
+		UnrearrangedReason:  m.UnrearrangedReason,
 		Status:              m.Status,
 		Submitter:           m.Submitter,
 		SubmitterInfo:       convertUserInfo(m.SubmitterInfo),

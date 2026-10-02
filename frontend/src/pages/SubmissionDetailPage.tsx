@@ -10,8 +10,19 @@ import {
   showUploadAudioAtom,
   type DetailTab,
 } from '@/atoms/submissionDetail';
-import { motion } from 'framer-motion';
-import { ArrowLeft, Check, Copy, Download, Loader2, Music, Upload, Users, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Check,
+  Copy,
+  Download,
+  Loader2,
+  Music,
+  Upload,
+  Users,
+  X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
@@ -23,7 +34,7 @@ import { useViewers, type Viewer } from '@/hooks/useViewers';
 import {
   buildActivityEntries,
   extractPlatformIds,
-  langText,
+  langListText,
   statusMeta,
 } from '@/components/submission/shared';
 import { formatDateTime } from '@/lib/format';
@@ -403,12 +414,14 @@ function SubmissionDetailContent({
             {detail.title || '未命名'}
             <span className="ml-2 text-base font-normal text-ink-3">#{detail.id}</span>
           </h1>
-          <Badge
-            variant="outline"
-            className={`shrink-0 inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium ${meta.className} border-transparent`}
-          >
-            {meta.label}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className={`shrink-0 inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium ${meta.className} border-transparent`}
+            >
+              {meta.label}
+            </Badge>
+          </div>
         </div>
         {/* meta 信息行 */}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-ink-3">
@@ -426,6 +439,33 @@ function SubmissionDetailContent({
           <span>于 {formatDateTime(detail.createdAt)} 提交</span>
           {detail.fileUpdatedAt && <span>· 文件更新于 {formatDateTime(detail.fileUpdatedAt)}</span>}
         </div>
+        {/* 未重排提示 */}
+        <AnimatePresence initial={false}>
+          {detail.isUnrearranged && (
+            <motion.div
+              key="unrearranged-banner"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-medium">
+                    该投稿为未重排歌词，文件已原样上传，未做自动重排。
+                  </div>
+                  {detail.unrearrangedReason && (
+                    <div className="mt-1 whitespace-pre-wrap text-xs opacity-90">
+                      投稿者说明：{detail.unrearrangedReason}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
 
       {/* 主体 + 侧边栏 */}
@@ -536,7 +576,7 @@ function SubmissionDetailContent({
                   value={platformIds.spotify.join(', ') || detail.spotifyId}
                 />
                 <MetaItem label="投稿人" value={detail.submitter} />
-                <MetaItem label="语言" value={langText(detail.language)} />
+                <MetaItem label="语言" value={langListText(detail.languages, detail.language)} />
                 <MetaItem label="创建时间" value={formatDateTime(detail.createdAt)} />
                 {detail.fileUpdatedAt && (
                   <MetaItem label="文件更新" value={formatDateTime(detail.fileUpdatedAt)} />
@@ -686,7 +726,9 @@ function SubmissionDetailContent({
               {detail.language && (
                 <div>
                   <div className="text-xs text-ink-3">语言</div>
-                  <div className="text-foreground">{langText(detail.language)}</div>
+                  <div className="text-foreground">
+                    {langListText(detail.languages, detail.language)}
+                  </div>
                 </div>
               )}
               {detail.tags && detail.tags.length > 0 && (

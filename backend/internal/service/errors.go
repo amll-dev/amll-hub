@@ -82,6 +82,9 @@ var ErrInvalidStatus = errors.New("invalid submission status for this action")
 // ErrForbidden 无权操作该投稿
 var ErrForbidden = errors.New("forbidden")
 
+// ErrMissingUnrearrangedReason 勾选了「未重排歌词」但没填原因（原因强制必填）
+var ErrMissingUnrearrangedReason = errors.New("missing unrearranged reason")
+
 // 歌词/索引模块
 
 // ErrLyricNotFound 歌词未找到

@@ -778,13 +778,13 @@ export function CreatorCenter() {
                 </div>
 
                 {/* Tab 内容 */}
-                <div className="pt-6">
-                  <AnimatePresence mode="wait">
+                <div className="relative pt-6">
+                  <AnimatePresence mode="popLayout">
                     <motion.div
                       key={submitTab}
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
+                      exit={{ opacity: 0, pointerEvents: 'none' }}
                       transition={{ duration: 0.18 }}
                     >
                       {submitTab === 'lyrics' && (

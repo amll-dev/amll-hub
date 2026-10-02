@@ -30,6 +30,16 @@ export function langText(code?: string): string {
   return langLabel[code] ?? code;
 }
 
+/**
+ * 多选语言展示：优先用 languages 数组，老数据回落到单值 language。
+ * 数组为空时同样回落，保证历史投稿显示不变。
+ */
+export function langListText(languages?: string[], language?: string): string {
+  const list = languages?.filter(Boolean) ?? [];
+  if (list.length === 0) return langText(language);
+  return list.map((l) => langLabel[l] ?? l).join('、');
+}
+
 /** 从投稿 metadata.platform_ids 提取各平台的全部 ID */
 export function extractPlatformIds(metadata?: Record<string, unknown>): {
   ncm: string[];

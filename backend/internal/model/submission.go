@@ -28,6 +28,14 @@ const (
 	LangKo     = "ko"
 )
 
+// 投稿语言相关上限
+const (
+	// MaxLanguages 单条投稿最多可勾选的语言数
+	MaxLanguages = 10
+	// MaxLanguageLen 自定义语言名的最大长度
+	MaxLanguageLen = 10
+)
+
 // JSONObject 自定义类型
 type JSONObject map[string]any
 
@@ -97,33 +105,39 @@ func (u UserInfo) GormDataType() string {
 
 // Submission 投稿主表
 type Submission struct {
-	ID                  int64           `gorm:"primaryKey;autoIncrement" json:"id"`
-	Title               string          `gorm:"type:varchar(200);not null;default:''" json:"title"`
-	Artist              string          `gorm:"type:varchar(200);not null;default:''" json:"artist"`
-	Album               string          `gorm:"type:varchar(200);not null;default:''" json:"album"`
-	NcmID               string          `gorm:"column:ncm_id;type:varchar(50);not null;default:''" json:"ncmId"`
-	QqID                string          `gorm:"column:qq_id;type:varchar(50);not null;default:''" json:"qqId"`
-	AmID                string          `gorm:"column:am_id;type:varchar(50);not null;default:''" json:"amId"`
-	SpotifyID           string          `gorm:"column:spotify_id;type:varchar(50);not null;default:''" json:"spotifyId"`
-	FileName            string          `gorm:"type:varchar(255);not null;default:''" json:"fileName"`
-	Notes               string          `gorm:"type:varchar(2000);not null;default:''" json:"notes"`
-	Tags                JSONStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"tags"`
-	Metadata            JSONObject      `gorm:"type:jsonb;not null;default:'{}'" json:"metadata"`
-	Language            string          `gorm:"type:varchar(10);not null;default:'others'" json:"language"`
-	Status              string          `gorm:"type:varchar(20);not null;default:'pending'" json:"status"`
-	Submitter           string          `gorm:"type:varchar(100);not null" json:"submitter"`
-	SubmitterInfo       UserInfo        `gorm:"type:jsonb;not null;default:'{}'" json:"submitterInfo"`
-	Provider            string          `gorm:"type:varchar(20);not null;default:'casdoor'" json:"provider"`
-	CreatedAt           time.Time       `gorm:"not null;default:CURRENT_TIMESTAMP" json:"createdAt"`
-	UpdatedAt           time.Time       `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updatedAt"`
-	FileUpdatedAt       *time.Time      `gorm:"column:file_updated_at;type:timestamptz" json:"fileUpdatedAt,omitempty"`
-	RevisionRequestedAt *time.Time      `gorm:"column:revision_requested_at;type:timestamptz" json:"revisionRequestedAt,omitempty"`
-	ClosedAt            *time.Time      `gorm:"column:closed_at;type:timestamptz" json:"closedAt,omitempty"`
-	ClosedBy            string          `gorm:"column:closed_by;type:varchar(100)" json:"closedBy,omitempty"`
-	ClosedByInfo        *UserInfo       `gorm:"column:closed_by_info;type:jsonb" json:"closedByInfo,omitempty"`
-	Reviewer            string          `gorm:"type:varchar(100)" json:"reviewer,omitempty"`
-	ReviewedAt          *time.Time      `gorm:"column:reviewed_at;type:timestamptz" json:"reviewedAt,omitempty"`
-	ReviewComment       string          `gorm:"column:review_comment;type:text" json:"reviewComment,omitempty"`
+	ID        int64           `gorm:"primaryKey;autoIncrement" json:"id"`
+	Title     string          `gorm:"type:varchar(200);not null;default:''" json:"title"`
+	Artist    string          `gorm:"type:varchar(200);not null;default:''" json:"artist"`
+	Album     string          `gorm:"type:varchar(200);not null;default:''" json:"album"`
+	NcmID     string          `gorm:"column:ncm_id;type:varchar(50);not null;default:''" json:"ncmId"`
+	QqID      string          `gorm:"column:qq_id;type:varchar(50);not null;default:''" json:"qqId"`
+	AmID      string          `gorm:"column:am_id;type:varchar(50);not null;default:''" json:"amId"`
+	SpotifyID string          `gorm:"column:spotify_id;type:varchar(50);not null;default:''" json:"spotifyId"`
+	FileName  string          `gorm:"type:varchar(255);not null;default:''" json:"fileName"`
+	Notes     string          `gorm:"type:varchar(2000);not null;default:''" json:"notes"`
+	Tags      JSONStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"tags"`
+	Metadata  JSONObject      `gorm:"type:jsonb;not null;default:'{}'" json:"metadata"`
+	Language  string          `gorm:"type:varchar(10);not null;default:'others'" json:"language"`
+	// Languages 多选语言（含用户自定义项），Language 存其中第一项作为主语言
+	Languages JSONStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"languages"`
+	// IsUnrearranged 为 true 表示上传的是未经重排的原始歌词文件
+	IsUnrearranged bool `gorm:"column:is_unrearranged;not null;default:false" json:"isUnrearranged"`
+	// UnrearrangedReason 投稿者填写的「为什么用未重排版」说明，详情页展示
+	UnrearrangedReason  string     `gorm:"column:unrearranged_reason;type:varchar(500);not null;default:''" json:"unrearrangedReason"`
+	Status              string     `gorm:"type:varchar(20);not null;default:'pending'" json:"status"`
+	Submitter           string     `gorm:"type:varchar(100);not null" json:"submitter"`
+	SubmitterInfo       UserInfo   `gorm:"type:jsonb;not null;default:'{}'" json:"submitterInfo"`
+	Provider            string     `gorm:"type:varchar(20);not null;default:'casdoor'" json:"provider"`
+	CreatedAt           time.Time  `gorm:"not null;default:CURRENT_TIMESTAMP" json:"createdAt"`
+	UpdatedAt           time.Time  `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updatedAt"`
+	FileUpdatedAt       *time.Time `gorm:"column:file_updated_at;type:timestamptz" json:"fileUpdatedAt,omitempty"`
+	RevisionRequestedAt *time.Time `gorm:"column:revision_requested_at;type:timestamptz" json:"revisionRequestedAt,omitempty"`
+	ClosedAt            *time.Time `gorm:"column:closed_at;type:timestamptz" json:"closedAt,omitempty"`
+	ClosedBy            string     `gorm:"column:closed_by;type:varchar(100)" json:"closedBy,omitempty"`
+	ClosedByInfo        *UserInfo  `gorm:"column:closed_by_info;type:jsonb" json:"closedByInfo,omitempty"`
+	Reviewer            string     `gorm:"type:varchar(100)" json:"reviewer,omitempty"`
+	ReviewedAt          *time.Time `gorm:"column:reviewed_at;type:timestamptz" json:"reviewedAt,omitempty"`
+	ReviewComment       string     `gorm:"column:review_comment;type:text" json:"reviewComment,omitempty"`
 }
 
 func (Submission) TableName() string { return "submissions" }

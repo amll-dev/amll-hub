@@ -1,11 +1,13 @@
 import { useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
-import { Check, Loader2, UploadCloud, X } from 'lucide-react';
+import { AlertTriangle, Check, FileText, Loader2, UploadCloud, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { buttonTap } from '@/lib/motion';
+import { useUnrearrangedMode } from '@/hooks/useUnrearrangedMode';
 import type { TtmlValidationResult } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { UnrearrangedToggle } from './UnrearrangedToggle';
 
 export interface UpdateLyricAreaProps {
   submissionId: number;
@@ -32,11 +34,29 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
   });
   const validating = validateMutation.isPending;
 
+  // 未重排模式：与投稿页共用同一份状态与提交门槛逻辑
+  const unrearranged = useUnrearrangedMode({
+    metaResolved: validation !== null || validateError !== '',
+    valid: validation?.valid === true,
+  });
+  const { isUnrearranged, reasonMissing } = unrearranged;
+  const ready = unrearranged.ready;
+
+  // 未重排时原因必填
+  const canUpload = file !== null && ready && !reasonMissing;
+
   // 上传文件并挂到投稿
   const uploadMutation = useMutation({
     mutationFn: async (f: File) => {
       const { fileName } = await api.uploadTtml(f, f.name);
-      await api.updateSubmissionFile(submissionId, { fileName });
+      await api.updateSubmissionFile(submissionId, {
+        fileName,
+        metadata: {
+          title: meta?.title?.[0] ?? f.name.replace(/\.[^.]+$/, ''),
+          metadata: (meta ?? {}) as Record<string, unknown>,
+          ...unrearranged.submissionFields,
+        },
+      });
     },
     onMutate: () => setMsg(null),
     onSuccess: () => {
@@ -74,7 +94,7 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
   };
 
   const submit = () => {
-    if (!file || !validation?.valid) return;
+    if (!canUpload) return;
     uploadMutation.mutate(file);
   };
 
@@ -85,6 +105,15 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
         <button type="button" onClick={onClose} className="text-ink-3 hover:text-foreground">
           <X className="h-4 w-4" />
         </button>
+      </div>
+
+      {/* 未重排开关：与投稿页共用同一组件 */}
+      <div className="mb-4">
+        <UnrearrangedToggle
+          mode={unrearranged}
+          compact
+          description="勾选后不做重排（元数据仍照常解析），.ttml 原样上传；不勾选则会自动校验并重排。"
+        />
       </div>
 
       <div
@@ -99,7 +128,9 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
       >
         <UploadCloud className="mx-auto h-8 w-8 text-ink-3" />
         <p className="mt-2 text-sm text-ink-2">{file ? file.name : '点击或拖拽 .ttml 文件'}</p>
-        <p className="mt-1 text-xs text-ink-3">文件将自动校验并重排</p>
+        <p className="mt-1 text-xs text-ink-3">
+          {isUnrearranged ? '仅解析元数据，文件原样上传（不做重排）' : '文件将自动校验并重排'}
+        </p>
       </div>
       <input
         ref={inputRef}
@@ -116,7 +147,17 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
       {validating && (
         <div className="mt-3 flex items-center gap-2 rounded-md border border-line bg-background px-4 py-3">
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
-          <span className="text-sm text-ink-2">正在校验文件…</span>
+          <span className="text-sm text-ink-2">
+            {isUnrearranged ? '正在解析元数据…' : '正在校验文件…'}
+          </span>
+        </div>
+      )}
+
+      {/* 未重排提示 */}
+      {isUnrearranged && file && !validating && (
+        <div className="mt-3 flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+          <AlertTriangle className="h-4 w-4" />
+          未重排模式：元数据照常解析，文件原样上传
         </div>
       )}
 
@@ -130,7 +171,7 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
       {/* 校验未通过 */}
       {validation && !validation.valid && (
         <Alert variant="destructive" className="mt-3">
-          <AlertTitle>校验未通过</AlertTitle>
+          <AlertTitle>{isUnrearranged ? '格式校验未通过（不影响提交）' : '校验未通过'}</AlertTitle>
           <AlertDescription>
             {validation.parseError && (
               <p className="text-xs text-red-500">{validation.parseError}</p>
@@ -144,12 +185,23 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
         </Alert>
       )}
 
-      {/* 校验通过 */}
-      {validation?.valid && meta && (
+      {/* 元数据：两种模式都会解析，未重排模式不以此为门槛 */}
+      {meta && (
         <div className="mt-3 space-y-3">
-          <div className="flex items-center gap-1.5 text-sm font-medium text-green-600">
-            <Check className="h-4 w-4" />
-            校验通过，已自动重排
+          <div
+            className={`flex items-center gap-1.5 text-sm font-medium ${!isUnrearranged && validation?.valid ? 'text-green-600' : 'text-ink-2'}`}
+          >
+            {!isUnrearranged && validation?.valid ? (
+              <>
+                <Check className="h-4 w-4" />
+                校验通过，已自动重排
+              </>
+            ) : (
+              <>
+                <FileText className="h-4 w-4" />
+                已从文件解析元数据（未重排，原样上传）
+              </>
+            )}
           </div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 rounded bg-background px-3 py-3 text-sm">
             <div>
@@ -206,7 +258,7 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
         <motion.button
           type="button"
           onClick={submit}
-          disabled={!file || !validation?.valid || uploading}
+          disabled={!file || !ready || reasonMissing || uploading}
           {...buttonTap}
           className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50"
         >
