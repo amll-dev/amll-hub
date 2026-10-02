@@ -90,6 +90,8 @@ export const lyricDataAtom = atom<LyricLine[] | null>(null);
 export const lyricLoadingAtom = atom(false);
 export const lyricErrorAtom = atom<string | null>(null);
 export const qualityAtom = atom<NcmQuality>('exhigh');
+// 当前曲目实际拿到的音质（上游降级后可能低于 qualityAtom）。
+export const actualQualityAtom = atom<NcmQuality | null>(null);
 export const playlistAtom = atom<PlaylistItem[]>([]);
 /** 当前播放索引（-1 表示无） */
 export const currentIndexAtom = atom(-1);

@@ -297,7 +297,22 @@ func (h *DailyRecommendationHandler) GetImage(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
 	defer cancel()
-	content, contentType, err := h.svc.GetImage(ctx, key)
+
+	// 临时区对象还没过审，不对外提供
+	if strings.HasPrefix(key, service.DailyRecTempPrefix) {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	var (
+		img *service.DailyRecImage
+		err error
+	)
+	if wantsThumb(c) {
+		img, err = h.svc.GetThumb(ctx, key)
+	} else {
+		img, err = h.svc.GetImage(ctx, key)
+	}
 	if err != nil {
 		if errors.Is(err, service.ErrDailyRecNotFound) {
 			c.Status(http.StatusNotFound)
@@ -307,6 +322,45 @@ func (h *DailyRecommendationHandler) GetImage(c *gin.Context) {
 		c.Status(http.StatusInternalServerError)
 		return
 	}
-	c.Header("Cache-Control", "public, max-age=60, must-revalidate")
-	c.Data(http.StatusOK, contentType, content)
+	defer func() { _ = img.Content.Close() }()
+
+	// 对象 key 含 UnixNano，同一 key 内容永不变化：可以放心 immutable 长缓存，
+	// 过期后靠 ETag 协商回 304，而不是重新下载整张图
+	c.Header("ETag", img.ETag)
+	c.Header("Cache-Control", "public, max-age=604800, immutable")
+	if etagMatch(c.GetHeader("If-None-Match"), img.ETag) {
+		c.Status(http.StatusNotModified)
+		return
+	}
+	c.DataFromReader(http.StatusOK, img.Size, img.ContentType, img.Content, nil)
+}
+
+// wantsThumb 判断是否要缩略图：?w=640 / ?w=1 都行，w 大于服务端缩略图边长时按缩略图返回
+func wantsThumb(c *gin.Context) bool {
+	raw := strings.TrimSpace(c.Query("w"))
+	if raw == "" {
+		return false
+	}
+	width, err := strconv.Atoi(raw)
+	if err != nil {
+		return false
+	}
+	return width > 0
+}
+
+// etagMatch 判断 If-None-Match 是否命中当前 ETag（弱比较，忽略 W/ 前缀）
+func etagMatch(header, etag string) bool {
+	if header == "" || etag == "" {
+		return false
+	}
+	header = strings.TrimSpace(header)
+	if header == "*" {
+		return true
+	}
+	for _, candidate := range strings.Split(header, ",") {
+		if strings.TrimPrefix(strings.TrimSpace(candidate), "W/") == etag {
+			return true
+		}
+	}
+	return false
 }

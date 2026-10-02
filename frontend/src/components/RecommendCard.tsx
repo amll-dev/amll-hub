@@ -87,7 +87,6 @@ export function RecommendCard({
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(recommendation.likeCount ?? 0);
   const [downloading, setDownloading] = useState(false);
-  const [coverLoaded, setCoverLoaded] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
 
   // 登录用户进入卡片时拉取服务端点赞状态（Query 去重：同卡片重复挂载只发一次）
@@ -146,54 +145,46 @@ export function RecommendCard({
     likeMutation.mutate();
   };
 
-  // 封面预加载
+  // 封面：直接用 URL 渲染
+  const coverUrl = useMemo(
+    () => (recommendation.coverKey ? api.dailyCoverUrl(recommendation.coverKey, 640) : ''),
+    [recommendation.coverKey]
+  );
+  const coverFullUrl = useMemo(
+    () => (recommendation.coverKey ? api.dailyCoverUrl(recommendation.coverKey) : ''),
+    [recommendation.coverKey]
+  );
   const [coverSrc, setCoverSrc] = useState('');
+  const [coverInlined, setCoverInlined] = useState(false);
+  const [coverLoaded, setCoverLoaded] = useState(false);
+
   useEffect(() => {
-    const coverUrl = recommendation.coverKey ? api.dailyCoverUrl(recommendation.coverKey) : '';
+    setCoverInlined(false);
     if (!coverUrl) {
+      setCoverSrc('');
       setCoverLoaded(true);
       return;
     }
+    // 先用 URL 直接渲染（浏览器解码缓存 + HTTP 缓存都能命中）
+    setCoverSrc(coverUrl);
     setCoverLoaded(false);
-    setCoverSrc('');
+
     let cancelled = false;
-    const show = () => {
+    const img = new Image();
+    img.decoding = 'async';
+    const done = () => {
       if (!cancelled) setCoverLoaded(true);
     };
-    (async () => {
-      try {
-        const resp = await fetch(coverUrl);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const blob = await resp.blob();
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(blob);
-        });
-        if (cancelled) return;
-        const img = new Image();
-        img.onload = () => {
-          if (cancelled) return;
-          setCoverSrc(dataUrl);
-          // 等待解码完成
-          if (typeof img.decode === 'function') {
-            img.decode().then(show, show);
-          } else {
-            show();
-          }
-        };
-        img.onerror = show;
-        img.src = dataUrl;
-      } catch {
-        // 拉取失败也要结束骨架屏，渲染端回退占位图
-        show();
-      }
-    })();
+    img.onload = () => {
+      if (typeof img.decode === 'function') img.decode().then(done, done);
+      else done();
+    };
+    img.onerror = done;
+    img.src = coverUrl;
     return () => {
       cancelled = true;
     };
-  }, [recommendation.coverKey]);
+  }, [coverUrl]);
 
   // 点赞计数由服务端同步的 likeCount state 承接
 
@@ -251,6 +242,30 @@ export function RecommendCard({
     if (!cardRef.current || downloading) return;
     setDownloading(true);
     try {
+      // 光栅化前先把封面换成 data URL：canvas 读取跨源图片会被污染，
+      // toDataURL 会直接抛安全错误。首屏不转，只有到这里才转。
+      if (coverFullUrl && !coverInlined) {
+        try {
+          const resp = await fetch(coverFullUrl);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const blob = await resp.blob();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+          });
+          setCoverSrc(dataUrl);
+          setCoverInlined(true);
+          // 等两帧，保证新 src 已经提交并被解码
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          });
+        } catch (e) {
+          console.warn('封面内联失败，下载图片可能不完整', e);
+        }
+      }
+
       const png = await domToPng(cardRef.current, { scale: 2 });
       // canvas 层裁剪圆角：CSS border-radius 在 foreignObject 光栅化时
       // 对 blur 滤镜背景的裁剪不可靠，直接用裁剪路径切，角外必为透明

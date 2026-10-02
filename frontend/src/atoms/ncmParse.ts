@@ -1,6 +1,7 @@
 import { atom } from 'jotai';
 import type { LyricLine } from '@applemusic-like-lyrics/lyric';
 import type { NcmMusicInfo, NcmPlaylistDetail, NcmSong } from '@/lib/types';
+import type { NcmQuality } from '@/atoms/player';
 
 /** 点击搜索结果后解析出的歌曲 */
 export interface ParsedSong {
@@ -29,6 +30,8 @@ export const ncmSongIdInputAtom = atom('');
 
 /** 已提交的歌单 ID，驱动歌单 Query */
 export const ncmPlaylistIdAtom = atom('');
+
+export const ncmQualityAtom = atom<NcmQuality | null>(null);
 
 // ===== 派生数据（Query 结果由 hook 侧映射，atoms 只存提交源） =====
 export type { NcmSong, NcmPlaylistDetail };

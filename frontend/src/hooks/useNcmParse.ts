@@ -1,10 +1,10 @@
 import { useCallback } from 'react';
-import { getDefaultStore, useAtom, useAtomValue } from 'jotai';
+import { useAtom, useAtomValue } from 'jotai';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import type { NcmPlaylistDetail, NcmSong } from '@/lib/types';
-import { qualityAtom } from '@/atoms/player';
+import { qualityAtom, type NcmQuality } from '@/atoms/player';
 import {
   ncmSearchQueryAtom,
   ncmHideSearchListAtom,
@@ -13,6 +13,7 @@ import {
   ncmParseErrorAtom,
   ncmSongIdInputAtom,
   ncmPlaylistIdAtom,
+  ncmQualityAtom,
   type ParsedSong,
 } from '@/atoms/ncmParse';
 
@@ -40,6 +41,15 @@ export interface NcmParseContextValue {
   songIdInput: string;
   setSongIdInput: (v: string) => void;
 
+  // ===== 音质 =====
+  /** 解析页当前生效的音质：页面手动选过就用它，否则跟随播放器全局音质 */
+  quality: NcmQuality;
+  /** 页面级待应用音质（null = 跟随全局） */
+  pageQuality: NcmQuality | null;
+  setPageQuality: (q: NcmQuality | null) => void;
+  /** 把页面选择同步到全局音质（真正解析 / 播放前调用） */
+  applyQuality: () => NcmQuality;
+
   // ===== 解析歌单 =====
   playlistDetail: NcmPlaylistDetail | null;
   playlistLoading: boolean;
@@ -61,6 +71,7 @@ export function useNcmParse(): NcmParseContextValue {
   const parseLoading = useAtomValue(ncmParseLoadingAtom);
   const parseError = useAtomValue(ncmParseErrorAtom);
   const playlistId = useAtomValue(ncmPlaylistIdAtom);
+  const globalQuality = useAtomValue(qualityAtom);
 
   const [, setHideSearchList] = useAtom(ncmHideSearchListAtom);
   const [, setSearchQuery] = useAtom(ncmSearchQueryAtom);
@@ -69,6 +80,11 @@ export function useNcmParse(): NcmParseContextValue {
   const [, setParseError] = useAtom(ncmParseErrorAtom);
   const [songIdInput, setSongIdInput] = useAtom(ncmSongIdInputAtom);
   const [, setPlaylistId] = useAtom(ncmPlaylistIdAtom);
+  const [pageQuality, setPageQuality] = useAtom(ncmQualityAtom);
+  const [, setGlobalQuality] = useAtom(qualityAtom);
+
+  // 页面没手动选过就跟随播放器全局音质
+  const quality = pageQuality ?? globalQuality;
 
   const searchNcmQuery = useQuery({
     queryKey: queryKeys.ncmSearch(searchQuery),
@@ -103,9 +119,9 @@ export function useNcmParse(): NcmParseContextValue {
       setParseError(null);
       setHideSearchList(true);
       setSongIdInput(songId);
+      // 真正解析时才把页面选择同步到全局，播放器与歌词页的音质随之对齐
+      setGlobalQuality(quality);
       try {
-        // 音质取当前播放器音质（atoms 化后直接读全局值，无需 Context 依赖）
-        const quality = qualityAtomDefaultGet();
         const info = await api.parseNcmMusic(songId, quality);
         // 先填充播放信息，歌词异步获取（避免阻塞播放按钮）
         setParsedSong({
@@ -155,7 +171,15 @@ export function useNcmParse(): NcmParseContextValue {
         setParseLoading(false);
       }
     },
-    [setParseLoading, setParseError, setHideSearchList, setSongIdInput, setParsedSong]
+    [
+      setParseLoading,
+      setParseError,
+      setHideSearchList,
+      setSongIdInput,
+      setGlobalQuality,
+      setParsedSong,
+      quality,
+    ]
   );
 
   const doParsePlaylist = useCallback(
@@ -164,6 +188,12 @@ export function useNcmParse(): NcmParseContextValue {
     },
     [setPlaylistId]
   );
+
+  /** 把页面级音质选择同步到全局，返回生效的音质 */
+  const applyQuality = useCallback(() => {
+    setGlobalQuality(quality);
+    return quality;
+  }, [quality, setGlobalQuality]);
 
   return {
     searchSongs: (searchNcmQuery.data?.data as NcmSong[] | undefined) ?? null,
@@ -181,6 +211,10 @@ export function useNcmParse(): NcmParseContextValue {
     parseSong,
     songIdInput,
     setSongIdInput,
+    quality,
+    pageQuality,
+    setPageQuality,
+    applyQuality,
     playlistDetail: playlistQuery.data?.playlist ?? null,
     playlistLoading: playlistQuery.isFetching,
     playlistError: playlistQuery.error
@@ -190,9 +224,4 @@ export function useNcmParse(): NcmParseContextValue {
       : null,
     doParsePlaylist,
   };
-}
-
-// 音质从 player atoms 的默认 store 读取（避免 hook 间循环依赖）
-function qualityAtomDefaultGet() {
-  return getDefaultStore().get(qualityAtom);
 }

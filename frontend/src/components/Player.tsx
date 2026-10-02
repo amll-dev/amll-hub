@@ -37,9 +37,11 @@ import {
   lyricDataAtom,
   playlistAtom,
   qualityAtom,
+  actualQualityAtom,
   type NcmQuality,
   type RepeatMode,
 } from '@/atoms/player';
+import { isQualityDowngraded } from '@/lib/quality';
 
 const LyricsPage = lazy(() =>
   import('@/components/LyricsPage').then((m) => ({ default: m.LyricsPage }))
@@ -119,8 +121,6 @@ export function NcmSelectDialog() {
                     onClick={() => resolveSelect(id)}
                     className="block w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-left text-sm transition-colors hover:border-primary hover:bg-primary-tint hover:text-primary"
                   >
-                    <span className="font-mono">{id}</span>
-                    {idx === 0 && <span className="ml-2 text-[10px] text-ink-3">（首选）</span>}
                   </button>
                 </li>
               ))}
@@ -227,19 +227,32 @@ function VolumeControl() {
 /** 音质选择按钮：点击弹出下拉菜单选择音质，切换后保持进度 */
 function QualityControl() {
   const quality = useAtomValue(qualityAtom);
+  const actualQuality = useAtomValue(actualQualityAtom);
   const track = useAtomValue(trackAtom);
   const { reloadWithQuality } = playerActions;
   const [open, setOpen] = useState(false);
   if (!track) return null;
+
+  // 上游拿不到用户所选的音质时会自动降级，按钮上标出来，别让用户以为拿到了杜比
+  const downgraded = isQualityDowngraded(actualQuality, quality);
   return (
     <div className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="rounded-full border border-line bg-surface-2/60 px-2.5 py-1 text-[11px] font-medium text-ink-2 transition-colors hover:border-primary hover:text-primary"
-        title="切换音质"
+        className="flex items-center gap-1.5 rounded-full border border-line bg-surface-2/60 px-2.5 py-1 text-[11px] font-medium text-ink-2 transition-colors hover:border-primary hover:text-primary"
+        title={
+          downgraded
+            ? `所选音质「${NCM_QUALITY_LABEL[quality]}」不可用，已降级为「${NCM_QUALITY_LABEL[actualQuality ?? 'standard']}」`
+            : '切换音质'
+        }
       >
         {NCM_QUALITY_LABEL[quality as NcmQuality]}
+        {downgraded && (
+          <span className="rounded bg-warning/15 px-1 text-[10px] font-semibold text-warning">
+            已降级
+          </span>
+        )}
       </button>
       <AnimatePresence>
         {open && (

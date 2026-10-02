@@ -753,9 +753,15 @@ export const api = {
 
   // ===== 每日推荐 =====
 
-  /** 每日推荐封面图片 URL */
-  dailyCoverUrl(key: string): string {
-    return `${API_BASE}/api/v1/daily-recommendations/image/${encodeURIComponent(key)}`;
+  /**
+   * 每日推荐封面图片 URL
+   *
+   * @param key 封面对象 key
+   * @param width 传值则请求缩略图（列表页用，避免拉原图）；不传返回原图（下载海报、创作者预览用）
+   */
+  dailyCoverUrl(key: string, width?: number): string {
+    const base = `${API_BASE}/api/v1/daily-recommendations/image/${encodeURIComponent(key)}`;
+    return width ? `${base}?w=${width}` : base;
   },
 
   /**

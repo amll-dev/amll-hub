@@ -1,11 +1,8 @@
-// type-only 导入不产生运行时依赖，AMLL 运行时代码全部动态导入：
-// 本文件是全局 Boot（首屏必加载），若顶层 import AMLL 包（含 WebGL 渲染器
-// ~360KB），纯浏览的访客也要为歌词页功能买单。
-// react-full 内部经 globalThis.jotaiAtomCache 创建 atom 单例，
-// 动态导入与歌词页（LyricsPage）拿到的是同一实例，状态互通。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAtom, useStore } from 'jotai';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { normalizeNcmLevel } from '@/lib/quality';
 import type { SearchHit } from '@/lib/types';
 import {
   NCM_QUALITY_ORDER,
@@ -24,6 +21,7 @@ import {
   lyricLoadingAtom,
   lyricErrorAtom,
   qualityAtom,
+  actualQualityAtom,
   playlistAtom,
   currentIndexAtom,
   showPlaylistPanelAtom,
@@ -48,6 +46,24 @@ const REVERB_SEND_LEVEL = 0.3;
 const TRANSITION_HOLD_RATIO = 0.4;
 /** 预加载 URL 新鲜度阈值：超过该时长且距曲目结束不足 60s 时重新解析（网易云 CDN URL 会过期） */
 const PRELOAD_REFRESH_MS = 10 * 60_000;
+
+// ===== 音质可播性 =====
+const DOLBY_HINT = '杜比全景声暂不支持播放，可改选其它音质；或下载后用本地播放器收听';
+
+/** 该音质是否能在浏览器里直接播放 */
+function isUnplayableQuality(quality: NcmQuality): boolean {
+  return quality === 'dolby';
+}
+
+/** 把播放失败的原因翻译成用户能看懂的话 */
+function describePlayError(e: unknown): string {
+  const err = e as { name?: string; message?: string; code?: number };
+  // MediaError: 1=ABORTED 2=NETWORK 3=DECODE 4=SRC_NOT_SUPPORTED
+  if (err?.name === 'NotSupportedError' || err?.code === 4 || err?.code === 3) {
+    return '浏览器无法解码该音频的编码，请改选其它音质';
+  }
+  return `播放失败：${err?.message || String(e)}`;
+}
 
 // 恒功率淡化曲线（cos/sin，同 SeamlessDJPlayer 的恒功率交叉淡化；
 // 相比 linear 曲线中点不失真，总能量恒定）
@@ -256,6 +272,7 @@ export function PlayerBoot() {
   const [, setLyricLoading] = useAtom(lyricLoadingAtom);
   const [, setLyricError] = useAtom(lyricErrorAtom);
   const [quality, setQuality] = useAtom(qualityAtom);
+  const [, setActualQuality] = useAtom(actualQualityAtom);
   const [playlist, setPlaylist] = useAtom(playlistAtom);
   const [currentIndex, setCurrentIndex] = useAtom(currentIndexAtom);
   const [, setShowPlaylistPanel] = useAtom(showPlaylistPanelAtom);
@@ -377,7 +394,7 @@ export function PlayerBoot() {
         }
         setCurrent(audio.currentTime || seekTo);
         audio.play().catch((e) => {
-          setError(`播放失败：${e instanceof Error ? e.message : String(e)}`);
+          setError(describePlayError(e));
           setPlaying(false);
         });
       };
@@ -386,7 +403,7 @@ export function PlayerBoot() {
       audio.currentTime = 0;
       setCurrent(0);
       audio.play().catch((e) => {
-        setError(`播放失败：${e instanceof Error ? e.message : String(e)}`);
+        setError(describePlayError(e));
         setPlaying(false);
       });
     }
@@ -501,6 +518,11 @@ export function PlayerBoot() {
     }
     // 上一曲即时混音加载进行中：standby 被占用，跳过
     if (manualLoadRef.current) return;
+    // 杜比全景声播不了，没必要预载
+    if (isUnplayableQuality(qualityRef.current)) {
+      preloadedRef.current = null;
+      return;
+    }
     const reqId = ++preloadReqIdRef.current;
     try {
       const info = await api.parseNcmMusic(item.songId, qualityRef.current);
@@ -811,6 +833,11 @@ export function PlayerBoot() {
       } = {}
     ) => {
       const useQ = opts.q ?? quality;
+      // 杜比全景声浏览器解不了：发请求前就拦住，别让用户等一个必然失败的请求
+      if (isUnplayableQuality(useQ)) {
+        toast.error(DOLBY_HINT);
+        return;
+      }
       setLoading(true);
       setError(null);
       // 常规切歌路径：中止进行中的淡变
@@ -823,6 +850,9 @@ export function PlayerBoot() {
           throw new Error('未能获取播放链接（可能无版权）');
         }
         const hit = opts.hit;
+        // 记录实际拿到的音质：上游拿不到用户所选音质时会自动降级，
+        // 播放器据此提示「已降级」（见 Player.tsx 的 QualityControl）
+        setActualQuality(normalizeNcmLevel(info.level));
         setTrack({
           title: info.name || opts.meta?.name || hit?.musicNames[0] || '未知歌曲',
           artists: opts.meta?.artists || hit?.artists.join(' / ') || info.artists || '未知歌手',
@@ -858,6 +888,7 @@ export function PlayerBoot() {
       quality,
       ensureAudioContext,
       abortTransition,
+      setActualQuality,
       setCurrentIndex,
       setError,
       setLoading,
@@ -902,6 +933,8 @@ export function PlayerBoot() {
       setDuration(0);
       setError(null);
       setLoading(false);
+      // 非网易云曲目没有音质概念，清掉降级提示
+      setActualQuality(null);
       setTrack({
         title: opts.title,
         artists: opts.artists || '未知歌手',
@@ -912,7 +945,16 @@ export function PlayerBoot() {
       });
       setPlaying(true);
     },
-    [abortTransition, setCurrent, setDuration, setError, setLoading, setPlaying, setTrack]
+    [
+      abortTransition,
+      setActualQuality,
+      setCurrent,
+      setDuration,
+      setError,
+      setLoading,
+      setPlaying,
+      setTrack,
+    ]
   );
 
   // 切换到下一个音质
@@ -1043,6 +1085,13 @@ export function PlayerBoot() {
       const startEl = activeElRef.current;
       if (!item) return;
       if (!standby || transitionRef.current) {
+        void resolveAndPlay(item.songId, {
+          meta: { name: item.name, artists: item.artists, cover: item.cover },
+        });
+        return;
+      }
+      // 杜比全景声播不了，直接走普通路径（会在 resolveAndPlay 里被拦住并提示）
+      if (isUnplayableQuality(qualityRef.current)) {
         void resolveAndPlay(item.songId, {
           meta: { name: item.name, artists: item.artists, cover: item.cover },
         });
