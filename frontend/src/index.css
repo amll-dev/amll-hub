@@ -263,6 +263,8 @@ html.dark {
   --amll-state-info: #4d9fe0;
 }
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* 桥接 --amll-* 到 Tailwind v4 语义 utility（bg-background / text-foreground / bg-primary 等） */
 @theme inline {
   --color-background: var(--amll-background);

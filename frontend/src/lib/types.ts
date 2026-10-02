@@ -311,6 +311,23 @@ export interface TtmlMetadata {
   raw_properties?: Record<string, string[]>;
 }
 
+// GET /api/v1/users/me/activity 返回
+export interface UserActivityDay {
+  /** YYYY-MM-DD */
+  date: string;
+  count: number;
+  byType: Record<string, number>;
+}
+
+export interface UserActivity {
+  year: number;
+  /** 有记录的年份（供切换） */
+  years: number[];
+  days: UserActivityDay[];
+  total: number;
+  byType: Record<string, number>;
+}
+
 // POST /api/v1/submissions/validate 返回
 export interface TtmlValidationResult {
   valid: boolean;

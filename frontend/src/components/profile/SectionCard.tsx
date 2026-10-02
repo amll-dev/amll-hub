@@ -1,6 +1,4 @@
 import type { ReactNode } from 'react';
-import { motion } from 'framer-motion';
-import { fadeUp } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
 
@@ -15,7 +13,7 @@ interface SectionCardProps {
 /** 个人中心右侧内容区块 */
 export function SectionCard({ icon, title, description, className, children }: SectionCardProps) {
   return (
-    <motion.div variants={fadeUp}>
+    <div>
       <Card className={cn('gap-0 p-6', className)}>
         <div className="mb-5 flex items-start gap-3">
           {icon && (
@@ -30,6 +28,6 @@ export function SectionCard({ icon, title, description, className, children }: S
         </div>
         {children}
       </Card>
-    </motion.div>
+    </div>
   );
 }

@@ -127,6 +127,7 @@ func Run() {
 
 	// 消息中心 service
 	notifSvc := service.NewNotificationService(notifRepo)
+	userActivitySvc := service.NewUserActivityService(db)
 	// 邮件通知
 	casdoorClient := infrastructure.NewCasdoorClient(cfg.Casdoor)
 	mailSender, err := mail.NewSender(cfg.Email)
@@ -229,6 +230,7 @@ func Run() {
 	latestSongH := handler.NewLatestSongHandler(latestSongSvc)
 	adminH := handler.NewAdminHandler(reviewerRepo, reviewerCache, notifSvc)
 	notifH := handler.NewNotificationHandler(notifSvc)
+	userActivityH := handler.NewUserActivityHandler(userActivitySvc)
 	wsH := handler.NewWSHandler(hub, viewerSvc, reviewerCache, cfg.Casdoor.JWTSecret)
 
 	// 6. 启动 HTTP
@@ -254,6 +256,7 @@ func Run() {
 		LatestSong:   latestSongH,
 		Admin:        adminH,
 		Notification: notifH,
+		UserActivity: userActivityH,
 
 		ReviewerCache: reviewerCache,
 		AdminCache:    adminCache,

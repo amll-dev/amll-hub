@@ -155,7 +155,7 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
 
       {/* 未重排提示 */}
       {isUnrearranged && file && !validating && (
-        <div className="mt-3 flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+        <div className="mt-3 flex items-center gap-1.5 rounded-md border border-amber-500/60 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-300">
           <AlertTriangle className="h-4 w-4" />
           未重排模式：元数据照常解析，文件原样上传
         </div>

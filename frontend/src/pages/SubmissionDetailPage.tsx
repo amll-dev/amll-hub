@@ -450,7 +450,7 @@ function SubmissionDetailContent({
               transition={{ duration: 0.2 }}
               className="overflow-hidden"
             >
-              <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-50 px-3 py-2.5 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+              <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-500/60 bg-amber-50 dark:border-amber-500/40 px-3 py-2.5 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <div className="min-w-0">
                   <div className="font-medium">
