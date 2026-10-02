@@ -51,6 +51,26 @@ function loadAliyunCaptchaScript(): Promise<void> {
 }
 
 /**
+ * 等待挂载点出现在 DOM 中。
+ *
+ * 容器由 React 渲染，effect 执行时可能还没 commit（首帧 / 条件渲染切换）。
+ */
+function waitForElement(containerId: string, timeoutMs = 3000): Promise<HTMLElement | null> {
+  const existing = document.getElementById(containerId);
+  if (existing) return Promise.resolve(existing);
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      const el = document.getElementById(containerId);
+      if (el || Date.now() - startedAt > timeoutMs) {
+        clearInterval(timer);
+        resolve(el);
+      }
+    }, 50);
+  });
+}
+
+/**
  * 管理阿里云人机验证码
  */
 export function useAliyunCaptcha(
@@ -108,11 +128,15 @@ export function useAliyunCaptcha(
         await loadAliyunCaptchaScript();
         if (!mounted) return;
 
-        destroy();
+        // 挂载点可能尚未 commit（首帧 / 条件渲染切换），等它出现
+        const el = await waitForElement(containerId);
+        if (!mounted) return;
+        if (!el) {
+          console.warn('[aliyun-captcha] 挂载点未出现：', containerId);
+          return;
+        }
 
-        // 清理容器
-        const el = document.getElementById(containerId);
-        if (!el) return;
+        destroy();
         el.innerHTML = '';
 
         window.initAliyunCaptcha!({

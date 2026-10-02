@@ -3,6 +3,8 @@ import type {
   DailyLikeStatus,
   DailyRecommendation,
   DailyRecListResult,
+  IdentityMethod,
+  IdentityStatus,
   LatestSongItem,
   LyricViewResponse,
   MessageType,
@@ -347,11 +349,40 @@ export const api = {
     });
   },
 
-  /** 修改密码 POST /api/v1/auth/change-password */
+  /** 修改密码 POST /api/v1/auth/change-password
+   *  oldPassword 可为空：此时要求已通过手机 / 邮箱身份验证 */
   changePassword(oldPassword: string, newPassword: string): Promise<void> {
     return request<void>('/api/v1/auth/change-password', {
       method: 'POST',
       body: JSON.stringify({ oldPassword, newPassword }),
+    });
+  },
+
+  /** 身份验证状态 GET /api/v1/auth/identity */
+  getIdentityStatus(): Promise<IdentityStatus> {
+    return request<IdentityStatus>('/api/v1/auth/identity');
+  },
+
+  /** 向自身已绑定的手机 / 邮箱发送身份验证验证码 POST /api/v1/auth/identity/code */
+  sendIdentityCode(params: {
+    method: IdentityMethod;
+    captchaType: string;
+    captchaToken: string;
+  }): Promise<void> {
+    return request<void>('/api/v1/auth/identity/code', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  /** 身份验证 POST /api/v1/auth/identity/verify */
+  verifyIdentity(params: { method: IdentityMethod; code: string }): Promise<{
+    verified: boolean;
+    expiresIn: number;
+  }> {
+    return request<{ verified: boolean; expiresIn: number }>('/api/v1/auth/identity/verify', {
+      method: 'POST',
+      body: JSON.stringify(params),
     });
   },
 

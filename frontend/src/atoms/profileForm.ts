@@ -1,6 +1,6 @@
 import { atom, getDefaultStore } from 'jotai';
 
-// ===== 个人资料页状态 atoms（替代 Profile 页的 useState） =====
+// ===== 个人中心状态 atoms（ProfileInfo / ProfileSecurity 共用） =====
 
 /** 联系方式编辑目标："email" | "phone" | null（null 表示未在编辑） */
 export type EditTarget = 'email' | 'phone' | null;
@@ -18,14 +18,12 @@ export const editValueAtom = atom('');
 export const editCodeAtom = atom('');
 /** 联系方式修改反馈消息 */
 export const editMsgAtom = atom<FormMsg>(null);
-/** 人机验证弹窗是否打开 */
-export const captchaModalOpenAtom = atom(false);
 /** 资料保存反馈消息 */
 export const profileMsgAtom = atom<FormMsg>(null);
 /** 密码修改反馈消息 */
 export const pwdMsgAtom = atom<FormMsg>(null);
 
-/** 复位个人资料页状态（页面卸载时调用，保持与原 useState 卸载即重置一致的语义） */
+/** 复位个人中心表单状态（页面卸载时调用，保持与原 useState 卸载即重置一致的语义） */
 export function resetProfileForm() {
   const store = getDefaultStore();
   store.set(avatarMsgAtom, null);
@@ -33,7 +31,6 @@ export function resetProfileForm() {
   store.set(editValueAtom, '');
   store.set(editCodeAtom, '');
   store.set(editMsgAtom, null);
-  store.set(captchaModalOpenAtom, false);
   store.set(profileMsgAtom, null);
   store.set(pwdMsgAtom, null);
 }

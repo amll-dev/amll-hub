@@ -218,17 +218,6 @@ func (c *CasdoorClient) doWithBearer(ctx context.Context, method, path string, b
 	return c.doRequest(req)
 }
 
-// doRequestWithMultipart 发送 multipart 请求（Basic Auth）
-func (c *CasdoorClient) doRequestWithMultipart(ctx context.Context, path string, writer *multipart.Writer, body *bytes.Buffer) (*casdoorResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", c.cfg.Endpoint+path, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", c.basicAuthHeader())
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	return c.doRequest(req)
-}
-
 func (c *CasdoorClient) doRequest(req *http.Request) (*casdoorResponse, error) {
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -386,8 +375,11 @@ func (c *CasdoorClient) getAccount(ctx context.Context, accessToken string) (*Ca
 	return &user, nil
 }
 
-// LoginByCode 用验证码登录（Casdoor /api/login 接口）
-func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string) (*CasdoorUser, error) {
+// LoginByCode 用验证码登录（Casdoor /api/login 接口）。
+//
+// 该接口不返回 OAuth token，而是通过 Set-Cookie 下发会话，因此这里用 cookie jar 捕获，
+// 让「以登录用户身份」的接口（如 /api/reset-email-or-phone）也能复用这份会话。
+func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string) (*CasdoorUser, []*http.Cookie, error) {
 	isEmail := strings.Contains(dest, "@")
 
 	payload := map[string]any{
@@ -401,7 +393,7 @@ func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string) (*Ca
 
 	jsonBody, err := json.Marshal(payload)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -410,28 +402,106 @@ func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string) (*Ca
 		"isEmail": isEmail,
 	}).Info("casdoor /api/login (code) request")
 
-	cr, err := c.doWithBasicAuth(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json")
+	cr, cookies, err := c.doWithBasicAuthAndCookies(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := checkStatus(cr); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"error":       err,
 			"casdoor_msg": cr.Msg,
 		}).Warn("casdoor login (code) failed")
-		return nil, err
+		return nil, nil, err
 	}
 
 	// 验证码校验通过，根据邮箱/手机查询用户
 	if isEmail {
-		return c.GetUserByEmail(ctx, dest)
+		user, err := c.GetUserByEmail(ctx, dest)
+		return user, cookies, err
 	}
-	return c.GetUserByPhone(ctx, dest)
+	user, err := c.GetUserByPhone(ctx, dest)
+	return user, cookies, err
 }
 
 // 根据手机号查询用户
 func (c *CasdoorClient) GetUserByPhone(ctx context.Context, phone string) (*CasdoorUser, error) {
-	cr, err := c.doWithBasicAuth(ctx, "GET", fmt.Sprintf("/api/get-users?owner=%s&field=phone&value=%s&pageSize=100&p=1", url.QueryEscape(c.cfg.Organization), url.QueryEscape(phone)), nil, "")
+	phone = strings.TrimSpace(phone)
+	if phone == "" {
+		return nil, fmt.Errorf("该手机号未注册")
+	}
+	candidates := []string{phone}
+	bare := toBarePhone(phone)
+	e164 := toE164Phone(phone)
+	for _, v := range []string{bare, e164} {
+		if v != "" && v != candidates[0] {
+			candidates = append(candidates, v)
+		}
+	}
+
+	var lastErr error
+	for _, cand := range candidates {
+		users, err := c.queryUsersByField(ctx, "phone", cand)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		for i := range users {
+			if phoneMatches(users[i].Phone, phone) {
+				logrus.WithFields(logrus.Fields{
+					"query": cand,
+					"phone": users[i].Phone,
+					"owner": users[i].Owner,
+					"name":  users[i].Name,
+				}).Info("casdoor get-user-by-phone matched")
+				return &users[i], nil
+			}
+		}
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("该手机号未注册")
+}
+
+// toE164Phone 把号码补成 E.164（+86xxxxxxxxxxx），非数字字符原样返回
+func toE164Phone(phone string) string {
+	phone = strings.TrimSpace(phone)
+	if phone == "" || strings.HasPrefix(phone, "+") {
+		return phone
+	}
+	for _, r := range phone {
+		if r < '0' || r > '9' {
+			return phone
+		}
+	}
+	return "+86" + phone
+}
+
+// toBarePhone 去掉国家码前缀，只留订阅号
+func toBarePhone(phone string) string {
+	phone = strings.TrimSpace(phone)
+	if strings.HasPrefix(phone, "+") {
+		phone = phone[1:]
+	}
+	if len(phone) == 13 && strings.HasPrefix(phone, "86") {
+		return phone[2:]
+	}
+	return phone
+}
+
+// phoneMatches 判断库里的 phone 与目标是否同一个（裸号 / E.164 两种写法都算）
+func phoneMatches(stored, target string) bool {
+	if stored == "" || target == "" {
+		return false
+	}
+	return toBarePhone(stored) == toBarePhone(target)
+}
+
+// queryUsersByField 按字段查询用户列表
+func (c *CasdoorClient) queryUsersByField(ctx context.Context, field, value string) ([]CasdoorUser, error) {
+	path := fmt.Sprintf("/api/get-users?owner=%s&field=%s&value=%s&pageSize=100&p=1",
+		url.QueryEscape(c.cfg.Organization), url.QueryEscape(field), url.QueryEscape(value))
+	cr, err := c.doWithBasicAuth(ctx, "GET", path, nil, "")
 	if err != nil {
 		return nil, err
 	}
@@ -442,16 +512,7 @@ func (c *CasdoorClient) GetUserByPhone(ctx context.Context, phone string) (*Casd
 	if err := json.Unmarshal(cr.Data, &users); err != nil {
 		return nil, fmt.Errorf("decode users: %w", err)
 	}
-	// 在客户端二次校验
-	for i := range users {
-		if users[i].Phone == phone {
-			return &users[i], nil
-		}
-	}
-	if len(users) == 0 {
-		return nil, fmt.Errorf("该手机号未注册")
-	}
-	return nil, fmt.Errorf("该手机号未注册")
+	return users, nil
 }
 
 // 注册请求
@@ -670,6 +731,42 @@ func (c *CasdoorClient) UpdateUser(ctx context.Context, user *CasdoorUser, colum
 	return nil
 }
 
+// ResetEmailOrPhone 修改当前登录用户的邮箱 / 手机号。
+func (c *CasdoorClient) ResetEmailOrPhone(ctx context.Context, destType, dest, code, accessToken string, sessionCookies []*http.Cookie) error {
+	form := url.Values{}
+	form.Set("type", destType)
+	form.Set("dest", dest)
+	form.Set("code", code)
+
+	logrus.WithFields(logrus.Fields{
+		"type":       destType,
+		"dest":       dest,
+		"has_token":  accessToken != "",
+		"has_cookie": len(sessionCookies) > 0,
+	}).Info("casdoor reset-email-or-phone request")
+
+	var cr *casdoorResponse
+	var err error
+	if accessToken != "" {
+		cr, err = c.doWithBearer(ctx, "POST", "/api/reset-email-or-phone", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", accessToken)
+	} else if len(sessionCookies) > 0 {
+		cr, _, err = c.doWithBasicAuthWithCookieJar(ctx, "POST", "/api/reset-email-or-phone", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", sessionCookies)
+	} else {
+		return errors.New("缺少 Casdoor 用户身份凭证，请重新登录")
+	}
+	if err != nil {
+		return err
+	}
+	if err := checkStatus(cr); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error":       err,
+			"casdoor_msg": cr.Msg,
+		}).Warn("casdoor reset-email-or-phone failed")
+		return fmt.Errorf("%w: %s", err, cr.Msg)
+	}
+	return nil
+}
+
 // 修改密码
 func (c *CasdoorClient) SetPassword(ctx context.Context, owner, name, oldPassword, newPassword string) error {
 	form := url.Values{}
@@ -685,14 +782,15 @@ func (c *CasdoorClient) SetPassword(ctx context.Context, owner, name, oldPasswor
 	return checkStatus(cr)
 }
 
-// 校验验证码并把 verifiedCode/verifiedUserId 写入 Casdoor Session
-func (c *CasdoorClient) VerifyCode(ctx context.Context, dest, name, code string, cookies []*http.Cookie) ([]*http.Cookie, error) {
+// VerifyCode 校验验证码，并把 verifiedCode 写入 Casdoor Session。
+func (c *CasdoorClient) VerifyCode(ctx context.Context, checkType, dest, name, code string, cookies []*http.Cookie) ([]*http.Cookie, error) {
 	payload := map[string]any{
 		"organization": c.cfg.Organization,
 		"username":     dest,
 		"name":         name,
 		"code":         code,
-		"type":         "login",
+		"checkType":    checkType,
+		"type":         checkType,
 	}
 	jsonBody, err := json.Marshal(payload)
 	if err != nil {
@@ -700,10 +798,11 @@ func (c *CasdoorClient) VerifyCode(ctx context.Context, dest, name, code string,
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"dest":     dest,
-		"name":     name,
-		"code_len": len(code),
-		"cookies":  len(cookies),
+		"checkType": checkType,
+		"dest":      dest,
+		"name":      name,
+		"code_len":  len(code),
+		"cookies":   len(cookies),
 	}).Info("casdoor verify-code request")
 	cr, respCookies, err := c.doWithBasicAuthWithCookieJar(ctx, "POST", "/api/verify-code", bytes.NewReader(jsonBody), "application/json", cookies)
 	if err != nil {
@@ -714,13 +813,76 @@ func (c *CasdoorClient) VerifyCode(ctx context.Context, dest, name, code string,
 			"error":       err,
 			"casdoor_msg": cr.Msg,
 		}).Warn("casdoor verify-code failed")
-		return nil, err
+		return nil, fmt.Errorf("%w: %s", err, cr.Msg)
 	}
 	logrus.WithFields(logrus.Fields{
 		"input":  len(cookies),
 		"output": len(respCookies),
 	}).Info("casdoor verify-code ok, cookies")
 	return respCookies, nil
+}
+
+// doRequestWithMultipart 发送 multipart 请求（Basic Auth）
+func (c *CasdoorClient) doRequestWithMultipart(ctx context.Context, path string, writer *multipart.Writer, body *bytes.Buffer) (*casdoorResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, "POST", c.cfg.Endpoint+path, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", c.basicAuthHeader())
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return c.doRequest(req)
+}
+
+// UploadAvatar 上传用户头像，返回头像 URL。
+func (c *CasdoorClient) UploadAvatar(ctx context.Context, fileBytes []byte, storedName, username string) (string, error) {
+	fullFilePath := "avatar/" + c.cfg.Organization + "/" + storedName
+
+	q := url.Values{}
+	q.Set("owner", c.cfg.Organization)
+	q.Set("user", username)
+	q.Set("application", c.cfg.Application)
+	q.Set("tag", "avatar")
+	q.Set("parent", c.cfg.Organization+"/"+username)
+	q.Set("fullFilePath", "/"+fullFilePath)
+	apiPath := "/api/upload-resource?" + q.Encode()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	part, err := writer.CreateFormFile("file", storedName)
+	if err != nil {
+		return "", err
+	}
+	if _, err := part.Write(fileBytes); err != nil {
+		return "", err
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"username":     username,
+		"filename":     storedName,
+		"fullFilePath": fullFilePath,
+	}).Info("casdoor upload-resource request")
+	cr, err := c.doRequestWithMultipart(ctx, apiPath, writer, body)
+	if err != nil {
+		return "", err
+	}
+	if err := checkStatus(cr); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error":       err,
+			"casdoor_msg": cr.Msg,
+		}).Warn("casdoor upload-resource failed")
+		return "", err
+	}
+
+	// data 是资源 URL 字符串
+	var urlStr string
+	if err := json.Unmarshal(cr.Data, &urlStr); err != nil {
+		return "", fmt.Errorf("decode upload url: %w", err)
+	}
+	return urlStr, nil
 }
 
 // 重置密码。
@@ -749,54 +911,4 @@ func (c *CasdoorClient) ResetPassword(ctx context.Context, owner, name, newPassw
 		return err
 	}
 	return nil
-}
-
-// 上传头像到 Casdoor 资源存储
-func (c *CasdoorClient) UploadAvatar(ctx context.Context, fileBytes []byte, filename, username string) (string, error) {
-	q := url.Values{}
-	q.Set("owner", c.cfg.Organization)
-	q.Set("user", username)
-	q.Set("application", c.cfg.Application)
-	q.Set("tag", "avatar")
-	q.Set("parent", c.cfg.Organization+"/"+username)
-	q.Set("fullFilePath", "/avatar/"+username+"/"+filename)
-	path := "/api/upload-resource?" + q.Encode()
-
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	part, err := writer.CreateFormFile("file", filename)
-	if err != nil {
-		return "", err
-	}
-	if _, err := part.Write(fileBytes); err != nil {
-		return "", err
-	}
-	if err := writer.Close(); err != nil {
-		return "", err
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"username":     username,
-		"filename":     filename,
-		"fullFilePath": "/avatar/" + username + "/" + filename,
-	}).Info("casdoor upload-resource request")
-	cr, err := c.doRequestWithMultipart(ctx, path, writer, body)
-	if err != nil {
-		return "", err
-	}
-	if err := checkStatus(cr); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"error":       err,
-			"casdoor_msg": cr.Msg,
-		}).Warn("casdoor upload-resource failed")
-		return "", err
-	}
-
-	// data 是资源 URL 字符串
-	var urlStr string
-	if err := json.Unmarshal(cr.Data, &urlStr); err != nil {
-		return "", fmt.Errorf("decode upload url: %w", err)
-	}
-	return urlStr, nil
 }

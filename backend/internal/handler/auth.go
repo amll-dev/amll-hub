@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
@@ -246,6 +247,81 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	pkg.OK(c, profile)
 }
 
+// GetIdentityStatus GET /api/v1/auth/identity
+// 查询可用的身份验证方式与当前验证状态
+func (h *AuthHandler) GetIdentityStatus(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		pkg.Unauthorized(c)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
+	defer cancel()
+
+	status, err := h.svc.GetIdentityStatus(ctx, userID)
+	if err != nil {
+		writeAuthErr(c, err)
+		return
+	}
+	pkg.OK(c, status)
+}
+
+// SendIdentityCode POST /api/v1/auth/identity/code
+// 向账号自身已绑定的手机 / 邮箱发送身份验证验证码（目标地址由后端决定）
+func (h *AuthHandler) SendIdentityCode(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		pkg.Unauthorized(c)
+		return
+	}
+
+	var req struct {
+		Method       string `json:"method" binding:"required"`
+		CaptchaType  string `json:"captchaType"`
+		CaptchaToken string `json:"captchaToken"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.BadRequest(c, "验证方式必填")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	if err := h.svc.SendIdentityCode(ctx, userID, req.Method, req.CaptchaType, req.CaptchaToken); err != nil {
+		writeAuthErr(c, err)
+		return
+	}
+	pkg.OKWithMsg(c, nil, "验证码已发送")
+}
+
+// VerifyIdentity POST /api/v1/auth/identity/verify
+// 身份验证，通过后返回凭证有效期（秒）
+func (h *AuthHandler) VerifyIdentity(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		pkg.Unauthorized(c)
+		return
+	}
+
+	var req service.VerifyIdentityRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.BadRequest(c, "参数错误")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	ttl, err := h.svc.VerifyIdentity(ctx, userID, req)
+	if err != nil {
+		writeAuthErr(c, err)
+		return
+	}
+	pkg.OK(c, gin.H{"verified": true, "expiresIn": ttl})
+}
+
 // ChangePassword POST /api/v1/auth/change-password
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	userID := middleware.GetUserID(c)
@@ -254,12 +330,13 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
+	// oldPassword 可为空：此时要求已通过手机 / 邮箱身份验证
 	var req struct {
-		OldPassword string `json:"oldPassword" binding:"required"`
+		OldPassword string `json:"oldPassword"`
 		NewPassword string `json:"newPassword" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.BadRequest(c, "旧密码和新密码必填")
+		pkg.BadRequest(c, "新密码必填")
 		return
 	}
 
@@ -333,6 +410,32 @@ func writeAuthErr(c *gin.Context, err error) {
 		pkg.Fail(c, http.StatusTooManyRequests, http.StatusTooManyRequests, "验证码发送过于频繁，请稍后再试")
 	case errors.Is(err, service.ErrInvalidInput):
 		pkg.BadRequest(c, "请求参数非法")
+	case errors.Is(err, service.ErrIdentityNotVerified):
+		pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "请先完成身份验证")
+	case errors.Is(err, service.ErrIdentityLocked):
+		pkg.Fail(c, http.StatusTooManyRequests, http.StatusTooManyRequests, "验证失败次数过多，请稍后再试")
+	case errors.Is(err, service.ErrIdentityMethodUnavailable):
+		pkg.BadRequest(c, "该验证方式不可用：账号资料里的手机号/邮箱未正确填写，请在 Casdoor 中补全后再试")
+	case errors.Is(err, service.ErrCasdoorPermissionDenied):
+		detail := err.Error()
+		if idx := strings.Index(detail, ": "); idx >= 0 {
+			detail = detail[idx+2:]
+		}
+		pkg.Fail(c, http.StatusBadGateway, http.StatusBadGateway, detail)
+	case errors.Is(err, service.ErrCasdoorCredentialMissing):
+		pkg.Fail(c, http.StatusUnauthorized, http.StatusUnauthorized, "登录状态已过期，请重新登录后再试")
+	case errors.Is(err, service.ErrCaptchaFailed):
+		pkg.BadRequest(c, "人机验证未通过，请重试")
+	case errors.Is(err, service.ErrDestLookupFailed):
+		pkg.Fail(c, http.StatusBadGateway, http.StatusBadGateway, "认证服务无法定位该账号的联系方式，请联系管理员检查认证服务配置")
+	case errors.Is(err, service.ErrInvalidPhone):
+		pkg.BadRequest(c, "手机号格式有误，请检查后重试")
+	case errors.Is(err, service.ErrProviderNotConfigured):
+		detail := err.Error()
+		if idx := strings.Index(detail, ": "); idx >= 0 {
+			detail = detail[idx+2:]
+		}
+		pkg.Fail(c, http.StatusBadGateway, http.StatusBadGateway, detail)
 	case errors.Is(err, service.ErrUpstreamUnavailable):
 		writeUpstreamErr(c, err, "认证服务暂不可用")
 	default:

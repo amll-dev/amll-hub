@@ -100,7 +100,7 @@ export function UserMenu() {
               className="cursor-pointer"
             >
               <User className="h-4 w-4" />
-              个人资料
+              个人中心
             </Link>
           </DropdownMenuItem>
 
