@@ -119,8 +119,9 @@ export function NcmSelectDialog() {
                   <button
                     type="button"
                     onClick={() => resolveSelect(id)}
-                    className="block w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-left text-sm transition-colors hover:border-primary hover:bg-primary-tint hover:text-primary"
+                    className="block w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-left font-medium text-sm transition-colors hover:border-primary hover:bg-primary-tint hover:text-primary"
                   >
+                    {id}
                   </button>
                 </li>
               ))}
