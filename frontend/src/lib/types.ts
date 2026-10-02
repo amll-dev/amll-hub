@@ -14,6 +14,16 @@ export interface OnlineSyllable {
   text: string;
 }
 
+// 逐字歌词单元（对应 backend LyricViewWord，毫秒）
+export interface LyricViewWord {
+  startTime: number;
+  endTime: number;
+  /** 空白分隔渲染时按间距处理 */
+  word: string;
+  romanWord?: string;
+  emptyBeat?: number;
+}
+
 // 歌词查看页单行（对应 backend LyricViewLine）
 export interface LyricViewLine {
   startTime: number;
@@ -23,6 +33,8 @@ export interface LyricViewLine {
   romanLyric?: string;
   isBg: boolean;
   isDuet: boolean;
+  /** 逐字时间轴，仅 TTML 等带字级时间的数据源有 */
+  words?: LyricViewWord[];
 }
 
 // 歌词查看页响应（对应 backend LyricViewResponse）

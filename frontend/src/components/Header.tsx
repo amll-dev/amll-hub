@@ -63,14 +63,15 @@ export function Header() {
       }}
     >
       <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-6">
-        <div className="flex shrink-0 items-center gap-3">
+        {/* 左侧：logo + 搜索框槽位 */}
+        <div className="flex min-w-0 items-center gap-3">
           <Link
             to="/"
             onClick={() => {
               window.scrollTo(0, 0);
               setQuery('');
             }}
-            className="relative flex items-center gap-2"
+            className="relative flex shrink-0 items-center gap-2"
           >
             <img
               src="/logo.png"
@@ -108,12 +109,12 @@ export function Header() {
           </AnimatePresence>
         </div>
 
-        {/* 导航 */}
+        {/* 导航：shrink-0 + nowrap，保证标签始终单行不折行 */}
         <motion.nav
           layout={!scrolled}
           layoutDependency={hasQuery}
           transition={{ layout: { duration: 0.45, ease: [0.2, 0.8, 0.2, 1] } }}
-          className="hidden items-center gap-8 md:flex"
+          className="hidden shrink-0 items-center gap-5 md:flex xl:gap-8"
         >
           {navItems.map((item) => (
             <NavLink
@@ -129,12 +130,12 @@ export function Header() {
                 }
                 window.scrollTo(0, 0);
               }}
-              className="block"
+              className="block shrink-0 whitespace-nowrap"
             >
               {({ isActive }) => (
                 <div className="relative py-2">
                   <span
-                    className={`text-sm font-medium transition-colors hover:text-primary ${
+                    className={`whitespace-nowrap text-sm font-medium transition-colors hover:text-primary ${
                       isActive ? 'text-primary' : 'text-ink-2'
                     }`}
                   >
