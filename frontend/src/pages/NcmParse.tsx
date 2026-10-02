@@ -18,7 +18,6 @@ import {
   usePlayer,
   NCM_QUALITY_LABEL,
   NCM_QUALITY_ORDER,
-  type NcmQuality,
   type PlaylistItem,
 } from '@/hooks/usePlayer';
 import {
@@ -33,6 +32,7 @@ import type { LyricLine } from '@applemusic-like-lyrics/lyric';
 import { downloadMusicWithMeta, downloadAllAsZip, type BatchProgress } from '@/lib/download';
 import { api } from '@/lib/api';
 import { formatBytes, formatDuration } from '@/lib/format';
+import { isQualityDowngraded, normalizeNcmLevel } from '@/lib/quality';
 import { EmptyState } from '@/components/ui/EmptyState';
 
 const AUTO_HEIGHT_MS = 300;
@@ -369,7 +369,7 @@ function SongIdParsePanel() {
 
 /** 音质下拉：自定义样式 + 动画 */
 function QualitySelect() {
-  const { quality, setQuality } = usePlayer();
+  const { quality, setPageQuality } = useNcmParse();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -414,7 +414,7 @@ function QualitySelect() {
                   <button
                     type="button"
                     onClick={() => {
-                      setQuality(q);
+                      setPageQuality(q);
                       setOpen(false);
                     }}
                     className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-sm transition-colors hover:bg-surface-2 ${
@@ -436,8 +436,8 @@ function QualitySelect() {
 
 // ===== 歌单结果列表 =====
 function PlaylistResultsList() {
-  const { playlistDetail, playlistLoading, playlistError } = useNcmParse();
-  const { track, playAll, quality } = usePlayer();
+  const { playlistDetail, playlistLoading, playlistError, quality, applyQuality } = useNcmParse();
+  const { track, playAll } = usePlayer();
   const [batchDownloading, setBatchDownloading] = useState(false);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
 
@@ -464,6 +464,8 @@ function PlaylistResultsList() {
 
   const handlePlayAll = () => {
     if (items.length === 0) return;
+    // 播放前同步页面选择的音质，播放器整张列表按该音质解析
+    applyQuality();
     playAll(items);
   };
 
@@ -619,6 +621,7 @@ function PlayIconButton({
   cover?: string;
 }) {
   const { playNcmSong, loading: playerLoading, track } = usePlayer();
+  const { applyQuality } = useNcmParse();
   const isCurrent = track?.ncmSongId === songId;
   return (
     <button
@@ -626,6 +629,8 @@ function PlayIconButton({
       onClick={(e) => {
         e.stopPropagation();
         if (playerLoading) return;
+        // 播放前把页面选择的音质同步到全局，播放器内部会按全局音质重新解析
+        applyQuality();
         void playNcmSong(songId, { name, artists, cover });
       }}
       disabled={playerLoading}
@@ -657,7 +662,7 @@ function DownloadIconButton({
   artists: string;
   cover?: string;
 }) {
-  const { quality } = usePlayer();
+  const { applyQuality } = useNcmParse();
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -666,7 +671,9 @@ function DownloadIconButton({
     setDownloading(true);
     setError(null);
     try {
-      const info = await api.parseNcmMusic(songId, quality);
+      // 下载同样跟随页面选择的音质
+      const q = applyQuality();
+      const info = await api.parseNcmMusic(songId, q);
       if (!info.url) throw new Error('无可用播放链接');
       await downloadMusicWithMeta(info.url, {
         title: info.name ?? name,
@@ -756,16 +763,16 @@ function ParseResultCard({
 }) {
   const { info, songId, metaDuration, lyricLines, lyricError } = parsedSong;
   const { playNcmSong, loading: playerLoading, track, quality } = usePlayer();
+  const { applyQuality } = useNcmParse();
   const isCurrent = track?.ncmSongId === songId;
   const [downloading, setDownloading] = useState(false);
   const [dlError, setDlError] = useState<string | null>(null);
 
   // 时长优先用 parse-music 返回，回退到搜索结果传入的 metaDuration
   const durationMs = info.duration ?? metaDuration ?? 0;
-  // 音质标签：优先用响应回显的 level，回退到当前全局 quality
-  const qualityLabel = info.level
-    ? (NCM_QUALITY_LABEL[info.level as NcmQuality] ?? info.level)
-    : NCM_QUALITY_LABEL[quality];
+  const actualQuality = normalizeNcmLevel(info.level);
+  const downgraded = isQualityDowngraded(actualQuality, quality);
+  const qualityLabel = NCM_QUALITY_LABEL[actualQuality ?? quality];
 
   const handleDownload = async () => {
     if (downloading || !info.url) return;
@@ -807,6 +814,14 @@ function ParseResultCard({
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3">
             <span>
               音质 <span className="text-ink-2">{qualityLabel}</span>
+              {downgraded && (
+                <span
+                  className="ml-1 text-ink-3"
+                  title={`所选音质「${NCM_QUALITY_LABEL[quality]}」不可用，已自动降级`}
+                >
+                  已降级
+                </span>
+              )}
             </span>
             {durationMs > 0 && (
               <span>
@@ -830,13 +845,15 @@ function ParseResultCard({
             {info.url && (
               <motion.button
                 type="button"
-                onClick={() =>
-                  playNcmSong(songId, {
+                onClick={() => {
+                  // 播放前同步页面选择的音质，播放器内部按全局音质重新解析
+                  applyQuality();
+                  void playNcmSong(songId, {
                     name: info.name,
                     artists: info.artists,
                     cover: info.cover,
-                  })
-                }
+                  });
+                }}
                 disabled={playerLoading}
                 {...buttonTap}
                 className={`inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-colors disabled:opacity-50 ${
