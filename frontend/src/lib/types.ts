@@ -204,6 +204,12 @@ export interface SubmissionListItem {
   tags?: string[];
   metadata?: Record<string, unknown>;
   language: string;
+  /** 多选语言（含自定义语言名）；老投稿可能为空，此时回落到 language */
+  languages?: string[];
+  /** true 表示上传的是未经重排的原始歌词文件 */
+  isUnrearranged?: boolean;
+  /** 投稿者填写的未重排原因说明 */
+  unrearrangedReason?: string;
   status: SubmissionStatus;
   submitter: string;
   submitterInfo?: UserInfo;

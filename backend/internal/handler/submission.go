@@ -284,6 +284,8 @@ func writeSubmissionErr(c *gin.Context, err error) {
 		pkg.Fail(c, http.StatusConflict, http.StatusConflict, "投稿当前状态不允许此操作")
 	case errors.Is(err, service.ErrForbidden):
 		pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "无权操作该投稿")
+	case errors.Is(err, service.ErrMissingUnrearrangedReason):
+		pkg.BadRequest(c, "勾选未重排歌词时必须填写原因")
 	case errors.Is(err, service.ErrUpstreamUnavailable):
 		writeUpstreamErr(c, err, "上游服务暂不可用")
 	default:

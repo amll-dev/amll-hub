@@ -28,6 +28,14 @@ const (
 	LangKo     = "ko"
 )
 
+// 投稿语言相关上限
+const (
+	// MaxLanguages 单条投稿最多可勾选的语言数
+	MaxLanguages = 10
+	// MaxLanguageLen 自定义语言名的最大长度
+	MaxLanguageLen = 10
+)
+
 // JSONObject 自定义类型
 type JSONObject map[string]any
 
@@ -110,6 +118,12 @@ type Submission struct {
 	Tags                JSONStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"tags"`
 	Metadata            JSONObject      `gorm:"type:jsonb;not null;default:'{}'" json:"metadata"`
 	Language            string          `gorm:"type:varchar(10);not null;default:'others'" json:"language"`
+	// Languages 多选语言（含用户自定义项），Language 存其中第一项作为主语言
+	Languages JSONStringArray `gorm:"type:jsonb;not null;default:'[]'" json:"languages"`
+	// IsUnrearranged 为 true 表示上传的是未经重排的原始歌词文件
+	IsUnrearranged bool `gorm:"column:is_unrearranged;not null;default:false" json:"isUnrearranged"`
+	// UnrearrangedReason 投稿者填写的「为什么用未重排版」说明，详情页展示
+	UnrearrangedReason string `gorm:"column:unrearranged_reason;type:varchar(500);not null;default:''" json:"unrearrangedReason"`
 	Status              string          `gorm:"type:varchar(20);not null;default:'pending'" json:"status"`
 	Submitter           string          `gorm:"type:varchar(100);not null" json:"submitter"`
 	SubmitterInfo       UserInfo        `gorm:"type:jsonb;not null;default:'{}'" json:"submitterInfo"`

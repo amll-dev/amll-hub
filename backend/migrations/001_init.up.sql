@@ -1,7 +1,3 @@
--- 完整建表脚本（001 + 002 + 003 合并后的单一初始化文件）
--- 用法：全新库直接执行本文件；已有库仍走 golang-migrate（make migrate-up）
-
--- updated_at 触发器函数
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -193,6 +189,15 @@ CREATE TABLE submissions (
     tags                  JSONB         NOT NULL DEFAULT '[]'::jsonb,
     metadata              JSONB         NOT NULL DEFAULT '{}'::jsonb,
     language              VARCHAR(10)   NOT NULL DEFAULT 'others',
+    --  languages：多选语言数组（jsonb）。元素可以是内置代码（zh/en/ja/ko），
+    --             也可以是用户自定义的语言名（如「粤语」）；
+    --             language 列继续保留存数组第一项作为主语言，按 language 筛选行为不变。
+    languages             JSONB         NOT NULL DEFAULT '[]'::jsonb,
+    --  is_unrearranged：投稿文件为未经重排的原始歌词。
+    --     元数据仍照常从 TTML 解析（标题/歌手/专辑/平台 ID），只是不采用重排结果、
+    --     不以格式校验作为提交门槛；unrearranged_reason 强制必填。
+    is_unrearranged       BOOLEAN       NOT NULL DEFAULT FALSE,
+    unrearranged_reason   VARCHAR(500)  NOT NULL DEFAULT '',
     status                VARCHAR(20)   NOT NULL DEFAULT 'pending',
     submitter             VARCHAR(100)  NOT NULL,
     submitter_info        JSONB         NOT NULL DEFAULT '{}'::jsonb,
@@ -212,6 +217,8 @@ CREATE TABLE submissions (
 CREATE INDEX idx_submissions_submitter       ON submissions(submitter);
 CREATE INDEX idx_submissions_status          ON submissions(status);
 CREATE INDEX idx_submissions_language        ON submissions(language);
+-- 多选语言筛选用 GIN 索引
+CREATE INDEX idx_submissions_languages       ON submissions USING GIN (languages);
 CREATE INDEX idx_submissions_created         ON submissions(created_at DESC);
 CREATE INDEX idx_submissions_status_created  ON submissions(status, created_at DESC);
 CREATE INDEX idx_submissions_search ON submissions

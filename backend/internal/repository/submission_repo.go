@@ -118,6 +118,11 @@ func (r *SubmissionRepo) UpdateFile(ctx context.Context, tx *gorm.DB, id int64, 
 		updates["tags"] = metadata.Tags
 		updates["metadata"] = metadata.Metadata
 		updates["language"] = metadata.Language
+		// Languages 为 nil 表示本次更新没带多选语言，
+		// 此时不动该列，避免把已有多选语言清空。
+		if metadata.Languages != nil {
+			updates["languages"] = metadata.Languages
+		}
 	}
 	return tx.WithContext(ctx).Model(&model.Submission{}).
 		Where("id = ?", id).
