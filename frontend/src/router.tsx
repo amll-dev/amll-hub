@@ -11,7 +11,10 @@ import {
   OnlineLyricSearch,
   OnlineViewLyricPage,
   Placeholder,
-  Profile,
+  ProfileHome,
+  ProfileInfo,
+  ProfileLayout,
+  ProfileSecurity,
   Ranking,
   Register,
   ResetPassword,
@@ -36,7 +39,15 @@ export const router = createBrowserRouter([
       { path: '/online-lyric/:platform/:songId', element: <OnlineViewLyricPage /> },
       { path: '/stats', element: <Placeholder title="统计" /> },
       { path: '/docs', element: <Placeholder title="文档" /> },
-      { path: '/profile', element: <Profile /> },
+      {
+        path: '/profile',
+        element: <ProfileLayout />,
+        children: [
+          { index: true, element: <ProfileHome /> },
+          { path: 'info', element: <ProfileInfo /> },
+          { path: 'security', element: <ProfileSecurity /> },
+        ],
+      },
       { path: '/messages', element: <MessagesPage /> },
       { path: '/creator', element: <CreatorCenter /> },
       {

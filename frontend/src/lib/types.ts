@@ -173,6 +173,21 @@ export interface UserInfo {
   avatar: string;
 }
 
+/** 身份验证方式（对应 backend service.IdentityMethodXxx；仅验证码方式） */
+export type IdentityMethod = 'phone' | 'email';
+
+/** GET /api/v1/auth/identity 身份验证状态 */
+export interface IdentityStatus {
+  /** 当前账号可用的验证方式（只含已绑定的手机 / 邮箱） */
+  methods: IdentityMethod[];
+  /** 是否已通过验证（凭证未过期） */
+  verified: boolean;
+  /** 已通过的验证方式 */
+  verifiedMethod?: IdentityMethod;
+  /** 凭证剩余有效秒数 */
+  remaining: number;
+}
+
 // GET /api/v1/submissions 列表项 / 详情基础
 // 对应 backend/internal/service/submission_svc.go Submission
 export interface SubmissionListItem {

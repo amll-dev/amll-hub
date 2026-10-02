@@ -176,6 +176,9 @@ func New(deps RouterDeps) *gin.Engine {
 			protected.GET("/profile", authH.GetProfile)
 			protected.PUT("/profile", authH.UpdateProfile)
 			protected.POST("/change-password", authH.ChangePassword)
+			protected.GET("/identity", authH.GetIdentityStatus)
+			protected.POST("/identity/code", authH.SendIdentityCode)
+			protected.POST("/identity/verify", authH.VerifyIdentity)
 			protected.POST("/avatar", authH.UploadAvatar)
 		}
 

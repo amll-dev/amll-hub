@@ -35,6 +35,36 @@ var ErrUpstreamUnavailable = errors.New("upstream unavailable")
 // ErrNotFound 通用未找到（service 层未提供更具体类型时使用）
 var ErrNotFound = errors.New("not found")
 
+// 身份验证模块
+
+// ErrIdentityNotVerified 未通过身份验证（或凭证已过期）
+var ErrIdentityNotVerified = errors.New("identity not verified")
+
+// ErrIdentityLocked 身份验证失败次数过多，暂时锁定
+var ErrIdentityLocked = errors.New("identity verify locked")
+
+// ErrIdentityMethodUnavailable 该验证方式不可用（如未绑定手机 / 邮箱）
+var ErrIdentityMethodUnavailable = errors.New("identity method unavailable")
+
+// ErrCasdoorCredentialMissing 缺少 Casdoor 用户身份凭证（access token / session），
+// 通常是登录时间太久、缓存已过期，需要重新登录
+var ErrCasdoorCredentialMissing = errors.New("casdoor credential missing")
+
+// ErrCaptchaFailed 人机验证未通过（Casdoor 侧 Turing test failed）
+var ErrCaptchaFailed = errors.New("captcha failed")
+
+// ErrInvalidPhone 手机号格式不被上游接受（缺少区号 / 无法解析）
+var ErrInvalidPhone = errors.New("invalid phone number")
+
+// ErrProviderNotConfigured Casdoor 应用未配置对应的邮件 / 短信 provider
+var ErrProviderNotConfigured = errors.New("provider not configured")
+
+// ErrCasdoorPermissionDenied Casdoor 拒绝了应用身份的操作（Unauthorized operation）。
+var ErrCasdoorPermissionDenied = errors.New("casdoor permission denied")
+
+// ErrDestLookupFailed Casdoor 侧按目标地址反查用户失败。
+var ErrDestLookupFailed = errors.New("destination lookup failed")
+
 // 投稿模块
 
 // ErrSubmissionNotFound 投稿不存在

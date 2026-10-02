@@ -13,7 +13,14 @@ const loadViewLyricPage = () =>
   import('@/pages/ViewLyricPage').then((m) => ({ default: m.ViewLyricPage }));
 const loadOnlineViewLyricPage = () =>
   import('@/pages/OnlineViewLyricPage').then((m) => ({ default: m.OnlineViewLyricPage }));
-const loadProfile = () => import('@/pages/Profile').then((m) => ({ default: m.Profile }));
+const loadProfileLayout = () =>
+  import('@/pages/profile/ProfileLayout').then((m) => ({ default: m.ProfileLayout }));
+const loadProfileHome = () =>
+  import('@/pages/profile/ProfileHome').then((m) => ({ default: m.ProfileHome }));
+const loadProfileInfo = () =>
+  import('@/pages/profile/ProfileInfo').then((m) => ({ default: m.ProfileInfo }));
+const loadProfileSecurity = () =>
+  import('@/pages/profile/ProfileSecurity').then((m) => ({ default: m.ProfileSecurity }));
 const loadMessagesPage = () =>
   import('@/pages/MessagesPage').then((m) => ({ default: m.MessagesPage }));
 const loadCreatorCenter = () =>
@@ -38,7 +45,10 @@ export const Ranking = lazy(loadRanking);
 export const DailyRecommend = lazy(loadDailyRecommend);
 export const ViewLyricPage = lazy(loadViewLyricPage);
 export const OnlineViewLyricPage = lazy(loadOnlineViewLyricPage);
-export const Profile = lazy(loadProfile);
+export const ProfileLayout = lazy(loadProfileLayout);
+export const ProfileHome = lazy(loadProfileHome);
+export const ProfileInfo = lazy(loadProfileInfo);
+export const ProfileSecurity = lazy(loadProfileSecurity);
 export const MessagesPage = lazy(loadMessagesPage);
 export const CreatorCenter = lazy(loadCreatorCenter);
 export const ReviewCenter = lazy(loadReviewCenter);
@@ -60,7 +70,9 @@ export const pagePreloads: Record<string, () => Promise<unknown>> = {
   '/online-lyric/:platform/:songId': loadOnlineViewLyricPage,
   '/stats': loadPlaceholder,
   '/docs': loadPlaceholder,
-  '/profile': loadProfile,
+  '/profile': loadProfileLayout,
+  '/profile/info': loadProfileInfo,
+  '/profile/security': loadProfileSecurity,
   '/messages': loadMessagesPage,
   '/creator': loadCreatorCenter,
   '/creator/lyrics/detail': loadSubmissionDetailPage,
