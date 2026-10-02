@@ -9,15 +9,25 @@ import (
 	ttml "github.com/xiaowumin-mark/amll-ttml"
 )
 
+// LyricViewWord 逐字歌词单元（毫秒）
+type LyricViewWord struct {
+	StartTime float64 `json:"startTime"`
+	EndTime   float64 `json:"endTime"`
+	Word      string  `json:"word"`
+	RomanWord string  `json:"romanWord,omitempty"`
+	EmptyBeat float64 `json:"emptyBeat,omitempty"`
+}
+
 // LyricViewLine 歌词查看页单行
 type LyricViewLine struct {
-	StartTime       float64 `json:"startTime"`
-	EndTime         float64 `json:"endTime"`
-	Text            string  `json:"text"`
-	TranslatedLyric string  `json:"translatedLyric,omitempty"`
-	RomanLyric      string  `json:"romanLyric,omitempty"`
-	IsBG            bool    `json:"isBg"`
-	IsDuet          bool    `json:"isDuet"`
+	StartTime       float64         `json:"startTime"`
+	EndTime         float64         `json:"endTime"`
+	Text            string          `json:"text"`
+	TranslatedLyric string          `json:"translatedLyric,omitempty"`
+	RomanLyric      string          `json:"romanLyric,omitempty"`
+	IsBG            bool            `json:"isBg"`
+	IsDuet          bool            `json:"isDuet"`
+	Words           []LyricViewWord `json:"words,omitempty"`
 }
 
 // LyricViewResponse 歌词查看页响应
@@ -37,8 +47,17 @@ func toViewResponse(parsed ttml.TTMLLyric) *LyricViewResponse {
 	}
 	for _, line := range parsed.LyricLines {
 		var text strings.Builder
+		// 逐字透传
+		words := make([]LyricViewWord, 0, len(line.Words))
 		for _, w := range line.Words {
 			text.WriteString(w.Word)
+			words = append(words, LyricViewWord{
+				StartTime: w.StartTime,
+				EndTime:   w.EndTime,
+				Word:      w.Word,
+				RomanWord: w.RomanWord,
+				EmptyBeat: w.EmptyBeat,
+			})
 		}
 		resp.Lines = append(resp.Lines, LyricViewLine{
 			StartTime:       line.StartTime,
@@ -48,9 +67,15 @@ func toViewResponse(parsed ttml.TTMLLyric) *LyricViewResponse {
 			RomanLyric:      line.RomanLyric,
 			IsBG:            line.IsBG,
 			IsDuet:          line.IsDuet,
+			Words:           words,
 		})
 	}
 	return resp
+}
+
+// parseTTML 解析 TTML
+func parseTTML(ttmlText string) (ttml.TTMLLyric, error) {
+	return ttml.ParseLyric(dedupeTransliterations(ttmlText))
 }
 
 // ViewLyric 解析 raw-lyrics 下的 TTML 文件为结构化歌词数据，
@@ -70,7 +95,7 @@ func (s *LyricsService) ViewLyric(ctx context.Context, filename string) (*LyricV
 		return nil, fmt.Errorf("read lyric content: %w", err)
 	}
 
-	parsed, err := ttml.ParseLyric(content.String())
+	parsed, err := parseTTML(content.String())
 	if err != nil {
 		return nil, fmt.Errorf("parse ttml: %w", err)
 	}
@@ -79,7 +104,7 @@ func (s *LyricsService) ViewLyric(ctx context.Context, filename string) (*LyricV
 
 // ParseLyric 解析任意 TTML 文本为结构化歌词数据，
 func (s *LyricsService) ParseLyric(ctx context.Context, ttmlText string) (*LyricViewResponse, error) {
-	parsed, err := ttml.ParseLyric(ttmlText)
+	parsed, err := parseTTML(ttmlText)
 	if err != nil {
 		return nil, fmt.Errorf("parse ttml: %w", err)
 	}

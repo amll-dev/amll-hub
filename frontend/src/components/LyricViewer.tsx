@@ -7,7 +7,7 @@ import {
   FileText,
   Languages,
   Loader2,
-  Music as MusicIcon,
+  Type as TypeIcon,
   User,
   Disc3,
   Edit,
@@ -93,13 +93,139 @@ async function fetchOnlineView(
   };
 }
 
-/** 将毫秒（float）格式化为 MM:SS.mmm */
+// 把背景行归入它所依附的主行，组成一个展示组
+function buildGroups(lines: LyricViewLine[]): LyricViewLine[][] {
+  const groups: LyricViewLine[][] = [];
+  const used = new Array<boolean>(lines.length).fill(false);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || used[i]) continue;
+    used[i] = true;
+    // 没有可依附主行的孤立背景行，单独成组
+    if (line.isBg) {
+      groups.push([line]);
+      continue;
+    }
+    let bgAbove: LyricViewLine | undefined;
+    let bgBelow: LyricViewLine | undefined;
+    for (const j of [i + 1, i - 1]) {
+      const bg = lines[j];
+      if (j < 0 || j >= lines.length || !bg || used[j] || !bg.isBg) continue;
+      used[j] = true;
+      if (bg.startTime < line.startTime) bgAbove = bg;
+      else bgBelow = bg;
+    }
+    const group: LyricViewLine[] = [];
+    if (bgAbove) group.push(bgAbove);
+    group.push(line);
+    if (bgBelow) group.push(bgBelow);
+    groups.push(group);
+  }
+  return groups;
+}
+
+/** 背景歌词 */
+function BgLine({ line }: { line: LyricViewLine }) {
+  // 逐字音译已在单元格内展示时不再重复整行；否则回退到整行音译
+  const hasWordRoman = (line.words ?? []).some((w) => w.romanWord);
+  const roman = hasWordRoman
+    ? ''
+    : line.romanLyric ||
+      (line.words ?? [])
+        .map((w) => w.romanWord ?? '')
+        .filter(Boolean)
+        .join(' ');
+  return (
+    <div className="min-w-0">
+      <WordCells line={line} />
+      {line.translatedLyric && (
+        <div
+          className={`mt-1 flex items-start gap-1.5 text-xs text-primary/80 ${
+            line.isDuet ? 'flex-row-reverse justify-start text-right' : ''
+          }`}
+        >
+          <Languages className="mt-0.5 h-3 w-3 shrink-0" />
+          <span className="break-words">{line.translatedLyric}</span>
+        </div>
+      )}
+      {roman && (
+        <div
+          className={`mt-0.5 flex items-start gap-1.5 text-xs text-purple-500 ${
+            line.isDuet ? 'flex-row-reverse justify-start text-right' : ''
+          }`}
+        >
+          <TypeIcon className="mt-0.5 h-3 w-3 shrink-0" />
+          <span className="font-mono break-words">{roman}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 逐字单元格 */
+function WordCells({ line }: { line: LyricViewLine }) {
+  const words = line.words ?? [];
+  if (words.length === 0) {
+    return (
+      <div
+        className={`font-medium ${
+          line.isBg ? 'text-sm text-ink-3' : 'text-base text-foreground sm:text-lg'
+        } ${line.isDuet ? 'text-right' : ''}`}
+      >
+        {line.text || '♪'}
+      </div>
+    );
+  }
+  return (
+    <div className={`flex flex-wrap items-stretch gap-1 ${line.isDuet ? 'justify-end' : ''}`}>
+      {words.map((w, i) => {
+        const key = `${i}-${w.startTime}`;
+        // 空白分隔 token 没有时间，按间距渲染
+        if (w.word.trim() === '') {
+          return <span key={key} className="inline-block w-1" aria-hidden="true" />;
+        }
+        return (
+          <span
+            key={key}
+            className="inline-flex flex-col items-center rounded-md border border-line/70 bg-surface-2/40 px-1.5 py-1"
+            title={`${formatLyricTime(w.startTime)} → ${formatLyricTime(w.endTime)}（${Math.max(
+              0,
+              Math.round(w.endTime - w.startTime)
+            )}ms）`}
+          >
+            {/* 起止时间 */}
+            <span className="rounded bg-primary/10 px-1 font-mono text-[10px] leading-4 tabular-nums text-primary">
+              {formatLyricTime(w.startTime)}
+            </span>
+            {/* 中间区域 */}
+            <span className="relative flex min-h-[46px] w-full items-center justify-center">
+              <span
+                className={`font-medium leading-tight ${
+                  line.isBg ? 'text-sm text-ink-3' : 'text-base text-foreground sm:text-lg'
+                }`}
+              >
+                {w.word}
+              </span>
+              <span className="absolute inset-x-0 bottom-0 text-center text-[11px] italic leading-none text-purple-500">
+                {w.romanWord ?? ''}
+              </span>
+            </span>
+            <span className="mt-1 rounded bg-primary/10 px-1 font-mono text-[10px] leading-4 tabular-nums text-primary/80">
+              {formatLyricTime(w.endTime)}
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 function MetaChip({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-2 px-3 py-1 text-xs font-medium text-ink-2 transition-colors hover:border-primary hover:text-primary">
-      <Icon className="h-3.5 w-3.5" />
-      {children}
+    // 固定圆角
+    <span className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-line bg-surface-2 px-3 py-1 text-xs font-medium text-ink-2 transition-colors hover:border-primary hover:text-primary">
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span className="min-w-0 break-words">{children}</span>
     </span>
   );
 }
@@ -188,6 +314,9 @@ export function LyricViewer({
   const albums = md.album ?? [];
   const author = md.ttmlAuthorGithubLogin?.[0] ?? md.ttmlAuthorGithub?.[0];
 
+  // 背景行并入主行后才是实际展示的行数
+  const groups = buildGroups(data.lines);
+
   const handleDownload = async () => {
     setDlError('');
     // 平台模式：直接下载已获取的 LRC 原始文本
@@ -229,75 +358,68 @@ export function LyricViewer({
             {artists.length > 0 && <MetaChip icon={User}>{artists.join(', ')}</MetaChip>}
             {albums.length > 0 && <MetaChip icon={Disc3}>{albums.join(', ')}</MetaChip>}
             {author && <MetaChip icon={Edit}>{author}</MetaChip>}
-            <MetaChip icon={ListOrdered}>{data.lines.length} 行歌词</MetaChip>
+            <MetaChip icon={ListOrdered}>{groups.length} 行歌词</MetaChip>
           </div>
         </motion.div>
       )}
 
       {/* 歌词内容 */}
       <motion.div variants={listItem} className="space-y-1">
-        {data.lines.map((line, idx) => (
-          <motion.div
-            key={idx}
-            variants={listItem}
-            className={`flex gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-primary-tint/50 sm:gap-4 sm:px-4 ${
-              line.isDuet ? 'flex-row-reverse text-right' : ''
-            }`}
-          >
-            {/* 时间 */}
-            <span
-              className={`shrink-0 font-mono text-xs font-semibold text-primary sm:text-sm ${
-                line.isDuet ? 'text-right' : ''
-              }`}
-              style={{ minWidth: '72px' }}
-            >
-              {formatLyricTime(line.startTime)}
-            </span>
-
-            {/* 歌词文本 */}
-            <div className="min-w-0 flex-1">
-              {/* 主歌词 */}
-              {!line.isBg && (
-                <div className="text-base font-medium text-foreground sm:text-lg">
-                  {line.text || '♪'}
-                </div>
-              )}
-
-              {/* 背景歌词 */}
-              {line.isBg && (
-                <div
-                  className={`flex items-start gap-1.5 rounded-md bg-surface-2 px-3 py-1.5 text-sm text-ink-3 ${
-                    line.isDuet ? 'flex-row-reverse' : ''
+        {groups.map((group, gi) => (
+          <motion.div key={gi} variants={listItem} className="space-y-0.5">
+            {group.map((line, li) => (
+              <div
+                key={li}
+                className={`flex gap-3 rounded-lg px-3 py-1.5 transition-colors hover:bg-primary-tint/50 sm:gap-4 sm:px-4 ${
+                  line.isDuet ? 'flex-row-reverse text-right' : ''
+                }`}
+              >
+                {/* 时间轴 */}
+                <span
+                  className={`shrink-0 pt-0.5 font-mono text-xs font-semibold text-primary sm:text-sm ${
+                    line.isDuet ? 'text-right' : ''
                   }`}
+                  style={{ minWidth: '72px' }}
                 >
-                  <MusicIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>{line.text}</span>
-                </div>
-              )}
+                  {formatLyricTime(line.startTime)}
+                </span>
 
-              {/* 翻译 */}
-              {line.translatedLyric && (
-                <div
-                  className={`mt-1 flex items-start gap-1.5 text-sm text-primary ${
-                    line.isDuet ? 'justify-end' : 'pl-1'
-                  }`}
-                >
-                  <Languages className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>{line.translatedLyric}</span>
-                </div>
-              )}
+                {/* 歌词文本 */}
+                <div className="min-w-0 flex-1">
+                  {line.isBg ? (
+                    <BgLine line={line} />
+                  ) : (
+                    <>
+                      <WordCells line={line} />
 
-              {/* 罗马音 */}
-              {line.romanLyric && (
-                <div
-                  className={`mt-1 font-mono text-xs text-purple-500 ${
-                    line.isDuet ? 'text-right' : 'pl-1'
-                  }`}
-                >
-                  {line.romanLyric}
+                      {/* 翻译 */}
+                      {line.translatedLyric && (
+                        <div
+                          className={`mt-1 flex items-start gap-1.5 text-sm text-primary ${
+                            line.isDuet ? 'flex-row-reverse justify-start text-right' : 'pl-1'
+                          }`}
+                        >
+                          <Languages className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <span>{line.translatedLyric}</span>
+                        </div>
+                      )}
+
+                      {/* 整行音译 */}
+                      {line.romanLyric && (
+                        <div
+                          className={`mt-1 flex items-start gap-1.5 text-xs text-purple-500 ${
+                            line.isDuet ? 'flex-row-reverse justify-start text-right' : 'pl-1'
+                          }`}
+                        >
+                          <TypeIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <span className="font-mono break-words">{line.romanLyric}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            ))}
           </motion.div>
         ))}
       </motion.div>
