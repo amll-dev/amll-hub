@@ -62,7 +62,6 @@ export function UnrearrangedToggle({
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
-
             <div className={`-mx-1 px-1 ${compact ? 'mb-4' : 'mt-3'}`}>
               <label
                 className={`mb-1.5 block font-medium text-ink-2 ${compact ? 'text-xs' : 'text-sm'}`}
