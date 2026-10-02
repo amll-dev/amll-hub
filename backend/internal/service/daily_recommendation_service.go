@@ -491,34 +491,38 @@ func (s *DailyRecommendationService) ToggleLike(ctx context.Context, recID int64
 	return &LikeStatus{Liked: liked, LikeCount: count}, nil
 }
 
-// GetImage 从 MinIO 读取图片，返回完整内容、Content-Type
-func (s *DailyRecommendationService) GetImage(ctx context.Context, key string) ([]byte, string, error) {
+// DailyRecImage 流式图片读取结果
+type DailyRecImage struct {
+	Content     io.ReadCloser
+	ContentType string
+	ETag        string
+	Size        int64
+}
+
+// GetImage 从 MinIO 流式读取图片。
+func (s *DailyRecommendationService) GetImage(ctx context.Context, key string) (*DailyRecImage, error) {
 	if !strings.HasPrefix(key, DailyRecImagePrefix) {
-		return nil, "", ErrDailyRecNotFound
+		return nil, ErrDailyRecNotFound
 	}
 	obj, err := s.minio.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	defer obj.Close()
 
 	info, statErr := obj.Stat()
 	if statErr != nil {
+		_ = obj.Close()
 		resp := minio.ToErrorResponse(statErr)
 		if resp.Code == "NoSuchKey" {
-			return nil, "", ErrDailyRecNotFound
+			return nil, ErrDailyRecNotFound
 		}
-		return nil, "", statErr
+		return nil, statErr
 	}
 
-	content, err := io.ReadAll(obj)
-	if err != nil {
-		return nil, "", fmt.Errorf("读取图片内容失败: %w", err)
-	}
-	if int64(len(content)) != info.Size {
-		return nil, "", fmt.Errorf("图片内容不完整: 读取 %d 字节, 预期 %d 字节", len(content), info.Size)
-	}
-
-	contentType := imageContentType(path.Ext(key))
-	return content, contentType, nil
+	return &DailyRecImage{
+		Content:     obj,
+		ContentType: imageContentType(path.Ext(key)),
+		ETag:        info.ETag,
+		Size:        info.Size,
+	}, nil
 }
