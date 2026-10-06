@@ -70,7 +70,7 @@ func (r *SubmissionRepo) UpdateStatus(ctx context.Context, tx *gorm.DB, s *model
 		}).Error
 }
 
-// UpdateStatusWhere 条件更新投稿状态：仅当当前状态在 fromStatuses 中才生效。
+// UpdateStatusWhere 条件更新投稿状态：仅当当前状态在 fromStatuses 中才生效
 func (r *SubmissionRepo) UpdateStatusWhere(ctx context.Context, tx *gorm.DB, s *model.Submission, fromStatuses []string) (bool, error) {
 	if tx == nil {
 		tx = r.db.WithContext(ctx)
@@ -87,6 +87,14 @@ func (r *SubmissionRepo) UpdateStatusWhere(ctx context.Context, tx *gorm.DB, s *
 			"closed_by":             s.ClosedBy,
 			"closed_by_info":        s.ClosedByInfo,
 			"file_updated_at":       s.FileUpdatedAt,
+
+			// 修订版（审核员提交后等投稿者确认）
+			"revision_file_key":      s.RevisionFileKey,
+			"revision_ttml":          s.RevisionTTML,
+			"revision_metadata":      s.RevisionMetadata,
+			"revision_at":            s.RevisionAt,
+			"revision_reviewer":      s.RevisionReviewer,
+			"revision_reviewer_info": s.RevisionReviewerInfo,
 		})
 	if res.Error != nil {
 		return false, res.Error
@@ -251,6 +259,8 @@ type Stats struct {
 	MissingAudio int64 `json:"missingAudio"`
 	Closed       int64 `json:"closed"`
 	Draft        int64 `json:"draft"`
+	// Revised 审核员已提交修订版、等待投稿者确认的数量
+	Revised int64 `json:"revised"`
 }
 
 func (r *SubmissionRepo) Stats(ctx context.Context, submitter string) (*Stats, error) {
@@ -287,6 +297,8 @@ func (r *SubmissionRepo) Stats(ctx context.Context, submitter string) (*Stats, e
 			stats.Closed = rows[i].Cnt
 		case model.StatusDraft:
 			stats.Draft = rows[i].Cnt
+		case model.StatusRevised:
+			stats.Revised = rows[i].Cnt
 		}
 	}
 	return stats, nil
@@ -403,6 +415,50 @@ func (r *CommentRepo) ListBySubmission(ctx context.Context, submissionID int64) 
 // Insert 插入评论
 func (r *CommentRepo) Insert(ctx context.Context, c *model.Comment) error {
 	return r.db.WithContext(ctx).Create(c).Error
+}
+
+// ReviewReportRepo 审核报告
+type ReviewReportRepo struct {
+	db *gorm.DB
+}
+
+func NewReviewReportRepo(db *gorm.DB) *ReviewReportRepo {
+	return &ReviewReportRepo{db: db}
+}
+
+// Insert 插入审核报告
+func (r *ReviewReportRepo) Insert(ctx context.Context, tx *gorm.DB, rep *model.ReviewReport) error {
+	if tx == nil {
+		tx = r.db.WithContext(ctx)
+	}
+	return tx.WithContext(ctx).Create(rep).Error
+}
+
+// ListBySubmission 按时间倒序返回某投稿的审核报告（最近一份在前）
+func (r *ReviewReportRepo) ListBySubmission(ctx context.Context, submissionID int64) ([]model.ReviewReport, error) {
+	var items []model.ReviewReport
+	err := r.db.WithContext(ctx).
+		Where("submission_id = ?", submissionID).
+		Order("created_at DESC").
+		Find(&items).Error
+	return items, err
+}
+
+// LatestBySubmission 返回最新一份审核报告，无则返回 nil
+func (r *ReviewReportRepo) LatestBySubmission(ctx context.Context, submissionID int64) (*model.ReviewReport, error) {
+	var item model.ReviewReport
+	err := r.db.WithContext(ctx).
+		Where("submission_id = ?", submissionID).
+		Order("created_at DESC").
+		Limit(1).
+		First(&item).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
 }
 
 // AudioRepo 音频附件

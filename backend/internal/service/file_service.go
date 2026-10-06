@@ -20,6 +20,7 @@ const (
 	ApprovedLyricsPrefix = "shtg-lyrics/"
 	MusicPrefix          = "music/"
 	CoverPrefix          = "tg-image/"
+	RevisionLyricsPrefix = "tg-lyrics-review/"
 )
 
 // FileService 投稿模块文件服务
@@ -191,6 +192,29 @@ func PendingLyricKey(fileName string) string {
 // ApprovedLyricKey 拼接已审核 TTML 的完整对象 key
 func ApprovedLyricKey(fileName string) string {
 	return ApprovedLyricsPrefix + fileName
+}
+
+// RevisionLyricKey 拼接审核员修订版 TTML 的完整对象 key
+func RevisionLyricKey(fileName string) string {
+	return RevisionLyricsPrefix + fileName
+}
+
+// UploadRevisionTTML 上传审核员修订版 TTML 到修订区
+func (s *FileService) UploadRevisionTTML(ctx context.Context, fileName string, content []byte) (string, error) {
+	if err := validateTTMLFileName(fileName); err != nil {
+		return "", err
+	}
+	if len(content) > int(s.cfg.Submission.MaxTTMLSize) {
+		return "", fmt.Errorf("TTML 文件大小超过 %d 字节", s.cfg.Submission.MaxTTMLSize)
+	}
+	key := RevisionLyricKey(fileName)
+	_, err := s.minio.PutObject(ctx, s.bucket, key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
+		ContentType: "application/xml; charset=utf-8",
+	})
+	if err != nil {
+		return "", err
+	}
+	return key, nil
 }
 
 // validateTTMLFileName 校验 TTML 文件名格式。

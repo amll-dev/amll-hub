@@ -19,6 +19,7 @@ import {
   Download,
   Loader2,
   Music,
+  PencilLine,
   Upload,
   Users,
   X,
@@ -394,11 +395,14 @@ function SubmissionDetailContent({
   };
   const canReview =
     isReviewer &&
-    ['pending', 'reviewing', 'need_revision', 'missing_audio'].includes(detail.status);
+    ['pending', 'reviewing', 'revised', 'need_revision', 'missing_audio'].includes(detail.status);
   const canUpdateLyric = detail.status !== 'closed';
   const canUploadAudio = detail.status !== 'closed';
   const canClose = !['closed', 'approved', 'rejected'].includes(detail.status);
   const audios: SubmissionAudio[] = detail.audios ?? (detail.audio ? [detail.audio] : []);
+  const ncmSongId = platformIds.ncm[0] || detail.ncmId || '';
+  const hasAudioSource = audios.length > 0 || !!ncmSongId;
+  const canEditLyric = canReview;
 
   return (
     <motion.div
@@ -488,6 +492,23 @@ function SubmissionDetailContent({
               </TabsList>
             </Tabs>
             <div className="flex flex-wrap gap-2">
+              {canEditLyric && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/review/editor/${id}`)}
+                  disabled={!hasAudioSource}
+                  className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-ink-3 disabled:hover:bg-ink-3"
+                  title={
+                    hasAudioSource
+                      ? '打开歌词编辑器，可打轴、改词、改元数据，并生成审核报告'
+                      : '缺参考音频：打轴需要音频作为时间基准。请先上传音频，或把该投稿标记为「缺音频」'
+                  }
+                >
+                  <PencilLine className="h-3.5 w-3.5" />
+                  编辑歌词
+                  {!hasAudioSource && <span className="opacity-80">（缺音频）</span>}
+                </button>
+              )}
               {canUpdateLyric && (
                 <button
                   type="button"
@@ -607,11 +628,9 @@ function SubmissionDetailContent({
                   />
                 ))}
                 {/* 网易云歌曲信息自动解析 */}
-                {(platformIds.ncm[0] || detail.ncmId) && (
-                  <NcmSongCard songId={platformIds.ncm[0] || detail.ncmId || ''} ttml={ttml} />
-                )}
+                {ncmSongId && <NcmSongCard songId={ncmSongId} ttml={ttml} />}
                 {/* 无音频且无 ncm ID */}
-                {audios.length === 0 && !(platformIds.ncm[0] || detail.ncmId) && (
+                {audios.length === 0 && !ncmSongId && (
                   <p className="text-sm text-ink-3">暂无歌曲信息</p>
                 )}
               </div>
@@ -689,6 +708,7 @@ function SubmissionDetailContent({
             isReviewer={isReviewer}
             activityEntries={activityEntries}
             canReview={canReview}
+            detail={detail}
             onReviewed={loadDetail}
           />
         </motion.div>

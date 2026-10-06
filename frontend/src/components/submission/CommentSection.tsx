@@ -24,9 +24,10 @@ import { queryKeys } from '@/lib/query';
 import { useAuth } from '@/hooks/useAuth';
 import { buttonTap } from '@/lib/motion';
 import { renderMarkdown, type ActivityEntry } from '@/components/submission/shared';
+import { RevisionConfirmInline } from '@/components/submission/RevisionConfirmInline';
 import { ActivityTimelineItem } from '@/components/submission/ActivityTimelineItem';
 import { CommentItem } from '@/components/submission/CommentItem';
-import type { ReviewAction, SubmissionComment } from '@/lib/types';
+import type { ReviewAction, SubmissionComment, SubmissionDetail } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 
 const reviewActions: { key: ReviewAction; label: string; color: string; icon: typeof Check }[] = [
@@ -98,6 +99,7 @@ export interface CommentSectionProps {
   activityEntries: ActivityEntry[];
   canReview: boolean;
   onReviewed: () => void;
+  detail?: SubmissionDetail;
 }
 
 /** 评论系统 */
@@ -108,6 +110,7 @@ export function CommentSection({
   activityEntries,
   canReview,
   onReviewed,
+  detail,
 }: CommentSectionProps) {
   const [text, setText] = useState('');
   const [reviewMsg, setReviewMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(
@@ -215,6 +218,10 @@ export function CommentSection({
 
   const previewHtml = useMemo(() => renderMarkdown(text), [text]);
 
+  const hasPendingRevision = Boolean(detail?.hasRevision);
+  const isSubmitter =
+    (detail?.submitter ?? '').trim().toLowerCase() === (user?.name ?? '').trim().toLowerCase();
+
   // 合并活动事件与评论，按时间升序排列
   const timeline: TimelineEntry[] = useMemo(() => {
     const entries: TimelineEntry[] = [
@@ -288,6 +295,17 @@ export function CommentSection({
 
       {/* 活动与评论合并时间线 */}
       <ul className="mb-4">
+        {hasPendingRevision && detail && (
+          <RevisionConfirmInline
+            detail={detail}
+            isSubmitter={isSubmitter}
+            onDone={() => {
+              void queryClient.invalidateQueries({ queryKey: queryKeys.submission(detail.id) });
+              onReviewed();
+            }}
+          />
+        )}
+
         {timeline.length === 0 ? (
           <li className="py-4 text-center text-sm text-ink-3">暂无活动记录</li>
         ) : (

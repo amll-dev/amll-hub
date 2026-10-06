@@ -1,0 +1,121 @@
+.radix-themes.editor-radix-theme {
+  height: 100%;
+  min-height: 0;
+}
+
+body .rt-DialogOverlay {
+  position: fixed !important;
+  inset: 0 !important;
+  min-height: 0 !important;
+}
+
+body .rt-DialogOverlay {
+  --color-overlay: rgb(0 0 0 / 0.45);
+}
+
+body.editor-body:has(.dark),
+body.editor-body.dark {
+  --color-overlay: rgb(0 0 0 / 0.6);
+}
+
+body .rt-DialogOverlay[data-has-background='true'] {
+  background-color: transparent !important;
+}
+
+/* 兜底：不给data-has-background 也保持透明 */
+body .rt-DialogOverlay {
+  background-color: transparent !important;
+}
+
+body .rt-DialogOverlay::before,
+body .rt-DialogOverlay:where([data-state='open'])::before {
+  background-color: rgb(0 0 0 / 0.45) !important;
+}
+
+body.editor-body:has(.dark) .rt-DialogOverlay::before,
+body.editor-body.dark .rt-DialogOverlay::before,
+body.editor-body:has(.dark) .rt-DialogOverlay:where([data-state='open'])::before,
+body.editor-body.dark .rt-DialogOverlay:where([data-state='open'])::before {
+  background-color: rgb(0 0 0 / 0.6) !important;
+}
+
+body .rt-DialogOverlay,
+body .rt-DialogScroll,
+body .rt-DialogContent {
+  z-index: 400 !important;
+}
+
+body .rt-DialogContent .rt-ScrollAreaRoot {
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.radix-themes.editor-radix-theme,
+body.editor-body [data-accent-color] {
+  --accent-1: #fff5f6;
+  --accent-2: #feeaec;
+  --accent-3: #fbdde0;
+  --accent-4: #f9c8cd;
+  --accent-5: #f6aeb6;
+  --accent-6: #f3919d;
+  --accent-7: #ef7484;
+  --accent-8: #ec576b;
+  --accent-9: #e0303f;
+  --accent-10: #c22a38;
+  --accent-11: #a81f2c;
+  --accent-12: #8a1a25;
+  --accent-13: #6b141d;
+
+  --accent-a1: rgb(224 48 63 / 0.05);
+  --accent-a2: rgb(224 48 63 / 0.08);
+  --accent-a3: rgb(224 48 63 / 0.16);
+  --accent-a4: rgb(197 32 48 / 0.34);
+  --accent-a5: rgb(197 32 48 / 0.42);
+  --accent-a6: rgb(190 28 44 / 0.52);
+  --accent-a7: rgb(184 24 40 / 0.62);
+  --accent-a8: rgb(178 20 36 / 0.72);
+  --accent-a9: rgb(224 48 63 / 0.92);
+  --accent-a10: rgb(224 48 63 / 0.88);
+  --accent-a11: rgb(224 48 63 / 0.8);
+  --accent-a12: rgb(224 48 63 / 0.6);
+
+  --accent-contrast: #ffffff;
+  --accent-surface: #fff5f6;
+  --accent-indicator: #e0303f;
+  --accent-track: #fbdde0;
+}
+
+.radix-themes.editor-radix-theme:where(.dark, .dark-theme),
+body.editor-body [data-accent-color]:where(.dark, .dark-theme) {
+  --accent-1: #2a1418;
+  --accent-2: #3a1a20;
+  --accent-3: #4a2127;
+  --accent-4: #6b2b33;
+  --accent-5: #8d3540;
+  --accent-6: #b0404c;
+  --accent-7: #d04a58;
+  --accent-8: #e0303f;
+  --accent-9: #e0303f;
+  --accent-10: #f04a58;
+  --accent-11: #f87a83;
+  --accent-12: #ffa8ae;
+  --accent-13: #ffc9cd;
+
+  --accent-a1: rgb(224 48 63 / 0.12);
+  --accent-a2: rgb(224 48 63 / 0.16);
+  --accent-a3: rgb(224 48 63 / 0.2);
+  --accent-a4: rgb(224 48 63 / 0.26);
+  --accent-a5: rgb(224 48 63 / 0.34);
+  --accent-a6: rgb(224 48 63 / 0.44);
+  --accent-a7: rgb(224 48 63 / 0.56);
+  --accent-a8: rgb(224 48 63 / 0.7);
+  --accent-a9: rgb(224 48 63 / 0.92);
+  --accent-a10: rgb(224 48 63 / 0.88);
+  --accent-a11: rgb(224 48 63 / 0.8);
+  --accent-a12: rgb(224 48 63 / 0.6);
+
+  --accent-contrast: #ffffff;
+  --accent-surface: #2a1418;
+  --accent-indicator: #e0303f;
+  --accent-track: #4a2127;
+}

@@ -1,0 +1,63 @@
+.wordSegment {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  color: var(--gray-12);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  padding: 4px 4px 0 4px;
+  font-size: 16px;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+
+/* 选中态用 green 色阶，理由同 LyricLineSegment.module.css 的注释 */
+.wordSegment[data-visual-state='selected'] {
+  background-color: var(--green-a5);
+  box-shadow:
+    inset 0 1px 0 var(--green-11),
+    inset 0 -1px 0 var(--green-11);
+}
+
+.wordSegment[data-visual-state='hovered'] {
+  z-index: 2;
+  box-shadow:
+    inset 0 1px 0 var(--green-12),
+    inset 0 -1px 0 var(--green-12);
+}
+
+.wordSegment[data-visual-state='selected-hovered'] {
+  z-index: 2;
+  background-color: var(--green-a5);
+  box-shadow:
+    inset 0 1px 0 var(--green-12),
+    inset 0 -1px 0 var(--green-12);
+}
+
+.wordSegment:focus-visible {
+  border-color: var(--accent-13);
+  outline: none;
+}
+
+.romanText {
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--gray-11);
+  width: 100%;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.originText {
+  line-height: 1;
+  width: 100%;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

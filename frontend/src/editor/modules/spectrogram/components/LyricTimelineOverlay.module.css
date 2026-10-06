@@ -1,0 +1,45 @@
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.auxiliaryDivider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.auxiliaryDivider::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 3px;
+  transform: translateX(-50%);
+  border-radius: var(--radius-1);
+  background: var(--timeline-auxiliary-divider-color, var(--amber-9));
+  box-shadow: 0 0 0 1px var(--gray-a4);
+  opacity: 0.85;
+}
+
+.auxiliaryDividerShort::before {
+  top: 8px;
+  bottom: 8px;
+}
+
+.auxiliaryDividerInteractive {
+  cursor: ew-resize;
+  pointer-events: auto;
+}
+
+.auxiliaryDividerInteractive:focus-visible {
+  outline: 2px solid var(--amber-11);
+  border-radius: var(--radius-1);
+}

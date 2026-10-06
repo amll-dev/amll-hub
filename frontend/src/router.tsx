@@ -1,10 +1,12 @@
 import { createBrowserRouter } from 'react-router-dom';
 import { Layout } from '@/App';
 import { RouteErrorBoundary } from '@/components/ErrorBoundary';
+import { LyricEditorShell } from '@/components/review/LyricEditorShell';
 import {
   CreatorCenter,
   DailyRecommend,
   Home,
+  LyricEditorPage,
   MessagesPage,
   NcmParse,
   NotFound,
@@ -21,10 +23,21 @@ import {
   ReviewCenter,
   ReviewerManagePage,
   SubmissionDetailPage,
+  Terms,
+  Privacy,
   ViewLyricPage,
 } from '@/routes';
 
 export const router = createBrowserRouter([
+  {
+    path: '/review/editor/:id',
+    element: (
+      <LyricEditorShell>
+        <LyricEditorPage />
+      </LyricEditorShell>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
   {
     element: <Layout />,
     // 懒加载页面抛错 / chunk 加载失败时整树兜底，避免白屏
@@ -66,6 +79,8 @@ export const router = createBrowserRouter([
       { path: '/register', element: <Register /> },
       { path: '/reset-password', element: <ResetPassword /> },
       { path: '/admin/reviewers', element: <ReviewerManagePage /> },
+      { path: '/terms', element: <Terms /> },
+      { path: '/privacy', element: <Privacy /> },
       { path: '*', element: <NotFound /> },
     ],
   },

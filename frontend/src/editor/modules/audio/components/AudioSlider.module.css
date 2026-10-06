@@ -1,0 +1,169 @@
+.waveformContainer {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  cursor: text;
+  position: relative;
+  z-index: 1;
+}
+.waveformContainer ::part(progress) {
+  background-color: var(--accent-a4);
+}
+.waveformContainer ::part(cursor) {
+  box-shadow: 0 0 0 1px var(--accent-a11);
+}
+.waveformContainer ::part(hover) {
+  display: flex;
+  align-items: center;
+}
+.waveformContainer ::part(hover-label) {
+  padding: 0 0.5rem;
+  transition: none;
+}
+.waveformCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/*
+ * 已播放区间的遮罩。
+ *
+ * 之前直接用 `--accent-a4`（alpha 0.22 的品牌红），铺满整条进度条宽度后
+ * 呈现为一大块**半透明粉色**（见用户截图：整条进度条是粉色色块，
+ * 底下的波形形状完全被盖住）。
+ *
+ * 两个问题：
+ *  1. alpha 太低但面积太大 → 读起来像「背景被染色」而不是「已播放」
+ *  2. 遮罩在波形**之上**（z-index 0 但 DOM 顺序在 canvas 之后），
+ *     等于把波形冲淡
+ *
+ * 改法：alpha 提到 0.34（与 `--accent-a4` 新值一致），并明确压在波形之下。
+ * 品牌红在这里是「播放进度」的语义，与红色=报错不冲突（进度条上不会
+ * 出现错误标记），所以继续用 accent 色系。
+ */
+.playbackMask {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: var(--accent-a4);
+  pointer-events: none;
+  z-index: 0;
+  transform-origin: left;
+  will-change: transform;
+  transform: scaleX(0);
+}
+
+.playbackCursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background-color: var(--accent-a11);
+  pointer-events: none;
+  z-index: 20;
+  will-change: transform;
+}
+.spectrogramRegion {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.regionBody {
+  width: 100%;
+  height: 100%;
+  background-color: var(--accent-a5);
+  cursor: grab;
+  border-left: 1px solid var(--accent-a9);
+  border-right: 1px solid var(--accent-a9);
+  pointer-events: auto;
+}
+
+.regionBody:active {
+  cursor: grabbing;
+}
+
+.regionHandle {
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+  position: absolute;
+  top: 0;
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.regionHandleLeft {
+  left: 0;
+  transform: translateX(-50%);
+}
+
+.regionHandleRight {
+  right: 0;
+  transform: translateX(50%);
+}
+
+.selectedLyricRegion {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background-color: var(--accent-a8);
+  opacity: 0.3;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.hoverGuide {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+  user-select: none;
+
+  border-left: 1px solid var(--accent-a11, #00ffa21e);
+
+  opacity: 0;
+
+  transition: opacity 0.07s ease-out;
+
+  will-change: opacity, left;
+}
+
+.hoverGuideVisible {
+  opacity: 1;
+}
+
+.timeLabel {
+  position: absolute;
+  top: 8px;
+
+  color: var(--accent-a11, #00ffa21e);
+  font-size: var(--font-size-2, 14px);
+
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.labelLeft {
+  left: 4px;
+  right: auto;
+}
+
+.labelRight {
+  right: 4px;
+  left: auto;
+}

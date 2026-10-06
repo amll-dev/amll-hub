@@ -1,0 +1,41 @@
+.layout {
+  min-height: 0;
+}
+
+.detail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.master {
+  width: 30%;
+  flex-shrink: 0;
+  background-color: var(--gray-2);
+  border-right: 1px solid var(--gray-5);
+}
+
+.masterHeader {
+  border-bottom: 1px solid var(--gray-5);
+}
+
+.masterBody {
+  min-height: 0;
+}
+
+.masterItem {
+  padding: 12px;
+  cursor: pointer;
+  background-color: transparent;
+  border-bottom: 1px solid var(--gray-4);
+  transition: background-color 0.2s;
+}
+
+.masterItem[data-selected='true'] {
+  background-color: var(--accent-4);
+}
+
+.placeholder {
+  height: 100%;
+  color: var(--gray-8);
+}

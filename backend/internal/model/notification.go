@@ -17,6 +17,8 @@ const (
 	NotifyResultNeedRevision = "need_revision"
 	NotifyResultMissingAudio = "missing_audio"
 	NotifyResultClosed       = "closed"
+	// NotifyResultRevised 审核员已提交修订版 TTML，等投稿者确认
+	NotifyResultRevised = "revised"
 )
 
 // Notification 站内消息

@@ -162,6 +162,7 @@ export type SubmissionStatus =
   | 'reviewing'
   | 'need_revision'
   | 'missing_audio'
+  | 'revised'
   | 'approved'
   | 'rejected'
   | 'closed';
@@ -283,6 +284,37 @@ export interface SubmissionDetail extends SubmissionListItem {
   comments: SubmissionComment[];
   audio?: SubmissionAudio;
   audios?: SubmissionAudio[];
+  // 审核员修订版
+  hasRevision?: boolean;
+  revisionFileName?: string;
+  revisionMetadata?: TtmlMetadata;
+  revisionAt?: string;
+  revisionReviewer?: string;
+  revisionReviewerInfo?: UserInfo;
+}
+
+// ===== 审核员修订版 =====
+
+/** GET /api/v1/submissions/:id/editor-context */
+export interface EditorContext {
+  /** 原始投稿 TTML 原文 */
+  ttml: string;
+  fileName: string;
+  audios: SubmissionAudio[];
+  ncmId?: string;
+  status: string;
+  hasRevision: boolean;
+}
+
+/** POST /api/v1/submissions/:id/revision 入参 */
+export interface SaveRevisionPayload {
+  uploadTtml: boolean;
+  ttmlContent?: string;
+  metadata?: Record<string, unknown>;
+  reportMd: string;
+  structured?: Record<string, unknown>;
+  comment?: string;
+  action?: ReviewAction;
 }
 
 // 审核操作类型
@@ -562,7 +594,14 @@ export interface OnlineLyric {
 export type MessageType = 'system' | 'review' | 'submission' | 'comment';
 
 /** 审核结果细分（对应 backend notifications.result，仅 type=review 有值） */
-export type ReviewResult = 'approved' | 'rejected' | 'need_revision' | 'missing_audio' | 'closed';
+export type ReviewResult =
+  | 'approved'
+  | 'rejected'
+  | 'need_revision'
+  | 'missing_audio'
+  // 审核员已提交修订版 TTML，等投稿者确认（后端 model.NotifyResultRevised）
+  | 'revised'
+  | 'closed';
 
 /** 跳转动作 */
 export interface MessageAction {

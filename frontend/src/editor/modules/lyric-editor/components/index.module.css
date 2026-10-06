@@ -1,0 +1,563 @@
+/*
+ * Copyright 2023-2025 Steve Xiao (stevexmh@qq.com) and contributors.
+ *
+ * 本源代码文件是属于 AMLL TTML Tool 项目的一部分。
+ * This source code file is a part of AMLL TTML Tool project.
+ * 本项目的源代码的使用受到 GNU GENERAL PUBLIC LICENSE version 3 许可证的约束，具体可以参阅以下链接。
+ * Use of this source code is governed by the GNU GPLv3 license that can be found through the following link.
+ *
+ * https://github.com/amll-dev/amll-ttml-tool/blob/main/LICENSE
+ */
+
+.lyricWord {
+  &.edit {
+    display: block;
+    padding: 0.25em 0.5em;
+    border-radius: var(--radius-4);
+
+    background-color: var(--color-panel);
+    box-shadow: var(--base-card-surface-box-shadow);
+  }
+
+  &.sync {
+    padding: var(--space-2);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+
+    border-right: solid 1px var(--gray-a5);
+  }
+
+  &.dropLeft {
+    border-left: solid 3px var(--accent-a11);
+  }
+
+  &.dropRight {
+    border-right: solid 3px var(--accent-a11);
+  }
+
+  &.advance {
+    display: flex;
+    flex-direction: column;
+    padding: 0.25em;
+    gap: 0.25em;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  &.rubyEnabled {
+    padding-right: var(--space-2);
+  }
+}
+
+.wordGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex-grow: 0;
+  flex-shrink: 0;
+  text-align: left;
+}
+
+.rubySyncRow {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.wordEditRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rubyEditor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rubyEditorCompact {
+  gap: 0.25em;
+}
+
+.rubyAdvanceRow {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  width: 100%;
+}
+
+.autoSizeInput {
+  position: relative;
+  display: inline-block;
+  min-width: 1.2em;
+}
+
+.autoSizeInputText {
+  visibility: hidden;
+  white-space: pre;
+  font: inherit;
+  line-height: inherit;
+  padding: var(--space-1) var(--space-2);
+}
+
+.autoSizeInputField {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.advanceBar {
+  display: flex;
+  gap: 0.25em;
+
+  & :global(.rt-TextFieldRoot) {
+    min-width: 10em;
+  }
+}
+
+.displayWord {
+  font-size: 1.5em;
+}
+
+.startTime,
+.endTime {
+  padding: 0.05em 0.5em;
+  border-radius: var(--radius-4);
+  color: var(--white-a6);
+}
+
+:global(.radix-themes.light) {
+  .startTime,
+  .endTime {
+    color: var(--white-a10);
+  }
+}
+
+.startTime {
+  background-color: var(--green-a4);
+}
+
+.endTime {
+  background-color: var(--red-a4);
+}
+
+.endTimeButton {
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  color: inherit;
+}
+
+.lyricWord,
+.lyricWord * {
+  white-space: nowrap;
+  word-wrap: none;
+  word-break: keep-all;
+  text-wrap: nowrap;
+  max-lines: 1;
+}
+
+.lyricLine {
+  border-radius: var(--radius-4);
+  box-shadow: var(--base-card-surface-box-shadow);
+  user-select: none;
+  display: flex;
+  position: relative;
+  isolation: isolate;
+  touch-action: none;
+
+  transition:
+    opacity 0.1s ease-in-out,
+    background-color 0.1s ease,
+    box-shadow 0.1s ease,
+    transform 0.2s;
+
+  &[data-is-dragged='true'] {
+    opacity: 0.4;
+    transform: scale(0.98);
+  }
+
+  &.ignoreSync {
+    &.edit {
+      opacity: 0.75;
+    }
+    &.sync {
+      opacity: 0.3;
+    }
+  }
+
+  &:hover {
+    .insertWordField {
+      opacity: 1;
+    }
+  }
+}
+
+.lyricLine > :not(.playbackActiveOverlay) {
+  position: relative;
+  z-index: 1;
+}
+
+.playbackActiveOverlay {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  background-color: var(--blue-a3);
+  box-shadow: 0 0 0 2px var(--blue-a9);
+}
+
+.lyricLine.playbackHighlighted:hover .playbackActiveOverlay {
+  background-color: var(--blue-a4);
+}
+
+.lyricLine.playbackHighlighted.selected .playbackActiveOverlay {
+  background-color: var(--blue-a5);
+}
+
+.insertWordField {
+  opacity: 0;
+  transition: opacity 0.2s ease-in-out;
+
+  &:has(> input:active),
+  &:has(> input:focus),
+  &:has(> input:hover),
+  &.empty {
+    opacity: 1;
+  }
+}
+
+.lyricLineContainer {
+  min-width: 0;
+  padding: var(--space-3);
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+
+  &.sync {
+    padding: 0 var(--space-3);
+  }
+}
+
+.vocalTagsRow {
+  margin-top: var(--space-1);
+}
+
+.vocalTagsButtons {
+  gap: var(--space-1);
+}
+
+.vocalTagButton {
+  min-width: 32px;
+}
+
+.lyricWordsContainer {
+  min-width: 0;
+  flex-grow: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+
+  &.edit {
+    margin-bottom: var(--space-2);
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+
+  &.sync {
+    flex-wrap: nowrap;
+    overflow: auto;
+    padding: var(--space-1) var(--space-3);
+    gap: 0;
+    border-left: solid 1px var(--gray-a5);
+    border-right: solid 1px var(--gray-a5);
+
+    &.hideTimestamps {
+      border-left: none;
+      border-right: none;
+
+      & .lyricWord.sync {
+        padding: var(--space-4) var(--space-4);
+        min-width: 3em;
+        justify-content: center;
+      }
+
+      & > :first-child .lyricWord.sync {
+        border-left: solid 1px var(--gray-a5);
+      }
+    }
+
+    &::-webkit-scrollbar {
+      border-top: solid 1px var(--gray-a5);
+    }
+  }
+}
+
+.blank {
+  color: var(--gray-a7);
+}
+
+.lyricWord:not(.error):hover,
+.lyricLine:not(.error):hover {
+  box-shadow: 0 0 0 2px var(--green-a5);
+  background-color: var(--green-a3);
+}
+
+.lyricWord.selected:not(.error),
+.lyricLine.selected:not(.error) {
+  box-shadow: 0 0 0 2px var(--green-a11);
+  background-color: var(--green-a5);
+  &:hover {
+    box-shadow: 0 0 0 2px var(--green-a11);
+    background-color: var(--green-a6);
+  }
+}
+
+.lyricWord.error,
+.lyricLine.error {
+  box-shadow: 0 0 0 2px var(--red-a10);
+}
+
+.lyricWord.error:hover,
+.lyricLine.error:hover {
+  background-color: var(--red-a2);
+}
+
+.lyricWord.error.selected,
+.lyricLine.error.selected {
+  background-color: var(--red-a3);
+}
+
+.lyricWord.error.selected:hover,
+.lyricLine.error.selected:hover {
+  background-color: var(--red-a4);
+}
+
+/* 偏旁字符检测样式 */
+.lyricWord.radical {
+  box-shadow: 0 0 0 2px var(--blue-a10);
+}
+
+.lyricWord.radical:hover {
+  background-color: var(--blue-a2);
+}
+
+.lyricWord.radical.selected {
+  background-color: var(--blue-a3);
+}
+
+.lyricWord.radical.selected:hover {
+  background-color: var(--blue-a4);
+}
+
+/* 同时有偏旁字符和时间戳错误的样式（紫色） */
+.lyricWord.radical.error {
+  box-shadow: 0 0 0 2px var(--purple-a10);
+}
+
+.lyricWord.radical.error:hover {
+  background-color: var(--purple-a2);
+}
+
+.lyricWord.radical.error.selected {
+  background-color: var(--purple-a3);
+}
+
+.lyricWord.radical.error.selected:hover {
+  background-color: var(--purple-a4);
+}
+
+/* 歌词行偏旁字符检测样式 */
+.lyricLine.radical {
+  box-shadow: 0 0 0 2px var(--blue-a10);
+}
+
+.lyricLine.radical:hover {
+  background-color: var(--blue-a2);
+}
+
+.lyricLine.radical.selected {
+  background-color: var(--blue-a3);
+}
+
+.lyricLine.radical.selected:hover {
+  background-color: var(--blue-a4);
+}
+
+/* 歌词行同时有偏旁字符和时间戳错误的样式（紫色） */
+.lyricLine.radical.error {
+  box-shadow: 0 0 0 2px var(--purple-a10);
+}
+
+.lyricLine.radical.error:hover {
+  background-color: var(--purple-a2);
+}
+
+.lyricLine.radical.error.selected {
+  background-color: var(--purple-a3);
+}
+
+.lyricLine.radical.error.selected:hover {
+  background-color: var(--purple-a4);
+}
+
+/* Agent 警告样式（橙色边框） */
+.lyricLine.agentWarning {
+  box-shadow: 0 0 0 2px var(--orange-a10);
+}
+
+.lyricLine.agentWarning:hover {
+  background-color: var(--orange-a2);
+}
+
+.lyricLine.agentWarning.selected {
+  background-color: var(--orange-a3);
+}
+
+.lyricLine.agentWarning.selected:hover {
+  background-color: var(--orange-a4);
+}
+
+/* Agent 警告与偏旁字符同时存在（深橙色） */
+.lyricLine.radical.agentWarning {
+  box-shadow: 0 0 0 2px var(--orange-a11);
+}
+
+.lyricLine.radical.agentWarning:hover {
+  background-color: var(--orange-a3);
+}
+
+.lyricLine.radical.agentWarning.selected {
+  background-color: var(--orange-a4);
+}
+
+.lyricLine.radical.agentWarning.selected:hover {
+  background-color: var(--orange-a5);
+}
+
+:global(.radix-themes.light) .lyricWord.selected {
+  .startTime,
+  .endTime {
+    color: var(--white-a12);
+  }
+}
+
+.lyricWord.selected {
+  .startTime,
+  .endTime {
+    color: var(--white-a10);
+  }
+}
+
+.lyricWord.sync.active {
+  background-color: var(--blue-a5);
+
+  &.selected {
+    background-color: var(--blue-a7);
+  }
+}
+
+.lineNumber {
+  min-width: 2em;
+  position: relative;
+  display: inline-block;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.lineNumber::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 1.5px;
+  background-color: currentColor;
+  border-radius: 999px;
+  transform-origin: center;
+
+  opacity: 0;
+  transform: translateY(-50%) rotate(-135deg) scaleX(0);
+
+  transition: opacity 0.2s ease-in-out;
+  pointer-events: none;
+}
+
+.lineNumber.ignored {
+  opacity: 0.6;
+}
+
+.lineNumber.ignored::after {
+  opacity: 1;
+  transform: translateY(-50%) rotate(-135deg) scaleX(1);
+}
+
+.playbackActiveLineNumber {
+  color: var(--blue-a11);
+  font-weight: 600;
+}
+
+.lyricLinesWrapper {
+  position: relative;
+  height: 100%;
+  max-height: 100%;
+}
+
+.dropIndicator {
+  position: absolute;
+  left: var(--space-2);
+  right: var(--space-2);
+  height: 2px;
+  background-color: var(--accent-9);
+  border-radius: 2px;
+  z-index: 50;
+  pointer-events: none;
+
+  display: var(--drop-indicator-display, none);
+  transform: translateY(var(--drop-indicator-y, 0px));
+  will-change: transform;
+}
+
+.annotationAdded {
+  background-color: var(--blue-a3) !important;
+  box-shadow: inset 0 0 0 1px var(--blue-a6);
+}
+
+.annotationRemoved {
+  opacity: 0.45;
+  filter: saturate(0.35);
+}
+
+.annotationRemoved :global(.rt-TextFieldRoot),
+.annotationRemoved .displayWord {
+  text-decoration: line-through;
+  text-decoration-color: var(--red-a8);
+}
+
+.annotationFocused {
+  outline: 2px solid var(--accent-a9);
+  outline-offset: 1px;
+}
+
+.annotationGhostWord {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  padding: 2px 6px;
+  margin: 0 2px;
+  border-radius: var(--radius-2);
+  font-size: 0.95em;
+  line-height: 1.4;
+  user-select: none;
+  pointer-events: none;
+  white-space: pre;
+}

@@ -57,6 +57,9 @@ type RegisterValues = z.infer<typeof registerSchema>;
 /** 表单输入框统一样式（在 Input 基础上加表单高度） */
 const fieldClass = 'h-11 bg-card px-4';
 
+/** 验证码组标题样式：与 FormLabel 的间距/字重保持一致 */
+const codeLabelClass = 'mb-2 block text-sm font-normal text-ink-2';
+
 export function Register() {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -351,9 +354,14 @@ export function Register() {
 
             {/* 手机号 + 手机验证码 */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormFieldPhone control={form.control} name="phone" fieldClass={fieldClass} />
+              <FormFieldPhone
+                control={form.control}
+                name="phone"
+                label="手机号"
+                fieldClass={fieldClass}
+              />
               <div>
-                <label className="mb-1.5 block text-sm text-ink-2">手机验证码</label>
+                <label className={codeLabelClass}>手机验证码</label>
                 <div className="flex gap-2">
                   <FormFields
                     control={form.control}
@@ -377,9 +385,14 @@ export function Register() {
 
             {/* 邮箱 + 邮箱验证码 */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <FormFieldEmail control={form.control} name="email" fieldClass={fieldClass} />
+              <FormFieldEmail
+                control={form.control}
+                name="email"
+                label="邮箱"
+                fieldClass={fieldClass}
+              />
               <div>
-                <label className="mb-1.5 block text-sm text-ink-2">邮箱验证码</label>
+                <label className={codeLabelClass}>邮箱验证码</label>
                 <div className="flex gap-2">
                   <FormFields
                     control={form.control}

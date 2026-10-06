@@ -90,6 +90,7 @@ func Run() {
 	historyRepo := repository.NewReviewHistoryRepo(db)
 	fileHistoryRepo := repository.NewFileHistoryRepo(db)
 	commentRepo := repository.NewCommentRepo(db)
+	reportRepo := repository.NewReviewReportRepo(db)
 	reviewerRepo := repository.NewReviewerRepo(db)
 	adminRepo := repository.NewAdminRepo(db)
 	notifRepo := repository.NewNotificationRepo(db)
@@ -123,6 +124,10 @@ func Run() {
 	viewerSvc := service.NewViewerService(nil, subRepo) // hub 后面注入
 	submissionSvc := service.NewSubmissionService(subRepo, audioRepo, historyRepo, fileHistoryRepo, commentRepo, fileSvc, db)
 	reviewSvc := service.NewReviewService(subRepo, historyRepo, fileSvc, githubSvc, viewerSvc, db)
+	revisionSvc := service.NewRevisionService(
+		subRepo, historyRepo, reportRepo, commentRepo, audioRepo,
+		fileSvc, githubSvc, viewerSvc, db,
+	)
 	batchSvc := service.NewBatchService(songRepo)
 
 	// 消息中心 service
@@ -192,6 +197,7 @@ func Run() {
 	// 注入通知服务（T1~T3 触发点）
 	submissionSvc.SetNotifier(notifSvc)
 	reviewSvc.SetNotifier(notifSvc)
+	revisionSvc.SetNotifier(notifSvc)
 	// 90 天历史消息清理
 	notifSvc.StartCleanupTask(appCtx)
 
@@ -222,6 +228,7 @@ func Run() {
 	// 投稿 handler
 	submissionH := handler.NewSubmissionHandler(submissionSvc, reviewerCache)
 	reviewH := handler.NewReviewHandler(reviewSvc)
+	revisionH := handler.NewRevisionHandler(revisionSvc)
 	commentH := handler.NewCommentHandler(submissionSvc)
 	uploadH := handler.NewUploadHandler(fileSvc, submissionSvc)
 	searchIpH := handler.NewSearchIPHandler(searchIpSvc)
@@ -247,6 +254,7 @@ func Run() {
 		Auth:         authH,
 		Submission:   submissionH,
 		Review:       reviewH,
+		Revision:     revisionH,
 		Comment:      commentH,
 		Upload:       uploadH,
 		SearchIP:     searchIpH,

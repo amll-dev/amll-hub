@@ -1,6 +1,6 @@
 import { Github } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { usePlayer } from '@/hooks/usePlayer';
 import { fadeUp, whileInViewProps } from '@/lib/motion';
 
@@ -11,6 +11,11 @@ const resourceLinks = [
 ];
 
 const ecosystemLinks = [{ label: 'GitHub 仓库', href: 'https://github.com/amll-dev/amll-hub' }];
+
+const legalLinks = [
+  { label: '用户协议', to: '/terms' },
+  { label: '隐私政策', to: '/privacy' },
+];
 
 const techStack = ['React', 'Go', 'Rust'];
 
@@ -31,7 +36,7 @@ export function Footer() {
         <motion.div
           variants={fadeUp}
           {...whileInViewProps}
-          className="grid gap-10 md:grid-cols-[2fr_1fr_1fr_1.5fr]"
+          className="grid gap-10 sm:grid-cols-2 md:grid-cols-[2fr_1fr_1fr_1fr_1fr] lg:gap-8"
         >
           <div>
             <div className="flex items-center gap-2">
@@ -51,12 +56,12 @@ export function Footer() {
             <ul className="mt-3 space-y-2">
               {resourceLinks.map((l) => (
                 <li key={l.to}>
-                  <a
-                    href={l.to}
+                  <Link
+                    to={l.to}
                     className="text-sm text-ink-2 transition-colors hover:text-primary"
                   >
                     {l.label}
-                  </a>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -75,6 +80,22 @@ export function Footer() {
                   >
                     {l.label}
                   </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-semibold text-ink-3">法律</h4>
+            <ul className="mt-3 space-y-2">
+              {legalLinks.map((l) => (
+                <li key={l.to}>
+                  <Link
+                    to={l.to}
+                    className="text-sm text-ink-2 transition-colors hover:text-primary"
+                  >
+                    {l.label}
+                  </Link>
                 </li>
               ))}
             </ul>

@@ -171,6 +171,15 @@ export function AuthDialog() {
     navigate('/reset-password');
   }, [handleClose, navigate]);
 
+  /** 跳转法律文档：先关弹窗，否则 Dialog 遮罩会盖住新页面 */
+  const openLegalDoc = useCallback(
+    (path: string) => {
+      handleClose();
+      navigate(path);
+    },
+    [handleClose, navigate]
+  );
+
   // 倒计时逻辑由 useCountdown 提供
 
   // 实际发送验证码的 API 调用
@@ -626,11 +635,19 @@ export function AuthDialog() {
             {/* 协议 */}
             <p className="mt-5 text-center text-[11px] leading-relaxed text-ink-3">
               登录或完成注册即代表你同意
-              <button type="button" className="text-primary hover:underline">
+              <button
+                type="button"
+                className="whitespace-nowrap text-primary hover:underline"
+                onClick={() => openLegalDoc('/terms')}
+              >
                 用户协议
               </button>
               和
-              <button type="button" className="text-primary hover:underline">
+              <button
+                type="button"
+                className="whitespace-nowrap text-primary hover:underline"
+                onClick={() => openLegalDoc('/privacy')}
+              >
                 隐私政策
               </button>
             </p>

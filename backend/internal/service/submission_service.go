@@ -42,36 +42,42 @@ type CreateSubmissionInput struct {
 	Status             string `json:"status"`
 } // Submission 投稿 DTO
 type Submission struct {
-	ID                  int64          `json:"id"`
-	Title               string         `json:"title"`
-	Artist              string         `json:"artist"`
-	Album               string         `json:"album"`
-	NcmID               string         `json:"ncmId"`
-	QqID                string         `json:"qqId"`
-	AmID                string         `json:"amId"`
-	SpotifyID           string         `json:"spotifyId"`
-	FileName            string         `json:"fileName"`
-	Notes               string         `json:"notes"`
-	Tags                []string       `json:"tags"`
-	Metadata            map[string]any `json:"metadata"`
-	Language            string         `json:"language"`
-	Languages           []string       `json:"languages"`
-	IsUnrearranged      bool           `json:"isUnrearranged"`
-	UnrearrangedReason  string         `json:"unrearrangedReason"`
-	Status              string         `json:"status"`
-	Submitter           string         `json:"submitter"`
-	SubmitterInfo       UserInfo       `json:"submitterInfo"`
-	Provider            string         `json:"provider"`
-	CreatedAt           time.Time      `json:"createdAt"`
-	UpdatedAt           time.Time      `json:"updatedAt"`
-	FileUpdatedAt       *time.Time     `json:"fileUpdatedAt,omitempty"`
-	RevisionRequestedAt *time.Time     `json:"revisionRequestedAt,omitempty"`
-	ClosedAt            *time.Time     `json:"closedAt,omitempty"`
-	ClosedBy            string         `json:"closedBy,omitempty"`
-	ClosedByInfo        *UserInfo      `json:"closedByInfo,omitempty"`
-	Reviewer            string         `json:"reviewer,omitempty"`
-	ReviewedAt          *time.Time     `json:"reviewedAt,omitempty"`
-	ReviewComment       string         `json:"reviewComment,omitempty"`
+	ID                   int64          `json:"id"`
+	Title                string         `json:"title"`
+	Artist               string         `json:"artist"`
+	Album                string         `json:"album"`
+	NcmID                string         `json:"ncmId"`
+	QqID                 string         `json:"qqId"`
+	AmID                 string         `json:"amId"`
+	SpotifyID            string         `json:"spotifyId"`
+	FileName             string         `json:"fileName"`
+	Notes                string         `json:"notes"`
+	Tags                 []string       `json:"tags"`
+	Metadata             map[string]any `json:"metadata"`
+	Language             string         `json:"language"`
+	Languages            []string       `json:"languages"`
+	IsUnrearranged       bool           `json:"isUnrearranged"`
+	UnrearrangedReason   string         `json:"unrearrangedReason"`
+	Status               string         `json:"status"`
+	Submitter            string         `json:"submitter"`
+	SubmitterInfo        UserInfo       `json:"submitterInfo"`
+	Provider             string         `json:"provider"`
+	CreatedAt            time.Time      `json:"createdAt"`
+	UpdatedAt            time.Time      `json:"updatedAt"`
+	FileUpdatedAt        *time.Time     `json:"fileUpdatedAt,omitempty"`
+	RevisionRequestedAt  *time.Time     `json:"revisionRequestedAt,omitempty"`
+	ClosedAt             *time.Time     `json:"closedAt,omitempty"`
+	ClosedBy             string         `json:"closedBy,omitempty"`
+	ClosedByInfo         *UserInfo      `json:"closedByInfo,omitempty"`
+	Reviewer             string         `json:"reviewer,omitempty"`
+	ReviewedAt           *time.Time     `json:"reviewedAt,omitempty"`
+	ReviewComment        string         `json:"reviewComment,omitempty"`
+	HasRevision          bool           `json:"hasRevision"`
+	RevisionFileName     string         `json:"revisionFileName,omitempty"`
+	RevisionMetadata     map[string]any `json:"revisionMetadata,omitempty"`
+	RevisionAt           *time.Time     `json:"revisionAt,omitempty"`
+	RevisionReviewer     string         `json:"revisionReviewer,omitempty"`
+	RevisionReviewerInfo *UserInfo      `json:"revisionReviewerInfo,omitempty"`
 }
 
 // UserInfo 用户信息（投稿者/审核员/关闭者）
@@ -162,6 +168,7 @@ type SubmissionStats struct {
 	MissingAudio int64 `json:"missingAudio"`
 	Closed       int64 `json:"closed"`
 	Draft        int64 `json:"draft"`
+	Revised      int64 `json:"revised"`
 }
 
 // AttachAudioInput 音频附件入参
@@ -396,6 +403,7 @@ func (s *SubmissionService) Stats(ctx context.Context, user *SubmissionUser, mod
 		MissingAudio: rs.MissingAudio,
 		Closed:       rs.Closed,
 		Draft:        rs.Draft,
+		Revised:      rs.Revised,
 	}, nil
 }
 
@@ -819,6 +827,13 @@ func convertSubmission(m model.Submission) Submission {
 		Reviewer:            m.Reviewer,
 		ReviewedAt:          m.ReviewedAt,
 		ReviewComment:       m.ReviewComment,
+
+		HasRevision:          m.RevisionFileKey != "",
+		RevisionFileName:     m.FileName,
+		RevisionMetadata:     map[string]any(m.RevisionMetadata),
+		RevisionAt:           m.RevisionAt,
+		RevisionReviewer:     m.RevisionReviewer,
+		RevisionReviewerInfo: convertUserInfoPtr(m.RevisionReviewerInfo),
 	}
 }
 

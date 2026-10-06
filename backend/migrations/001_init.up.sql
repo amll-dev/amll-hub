@@ -211,8 +211,23 @@ CREATE TABLE submissions (
     closed_by_info        JSONB,
     reviewer              VARCHAR(100),
     reviewed_at           TIMESTAMPTZ,
-    review_comment        TEXT
+    review_comment        TEXT,
+    revision_file_key     VARCHAR(500)  NOT NULL DEFAULT '',
+    revision_metadata     JSONB         NOT NULL DEFAULT '{}'::jsonb,
+    revision_ttml         TEXT,
+    revision_at           TIMESTAMPTZ,
+    revision_reviewer     VARCHAR(100),
+    revision_reviewer_info JSONB
 );
+
+COMMENT ON COLUMN submissions.status IS
+    '投稿状态：draft/pending/reviewing/revised/need_revision/missing_audio/approved/rejected/closed。revised 表示审核员已提交修订版，等待投稿者确认';
+COMMENT ON COLUMN submissions.revision_file_key IS
+    '审核员修订版 TTML 的对象存储 key；为空表示本次审核未上传修订文件';
+COMMENT ON COLUMN submissions.revision_ttml IS
+    '审核员修订版 TTML 原文，用于详情页对比展示与导出';
+COMMENT ON COLUMN submissions.revision_metadata IS
+    '审核员修正后的 TTML metadata（snake_case 序列化格式）';
 
 CREATE INDEX idx_submissions_submitter       ON submissions(submitter);
 CREATE INDEX idx_submissions_status          ON submissions(status);
@@ -227,6 +242,8 @@ CREATE INDEX idx_submissions_search ON submissions
         coalesce(artist,'') || ' ' ||
         coalesce(album,'') || ' ' ||
         coalesce(submitter,'')));
+CREATE INDEX idx_submissions_revision_at ON submissions(revision_at DESC)
+    WHERE revision_file_key <> '';
 
 CREATE TRIGGER trg_submissions_updated_at
     BEFORE UPDATE ON submissions
@@ -260,6 +277,21 @@ CREATE TABLE submission_review_history (
 );
 
 CREATE INDEX idx_review_history_submission ON submission_review_history(submission_id, reviewed_at DESC);
+
+CREATE TABLE review_reports (
+    id             BIGSERIAL PRIMARY KEY,
+    submission_id  BIGINT       NOT NULL,
+    reviewer       VARCHAR(100) NOT NULL,
+    reviewer_info  JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    action         VARCHAR(20)  NOT NULL,
+    has_revision   BOOLEAN      NOT NULL DEFAULT FALSE,
+    report_md      TEXT         NOT NULL DEFAULT '',
+    structured     JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_review_reports_submission ON review_reports(submission_id, created_at DESC);
+CREATE INDEX idx_review_reports_reviewer   ON review_reports(reviewer, created_at DESC);
 
 --  歌词文件更新历史表（独立于审核历史）
 CREATE TABLE submission_file_history (

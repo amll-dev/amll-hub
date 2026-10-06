@@ -1,0 +1,51 @@
+.dragGhost {
+  position: fixed;
+  z-index: 9999;
+  top: 0;
+  left: 0;
+  padding: 6px 16px;
+  border-radius: 20px;
+  background-color: var(--accent-a7);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent-13);
+  white-space: nowrap;
+
+  will-change: transform;
+
+  opacity: var(--drag-ghost-opacity, 0);
+  transform: translate(
+    calc(var(--drag-ghost-x, -999px) + 12px),
+    calc(var(--drag-ghost-y, -999px) + 12px)
+  );
+}
+
+.countBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  background-color: var(--accent-3);
+  color: var(--accent-13);
+
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+
+  margin-left: 2px;
+
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
