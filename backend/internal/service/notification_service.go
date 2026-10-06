@@ -205,6 +205,10 @@ func (s *NotificationService) NotifyReviewResult(ctx context.Context, sub *model
 		title, content, label, result = "投稿需修改", fmt.Sprintf("《%s》需要修改。%s", sub.Title, comment), "前往修改", model.NotifyResultNeedRevision
 	case model.StatusMissingAudio:
 		title, content, label, result = "投稿缺音频", fmt.Sprintf("《%s》缺少音频文件", sub.Title), "前往补充", model.NotifyResultMissingAudio
+	case model.StatusRevised:
+		title, content, label, result = "审核已完成修订",
+			fmt.Sprintf("《%s》的审核员已提交修订版歌词，请确认是否采用。%s", sub.Title, comment),
+			"确认修订", model.NotifyResultRevised
 	default:
 		return nil
 	}

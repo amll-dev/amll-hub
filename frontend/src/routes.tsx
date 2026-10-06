@@ -29,6 +29,8 @@ const loadReviewCenter = () =>
   import('@/pages/ReviewCenter').then((m) => ({ default: m.ReviewCenter }));
 const loadSubmissionDetailPage = () =>
   import('@/pages/SubmissionDetailPage').then((m) => ({ default: m.SubmissionDetailPage }));
+const loadLyricEditorPage = () =>
+  import('@/pages/LyricEditorPage').then((m) => ({ default: m.LyricEditorPage }));
 const loadRegister = () => import('@/pages/Register').then((m) => ({ default: m.Register }));
 const loadResetPassword = () =>
   import('@/pages/ResetPassword').then((m) => ({ default: m.ResetPassword }));
@@ -37,6 +39,8 @@ const loadReviewerManagePage = () =>
 const loadPlaceholder = () =>
   import('@/pages/Placeholder').then((m) => ({ default: m.Placeholder }));
 const loadNotFound = () => import('@/pages/NotFound').then((m) => ({ default: m.NotFound }));
+const loadTerms = () => import('@/pages/Terms').then((m) => ({ default: m.Terms }));
+const loadPrivacy = () => import('@/pages/Privacy').then((m) => ({ default: m.Privacy }));
 
 export const Home = lazy(loadHome);
 export const NcmParse = lazy(loadNcmParse);
@@ -53,11 +57,14 @@ export const MessagesPage = lazy(loadMessagesPage);
 export const CreatorCenter = lazy(loadCreatorCenter);
 export const ReviewCenter = lazy(loadReviewCenter);
 export const SubmissionDetailPage = lazy(loadSubmissionDetailPage);
+export const LyricEditorPage = lazy(loadLyricEditorPage);
 export const Register = lazy(loadRegister);
 export const ResetPassword = lazy(loadResetPassword);
 export const ReviewerManagePage = lazy(loadReviewerManagePage);
 export const Placeholder = lazy(loadPlaceholder);
 export const NotFound = lazy(loadNotFound);
+export const Terms = lazy(loadTerms);
+export const Privacy = lazy(loadPrivacy);
 
 /** path → 页面 chunk 加载器，供导航链接 hover/focus 时预取（Vite 对重复 import 幂等） */
 export const pagePreloads: Record<string, () => Promise<unknown>> = {
@@ -78,9 +85,12 @@ export const pagePreloads: Record<string, () => Promise<unknown>> = {
   '/creator/lyrics/detail': loadSubmissionDetailPage,
   '/review': loadReviewCenter,
   '/review/detail': loadSubmissionDetailPage,
+  '/review/editor': loadLyricEditorPage,
   '/register': loadRegister,
   '/reset-password': loadResetPassword,
   '/admin/reviewers': loadReviewerManagePage,
+  '/terms': loadTerms,
+  '/privacy': loadPrivacy,
 };
 
 /** 预取路由 chunk（幂等，可安全重复调用） */

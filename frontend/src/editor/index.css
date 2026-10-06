@@ -1,0 +1,96 @@
+@font-face {
+  font-family: 'Google Sans Code';
+  src:
+    url('./assets/fonts/GoogleSansCode-VariableFont_MONO,wght.ttf') format('truetype-variations'),
+    url('./assets/fonts/GoogleSansCode-VariableFont_MONO,wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Google Sans Code';
+  src:
+    url('./assets/fonts/GoogleSansCode-Italic-VariableFont_MONO,wght.ttf')
+      format('truetype-variations'),
+    url('./assets/fonts/GoogleSansCode-Italic-VariableFont_MONO,wght.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  font-family: 'MiSans', Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color: rgba(255, 255, 255, 0.87);
+  background-color: transparent;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.radix-themes {
+  --default-font-family: 'MiSans', Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+
+  --default-font-family-mono:
+    'Google Sans Code', ui-monospace, SFMono-Regular, 'SF Pro Mono', 'JetBrains Mono', Menlo,
+    Monaco, Consolas, 'Liberation Mono', 'Courier New', 'MiSans', monospace;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+
+  &:hover {
+    background: transparent;
+  }
+}
+
+::-webkit-scrollbar {
+  background-color: transparent;
+  width: 20px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: solid 6px transparent;
+  box-shadow:
+    inset 0 0 0 1px rgba(128, 128, 128, 0.15),
+    inset 0 0 0 6px rgba(128, 128, 128, 0.25);
+  border-radius: 10px;
+  background: transparent;
+
+  &:hover {
+    background: transparent;
+  }
+}
+
+.rt-BaseButton:where(.rt-variant-soft) {
+  background-color: var(--accent-a3);
+
+  &:hover {
+    background-color: var(--accent-a4);
+  }
+}
+
+.rt-BaseButton:where(.rt-variant-soft):where(:active:not([data-state='open'])) {
+  background-color: var(--accent-a5);
+}
+
+.amll-lyric-player {
+  margin: 0 !important;
+  padding: 0 !important;
+}

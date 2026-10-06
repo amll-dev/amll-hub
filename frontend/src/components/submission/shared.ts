@@ -1,6 +1,6 @@
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { Check, Eye, FileText, Music, Pencil, Upload, X } from 'lucide-react';
+import { Check, Eye, FileCheck, FileText, Music, Pencil, Upload, X } from 'lucide-react';
 import { escapeHtml } from '@/lib/markup';
 import type { SubmissionDetail } from '@/lib/types';
 
@@ -11,6 +11,7 @@ export const statusMeta: Record<string, { label: string; className: string }> = 
   reviewing: { label: '审核中', className: 'bg-blue-100 text-blue-700' },
   need_revision: { label: '需修改', className: 'bg-orange-100 text-orange-700' },
   missing_audio: { label: '缺音频', className: 'bg-orange-100 text-orange-700' },
+  revised: { label: '待投稿者确认', className: 'bg-purple-100 text-purple-700' },
   approved: { label: '已通过', className: 'bg-green-100 text-green-700' },
   rejected: { label: '未通过', className: 'bg-red-100 text-red-700' },
   closed: { label: '已关闭', className: 'bg-surface-2 text-ink-3' },
@@ -188,6 +189,14 @@ export function buildActivityEntries(detail: SubmissionDetail): ActivityEntry[] 
         timestamp: h.reviewedAt,
         label: '要求补充音频',
         icon: Music,
+        actor,
+      });
+    } else if (h.status === 'revised') {
+      entries.push({
+        id: `review_${h.id}`,
+        timestamp: h.reviewedAt,
+        label: '提交修订版，待投稿者确认',
+        icon: FileCheck,
         actor,
       });
     } else if (m) {

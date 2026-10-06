@@ -1,0 +1,140 @@
+.outlineContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-2);
+  gap: 2px;
+  position: relative;
+}
+
+.itemWrapper {
+  position: relative;
+  border-radius: var(--radius-2);
+}
+
+.outlineItem {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-2);
+  user-select: none;
+  background: transparent;
+  border: 1px solid transparent;
+  transition:
+    background-color 0.1s,
+    border-color 0.1s,
+    opacity 0.2s,
+    transform 0.2s;
+  gap: var(--space-3);
+  touch-action: none;
+}
+
+.outlineItem[data-is-dragged='true'] {
+  opacity: 0.4;
+  transform: scale(0.95);
+}
+
+.outlineItem:hover {
+  background: var(--gray-a3);
+}
+
+.outlineItem[data-selected='true'] {
+  background: var(--accent-a3);
+  border-color: var(--accent-a5);
+}
+
+.dropIndicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--accent-9);
+  border-radius: 2px;
+  z-index: 10;
+  pointer-events: none;
+
+  display: var(--drop-indicator-display, none);
+  transform: translateY(var(--drop-indicator-y, 0px));
+
+  will-change: transform;
+}
+
+.dragGhost {
+  position: fixed;
+  z-index: 9999;
+  padding: 6px 16px;
+  border-radius: 20px;
+  background-color: var(--accent-a7);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  transform: translate(12px, 12px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent-13);
+  white-space: nowrap;
+}
+
+.isDraggingGlobal {
+  cursor: grabbing;
+}
+.isDraggingGlobal * {
+  cursor: grabbing;
+}
+.isDraggingGlobal .outlineItem {
+  pointer-events: none;
+}
+
+.emptyText {
+  color: var(--gray-7);
+  font-style: italic;
+}
+
+.lineNumber {
+  flex: 0 0 15px;
+  font-size: 11px;
+  color: var(--gray-8);
+  text-align: left;
+  margin-top: 0;
+  font-variant-numeric: tabular-nums;
+}
+.textContent {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.isDuet {
+  text-align: right;
+}
+.primaryText {
+  font-size: 13px;
+  color: var(--gray-12);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  transition: color 0.2s;
+}
+
+.isBG .primaryText {
+  color: var(--gray-9);
+}
+.secondaryText {
+  font-size: 11px;
+  color: var(--gray-10);
+  margin-top: 2px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  transition: color 0.2s;
+}
+.isBG .secondaryText {
+  color: var(--gray-7);
+}

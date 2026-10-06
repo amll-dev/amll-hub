@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": false,
+
+    "lib": ["ESNext", "DOM", "DOM.Iterable", "WebWorker"],
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "types": ["audioworklet", "wicg-file-system-access", "vite/client"],
+
+    "paths": {
+      "@/*": ["./src/*"],
+      "$/*": ["./src/editor/*"]
+    }
+  },
+  "include": ["src"]
+}

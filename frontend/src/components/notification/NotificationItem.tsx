@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import {
   CircleCheck,
+  FileCheck,
   FilePlus2,
   Megaphone,
   MessageSquare,
@@ -30,6 +31,9 @@ const reviewResultIcons: Record<ReviewResult, LucideIcon> = {
   rejected: XCircle,
   need_revision: PencilLine,
   missing_audio: Music,
+  // revised：审核员已改好，等投稿者确认 → 用 FileCheck（待采纳的文件）
+  // ⚠️ 以前没这个键，会退化成通用的 ShieldCheck，看不出是哪种结果。
+  revised: FileCheck,
   closed: TimerOff,
 };
 

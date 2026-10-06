@@ -3,6 +3,7 @@ import type {
   DailyLikeStatus,
   DailyRecommendation,
   DailyRecListResult,
+  EditorContext,
   IdentityMethod,
   IdentityStatus,
   LatestSongItem,
@@ -18,6 +19,7 @@ import type {
   OnlineSearchResult,
   OnlineSongDetail,
   ReviewAction,
+  SaveRevisionPayload,
   SearchField,
   SearchIpListResult,
   SearchIpSubmissionDetail,
@@ -680,6 +682,42 @@ export const api = {
     return request<void>(`/api/v1/submissions/${id}/release-review`, {
       method: 'POST',
       keepalive,
+    });
+  },
+
+  /** 审核员编辑器上下文 GET /api/v1/submissions/:id/editor-context */
+  getEditorContext(id: number): Promise<EditorContext> {
+    return request<EditorContext>(`/api/v1/submissions/${id}/editor-context`);
+  },
+
+  /** 保存审核员修订 POST /api/v1/submissions/:id/revision */
+  saveRevision(id: number, payload: SaveRevisionPayload): Promise<void> {
+    return request<void>(`/api/v1/submissions/${id}/revision`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /** 读取审核员修订版 TTML 原文 GET /api/v1/submissions/:id/revision/ttml */
+  async getRevisionTtml(id: number): Promise<string> {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/api/v1/submissions/${id}/revision/ttml`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error(`获取修订版失败: ${res.status}`);
+    return res.text();
+  },
+
+  /** 投稿者确认采用审核员修订版 POST /api/v1/submissions/:id/revision/adopt */
+  adoptRevision(id: number): Promise<void> {
+    return request<void>(`/api/v1/submissions/${id}/revision/adopt`, { method: 'POST' });
+  },
+
+  /** 投稿者保留原版、退回需修改 POST /api/v1/submissions/:id/revision/reject */
+  rejectRevision(id: number, reason: string): Promise<void> {
+    return request<void>(`/api/v1/submissions/${id}/revision/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
     });
   },
 

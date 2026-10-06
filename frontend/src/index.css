@@ -1,6 +1,8 @@
 @import 'tailwindcss';
 /* tw-animate-css：shadcn 组件（Dialog/DropdownMenu 等）data-[state] 动画依赖的 utility */
 @import 'tw-animate-css';
+/* prose：法律文档正文排版（.legal-prose 仅做主题令牌桥接与少量定制） */
+@plugin '@tailwindcss/typography';
 
 /* Radix Accordion 展开动画（shadcn accordion 依赖 --animate-accordion-*） */
 @theme {
@@ -323,6 +325,50 @@ html {
   color-scheme: light;
 }
 
+/*
+ * 歌词/编辑器共用的 Radix accent 覆写
+ *
+ * ⚠️ 与 `components/review/editor-theme.css` 是**同一组变量**，
+ * 工作台 CSS 类覆写了这里的浅色档（那边的 a3/a4/a8 是半透明红）。
+ * 这里的值是**兜底默认值**，改配色时两处要一起改。
+ * 名字沿用 Radix 原生 `--accent-*` 梯度语义（1~13 纯色，a1~a13 带alpha）。
+ */
+:root {
+  /* 行块底色（低 alpha！叠三四行仍需透光） */
+  --accent-a3: rgb(224 48 63 / 0.16);
+  --accent-a8: rgb(178 20 36 / 0.72);
+  --accent-a11: rgb(255 255 255 / 0.45);
+  --accent-a12: rgb(255 255 255 / 0.6);
+  --accent-a13: rgb(255 255 255 / 0.75);
+
+  /* 选中的词：整词加底色 */
+  --accent-a4: var(--color-primary);
+  --accent-a5: var(--color-primary);
+  --accent-a9: var(--color-primary);
+  --accent-a10: var(--color-primary);
+  --accent-8: rgb(29 29 31 / 0.45);
+  --accent-9: var(--color-primary);
+  --accent-11: rgb(29 29 31 / 0.8);
+  --accent-12: rgb(29 29 31 / 0.95);
+  --accent-13: rgb(29 29 31);
+
+  /* 字色 / 灰阶（--gray-11/12 是浅底上的深灰） */
+  --gray-1: rgb(255 255 255);
+  --gray-2: rgb(240 240 245);
+  --gray-3: rgb(220 220 228);
+  --gray-4: rgb(190 190 200);
+  --gray-5: rgb(160 160 172);
+  --gray-8: rgb(120 120 134);
+  --gray-11: rgb(29 29 31 / 0.85);
+  --gray-12: rgb(29 29 31);
+  --gray-a3: rgb(29 29 31 / 0.13);
+  --gray-a4: rgb(29 29 31 / 0.26);
+
+  /* 圆角 */
+  --radius-1: 4px;
+  --radius-2: 6px;
+}
+
 /* 主题切换过渡 */
 html.theme-transitioning {
   transition-property:
@@ -538,4 +584,235 @@ html.dark .amll-skeleton::after {
   border: none;
   border-top: 1px solid var(--amll-line);
   margin: 1em 0;
+}
+
+/* 法律文档正文（用户协议 / 隐私政策）排版。
+ *
+ * 基础样式来自 @tailwindcss/typography 的 prose（在 tsx 里与 legal-prose 并列使用），
+ * 这里只做两件事，且作用域限定在 .legal-prose，避免污染其他 dangerouslySetInnerHTML 场景：
+ *   1. 把 prose 的灰阶令牌桥接到项目 --amll-* 主题令牌，暗色随 html.dark 自动切换，
+ *      因此不需要 prose-invert；
+ *   2. 保留项目特有的视觉：条款块、链接下划线风格、表格横向滚动等。
+ */
+.legal-prose {
+  font-size: 15px;
+  line-height: 1.85;
+  color: var(--amll-ink);
+  word-break: break-word;
+  /* prose 默认限宽 65ch，法律文档按容器宽度铺满 */
+  max-width: none;
+
+  --tw-prose-body: var(--amll-ink);
+  --tw-prose-headings: var(--amll-foreground);
+  --tw-prose-lead: var(--amll-ink-2);
+  --tw-prose-links: var(--amll-primary);
+  --tw-prose-bold: var(--amll-foreground);
+  --tw-prose-counters: var(--amll-ink-3);
+  --tw-prose-bullets: var(--amll-ink-3);
+  --tw-prose-hr: var(--amll-line);
+  --tw-prose-quotes: var(--amll-ink-2);
+  --tw-prose-quote-borders: var(--amll-primary);
+  --tw-prose-captions: var(--amll-ink-3);
+  --tw-prose-code: var(--amll-foreground);
+  --tw-prose-pre-code: var(--amll-foreground);
+  --tw-prose-pre-bg: var(--amll-surface-2);
+  --tw-prose-th-borders: var(--amll-line);
+  --tw-prose-td-borders: var(--amll-line);
+}
+
+/* 正文首个 h1（文档标题）与页头标题重复，隐藏之，靠页头渲染 */
+.legal-prose > h1:first-child {
+  display: none;
+}
+
+/* prose 默认标题偏大（h2 1.5em/32px 起）且字重 700-800，
+   条款类长文档需要更紧凑的层级，故整体收一档 */
+.legal-prose h1,
+.legal-prose h2,
+.legal-prose h3,
+.legal-prose h4 {
+  margin-top: 1.9em;
+  margin-bottom: 0.7em;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--amll-foreground);
+  scroll-margin-top: 5rem;
+}
+
+.legal-prose h1 {
+  font-size: 1.6em;
+}
+
+.legal-prose h2 {
+  font-size: 1.28em;
+}
+
+.legal-prose h3 {
+  font-size: 1.1em;
+}
+
+.legal-prose h4 {
+  font-size: 1em;
+}
+
+/* 长文档章节标题上方一条细分隔线，更易扫读 */
+.legal-prose h2 {
+  padding-top: 0.9em;
+  border-top: 1px solid var(--amll-line);
+}
+
+/* 正文链接常态不画下划线，只留一条淡色底线 */
+.legal-prose a {
+  text-decoration: none;
+  font-weight: inherit;
+  border-bottom: 1px solid var(--amll-primary-soft);
+}
+
+.legal-prose a:hover {
+  text-decoration: underline;
+}
+
+/* md 里的 <u>（术语、定义）用主色下划线区分 */
+.legal-prose u {
+  text-decoration-color: var(--amll-primary);
+  text-underline-offset: 3px;
+}
+
+/* 编号条款里的加粗前缀（如「**投稿人承诺。**」）后跟正文，做成提示块 */
+.legal-prose blockquote {
+  padding: 0.9em 1.1em;
+  margin: 0 0 1.2em;
+  font-style: normal;
+  font-weight: 400;
+  background: var(--amll-surface-2);
+  border-radius: 0 var(--amll-radius-md) var(--amll-radius-md) 0;
+}
+
+/* prose 默认给 blockquote 加中文引号（open-quote/close-quote），这里不要 */
+.legal-prose blockquote p::before,
+.legal-prose blockquote p::after {
+  content: none;
+}
+
+.legal-prose blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* md 里用「- 」做的二级列表在渲染后是 li > ul，符号跟随父级即可 */
+.legal-prose ul ul {
+  list-style-type: circle;
+}
+
+/* 行内 code 不带 pre 的底色块，补一层描边以便在浅色底上区分 */
+.legal-prose :not(pre) > code {
+  padding: 0.15em 0.4em;
+  font-size: 0.85em;
+  font-weight: 400;
+  background: var(--amll-surface-2);
+  border: 1px solid var(--amll-line);
+  border-radius: 4px;
+}
+
+.legal-prose pre {
+  border: 1px solid var(--amll-line);
+  border-radius: var(--amll-radius-md);
+}
+
+/* 第三方共享表格列多，窄屏下横向滚动而非挤压换行 */
+.legal-prose table {
+  display: block;
+  width: 100%;
+  font-size: 0.92em;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* prose 默认表格只画横线（thead/tbody tr 下边框），这里改回逐格网格 + 表头底色 */
+.legal-prose th,
+.legal-prose td {
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  border: 1px solid var(--amll-line);
+}
+
+.legal-prose th {
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--amll-surface-2);
+}
+
+/* 网格线已由单元格边框提供，去掉 prose 的行分隔线避免双线 */
+.legal-prose thead,
+.legal-prose tfoot,
+.legal-prose tbody tr {
+  border: 0;
+}
+
+.legal-prose img {
+  border-radius: var(--amll-radius-md);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-track:hover {
+  background: transparent;
+}
+
+::-webkit-scrollbar {
+  width: 20px;
+  height: 20px;
+  background-color: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: solid 6px transparent;
+  box-shadow:
+    inset 0 0 0 1px rgb(128 128 128 / 0.15),
+    inset 0 0 0 6px rgb(128 128 128 / 0.25);
+  border-radius: 10px;
+  background: transparent;
+}
+::-webkit-scrollbar-thumb:hover {
+  box-shadow:
+    inset 0 0 0 1px rgb(128 128 128 / 0.25),
+    inset 0 0 0 6px rgb(128 128 128 / 0.4);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox 用标准属性做同样的事 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(128 128 128 / 0.35) transparent;
+}
+
+.lyric-words-track {
+  /* 横向保留可见细条；纵向由组件的 overflow-y-hidden 处理 */
+  scrollbar-width: thin;
+  scrollbar-color: rgb(128 128 128 / 0.4) transparent;
+}
+.lyric-words-track::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+  border-top: solid 1px var(--color-border);
+}
+.lyric-words-track::-webkit-scrollbar-track {
+  background: transparent;
+}
+.lyric-words-track::-webkit-scrollbar-thumb {
+  border: solid 3px transparent;
+  border-radius: 8px;
+  background-color: rgb(128 128 128 / 0.45);
+  background-clip: content-box;
+  box-shadow: none;
+}
+.lyric-words-track::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(128 128 128 / 0.7);
+}
+.lyric-words-track::-webkit-scrollbar-corner {
+  background: transparent;
 }

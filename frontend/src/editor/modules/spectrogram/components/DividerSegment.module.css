@@ -1,0 +1,75 @@
+.divider {
+  --divider-hit-width: 16px;
+  --timeline-boundary-color: var(--accent-8);
+
+  position: absolute;
+  top: 0;
+  bottom: 0;
+
+  width: var(--divider-hit-width);
+  transform: translateX(-50%);
+
+  cursor: ew-resize;
+  pointer-events: auto;
+  z-index: 10;
+}
+
+.divider[data-shared='true'][data-kind='line-end'] {
+  width: calc(var(--divider-hit-width) / 2);
+  transform: translateX(-100%);
+}
+
+.divider[data-shared='true'][data-kind='line-end']::before {
+  left: 100%;
+}
+
+.divider[data-shared='true'][data-kind='line-start'] {
+  width: calc(var(--divider-hit-width) / 2);
+  transform: translateX(0);
+}
+
+.divider[data-shared='true'][data-kind='line-start']::before {
+  left: 0;
+}
+
+.divider:focus-visible {
+  outline: 2px solid var(--accent-12);
+}
+
+.divider::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  border-left: 1px solid var(--timeline-boundary-color);
+  pointer-events: none;
+}
+
+.divider[data-kind='line-start']::before,
+.divider[data-kind='line-end']::before {
+  top: 1px;
+  bottom: 1px;
+}
+
+.divider[data-visual-state='default'] {
+  --timeline-boundary-color: var(--accent-8);
+}
+
+.divider[data-visual-state='selected'] {
+  --timeline-boundary-color: var(--accent-11);
+}
+
+.divider[data-visual-state='hovered'],
+.divider[data-visual-state='editing'] {
+  --timeline-boundary-color: var(--accent-12);
+}
+
+.divider[data-visual-state='editing']::before,
+.divider:hover::before {
+  border-left-width: 2px;
+}
+
+.divider:hover {
+  --timeline-boundary-color: var(--accent-12);
+}

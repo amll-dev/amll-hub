@@ -67,6 +67,8 @@ export const queryKeys = {
   // 网易云解析
   ncmSearch: (q: string) => ['ncm-search', { q }] as const,
   ncmPlaylist: (id: string) => ['ncm-playlist', { id }] as const,
+  /** 单曲解析 */
+  ncmMusic: (id: string) => ['ncm-music', { id }] as const,
 
   // 认证
   profile: ['auth', 'profile'] as const,
@@ -85,6 +87,10 @@ export const queryKeys = {
   submission: (id: number) => ['submission', id] as const,
   submissionComments: (id: number) => ['submission', id, 'comments'] as const,
   submissionTtml: (id: number) => ['submission', id, 'ttml'] as const,
+  /** 审核员编辑器上下文 */
+  editorContext: (id: number) => ['submission', id, 'editor-context'] as const,
+  /** 审核员修订版 TTML 原文 */
+  revisionTtml: (id: number) => ['submission', id, 'revision-ttml'] as const,
   userActivity: (year: number) => ['user-activity', year] as const,
 
   // 搜索IP投稿

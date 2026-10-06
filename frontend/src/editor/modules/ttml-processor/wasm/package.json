@@ -1,0 +1,17 @@
+{
+  "name": "ttml_processor_wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "ttml_processor_wasm_bg.wasm",
+    "ttml_processor_wasm.js",
+    "ttml_processor_wasm_bg.js",
+    "ttml_processor_wasm.d.ts"
+  ],
+  "main": "ttml_processor_wasm.js",
+  "types": "ttml_processor_wasm.d.ts",
+  "sideEffects": [
+    "./ttml_processor_wasm.js",
+    "./snippets/*"
+  ]
+}

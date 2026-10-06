@@ -27,6 +27,7 @@ type RouterDeps struct {
 	Auth         *handler.AuthHandler
 	Submission   *handler.SubmissionHandler
 	Review       *handler.ReviewHandler
+	Revision     *handler.RevisionHandler
 	Comment      *handler.CommentHandler
 	Upload       *handler.UploadHandler
 	SearchIP     *handler.SearchIPHandler
@@ -57,6 +58,7 @@ func New(deps RouterDeps) *gin.Engine {
 	authH := deps.Auth
 	submissionH := deps.Submission
 	reviewH := deps.Review
+	revisionH := deps.Revision
 	commentH := deps.Comment
 	uploadH := deps.Upload
 	searchIpH := deps.SearchIP
@@ -215,6 +217,21 @@ func New(deps RouterDeps) *gin.Engine {
 				middleware.RequireReviewer(reviewerCache),
 				reviewH.ReleaseReview,
 			)
+
+			// 审核员修订版：编辑器上下文 / 保存修订 / 查看修订版原文
+			sub.GET("/submissions/:id/editor-context",
+				middleware.RequireReviewer(reviewerCache),
+				revisionH.GetEditorContext,
+			)
+			sub.POST("/submissions/:id/revision",
+				middleware.RequireReviewer(reviewerCache),
+				revisionH.Save,
+			)
+			sub.GET("/submissions/:id/revision/ttml", revisionH.GetRevisionContent)
+
+			// 投稿者确认修订版：采用（视为通过）/ 保留原版（退回需修改）
+			sub.POST("/submissions/:id/revision/adopt", revisionH.Adopt)
+			sub.POST("/submissions/:id/revision/reject", revisionH.Reject)
 
 			// 评论
 			sub.GET("/submissions/:id/comments", commentH.List)

@@ -1,0 +1,29 @@
+{
+  "name": "bpm-analyzer-wasm",
+  "type": "module",
+  "description": "WebAssembly bindings for bpm-analyzer",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/apoint123/bpm-analyzer"
+  },
+  "files": [
+    "bpm_analyzer_wasm_bg.wasm",
+    "bpm_analyzer_wasm.js",
+    "bpm_analyzer_wasm.d.ts"
+  ],
+  "main": "bpm_analyzer_wasm.js",
+  "homepage": "https://github.com/apoint123/bpm-analyzer",
+  "types": "bpm_analyzer_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ],
+  "keywords": [
+    "bpm",
+    "audio",
+    "wasm",
+    "beat-tracking",
+    "dsp"
+  ]
+}

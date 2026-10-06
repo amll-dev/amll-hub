@@ -101,6 +101,59 @@ export function formatLyricTime(ms: number | null | undefined): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(milli).padStart(3, '0')}`;
 }
 
+export function msToTimestamp(ms: number, options: { ms?: boolean } = {}): string {
+  if (ms === Number.POSITIVE_INFINITY) return '99:99.999';
+  const total = Number.isFinite(ms) && ms > 0 ? Math.round(ms) : 0;
+  const secsTotal = total / 1000;
+  const secs = secsTotal % 60;
+  const mins = Math.floor(secsTotal / 60) % 60;
+  const hrs = Math.floor(secsTotal / 3600);
+
+  const h = String(hrs).padStart(2, '0');
+  const m = String(mins).padStart(2, '0');
+  const s = secs.toFixed(3).padStart(6, '0');
+  const sNoMs = String(Math.floor(secs)).padStart(2, '0');
+
+  if (options.ms === false) {
+    return hrs > 0 ? `${h}:${m}:${sNoMs}` : `${m}:${sNoMs}`;
+  }
+  return hrs > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+}
+
+/*
+ * 以下两个函数搬自 `src/editor/utils/timestamp.ts`
+ * （Copyright 2023-2025 Steve Xiao and contributors, AMLL TTML Tool, GPLv3）。
+ *
+ * 搬过来是因为 `msToTimestamp` 在本文件与 tool 文件里各有一份重复实现
+ * （已用 66 组边界用例验证行为完全一致），而 `parseTimespan` /
+ * `formatDurationMs` 是 tool 独有的。统一到本文件后，editor 侧不再
+ * 需要依赖那份GPL 文件。
+ */
+
+/** 解析时间戳字符串 → 毫秒。支持 `ss(.fff)` / `mm:ss(.fff)` / `hh:mm:ss(.fff)` */
+const timeRegexp =
+  /^(((?<hour>[0-9]+):)?(?<min>[0-9]+):)?((?<sec>[0-9]+)([.:](?<frac>[0-9]{1,3}))?)$/;
+
+export function parseTimespan(timeSpan: string): number {
+  const matches = timeRegexp.exec(timeSpan);
+  if (matches) {
+    const hour = Number(matches.groups?.hour || '0');
+    const min = Number(matches.groups?.min || '0');
+    const sec = Number(matches.groups?.sec || '0');
+    const frac = Number((matches.groups?.frac || '0').padEnd(3, '0'));
+    return (hour * 3600 + min * 60 + sec) * 1000 + frac;
+  }
+  throw new TypeError(`时间戳字符串解析失败：${timeSpan}`);
+}
+
+/** 时长（毫秒）→ `123` 或 `123ms`。主要给输入框做实时回显用。 */
+export function formatDurationMs(durationMS: number, options: { suffix?: boolean } = {}): string {
+  const { suffix = false } = options;
+  const rounded = Math.round(durationMS);
+  const normalized = Object.is(rounded, -0) ? 0 : rounded;
+  return `${normalized}${suffix ? 'ms' : ''}`;
+}
+
 /** 字节数 -> `1.2 MB` / `320 KB`，非法值返回 '--' */
 export function formatBytes(bytes: number | null | undefined): string {
   if (!Number.isFinite(bytes) || (bytes as number) <= 0) return '--';

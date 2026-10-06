@@ -116,6 +116,18 @@ var resultStyles = map[string]resultStyle{
 		BadgeBG:   "#fdf3e3",
 		BadgeFG:   "#c97a0e",
 	},
+	// revised：审核员已改好，等投稿者确认。
+	"revised": {
+		Label:     "待确认",
+		Headline:  "审核员已提交修订版歌词",
+		Lead:      "你的投稿已完成审核修订，审核员提交了一版修订歌词。",
+		Tip:       "请在详情页查看修订内容与审核报告，确认后即可直接采用；如需保留原版可以选择不采用。",
+		Preheader: "歌词修订版已提交，请确认是否采用。",
+		Button:    "查看并确认",
+		Accent:    "#7c4dbe",
+		BadgeBG:   "#f1ebfa",
+		BadgeFG:   "#7c4dbe",
+	},
 	"closed": {
 		Label:     "已关闭",
 		Headline:  "你的投稿已超时关闭",

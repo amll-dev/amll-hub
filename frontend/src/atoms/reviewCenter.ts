@@ -7,6 +7,7 @@ export type ReviewTab =
   | 'all'
   | 'pending'
   | 'reviewing'
+  | 'revised'
   | 'need_revision'
   | 'missing_audio'
   | 'approved'

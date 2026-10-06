@@ -14,6 +14,10 @@ import { Badge } from '@/components/ui/badge';
 
 const statusMeta: Record<string, { label: string; className: string }> = {
   pending: { label: '待审核', className: 'bg-amber-100 text-amber-700' },
+  reviewing: { label: '审核中', className: 'bg-blue-100 text-blue-700' },
+  need_revision: { label: '需修改', className: 'bg-orange-100 text-orange-700' },
+  missing_audio: { label: '缺音频', className: 'bg-orange-100 text-orange-700' },
+  revised: { label: '待投稿者确认', className: 'bg-purple-100 text-purple-700' },
   approved: { label: '已通过', className: 'bg-green-100 text-green-700' },
   rejected: { label: '未通过', className: 'bg-red-100 text-red-700' },
 };

@@ -17,6 +17,9 @@ const (
 	StatusApproved     = "approved"
 	StatusRejected     = "rejected"
 	StatusClosed       = "closed"
+	// StatusRevised 审核员已提交修订版 TTML，等待投稿者确认。
+	// 投稿者确认采用后直接转 approved
+	StatusRevised = "revised"
 )
 
 // SubmissionLanguage 投稿语言枚举
@@ -138,9 +141,56 @@ type Submission struct {
 	Reviewer            string     `gorm:"type:varchar(100)" json:"reviewer,omitempty"`
 	ReviewedAt          *time.Time `gorm:"column:reviewed_at;type:timestamptz" json:"reviewedAt,omitempty"`
 	ReviewComment       string     `gorm:"column:review_comment;type:text" json:"reviewComment,omitempty"`
+
+	// 审核员修订版：编辑器保存时勾选（上传修改后的 TTML）才会写入
+	RevisionFileKey      string     `gorm:"column:revision_file_key;type:varchar(500);not null;default:''" json:"revisionFileKey,omitempty"`
+	RevisionMetadata     JSONObject `gorm:"column:revision_metadata;type:jsonb;not null;default:'{}'" json:"revisionMetadata,omitempty"`
+	RevisionTTML         *string    `gorm:"column:revision_ttml;type:text" json:"revisionTtml,omitempty"`
+	RevisionAt           *time.Time `gorm:"column:revision_at;type:timestamptz" json:"revisionAt,omitempty"`
+	RevisionReviewer     string     `gorm:"column:revision_reviewer;type:varchar(100)" json:"revisionReviewer,omitempty"`
+	RevisionReviewerInfo *UserInfo  `gorm:"column:revision_reviewer_info;type:jsonb" json:"revisionReviewerInfo,omitempty"`
 }
 
 func (Submission) TableName() string { return "submissions" }
+
+// SnapshotRevision 返回当前修订版字段的副本
+func (s *Submission) SnapshotRevision() *Submission {
+	cp := &Submission{
+		RevisionFileKey:      s.RevisionFileKey,
+		RevisionMetadata:     s.RevisionMetadata,
+		RevisionAt:           s.RevisionAt,
+		RevisionReviewer:     s.RevisionReviewer,
+		RevisionReviewerInfo: s.RevisionReviewerInfo,
+	}
+	if s.RevisionTTML != nil {
+		ttml := *s.RevisionTTML
+		cp.RevisionTTML = &ttml
+	}
+	return cp
+}
+
+// RestoreRevision 把快照里的修订版字段写回自身，用于回滚
+func (s *Submission) RestoreRevision(saved *Submission) {
+	if saved == nil {
+		return
+	}
+	s.RevisionFileKey = saved.RevisionFileKey
+	s.RevisionMetadata = saved.RevisionMetadata
+	s.RevisionTTML = saved.RevisionTTML
+	s.RevisionAt = saved.RevisionAt
+	s.RevisionReviewer = saved.RevisionReviewer
+	s.RevisionReviewerInfo = saved.RevisionReviewerInfo
+}
+
+// ClearRevision 清空修订版字段
+func (s *Submission) ClearRevision() {
+	s.RevisionFileKey = ""
+	s.RevisionMetadata = JSONObject{}
+	s.RevisionTTML = nil
+	s.RevisionAt = nil
+	s.RevisionReviewer = ""
+	s.RevisionReviewerInfo = nil
+}
 
 // SubmissionAudio 音频附件
 type SubmissionAudio struct {
@@ -183,6 +233,23 @@ type SubmissionFileHistory struct {
 }
 
 func (SubmissionFileHistory) TableName() string { return "submission_file_history" }
+
+// ReviewReport 审核报告
+type ReviewReport struct {
+	ID           int64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	SubmissionID int64    `gorm:"column:submission_id;not null" json:"submissionId"`
+	Reviewer     string   `gorm:"type:varchar(100);not null" json:"reviewer"`
+	ReviewerInfo UserInfo `gorm:"type:jsonb;not null;default:'{}'" json:"reviewerInfo"`
+	// Action 本次报告对应的审核动作（revision/approve/reject/missing_audio）
+	Action string `gorm:"type:varchar(20);not null" json:"action"`
+	// HasRevision 本次是否上传了修订版 TTML
+	HasRevision bool       `gorm:"column:has_revision;not null;default:false" json:"hasRevision"`
+	ReportMD    string     `gorm:"column:report_md;type:text;not null;default:''" json:"reportMd"`
+	Structured  JSONObject `gorm:"type:jsonb;not null;default:'{}'" json:"structured"`
+	CreatedAt   time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP" json:"createdAt"`
+}
+
+func (ReviewReport) TableName() string { return "review_reports" }
 
 // Comment 普通评论
 type Comment struct {
