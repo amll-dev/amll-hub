@@ -136,7 +136,9 @@ fun QrScannerView(
 }
 
 /** 识别单帧，命中二维码则回调一次 */
-@OptIn(ExperimentalGetImage::class)
+// ExperimentalGetImage 是 androidx.annotation.RequiresOptIn（Java 体系），
+// Lint 只认 androidx.annotation.OptIn 的 markerClass 形式，Kotlin 的 @OptIn 无效
+@androidx.annotation.OptIn(markerClass = [ExperimentalGetImage::class])
 private fun analyzeFrame(
     proxy: ImageProxy,
     scanner: BarcodeScanner,

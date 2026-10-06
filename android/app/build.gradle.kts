@@ -68,6 +68,12 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    lint {
+        // CI 以 lint 为门禁，warning 不阻断
+        warningsAsErrors = false
+        abortOnError = true
+    }
 }
 
 // AGP 9 移除了 android.kotlinOptions{}，改用 KGP 顶层 kotlin.compilerOptions{}
