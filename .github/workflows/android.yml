@@ -35,9 +35,13 @@ jobs:
       - name: 配置 Gradle（自带依赖缓存）
         uses: gradle/actions/setup-gradle@v5
 
-      # AGP 9.4 需要 Build Tools 36.x，显式安装避免 runner 镜像版本漂移
-      - name: 安装 Android SDK 组件
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: 打印 Android 环境
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "JAVA_HOME=$JAVA_HOME"
+          java -version
+          ls "$ANDROID_HOME/platforms" 2>/dev/null || true
+          ls "$ANDROID_HOME/build-tools" 2>/dev/null || true
 
       - name: 校验 Gradle 配置
         run: ./gradlew help --no-daemon --stacktrace

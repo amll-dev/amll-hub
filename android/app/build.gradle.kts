@@ -24,8 +24,6 @@ val apiBaseUrl: String = run {
 android {
     namespace = "dev.amll.hub.android"
     compileSdk = 36
-    // AGP 9.4 要求 Build Tools 36.0.0+
-    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "dev.amll.hub.android"
