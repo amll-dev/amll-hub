@@ -1,0 +1,44 @@
+# 默认按文本自动处理
+*text=auto
+
+# Gradle wrapper 脚本必须在 Linux 上保持 LF，
+# 否则 shebang 变成 `#!/bin/sh\r` 会直接执行失败
+gradlew text eol=lf
+*.bat text eol=crlf
+gradlew.bat text eol=crlf
+
+# Gradle 构建脚本统一 LF
+*.gradle text eol=lf
+*.gradle.kts text eol=lf
+gradle/wrapper/gradle-wrapper.properties text eol=lf
+gradle/libs.versions.toml text eol=lf
+settings.gradle.kts text eol=lf
+
+# 二进制资源不做换行转换
+*.jar binary
+*.aar binary
+*.apk binary
+*.aab binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.so binary
+
+# 前端
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+
+# 后端
+*.go text eol=lf
+*.sql text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Rust
+*.rs text eol=lf
+*.toml text eol=lf

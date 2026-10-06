@@ -513,7 +513,7 @@ export function ttmlLyricToTTMLResult(ttmlLyric: AppTTMLLyric): TTMLResult {
   let hasMainLine = false;
 
   for (let index = 0; index < ttmlLyric.lyricLines.length; index++) {
-    const line = ttmlLyric.lyricLines[index];
+    const line = ttmlLyric.lyricLines[index]!;
     if (line.isBG) continue;
     if (hasMainLine && line.songPart) blockIndex += 1;
     hasMainLine = true;

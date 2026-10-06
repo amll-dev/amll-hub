@@ -21,7 +21,7 @@ const findActiveLineIndex = (
   predicate?: (line: LyricLine) => boolean
 ) => {
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i]!;
     if (predicate && !predicate(line)) continue;
     if (isLineActiveAtTime(line, currentTime)) {
       return i;
@@ -37,7 +37,7 @@ const findLocatedLineIndex = (
 ) => {
   let previousIndex = -1;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i]!;
     if (predicate && !predicate(line)) continue;
     if (!hasCompleteLineTiming(line)) continue;
     if (currentTime < line.startTime) {
@@ -58,7 +58,7 @@ const findTimedLineWindow = (
 ) => {
   let previousIndex = -1;
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i]!;
     if (predicate && !predicate(line)) continue;
     if (!hasCompleteLineTiming(line)) continue;
     if (currentTime < line.startTime) {

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色模式：对应网页端 html.dark 的 background token -->
+    <color name="window_background">#101014</color>
+</resources>

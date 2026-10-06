@@ -55,7 +55,7 @@ const findCurrentLineIndex = (lines: LyricLine[], currentTime: number) => {
   const scan = (predicate?: (line: LyricLine) => boolean) => {
     let previousIndex = -1;
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+      const line = lines[i]!;
       if (predicate && !predicate(line)) continue;
       if (line.endTime <= line.startTime) continue;
       if (currentTime < line.startTime) {

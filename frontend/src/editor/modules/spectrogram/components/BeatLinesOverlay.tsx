@@ -26,12 +26,13 @@ export const BeatLinesOverlay: FC<BeatLinesOverlayProps> = ({ clientWidth }) => 
     let intervalS = 0;
 
     if (rawTicks.length > 0) {
-      const isMs = rawTicks[rawTicks.length - 1] > durationS * 2;
+      // 上面的 rawTicks.length > 0 已守卫
+      const isMs = rawTicks[rawTicks.length - 1]! > durationS * 2;
       const ticksInSeconds = isMs ? rawTicks.map((t) => t / 1000) : rawTicks;
 
       if (ticksInSeconds.length >= 2) {
         intervalS =
-          (ticksInSeconds[ticksInSeconds.length - 1] - ticksInSeconds[0]) /
+          (ticksInSeconds[ticksInSeconds.length - 1]! - ticksInSeconds[0]!) /
           (ticksInSeconds.length - 1);
       } else {
         intervalS = 60 / result.bpm;
@@ -45,9 +46,9 @@ export const BeatLinesOverlay: FC<BeatLinesOverlayProps> = ({ clientWidth }) => 
       } else if (scale === 2) {
         const doubled: number[] = [];
         for (let i = 0; i < ticksInSeconds.length; i++) {
-          doubled.push(ticksInSeconds[i]);
+          doubled.push(ticksInSeconds[i]!);
           if (i < ticksInSeconds.length - 1) {
-            doubled.push((ticksInSeconds[i] + ticksInSeconds[i + 1]) / 2);
+            doubled.push((ticksInSeconds[i]! + ticksInSeconds[i + 1]!) / 2);
           }
         }
         coreBeats = doubled;
@@ -83,13 +84,13 @@ export const BeatLinesOverlay: FC<BeatLinesOverlayProps> = ({ clientWidth }) => 
 
     const beats: number[] = [...coreBeats];
 
-    let first = beats[0];
+    let first = beats[0]!;
     while (first - intervalS >= 0) {
       first -= intervalS;
       beats.unshift(first);
     }
 
-    let last = beats[beats.length - 1];
+    let last = beats[beats.length - 1]!;
     while (last + intervalS <= durationS) {
       last += intervalS;
       beats.push(last);

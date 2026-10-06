@@ -158,7 +158,8 @@ const LyricWordViewEditSpan = ({
             }
           });
           for (let i = minBoundry; i <= maxBoundry; i++) {
-            v.add(line.words[i].id);
+            const w = line.words[i];
+            if (w) v.add(w.id);
           }
         } else {
           v.add(word.id);
@@ -229,18 +230,18 @@ const LyricWordViewEditSpan = ({
             const rect = evt.currentTarget.getBoundingClientRect();
             const innerX = evt.clientX - rect.left;
             if (innerX < rect.width / 2) {
-              evt.currentTarget.classList.add(styles.dropLeft);
-              evt.currentTarget.classList.remove(styles.dropRight);
+              evt.currentTarget.classList.add(styles.dropLeft!);
+              evt.currentTarget.classList.remove(styles.dropRight!);
             } else {
-              evt.currentTarget.classList.remove(styles.dropLeft);
-              evt.currentTarget.classList.add(styles.dropRight);
+              evt.currentTarget.classList.remove(styles.dropLeft!);
+              evt.currentTarget.classList.add(styles.dropRight!);
             }
             const isCopyingWords = evt.ctrlKey || evt.metaKey;
             evt.dataTransfer.dropEffect = isCopyingWords ? 'copy' : 'move';
           }}
           onDrop={(evt) => {
-            evt.currentTarget.classList.remove(styles.dropLeft);
-            evt.currentTarget.classList.remove(styles.dropRight);
+            evt.currentTarget.classList.remove(styles.dropLeft!);
+            evt.currentTarget.classList.remove(styles.dropRight!);
             if (!store.get(isDraggingAtom)) return;
             if (isWordSelected) return;
 
@@ -255,10 +256,12 @@ const LyricWordViewEditSpan = ({
                 const words = line.words.filter((w) => selectedWords.has(w.id));
                 collectedWords.push(...words);
                 if (!isCopyingWords) {
+                  const firstWord = line.words[0];
+                  const lastWord = line.words[line.words.length - 1];
                   const deletedAtBounds =
-                    line.words.length > 0 &&
-                    (selectedWords.has(line.words[0].id) ||
-                      selectedWords.has(line.words[line.words.length - 1].id));
+                    !!firstWord &&
+                    !!lastWord &&
+                    (selectedWords.has(firstWord.id) || selectedWords.has(lastWord.id));
                   line.words = line.words.filter((w) => !selectedWords.has(w.id));
                   if (deletedAtBounds) normalizeLineTime(line);
                 }
@@ -287,8 +290,8 @@ const LyricWordViewEditSpan = ({
             });
           }}
           onDragLeave={(evt) => {
-            evt.currentTarget.classList.remove(styles.dropLeft);
-            evt.currentTarget.classList.remove(styles.dropRight);
+            evt.currentTarget.classList.remove(styles.dropLeft!);
+            evt.currentTarget.classList.remove(styles.dropRight!);
           }}
           className={className}
           onDoubleClick={onDoubleClick}
@@ -714,7 +717,7 @@ const LyricSyncWordView: FC<{
       if (!highlightActiveWord) {
         if (isActiveRef.current) {
           isActiveRef.current = false;
-          wordContainerRef.current.classList.remove(styles.active);
+          wordContainerRef.current.classList.remove(styles.active!);
         }
         return;
       }
@@ -723,9 +726,9 @@ const LyricSyncWordView: FC<{
       if (isActive !== isActiveRef.current) {
         isActiveRef.current = isActive;
         if (isActive) {
-          wordContainerRef.current.classList.add(styles.active);
+          wordContainerRef.current.classList.add(styles.active!);
         } else {
-          wordContainerRef.current.classList.remove(styles.active);
+          wordContainerRef.current.classList.remove(styles.active!);
         }
       }
     };

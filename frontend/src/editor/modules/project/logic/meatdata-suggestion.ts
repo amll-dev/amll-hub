@@ -188,7 +188,7 @@ const parseEntry = (entry: unknown, onWarning: () => void): MetaSuggestionNode |
       return { group: stringGroup, children: [], title: stringGroup[0] };
     }
     const nodes = parseEntryList(entry, onWarning);
-    if (nodes.length === 1) return nodes[0];
+    if (nodes.length === 1) return nodes[0] ?? null;
     if (nodes.length > 1) {
       const combined = normalizeGroup(nodes.flatMap((node) => node.group));
       if (combined.length === 0) return null;

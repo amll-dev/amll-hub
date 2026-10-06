@@ -1,0 +1,94 @@
+name: Android 构建
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./android
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 配置 JDK 17（AGP 9 要求 17+）
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 配置 Gradle（自带依赖缓存）
+        uses: gradle/actions/setup-gradle@v5
+
+      # 不手动装 SDK 组件：runner 已预装 platforms;android-36 与 build-tools 36.x，
+      # 且 sdkmanager 不在 PATH（硬调会 command not found），AGP 会自行补齐
+      - name: 打印 Android 环境
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          java -version
+          ls "$ANDROID_HOME/platforms" 2>/dev/null || true
+          ls "$ANDROID_HOME/build-tools" 2>/dev/null || true
+
+      # `set -o pipefail` 不可省：tee 会吞掉 Gradle 退出码，
+      # 不加它构建失败会被判为成功。--console=plain 让错误行不被 spinners 掩盖。
+      - name: 校验 Gradle 配置
+        run: |
+          set -o pipefail
+          ./gradlew help --console=plain --stacktrace 2>&1 | tee ../gradle-help.log
+
+      - name: 单元测试
+        run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest --console=plain 2>&1 | tee ../gradle-test.log
+
+      - name: Lint
+        run: |
+          set -o pipefail
+          ./gradlew lintDebug --console=plain 2>&1 | tee ../gradle-lint.log
+
+      - name: 构建 Debug APK
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug --console=plain 2>&1 | tee ../gradle-build.log
+
+      # 失败时上传完整日志，避免只能靠截断的网页输出排查
+      - name: 上传 Gradle 日志
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-gradle-logs
+          path: gradle-*.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: amll-hub-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: 上传 Lint 报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-lint-report
+          path: android/app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+          retention-days: 7

@@ -351,7 +351,6 @@ class AudioEngineWrapper extends EventTarget {
    * 猜不到就用 `audio`（此时只是读不出内嵌歌名，解码不受影响）。
    */
   async loadMusicFromUrl(url: string): Promise<TTMLMetadata[]> {
-
     let blob: Blob;
     try {
       const response = await fetch(url);

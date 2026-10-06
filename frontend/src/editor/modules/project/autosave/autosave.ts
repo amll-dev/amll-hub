@@ -132,7 +132,7 @@ function getDB() {
 
           if (oldSnapshots && oldSnapshots.length > 0) {
             oldSnapshots.sort((a, b) => a.timestamp - b.timestamp);
-            const latestSnapshot = oldSnapshots[oldSnapshots.length - 1];
+            const latestSnapshot = oldSnapshots[oldSnapshots.length - 1]!;
             const projectStore = transaction.objectStore('projects');
             await projectStore.put({
               id: legacyProjectId,

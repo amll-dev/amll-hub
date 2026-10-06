@@ -20,7 +20,7 @@ import { useCountdown } from '@/hooks/useCountdown';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { buttonTap } from '@/lib/motion';
-import type { CaptchaConfig } from '@/lib/auth';
+import type { CaptchaConfig, LoginResult } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import {
@@ -53,15 +53,33 @@ const makeCodeSchema = (codeType: 'phone' | 'email') =>
   });
 type CodeFormValues = z.infer<ReturnType<typeof makeCodeSchema>>;
 
-/** 占位二维码*/
-function PlaceholderQR() {
+/** 扫码登录面板：申请票据 → 渲染二维码 → 轮询状态 → 确认后写入登录态 */
+function QrLoginPanel({ onSuccess }: { onSuccess: (r: LoginResult) => void }) {
   const [dataUrl, setDataUrl] = useState('');
+  const [countdown, setCountdown] = useState(0);
 
+  // 弹窗打开时申请票据；关闭后作废（refetchInterval 内会停）
+  const ticketQuery = useQuery({
+    queryKey: queryKeys.qrTicket,
+    queryFn: () => api.createQrTicket(),
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+
+  const ticket = ticketQuery.data;
+
+  // 二维码渲染：qrContent 变化或票据过期重建时重新生成
   useEffect(() => {
+    if (!ticket?.qrContent) {
+      setDataUrl('');
+      return;
+    }
     let cancelled = false;
     void import('qrcode')
       .then((QRCode) =>
-        QRCode.default.toDataURL('居然真的有人来扫这个码o(〃＾▽＾〃)o，此功能暂未上线，敬请期待~', {
+        QRCode.default.toDataURL(ticket.qrContent, {
           width: 176,
           margin: 1,
           color: { dark: '#1d1d1f', light: '#ffffff' },
@@ -74,11 +92,83 @@ function PlaceholderQR() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [ticket?.qrContent]);
+
+  // 过期倒计时
+  useEffect(() => {
+    if (!ticket) return;
+    setCountdown(ticket.expiresIn);
+    const timer = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [ticket]);
+
+  // 轮询票据状态，confirmed 时把 token 交给外层写入登录态
+  const statusQuery = useQuery({
+    queryKey: [...queryKeys.qrTicket, ticket?.ticket],
+    queryFn: () => api.getQrTicketStatus(ticket!.ticket),
+    enabled: !!ticket?.ticket && countdown > 0,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      // 已确认 / 已过期就停轮询
+      return status === 'confirmed' || status === 'expired' ? false : 2000;
+    },
+    retry: false,
+  });
+
+  const status = statusQuery.data?.status;
+
+  useEffect(() => {
+    if (status !== 'confirmed') return;
+    const { token, user } = statusQuery.data ?? {};
+    if (token && user) onSuccess({ token, user });
+  }, [status, statusQuery.data, onSuccess]);
+
+  const expired = countdown <= 0 || status === 'expired';
+  const scanned = status === 'scanned';
 
   return (
-    <div className="mx-auto aspect-square w-44 rounded-lg border border-line bg-white p-3 shadow-sm">
-      {dataUrl && <img src={dataUrl} alt="登录二维码" className="h-full w-full" />}
+    <div className="flex flex-col items-center gap-4">
+      <div className="relative mx-auto aspect-square w-44 rounded-lg border border-line bg-white p-3 shadow-sm">
+        {dataUrl && !expired && <img src={dataUrl} alt="登录二维码" className="h-full w-full" />}
+        {expired && (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center">
+            <p className="text-xs text-ink-3">二维码已过期</p>
+            <button
+              type="button"
+              onClick={() => void ticketQuery.refetch()}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              点击刷新
+            </button>
+          </div>
+        )}
+        {scanned && !expired && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-lg bg-card/92 backdrop-blur-sm">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            <p className="px-3 text-center text-xs leading-relaxed text-ink-2">
+              已扫码
+              <br />
+              请在手机上确认
+            </p>
+          </div>
+        )}
+      </div>
+
+      <p className="text-center text-xs leading-relaxed text-ink-2">
+        请使用 AMLL Hub 客户端
+        <br />
+        扫码登录或扫码下载 APP
+      </p>
+
+      {!expired && <p className="text-[11px] tabular-nums text-ink-3">{countdown}s 后失效</p>}
     </div>
   );
 }
@@ -319,12 +409,14 @@ export function AuthDialog() {
           {/* 左侧：二维码登录 */}
           <div className="hidden w-[280px] flex-col items-center justify-center gap-4 border-r border-line bg-surface-2 p-6 md:flex">
             <h4 className="text-base font-semibold text-foreground">扫描二维码登录</h4>
-            <PlaceholderQR />
-            <p className="text-center text-xs leading-relaxed text-ink-2">
-              请使用 AMLL Hub 客户端
-              <br />
-              扫码登录或扫码下载 APP
-            </p>
+            {loginOpen && (
+              <QrLoginPanel
+                onSuccess={(result) => {
+                  login(result.token, result.user);
+                  finishLogin();
+                }}
+              />
+            )}
           </div>
 
           {/* 右侧：表单 */}

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- logo 本身是铺满的圆角方块；adaptive-icon 前景层需留安全边距，
+     否则系统裁成圆形/squircle 时会把音符切掉 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:drawable="@drawable/logo"
+        android:bottom="12dp"
+        android:left="12dp"
+        android:right="12dp"
+        android:top="12dp" />
+</layer-list>

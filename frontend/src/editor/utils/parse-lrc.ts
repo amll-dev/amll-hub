@@ -25,9 +25,11 @@ export function parseLrc(lrcContent: string): LyricLine[] {
     const matches = line.matchAll(timeTagRegex);
 
     for (const match of matches) {
-      const minutes = parseInt(match[1], 10);
-      const seconds = parseInt(match[2], 10);
-      const fractionStr = match[3] ? `0.${match[3]}` : '0';
+      const [, m1, m2, m3] = match;
+      if (m1 === undefined || m2 === undefined) continue;
+      const minutes = parseInt(m1, 10);
+      const seconds = parseInt(m2, 10);
+      const fractionStr = m3 ? `0.${m3}` : '0';
       const fraction = parseFloat(fractionStr);
 
       const totalSeconds = minutes * 60 + seconds + fraction;
@@ -47,11 +49,16 @@ export function parseLrc(lrcContent: string): LyricLine[] {
 
   let i = 0;
   while (i < parsedEvents.length) {
-    const currentTime = parsedEvents[i].time;
+    const current = parsedEvents[i];
+    if (!current) break;
+    const currentTime = current.time;
 
-    const group: ParsedEvent[] = [];
-    while (i < parsedEvents.length && parsedEvents[i].time === currentTime) {
-      group.push(parsedEvents[i]);
+    const group: ParsedEvent[] = [current];
+    i++;
+    while (i < parsedEvents.length) {
+      const next = parsedEvents[i];
+      if (!next || next.time !== currentTime) break;
+      group.push(next);
       i++;
     }
 
@@ -65,6 +72,7 @@ export function parseLrc(lrcContent: string): LyricLine[] {
     }
 
     const mainEvent = textEvents[0];
+    if (!mainEvent) continue;
     const mainLine = newLyricLine();
     const mainWord = newLyricWord();
 
@@ -78,12 +86,12 @@ export function parseLrc(lrcContent: string): LyricLine[] {
 
     // 第二行作为翻译
     if (textEvents.length > 1) {
-      mainLine.translatedLyric = textEvents[1].text;
+      mainLine.translatedLyric = textEvents[1]?.text ?? mainLine.translatedLyric;
     }
 
     // 第三行作为音译
     if (textEvents.length > 2) {
-      mainLine.romanLyric = textEvents[2].text;
+      mainLine.romanLyric = textEvents[2]?.text ?? mainLine.romanLyric;
     }
 
     validLyricLines.push(mainLine);
@@ -91,6 +99,7 @@ export function parseLrc(lrcContent: string): LyricLine[] {
     if (textEvents.length > 3) {
       for (let k = 3; k < textEvents.length; k++) {
         const extraEvent = textEvents[k];
+        if (!extraEvent) continue;
         const extraLine = newLyricLine();
         const extraWord = newLyricWord();
 

@@ -37,7 +37,8 @@ import { TileComponent, type TileComponentProps } from './TileComponent.tsx';
 import { DEFAULT_RULER_HEIGHT, TimelineRuler, type TimelineRulerHandle } from './TimelineRuler.tsx';
 
 const TILE_DURATION_S = 5;
-const LOD_WIDTHS = [512, 1024, 2048, 4096, 8192];
+const LOD_WIDTHS = [512, 1024, 2048, 4096, 8192] as const;
+const MAX_LOD_WIDTH = LOD_WIDTHS[LOD_WIDTHS.length - 1]!;
 
 const ReviewLyricTimelineOverlay: FC<{
   clientWidth: number;
@@ -195,8 +196,7 @@ export const AudioSpectrogram: FC = () => {
       if (i < 0 || i >= totalTiles) continue;
 
       const cacheId = `tile-${i}`;
-      const targetLodWidth =
-        LOD_WIDTHS.find((w) => w >= tileDisplayWidthPx) || LOD_WIDTHS[LOD_WIDTHS.length - 1];
+      const targetLodWidth = LOD_WIDTHS.find((w) => w >= tileDisplayWidthPx) ?? MAX_LOD_WIDTH;
 
       requestTileIfNeeded({
         tileIndex: i,
@@ -362,7 +362,7 @@ export const AudioSpectrogram: FC = () => {
                   max={maxGain}
                   step={0.5}
                   value={[gain]}
-                  onValueChange={(v) => setGain(v[0])}
+                  onValueChange={(v) => setGain(v[0] ?? gain)}
                   style={{ flex: 1, width: '18px', zIndex: 10 }}
                 />
                 <div

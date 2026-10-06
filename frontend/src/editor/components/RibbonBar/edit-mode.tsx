@@ -283,7 +283,7 @@ function EditField<
                 };
 
                 for (let wordIndex = 0; wordIndex < line.words.length; wordIndex++) {
-                  const word = line.words[wordIndex];
+                  const word = line.words[wordIndex]!;
                   if (!selectedItems.has(word.id)) continue;
                   if (isTimeDelta && fieldName === 'startTime') {
                     const previousWord = line.words[wordIndex - 1];

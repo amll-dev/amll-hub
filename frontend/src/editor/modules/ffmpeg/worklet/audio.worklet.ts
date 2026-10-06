@@ -100,9 +100,10 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
       !this.stProcessor ||
       !this.wasmMemory ||
       this.inputChunkSize === 0 ||
+      !output ||
       !output[0]
     ) {
-      this.fillSilence(output, WORKLET_BLOCK_SIZE);
+      this.fillSilence(output ?? [], WORKLET_BLOCK_SIZE);
       return true;
     }
 
@@ -182,7 +183,7 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
       for (let c = 0; c < actualChannels; c++) {
         const ptr = this.stProcessor.getOutputPtr(c);
         const wasmOutput = new Float32Array(this.wasmMemory.buffer, ptr, extracted);
-        output[c].set(wasmOutput);
+        output[c]!.set(wasmOutput);
       }
 
       const consumedSourceFrames = extracted * this.currentTempo * this.currentRate;
@@ -199,7 +200,7 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
     if (extracted < WORKLET_BLOCK_SIZE) {
       const actualChannels = Math.min(this.channels, output.length);
       for (let c = 0; c < actualChannels; c++) {
-        output[c].fill(0, extracted);
+        output[c]!.fill(0, extracted);
       }
     }
 
@@ -215,7 +216,7 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
   private fillSilence(output: Float32Array[], length: number): void {
     const actualChannels = Math.min(this.channels, output.length);
     for (let c = 0; c < actualChannels; c++) {
-      output[c].fill(0, 0, length);
+      output[c]!.fill(0, 0, length);
     }
   }
 }

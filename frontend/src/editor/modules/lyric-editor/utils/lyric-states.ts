@@ -33,10 +33,12 @@ export const buildRubySelectionId = (wordId: string, rubyIndex: number) =>
 
 export const parseRubySelectionId = (id: string) => {
   const match = id.match(/^(.*)-ruby-(\d+)$/);
-  if (!match) return;
+  const wordId = match?.[1];
+  const rubyIndexText = match?.[2];
+  if (wordId === undefined || rubyIndexText === undefined) return;
   return {
-    wordId: match[1],
-    rubyIndex: Number.parseInt(match[2], 10),
+    wordId,
+    rubyIndex: Number.parseInt(rubyIndexText, 10),
   };
 };
 
@@ -81,9 +83,11 @@ export function getCurrentLineLocation(
   if (!selectedLineId) return;
   const lyricLine = lyricLines.findIndex((line) => line.id === selectedLineId);
   if (lyricLine === -1) return;
+  const line = lyricLines[lyricLine];
+  if (!line) return;
   return {
     lines: lyricLines,
-    line: lyricLines[lyricLine],
+    line,
     lineIndex: lyricLine,
   };
 }
@@ -99,6 +103,7 @@ export function getCurrentLocation(
   const selectedWordId = [...store.get(selectedWordsAtom)][0];
   if (!selectedWordId) return;
   const line = lyricLines[lyricLine];
+  if (!line) return;
   const syncUnits = getSynchronizableUnits(line);
   let syncIndex = syncUnits.findIndex((unit) => unit.id === selectedWordId);
   if (syncIndex === -1) {
@@ -139,6 +144,7 @@ export function useCurrentLocation(): LineAndWordLocationResult | undefined {
     const lyricLine = lyrics.lyricLines.findIndex((line) => selectedLines.has(line.id));
     if (lyricLine === -1) return;
     const line = lyrics.lyricLines[lyricLine];
+    if (!line) return;
     const syncUnits = getSynchronizableUnits(line);
     let syncIndex = syncUnits.findIndex((unit) => selectedWords.has(unit.id));
     if (syncIndex === -1) {

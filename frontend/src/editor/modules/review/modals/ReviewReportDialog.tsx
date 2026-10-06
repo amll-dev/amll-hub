@@ -515,7 +515,10 @@ export const ReviewReportDialog = ({ onSubmit, submitting }: ReviewReportDialogP
       if (index < 0 || target < 0 || target >= prev.length) return prev;
       if (prev[target]?.kind !== 'manual') return prev;
       const next = [...prev];
-      [next[index], next[target]] = [next[target], next[index]];
+      const current = next[index]!;
+      const moved = next[target]!;
+      next[index] = moved;
+      next[target] = current;
       return next;
     });
   };

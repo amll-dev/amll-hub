@@ -34,6 +34,25 @@ export interface CaptchaConfig {
   [key: string]: unknown;
 }
 
+// 后端 POST /api/v1/auth/qrcode 返回
+export interface QrTicket {
+  ticket: string;
+  /** 塞进二维码的 deep link，形如 amllhub://qrlogin?ticket=xxx */
+  qrContent: string;
+  expiresIn: number;
+}
+
+// 二维码票据状态
+export type QrStatus = 'pending' | 'scanned' | 'confirmed' | 'expired';
+
+// 后端 GET /api/v1/auth/qrcode/status?ticket=xxx 返回
+export interface QrTicketStatus {
+  status: QrStatus;
+  /** status为 confirmed 时一次性下发，取走即销毁票据 */
+  token?: string;
+  user?: UserProfile;
+}
+
 const TOKEN_KEY = 'amll_hub_token';
 const USER_KEY = 'amll_hub_user';
 

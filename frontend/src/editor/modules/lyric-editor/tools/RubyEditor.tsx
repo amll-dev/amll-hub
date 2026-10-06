@@ -128,8 +128,8 @@ export const RubyEditor = ({
           for (const word of line.words) {
             if (word.id !== currentWord.id) continue;
             if (!word.ruby || !word.ruby[index] || !word.ruby[index - 1]) return;
-            const prevRuby = word.ruby[index - 1];
-            const currentRuby = word.ruby[index];
+            const prevRuby = word.ruby[index - 1]!;
+            const currentRuby = word.ruby[index]!;
             prevRuby.word = mergedText;
             prevRuby.startTime = Math.min(prevRuby.startTime, currentRuby.startTime);
             prevRuby.endTime = Math.max(prevRuby.endTime, currentRuby.endTime);

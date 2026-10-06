@@ -20,6 +20,13 @@ export interface SegmentationContext {
 }
 
 /**
+ * @description 取字符串的首个码点（按 Unicode 码点切分，兼容代理对）
+ */
+function firstCodePoint(text: string): string {
+  return Array.from(text)[0] ?? ' ';
+}
+
+/**
  * @description 判断两个相邻字符是否应该合并
  */
 function isMergeablePair(prev: CharType, curr: CharType, splitCJK: boolean): boolean {
@@ -70,7 +77,7 @@ function autoTokenize(text: string, config: SegmentationConfig): string[] {
   const graphemes = Array.from(text);
 
   for (const grapheme of graphemes) {
-    const firstChar = grapheme.length > 0 ? Array.from(grapheme)[0] : ' ';
+    const firstChar = firstCodePoint(grapheme);
     const currentCharType = getCharType(firstChar);
 
     if (lastCharType !== null) {
@@ -108,7 +115,7 @@ function calculateWeight(token: string, config: SegmentationConfig): number {
   if (!token) {
     return 0;
   }
-  const firstChar = token.length > 0 ? Array.from(token)[0] : ' ';
+  const firstChar = firstCodePoint(token);
   const charType = getCharType(firstChar);
 
   switch (charType) {
@@ -147,7 +154,7 @@ function postProcess(
 
   for (const token of tokens) {
     const tokenWeight = calculateWeight(token, config);
-    const firstChar = token.length > 0 ? Array.from(token)[0] : ' ';
+    const firstChar = firstCodePoint(token);
     const charType = getCharType(firstChar);
 
     if (config.punctuationMode === 'merge' && charType === CharType.Other) {
@@ -171,7 +178,8 @@ function postProcess(
         // 向左合并
         if (processedTokens.length > 0) {
           processedTokens[processedTokens.length - 1] += token;
-          tokenWeights[tokenWeights.length - 1] += tokenWeight;
+          tokenWeights[tokenWeights.length - 1] =
+            (tokenWeights[tokenWeights.length - 1] ?? 0) + tokenWeight;
         } else {
           // 行首就是应该向左合并的标点符号，存起来然后合并到第一个音节中
           pendingPrefix += token;
@@ -195,7 +203,8 @@ function postProcess(
   if (pendingPrefix) {
     if (processedTokens.length > 0) {
       processedTokens[processedTokens.length - 1] += pendingPrefix;
-      tokenWeights[tokenWeights.length - 1] += pendingPrefixWeight;
+      tokenWeights[tokenWeights.length - 1] =
+        (tokenWeights[tokenWeights.length - 1] ?? 0) + pendingPrefixWeight;
     } else {
       // 整行都只有标点了
       processedTokens.push(pendingPrefix);
@@ -209,8 +218,8 @@ function postProcess(
   let totalWeight = 0;
 
   for (let i = 0; i < processedTokens.length; i++) {
-    const token = processedTokens[i];
-    const weight = tokenWeights[i];
+    const token = processedTokens[i]!;
+    const weight = tokenWeights[i]!;
 
     if (token === '' && config.removeEmptySegments) {
       continue;
@@ -241,7 +250,7 @@ function distributeTime(
     return [];
   }
   if (tokens.length === 1) {
-    return [{ ...originalWord, word: tokens[0] }];
+    return [{ ...originalWord, word: tokens[0]! }];
   }
 
   const totalDuration = originalWord.endTime - originalWord.startTime;
@@ -263,8 +272,8 @@ function distributeTime(
   let currentTokenStartMs = originalWord.startTime;
 
   for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
-    const weight = weights[i];
+    const token = tokens[i]!;
+    const weight = weights[i] ?? 0;
 
     const tokenDuration = Math.round(weight * durationPerWeight);
     let tokenEndMs = currentTokenStartMs + tokenDuration;

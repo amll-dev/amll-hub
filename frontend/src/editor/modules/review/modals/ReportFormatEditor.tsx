@@ -46,9 +46,10 @@ export const ReportFormatEditor = ({ value, onChange, report }: ReportFormatEdit
     [value]
   );
 
+  // 定义表是代码内固定常量，至少有一项；空数组只可能来自外部数据异常。
   const selectedDefinition =
     reviewReportFormatBlockDefinitions.find((d) => d.kind === selectedKind) ??
-    reviewReportFormatBlockDefinitions[0];
+    reviewReportFormatBlockDefinitions[0]!;
   const selectedFormat = value.blocks[selectedDefinition.kind];
 
   const renderedPreview = useMemo(() => renderReviewReport(report, value), [report, value]);

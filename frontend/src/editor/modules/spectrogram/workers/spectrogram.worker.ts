@@ -162,7 +162,7 @@ ctx.onmessage = async (event) => {
          */
         let peakAbs = 0;
         for (let i = 0; i < actualSamplesRead; i++) {
-          const a = Math.abs(reusableBuffer[i]);
+          const a = Math.abs(reusableBuffer[i] ?? 0);
           if (a > peakAbs) peakAbs = a;
         }
 

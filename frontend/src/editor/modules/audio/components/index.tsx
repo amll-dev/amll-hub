@@ -207,7 +207,7 @@ export const AudioControls: FC = memo(() => {
                       max={1}
                       defaultValue={[volume]}
                       step={0.01}
-                      onValueChange={(v) => setVolume(v[0])}
+                      onValueChange={(v) => setVolume(v[0] ?? volume)}
                     />
                     <Text wrap="nowrap" color="gray" size="1">
                       {(volume * 100).toFixed()}%
@@ -218,7 +218,7 @@ export const AudioControls: FC = memo(() => {
                       max={2}
                       defaultValue={[playbackRate]}
                       step={0.05}
-                      onValueChange={(v) => setPlaybackRate(v[0])}
+                      onValueChange={(v) => setPlaybackRate(v[0] ?? playbackRate)}
                     />
                     <Text wrap="nowrap" color="gray" size="1">
                       {playbackRate.toFixed(2)}x

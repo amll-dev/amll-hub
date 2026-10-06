@@ -30,7 +30,7 @@ export const activeSidebarTabAtom = atom(
     const active = get(baseActiveSidebarTabAtom);
     const openTabs = get(openSidebarTabsAtom);
     if (active !== 'none' && !openTabs.includes(active as SidebarTabId)) {
-      return openTabs.length > 0 ? openTabs[openTabs.length - 1] : 'none';
+      return openTabs[openTabs.length - 1] ?? 'none';
     }
     return active;
   },
@@ -64,11 +64,7 @@ export const closeTabAtom = atom(null, (get, set, tabId: SidebarTabId) => {
 
   const activeTab = get(activeSidebarTabAtom);
   if (activeTab === tabId) {
-    if (newOpen.length > 0) {
-      set(activeSidebarTabAtom, newOpen[newOpen.length - 1]);
-    } else {
-      set(activeSidebarTabAtom, 'none');
-    }
+    set(activeSidebarTabAtom, newOpen[newOpen.length - 1] ?? 'none');
   }
 });
 
@@ -91,11 +87,7 @@ export const toggleTabAtom = atom(
 
       const activeTab = get(activeSidebarTabAtom);
       if (activeTab === tabId) {
-        if (newOpen.length > 0) {
-          set(activeSidebarTabAtom, newOpen[newOpen.length - 1]);
-        } else {
-          set(activeSidebarTabAtom, 'none');
-        }
+        set(activeSidebarTabAtom, newOpen[newOpen.length - 1] ?? 'none');
       }
     }
   }

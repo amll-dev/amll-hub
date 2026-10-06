@@ -59,8 +59,9 @@ const setUnitStartTime = (
   time: number
 ) => {
   const word = line.words[wordIndex];
+  if (!word) return;
   if (rubyIndex !== undefined && word.ruby?.[rubyIndex]) {
-    word.ruby[rubyIndex].startTime = time;
+    word.ruby[rubyIndex]!.startTime = time;
     updateRubyParentTime(word);
     return;
   }
@@ -74,8 +75,9 @@ const setUnitEndTime = (
   time: number
 ) => {
   const word = line.words[wordIndex];
+  if (!word) return;
   if (rubyIndex !== undefined && word.ruby?.[rubyIndex]) {
-    word.ruby[rubyIndex].endTime = time;
+    word.ruby[rubyIndex]!.endTime = time;
     updateRubyParentTime(word);
     return;
   }
@@ -242,6 +244,7 @@ export const SyncKeyBinding: FC = () => {
       store.set(lyricLinesAtom, (state) =>
         produce(state, (state) => {
           const line = state.lyricLines[location.lineIndex];
+          if (!line) return;
           if (location.isFirstWord) {
             line.startTime = currentTime;
           }
@@ -265,6 +268,7 @@ export const SyncKeyBinding: FC = () => {
           store.set(lyricLinesAtom, (state) =>
             produce(state, (state) => {
               const line = state.lyricLines[location.lineIndex];
+              if (!line) return;
               line.startTime = currentTime;
               setUnitStartTime(line, location.wordIndex, location.rubyIndex, currentTime);
             })
@@ -290,6 +294,7 @@ export const SyncKeyBinding: FC = () => {
         store.set(lyricLinesAtom, (state) =>
           produce(state, (state) => {
             const line = state.lyricLines[location.lineIndex];
+            if (!line) return;
             setUnitEndTime(line, location.wordIndex, location.rubyIndex, currentTime);
             line.endTime = currentTime;
           })
@@ -301,6 +306,7 @@ export const SyncKeyBinding: FC = () => {
       store.set(lyricLinesAtom, (state) =>
         produce(state, (state) => {
           const curLine = state.lyricLines[location.lineIndex];
+          if (!curLine) return;
           setUnitEndTime(curLine, location.wordIndex, location.rubyIndex, currentTime);
           const nextWord = findNextWord(state.lyricLines, location.lineIndex, location.syncIndex);
           if (nextWord) {
@@ -345,6 +351,7 @@ export const SyncKeyBinding: FC = () => {
       store.set(lyricLinesAtom, (state) =>
         produce(state, (state) => {
           const line = state.lyricLines[location.lineIndex];
+          if (!line) return;
           setUnitEndTime(line, location.wordIndex, location.rubyIndex, currentTime);
           if (location.isLastWord) {
             line.endTime = currentTime;

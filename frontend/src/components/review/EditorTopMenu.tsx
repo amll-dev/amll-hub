@@ -124,16 +124,20 @@ function ToolMenu() {
       editLyricLines((draft) => {
         for (let i = 0; i < draft.lyricLines.length; i++) {
           const line = draft.lyricLines[i];
-          if (line.words.length === 0) continue;
+          if (!line || line.words.length === 0) continue;
 
-          let startTime = line.words[0].startTime;
-          let endTime = line.words[line.words.length - 1].endTime;
+          const firstWord = line.words[0];
+          const lastWord = line.words[line.words.length - 1];
+          if (!firstWord || !lastWord) continue;
 
-          if (i + 1 < draft.lyricLines.length) {
-            const nextLine = draft.lyricLines[i + 1];
-            if (nextLine.isBG && nextLine.words.length > 0) {
-              const nextLineStart = nextLine.words[0].startTime;
-              const nextLineEnd = nextLine.words[nextLine.words.length - 1].endTime;
+          let startTime = firstWord.startTime;
+          let endTime = lastWord.endTime;
+
+          const nextLine = draft.lyricLines[i + 1];
+          if (nextLine?.isBG && nextLine.words.length > 0) {
+            const nextLineStart = nextLine.words[0]?.startTime;
+            const nextLineEnd = nextLine.words[nextLine.words.length - 1]?.endTime;
+            if (nextLineStart !== undefined && nextLineEnd !== undefined) {
               startTime = Math.min(startTime, nextLineStart);
               endTime = Math.max(endTime, nextLineEnd);
             }

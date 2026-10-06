@@ -126,7 +126,7 @@ describe('审核报告：逐字时轴改动能否被检测到', () => {
       const f0 = wordFractions[i] ?? i / text.length;
       const f1 = wordFractions[i + 1] ?? (i + 1) / text.length;
       return {
-        ...line.words[i],
+        ...line.words[i]!,
         startTime: startTime + (endTime - startTime) * f0,
         endTime: startTime + (endTime - startTime) * f1,
       };

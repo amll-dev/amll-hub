@@ -196,6 +196,7 @@ export const buildEditReport = (freeze: TTMLLyric, staged: TTMLLyric) => {
     );
     if (lineKeys.size <= 1) continue;
     const sample = group[0];
+    if (!sample) continue;
     blocks.push({
       id: createReviewReportBlockId('word-text-shared'),
       kind: 'wordTextShared',
