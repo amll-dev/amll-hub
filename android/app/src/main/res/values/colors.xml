@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 默认（浅色）：网页端 --amll-background -->
+    <!-- 默认（浅色）：对应网页端 amll 主题的 background token -->
     <color name="window_background">#FBFBFD</color>
 </resources>
