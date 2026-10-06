@@ -19,10 +19,13 @@ AMLL Hub 的 Android 原生客户端。当前阶段只实现**账号登录**与*
 
 ## 构建
 
-需要 **JDK 17+**、Android SDK（`platforms;android-36` + `build-tools;36.0.0`）。
+需要 **JDK 17+**、Android SDK（`platforms;android-37`；`build-tools` 由 AGP 自动选）。
 
 ```bash
 cd android
+
+# 无需 SDK 也能跑的静态检查（XML 语法、compileSdk、插件残留、gradlew 权限）
+python3 scripts/check.py
 
 # 配置后端地址（默认已指向 beta 后端）
 echo "amll.api.baseUrl=http://10.0.2.2:8080" > local.properties
