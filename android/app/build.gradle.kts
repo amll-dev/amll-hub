@@ -22,11 +22,14 @@ val apiBaseUrl: String = run {
 
 android {
     namespace = "dev.amll.hub.android"
-    compileSdk = 36
+    // 依赖（Coil 3.6 / Compose 1.12 / Navigation 2.10 等）要求 compileSdk 37
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "dev.amll.hub.android"
         minSdk = 26
+        // targetSdk 与 compileSdk 独立：这里不跟随升级，
+        // 避免在验证编译阶段同时引入 Android 17 的运行时行为变更
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
