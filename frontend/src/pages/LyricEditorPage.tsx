@@ -20,7 +20,7 @@ import {
 } from '@/editor/modules/review/states';
 
 import { ReviewReportDialog } from '@/editor/modules/review/modals/ReviewReportDialog';
-import { EditorWorkbench } from '@/components/review/EditorWorkbench';
+import { EditorTheme, EditorWorkbench } from '@/components/review/EditorWorkbench';
 import { LyricEditorHeader } from '@/components/review/LyricEditorHeader';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -271,51 +271,53 @@ export function LyricEditorPage() {
     ctx.fileName.replace(/\.ttml$/i, '');
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
-      <LyricEditorHeader
-        title={title}
-        subtitle={`${lyricLines.lyricLines.length} 行 · ${isDirty ? '有未保存改动' : '未改动'}${
-          ctx.hasRevision ? ' · 已存在待确认的修订版' : ''
-        }`}
-        sources={sources}
-        audioIndex={audioIndex}
-        onAudioIndexChange={setAudioIndex}
-        onBack={goBack}
-        onSave={openReviewDialog}
-        saving={saveMutation.isPending}
-      />
+    <EditorTheme>
+      <div className="flex h-screen flex-col overflow-hidden">
+        <LyricEditorHeader
+          title={title}
+          subtitle={`${lyricLines.lyricLines.length} 行 · ${isDirty ? '有未保存改动' : '未改动'}${
+            ctx.hasRevision ? ' · 已存在待确认的修订版' : ''
+          }`}
+          sources={sources}
+          audioIndex={audioIndex}
+          onAudioIndexChange={setAudioIndex}
+          onBack={goBack}
+          onSave={openReviewDialog}
+          saving={saveMutation.isPending}
+        />
 
-      <div className="relative min-h-0 flex-1">
-        <EditorWorkbench />
+        <div className="relative min-h-0 flex-1">
+          <EditorWorkbench />
 
-        {effectiveReport && (
-          <ReviewReportDialog
-            submitting={saveMutation.isPending}
-            onSubmit={(input) => {
-              setAction(input.action as ReviewAction);
-              setUploadTtml(input.uploadTtml);
-              saveMutation.mutate({
-                uploadTtml: input.uploadTtml,
-                reportMd: input.reportMd,
-                structured: { version: 1, reviewReport: effectiveReport } as Record<
-                  string,
-                  unknown
-                >,
-                comment: manualNote,
-                action: input.action as ReviewAction,
-              });
-            }}
-          />
-        )}
+          {effectiveReport && (
+            <ReviewReportDialog
+              submitting={saveMutation.isPending}
+              onSubmit={(input) => {
+                setAction(input.action as ReviewAction);
+                setUploadTtml(input.uploadTtml);
+                saveMutation.mutate({
+                  uploadTtml: input.uploadTtml,
+                  reportMd: input.reportMd,
+                  structured: { version: 1, reviewReport: effectiveReport } as Record<
+                    string,
+                    unknown
+                  >,
+                  comment: manualNote,
+                  action: input.action as ReviewAction,
+                });
+              }}
+            />
+          )}
 
-        {saveMutation.isPending && (
-          <div className="pointer-events-none fixed bottom-24 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-4 py-2 text-xs text-background shadow-lg">
-            <Loader2 className="size-4 animate-spin" />
-            正在提交审核结果…
-          </div>
-        )}
+          {saveMutation.isPending && (
+            <div className="pointer-events-none fixed bottom-24 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-4 py-2 text-xs text-background shadow-lg">
+              <Loader2 className="size-4 animate-spin" />
+              正在提交审核结果…
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </EditorTheme>
   );
 }
 

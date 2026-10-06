@@ -12,7 +12,6 @@ import { AutosaveManager } from '@/editor/modules/project/autosave/AutosaveManag
 import { showTouchSyncPanelAtom } from '@/editor/modules/settings/states/sync.ts';
 import { ToolMode, toolModeAtom } from '@/editor/states/main.ts';
 import { MetadataEditor } from '@/editor/modules/project/modals/MetadataEditor.tsx';
-import { EditorMenuBar } from '@/components/review/EditorTopMenu';
 import { useMediaSession } from '@/editor/modules/audio/hooks/useMediaSession.ts';
 import { useAudioFeedback } from '@/editor/modules/audio/hooks/useAudioFeedback.ts';
 import { resolvedThemeAtom } from '@/atoms/theme';
@@ -51,10 +50,6 @@ export function EditorWorkbench() {
         className="flex h-full flex-col overflow-hidden"
         style={{ background: 'var(--color-panel)' }}
       >
-        <div className="flex shrink-0 items-center gap-1 px-2 pt-1.5">
-          <EditorMenuBar />
-        </div>
-
         <RibbonBar />
 
         <div className="mt-2 flex min-h-0 flex-1 flex-row overflow-hidden">
@@ -102,7 +97,14 @@ export function EditorWorkbench() {
   );
 }
 
-function EditorTheme({ children }: { children: ReactNode }) {
+/**
+ * 编辑器的 Radix Theme 根。
+ *
+ * 导出让 `LyricEditorPage` 能把它提到页面顶层，从而把顶栏也包进来 ——
+ * 否则顶栏右侧的 `EditorMenuBar`（Radix `DropdownMenu`）在 Theme 外，
+ * 样式会和工具栏里的其他 Radix 组件不一致。
+ */
+export function EditorTheme({ children }: { children: ReactNode }) {
   const resolvedTheme = useAtomValue(resolvedThemeAtom);
   const isDark = resolvedTheme === 'dark';
 

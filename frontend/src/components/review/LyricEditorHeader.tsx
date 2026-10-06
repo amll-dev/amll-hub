@@ -3,6 +3,7 @@ import { ArrowLeft, Loader2, Save, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ToolMode, toolModeAtom } from '@/editor/states/main.ts';
 import { metadataEditorDialogAtom } from '@/editor/states/dialogs.ts';
+import { EditorMenuBar } from '@/components/review/EditorTopMenu';
 import { cn } from '@/lib/utils';
 
 export interface EditorHeaderProps {
@@ -83,6 +84,9 @@ export function LyricEditorHeader({
 
       <div className="flex shrink-0 items-center gap-2">
         <ToolModeSwitch />
+        <EditorMenuBar />
+        {/* 分隔：菜单类操作与右侧的「元数据 / 提交」动作按钮区分开 */}
+        <div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
         <Button
           variant="outline"
           size="sm"

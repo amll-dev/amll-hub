@@ -57,7 +57,6 @@ export enum ToolMode {
   Edit = 'edit',
   Sync = 'sync',
   Preview = 'preview',
-  Review = 'review',
 }
 
 export const toolModeAtom = atom(ToolMode.Edit);

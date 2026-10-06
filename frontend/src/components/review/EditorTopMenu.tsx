@@ -26,7 +26,6 @@ import {
   undoLyricLinesAtom,
 } from '$/states/main.ts';
 import { formatKeyBindings } from '$/utils/keybindings.ts';
-import { ToolMode, toolModeAtom } from '@/editor/states/main.ts';
 const canUndoAtom = atom((get) => get(undoableLyricLinesAtom).canUndo);
 const canRedoAtom = atom((get) => get(undoableLyricLinesAtom).canRedo);
 
@@ -114,7 +113,6 @@ function ToolMenu() {
   const [, setConfirmDialog] = useAtom(confirmDialogAtom);
   const setTimeShiftDialog = useSetAtom(timeShiftDialogAtom);
   const setAdvancedSegmentation = useSetAtom(advancedSegmentationDialogAtom);
-  const setPanelMode = useSetAtom(toolModeAtom);
   const onAutoSegment = useCallback(() => {
     editLyricLines((draft) => {
       draft.lyricLines = segmentLyricLines(draft.lyricLines, segmentationConfig);
@@ -199,26 +197,6 @@ function ToolMenu() {
             </DropdownMenu.Item>
           </DropdownMenu.SubContent>
         </DropdownMenu.Sub>
-        <DropdownMenu.Separator />
-        {/*
-          面板模式切换。审核结果面板（RibbonBar 的「审核结果」分区）需要
-          一个入口 —— tool 原版靠 topBar 切模式，本项目 topBar 在 Theme 外，
-          放进 Radix 的 DropdownMenu 里（它在 Theme 内，样式一致）。
-        */}
-        <DropdownMenu.Sub>
-          <DropdownMenu.SubTrigger>{t('topBar.menu.panel', '面板')}</DropdownMenu.SubTrigger>
-          <DropdownMenu.SubContent>
-            <DropdownMenu.Item onSelect={() => setPanelMode(ToolMode.Edit)}>
-              {t('topBar.menu.panelEdit', '编辑')}
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => setPanelMode(ToolMode.Sync)}>
-              {t('topBar.menu.panelSync', '打轴')}
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => setPanelMode(ToolMode.Review)}>
-              {t('topBar.menu.panelReview', '审核结果')}
-            </DropdownMenu.Item>
-          </DropdownMenu.SubContent>
-        </DropdownMenu.Sub>
       </DropdownMenu.Content>
     </DropdownMenu.Root>
   );
@@ -227,7 +205,7 @@ function ToolMenu() {
 /* 组合 */
 export function EditorMenuBar() {
   return (
-    <div className="flex shrink-0 items-center gap-0.5">
+    <div className="flex shrink-0 items-center gap-0.5 border-l border-border pl-2">
       <EditMenu />
       <ToolMenu />
     </div>

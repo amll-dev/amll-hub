@@ -26,20 +26,20 @@ type TemplateRecord = {
 const presetTemplates: ReviewTemplate[] = [
   {
     id: 'preset-first-pass',
-    title: '✅完美通过（首次投稿）',
+    title: '完美通过（首次投稿）',
     content:
       '恭喜你，人工审核通过，你的贡献将会被更多人看到。感谢你对本项目的支持。欢迎下次投稿！\nCongratulations, you are passed manual review, your contribute will be seen by others. Thanks for your support to our project. You are welcome to post next time!\n\n_推荐使用 [AMLL Player](https://github.com/amll-dev/applemusic-like-lyrics/actions/workflows/build-player.yaml) 以获得更好的体验_\n_To get a better experience, we are recommend to use [AMLL Player](https://github.com/amll-dev/applemusic-like-lyrics/actions/workflows/build-player.yaml)._ \n\n_[Chinese Only] 欢迎加入我们的QQ群 719423243 和开发者一起玩哦！_\n_[Chinese Only] 如果你在群里可以在群名片附上你的 ID 以停止接收这条小广告~_',
     createdAt: 'preset',
   },
   {
     id: 'preset-pass',
-    title: '✅完美通过',
+    title: '完美通过',
     content: '恭喜你，人工审核通过，你的贡献会被更多人看到。感谢你对本项目的支持。欢迎下次投稿！',
     createdAt: 'preset',
   },
   {
     id: 'preset-update',
-    title: '⚠️需要修改',
+    title: '需要修改',
     content:
       '感谢你的慷慨贡献，但是很遗憾，本次人工审核你没有成功通过。建议参考以下内容修改并更新歌词，期待你更高质量的投稿！\n以下为这份歌词存在的问题：',
     createdAt: 'preset',
