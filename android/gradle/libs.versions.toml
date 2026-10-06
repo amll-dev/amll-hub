@@ -1,10 +1,9 @@
 [versions]
-# AGP 9 内置 Kotlin：不能再应用 org.jetbrains.kotlin.android 插件
+# AGP 9.4.1；因 KSP 不兼容 AGP 内置 Kotlin，gradle.properties 里设 android.builtInKotlin=false
 agp = "9.4.1"
-# KSP 官方最高只发布到 Kotlin 2.2.21（2.3+ 已并入 Kotlin 内置编译器）
 kotlin = "2.2.21"
 ksp = "2.2.21-2.0.5"
-# Hilt 2.60+ 要求 AGP >= 9.0.0（2.59.x 只支持 AGP 8.4+）
+# Hilt 2.60.1 要求 AGP >= 9.0.0（2.59.x 只支持 AGP 8.4+）
 hilt = "2.60.1"
 coreKtx = "1.19.1"
 lifecycle = "2.11.0"
@@ -70,7 +69,8 @@ androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-#注意：AGP 9 已内置 Kotlin，不要再声明 org.jetbrains.kotlin.android 插件
+# KSP 要求用传统 kotlin-android 插件（android.builtInKotlin=false）
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }

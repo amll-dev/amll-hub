@@ -42,13 +42,16 @@ AMLL_API_BASE_URL=http://192.168.1.10:8080 ./gradlew assembleDebug
 
 ### AGP 9 说明
 
-项目已迁移到 **AGP 9**，它内置了 Kotlin 支持，因此：
+项目已迁移到 **AGP 9**，但因为要用 Hilt（走 KSP），**关闭了 AGP 的内置 Kotlin**：
 
-- **不要**声明 `org.jetbrains.kotlin.android` 插件（会报 `extension already registered`）
-- `android.kotlinOptions {}` 已移除，改用顶层 `kotlin.compilerOptions {}`
-- `gradle.properties` 里 `android.builtInKotlin=true` 为默认值
-- 仍需保留 `kotlin-compose` 与 `kotlin-serialization` 插件（内置 Kotlin 不含它们）
+- `gradle.properties` 里 `android.builtInKotlin=false`，
+  同时保留 `org.jetbrains.kotlin.android` 插件 —— KSP 目前不兼容 AGP 内置 Kotlin
+- `android.kotlinOptions {}` 已被 AGP 9 移除，改用顶层 `kotlin.compilerOptions {}`
+- 仍需保留 `kotlin-compose` 与 `kotlin-serialization` 插件
 - Kotlin 固定在 **2.2.21**：KSP 官方最高只发布到该版本，2.3+ 已并入 Kotlin 内置编译器
+
+如果哪天确认 KSP 已支持内置 Kotlin，可以把 `android.builtInKotlin` 改回 `true`
+并移除 `kotlin-android` 插件。
 
 ## 登录方式
 
