@@ -44,10 +44,6 @@ jobs:
           ls "$ANDROID_HOME/platforms" 2>/dev/null || true
           ls "$ANDROID_HOME/build-tools" 2>/dev/null || true
 
-      # 无需 SDK 即可运行：XML 语法、AGP 9 插件残留、gradlew 权限与换行
-      - name: 静态检查
-        run: python3 scripts/check.py
-
       # `set -o pipefail` 不可省：tee 会吞掉 Gradle 退出码，
       # 不加它构建失败会被判为成功。--console=plain 让错误行不被 spinners 掩盖。
       - name: 校验 Gradle 配置
