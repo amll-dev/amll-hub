@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import { api } from '@/lib/api';
@@ -240,7 +241,8 @@ export function ContributionWall({ username }: ContributionWallProps) {
 
 /** 单个格子 */
 function CellBox({ cell }: { cell: Cell }) {
-  const [hover, setHover] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const [tip, setTip] = useState<{ top: number; left: number; below: boolean } | null>(null);
   const level = levelOf(cell.count);
   const isFuture = cell.date > TODAY_KEY;
 
@@ -248,24 +250,61 @@ function CellBox({ cell }: { cell: Cell }) {
     .map(([t, n]) => `${ACTIVITY_LABELS[t] ?? t} ×${n}`)
     .join('、');
 
+  // 用fixed + portal 渲染，避免被 overflow-x-auto 的滚动容器裁剪
+  const openTip = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const below = r.top < 48; // 顶部空间不够就翻到下方
+    setTip({
+      top: below ? r.bottom + 6 : r.top - 6,
+      left: Math.min(Math.max(r.left + r.width / 2, 8), window.innerWidth - 8),
+      below,
+    });
+  };
+
+  // 滚动时关闭，避免悬浮框脱离格子
+  useEffect(() => {
+    if (!tip) return;
+    const close = () => setTip(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [tip]);
+
   return (
     <div
+      ref={ref}
       className="relative"
       style={{ width: 11, height: 11 }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
+      onMouseEnter={openTip}
+      onMouseLeave={() => setTip(null)}
     >
       <span
         className={clsx('block h-full w-full rounded-[3px] transition-colors', LEVEL_CLASS[level])}
       />
-      {hover && !isFuture && (
-        <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 w-max -translate-x-1/2 rounded-md border border-line bg-card px-2.5 py-1.5 text-xs shadow-lg">
-          <div className="font-medium text-foreground">
-            {cell.month + 1}月{cell.day}日 · {cell.count} 次
-          </div>
-          {typeText && <div className="mt-0.5 text-ink-3">{typeText}</div>}
-        </div>
-      )}
+      {tip &&
+        !isFuture &&
+        createPortal(
+          <div
+            className="pointer-events-none fixed z-[999] w-max max-w-[240px] rounded-md border border-line bg-card px-2.5 py-1.5 text-xs text-foreground shadow-lg"
+            style={{
+              left: tip.left,
+              top: tip.top,
+              transform: `translate(-50%, ${tip.below ? '0' : '-100%'})`,
+            }}
+            role="tooltip"
+          >
+            <div className="font-medium text-foreground">
+              {cell.month + 1}月{cell.day}日 · {cell.count} 次
+            </div>
+            {typeText && <div className="mt-0.5 text-ink-3">{typeText}</div>}
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
