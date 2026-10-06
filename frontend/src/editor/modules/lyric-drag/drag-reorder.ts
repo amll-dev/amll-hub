@@ -44,7 +44,7 @@ export const reorderOrCopyLyricLines = (
     remaining = originalLines.filter((line) => !draggedIds.has(line.id));
     let adjustCount = 0;
     for (let i = 0; i < dropIndex && i < originalLines.length; i++) {
-      if (draggedIds.has(originalLines[i].id)) {
+      if (draggedIds.has(originalLines[i]?.id ?? '')) {
         adjustCount++;
       }
     }

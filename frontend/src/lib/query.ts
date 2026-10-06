@@ -73,6 +73,8 @@ export const queryKeys = {
   // 认证
   profile: ['auth', 'profile'] as const,
   captcha: ['auth', 'captcha'] as const,
+  /** 扫码登录票据（登录弹窗打开期间申请） */
+  qrTicket: ['auth', 'qr-ticket'] as const,
   /** 身份验证状态（改联系方式 / 改密码前会查询） */
   identity: ['auth', 'identity'] as const,
 

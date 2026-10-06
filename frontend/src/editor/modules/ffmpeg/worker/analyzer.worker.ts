@@ -101,7 +101,7 @@ function computePeaks(pcm: Float32Array, totalSamples: number) {
     let min = 0;
     let max = 0;
     for (let i = start; i < end; i++) {
-      const v = pcm[i];
+      const v = pcm[i] ?? 0;
       if (v < min) min = v;
       if (v > max) max = v;
     }

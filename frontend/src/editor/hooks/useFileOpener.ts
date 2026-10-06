@@ -264,6 +264,7 @@ export const useFileOpener = () => {
           }
         } else if (ext in LYRIC_PARSERS) {
           const parser = LYRIC_PARSERS[ext];
+          if (!parser) return;
           const rawLines = parser(text);
           lyricData = normalizeLyricLines(rawLines);
         } else {

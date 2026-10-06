@@ -109,7 +109,7 @@ export const SplitWordDialog = memo(() => {
         const indices = new Set<number>();
         let currentIndex = 0;
         for (let i = 0; i < resultWords.length - 1; i++) {
-          currentIndex += resultWords[i].word.length;
+          currentIndex += resultWords[i]?.word.length ?? 0;
           indices.add(currentIndex);
         }
         setSplitIndices(indices);

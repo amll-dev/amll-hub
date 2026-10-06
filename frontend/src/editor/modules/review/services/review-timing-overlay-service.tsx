@@ -65,7 +65,7 @@ const getReviewLineBoundaryDetachPreview = (
   );
   if (segmentIndex < 0) return line;
 
-  const segment = line.segments[segmentIndex];
+  const segment = line.segments[segmentIndex]!;
   if (segment.type !== 'word') return line;
 
   const minVisualDurationMs = (REVIEW_TIMING_MIN_DIVIDER_WIDTH_PX / zoom) * 1000;
@@ -187,7 +187,7 @@ export const useReviewSpectrogramTimingOverlay = () => {
       );
       if (segmentIndex < 0) return null;
 
-      const selectedSegment = line.segments[segmentIndex];
+      const selectedSegment = line.segments[segmentIndex]!;
       if (selectedSegment.type !== 'word') return null;
 
       // 当词边界与行边界重合时只显示一条合并线；Ctrl 拖这条线才把二者分离。

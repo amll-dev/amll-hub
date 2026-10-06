@@ -81,8 +81,8 @@ export function autoSplitRomajiChunk(token: string): string[] | null {
 
   while (idx < len) {
     const start = idx;
-    const currentChar = lower[idx];
-    const nextChar = idx + 1 < len ? lower[idx + 1] : '';
+    const currentChar = lower[idx]!;
+    const nextChar = idx + 1 < len ? lower[idx + 1]! : '';
 
     // 促音/叠词处理，如 sshi -> s, shi;  matte -> ma, t, te
     const isConsonant = !ROMAJI_VOWELS.has(currentChar);
@@ -96,7 +96,7 @@ export function autoSplitRomajiChunk(token: string): string[] | null {
 
     // 特殊处理 'n' (拨音): 后面没有元音，或者后面是辅音(非y)
     if (currentChar === 'n') {
-      const nextNext = idx + 2 < len ? lower[idx + 2] : '';
+      const nextNext = idx + 2 < len ? lower[idx + 2]! : '';
 
       // 判断是否是拨音 'n' 的结束条件
       const isNextVowel = ROMAJI_VOWELS.has(nextChar);
@@ -110,7 +110,7 @@ export function autoSplitRomajiChunk(token: string): string[] | null {
     }
 
     // 吞噬辅音，直到遇到元音
-    while (idx < len && !ROMAJI_VOWELS.has(lower[idx])) {
+    while (idx < len && !ROMAJI_VOWELS.has(lower[idx]!)) {
       idx++;
     }
 

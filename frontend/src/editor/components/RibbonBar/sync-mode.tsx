@@ -52,7 +52,7 @@ const EmptyBeatField = () => {
       </Text>
       <Slider
         value={[currentEmptyBeat]}
-        onValueChange={(v) => setCurrentEmptyBeat(v[0])}
+        onValueChange={(v) => setCurrentEmptyBeat(v[0] ?? 0)}
         min={0}
         max={currentWordEmptyBeat}
         step={1}

@@ -174,6 +174,10 @@ func New(deps RouterDeps) *gin.Engine {
 			auth.POST("/forgot-password", authH.ForgotPassword)
 			auth.GET("/captcha", authH.GetCaptcha)
 
+			// 扫码登录：网页端申请票据 + 轮询状态（公开）
+			auth.POST("/qrcode", authH.CreateQRCode)
+			auth.GET("/qrcode/status", authH.QRCodeStatus)
+
 			// 受保护接口
 			protected := auth.Group("")
 			protected.Use(middleware.Auth(jwtSecret))
@@ -184,6 +188,10 @@ func New(deps RouterDeps) *gin.Engine {
 			protected.POST("/identity/code", authH.SendIdentityCode)
 			protected.POST("/identity/verify", authH.VerifyIdentity)
 			protected.POST("/avatar", authH.UploadAvatar)
+			// 扫码登录：App 侧确认 / 取消
+			protected.POST("/qrcode/scanned", authH.MarkQRCodeScanned)
+			protected.POST("/qrcode/confirm", authH.ConfirmQRCode)
+			protected.POST("/qrcode/cancel", authH.CancelQRCode)
 		}
 
 		// 投稿模块

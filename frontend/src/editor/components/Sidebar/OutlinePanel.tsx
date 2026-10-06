@@ -40,7 +40,7 @@ export const OutlinePanel = memo(() => {
     const nums: number[] = [];
     let currentNumber = 0;
     for (let i = 0; i < lyricLines.length; i++) {
-      if (!i || !lyricLines[i].isBG) currentNumber++;
+      if (!i || !lyricLines[i]?.isBG) currentNumber++;
       nums.push(currentNumber);
     }
     return nums;

@@ -28,10 +28,11 @@ export const SidebarTabBar: FC<SidebarTabBarProps> = ({
     prevTabIdsRef.current = new Set(tabs.map((t) => t.id));
   }, [tabs]);
 
-  if (tabs.length === 1) {
+  const singleTab = tabs.length === 1 ? tabs[0] : undefined;
+  if (singleTab) {
     return (
       <div className={styles.singleTitleContainer}>
-        <span className={styles.singleTitle}>{tabs[0].getTitle(t)}</span>
+        <span className={styles.singleTitle}>{singleTab.getTitle(t)}</span>
       </div>
     );
   }

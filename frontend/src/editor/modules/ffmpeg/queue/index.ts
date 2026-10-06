@@ -198,8 +198,8 @@ class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
     const spaceToEnd = this.capacityFrames - ringPos;
 
     for (let c = 0; c < this.channels; c++) {
-      const source = channelDatas[c];
-      const target = this.channelBuffers[c];
+      const source = channelDatas[c]!;
+      const target = this.channelBuffers[c]!;
 
       if (writeAmount <= spaceToEnd) {
         target.set(source.subarray(offset, offset + writeAmount), ringPos);
@@ -306,13 +306,15 @@ class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
     const ringPos = readIndex % this.capacityFrames;
     const spaceToEnd = this.capacityFrames - ringPos;
     for (let c = 0; c < this.channels; c++) {
-      if (!outputs[c]) continue;
+      const output = outputs[c];
+      const ring = this.channelBuffers[c];
+      if (!output || !ring) continue;
       if (readAmount <= spaceToEnd) {
-        outputs[c].set(this.channelBuffers[c].subarray(ringPos, ringPos + readAmount));
+        output.set(ring.subarray(ringPos, ringPos + readAmount));
       } else {
-        outputs[c].set(this.channelBuffers[c].subarray(ringPos, this.capacityFrames), 0);
+        output.set(ring.subarray(ringPos, this.capacityFrames), 0);
         const remaining = readAmount - spaceToEnd;
-        outputs[c].set(this.channelBuffers[c].subarray(0, remaining), spaceToEnd);
+        output.set(ring.subarray(0, remaining), spaceToEnd);
       }
     }
 

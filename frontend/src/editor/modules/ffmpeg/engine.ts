@@ -48,10 +48,10 @@ function resampleToMono44k(buffer: AudioBuffer): Float32Array {
   const mono = new Float32Array(srcFrames);
   for (let c = 0; c < channels; c++) {
     const data = buffer.getChannelData(c);
-    for (let i = 0; i < srcFrames; i++) mono[i] += data[i];
+    for (let i = 0; i < srcFrames; i++) mono[i] = (mono[i] ?? 0) + (data[i] ?? 0);
   }
   if (channels > 1) {
-    for (let i = 0; i < srcFrames; i++) mono[i] /= channels;
+    for (let i = 0; i < srcFrames; i++) mono[i] = (mono[i] ?? 0) / channels;
   }
 
   // 线性插值重采样
@@ -64,7 +64,7 @@ function resampleToMono44k(buffer: AudioBuffer): Float32Array {
       break;
     }
     const frac = pos - idx;
-    out[i] = mono[idx] * (1 - frac) + mono[idx + 1] * frac;
+    out[i] = (mono[idx] ?? 0) * (1 - frac) + (mono[idx + 1] ?? 0) * frac;
   }
   return out;
 }

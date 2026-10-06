@@ -124,20 +124,26 @@ export function generateLutFromStops(stops: ColorStop[]): Uint8Array {
   for (let i = 0; i < 256; i++) {
     const currentPos = i / 255.0;
 
-    let stopA = parsedStops[0];
-    let stopB = parsedStops[parsedStops.length - 1];
+    // 上面的 stops.length === 0 已提前返回，这里 parsedStops 必非空
+    const firstStop = parsedStops[0]!;
+    const lastStop = parsedStops[parsedStops.length - 1]!;
 
-    if (currentPos <= parsedStops[0].pos) {
-      stopA = parsedStops[0];
-      stopB = parsedStops[0];
-    } else if (currentPos >= parsedStops[parsedStops.length - 1].pos) {
-      stopA = parsedStops[parsedStops.length - 1];
-      stopB = parsedStops[parsedStops.length - 1];
+    let stopA = firstStop;
+    let stopB = lastStop;
+
+    if (currentPos <= firstStop.pos) {
+      stopA = firstStop;
+      stopB = firstStop;
+    } else if (currentPos >= lastStop.pos) {
+      stopA = lastStop;
+      stopB = lastStop;
     } else {
       for (let j = 0; j < parsedStops.length - 1; j++) {
-        if (currentPos >= parsedStops[j].pos && currentPos <= parsedStops[j + 1].pos) {
-          stopA = parsedStops[j];
-          stopB = parsedStops[j + 1];
+        const s0 = parsedStops[j]!;
+        const s1 = parsedStops[j + 1]!;
+        if (currentPos >= s0.pos && currentPos <= s1.pos) {
+          stopA = s0;
+          stopB = s1;
           break;
         }
       }
@@ -146,9 +152,9 @@ export function generateLutFromStops(stops: ColorStop[]): Uint8Array {
     const range = stopB.pos - stopA.pos;
     const t = range < 1e-6 ? 0 : (currentPos - stopA.pos) / range;
 
-    const r = lerp(stopA.rgb[0], stopB.rgb[0], t);
-    const g = lerp(stopA.rgb[1], stopB.rgb[1], t);
-    const b = lerp(stopA.rgb[2], stopB.rgb[2], t);
+    const r = lerp(stopA.rgb[0]!, stopB.rgb[0]!, t);
+    const g = lerp(stopA.rgb[1]!, stopB.rgb[1]!, t);
+    const b = lerp(stopA.rgb[2]!, stopB.rgb[2]!, t);
 
     const idx = i * 4;
     lut[idx] = r;

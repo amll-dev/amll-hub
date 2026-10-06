@@ -430,6 +430,10 @@ func writeAuthErr(c *gin.Context, err error) {
 		pkg.Fail(c, http.StatusBadGateway, http.StatusBadGateway, "认证服务无法定位该账号的联系方式，请联系管理员检查认证服务配置")
 	case errors.Is(err, service.ErrInvalidPhone):
 		pkg.BadRequest(c, "手机号格式有误，请检查后重试")
+	case errors.Is(err, service.ErrQRTicketExpired):
+		pkg.Fail(c, http.StatusGone, http.StatusGone, "二维码已过期，请在网页端重新生成")
+	case errors.Is(err, service.ErrQRTicketAlreadyScanned):
+		pkg.Fail(c, http.StatusConflict, http.StatusConflict, "该二维码已被其他账号扫码")
 	case errors.Is(err, service.ErrProviderNotConfigured):
 		detail := err.Error()
 		if idx := strings.Index(detail, ": "); idx >= 0 {

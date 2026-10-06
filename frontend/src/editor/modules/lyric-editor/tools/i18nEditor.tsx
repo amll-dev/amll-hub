@@ -14,13 +14,17 @@ export const I18nEditor: FC = () => {
   const setAddLanguageDialog = useSetAtom(addLanguageDialogAtom);
   const placeholder = t('ribbonBar.editMode.multilingualPlaceholder', '请选择语言');
 
+  /** 只有一个 und 条目时，说明这行没有指定语言，退回 und 处理。 */
+  const isOnlyUndEntry = (entries: [string, string][]) =>
+    entries.length === 1 && entries[0]?.[0] === 'und';
+
   const translationLanguages = useMemo(() => {
     const languages = new Set<string>();
     let hasUndFallback = false;
     for (const line of lyricLines.lyricLines) {
       if (!line.translatedLyricByLang) continue;
       const entries = Object.entries(line.translatedLyricByLang);
-      if (entries.length === 1 && entries[0][0] === 'und') {
+      if (isOnlyUndEntry(entries)) {
         hasUndFallback = true;
         continue;
       }
@@ -42,7 +46,7 @@ export const I18nEditor: FC = () => {
     for (const line of lyricLines.lyricLines) {
       if (!line.romanLyricByLang) continue;
       const entries = Object.entries(line.romanLyricByLang);
-      if (entries.length === 1 && entries[0][0] === 'und') {
+      if (isOnlyUndEntry(entries)) {
         hasUndFallback = true;
         continue;
       }

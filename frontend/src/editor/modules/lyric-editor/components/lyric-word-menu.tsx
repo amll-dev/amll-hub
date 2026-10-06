@@ -72,10 +72,11 @@ export const LyricWordMenu = ({
             if (line) {
               const selectedWordsInLine = line.words.filter((w) => selectedWords.has(w.id));
 
-              if (selectedWordsInLine.length > 1) {
+              const firstWord = selectedWordsInLine[0];
+              const lastWord = selectedWordsInLine[selectedWordsInLine.length - 1];
+
+              if (firstWord && lastWord && selectedWordsInLine.length > 1) {
                 const mergedWord = selectedWordsInLine.map((w) => w.word).join('');
-                const firstWord = selectedWordsInLine[0];
-                const lastWord = selectedWordsInLine[selectedWordsInLine.length - 1];
                 const firstIndex = line.words.indexOf(firstWord);
 
                 const newWord = newLyricWord();
@@ -83,11 +84,9 @@ export const LyricWordMenu = ({
                 newWord.startTime = firstWord.startTime;
                 newWord.endTime = lastWord.endTime;
 
-                state.lyricLines[lineIndex].words = line.words.filter(
-                  (w) => !selectedWords.has(w.id)
-                );
+                line.words = line.words.filter((w) => !selectedWords.has(w.id));
                 if (firstIndex !== -1) {
-                  state.lyricLines[lineIndex].words.splice(firstIndex, 0, newWord);
+                  line.words.splice(firstIndex, 0, newWord);
                 }
               }
             }
@@ -140,10 +139,12 @@ export const LyricWordMenu = ({
       const selectedWords: LyricWord[] = [];
       const affectedLines: LyricLine[] = [];
       for (const line of state.lyricLines) {
+        const firstWord = line.words[0];
+        const lastWord = line.words[line.words.length - 1];
         const deletedAtBounds =
-          line.words.length > 0 &&
-          (selectedWordIds.has(line.words[0].id) ||
-            selectedWordIds.has(line.words[line.words.length - 1].id));
+          !!firstWord &&
+          !!lastWord &&
+          (selectedWordIds.has(firstWord.id) || selectedWordIds.has(lastWord.id));
         line.words = line.words.filter((w) => {
           if (selectedWordIds.has(w.id)) {
             selectedWords.push(w);
@@ -156,8 +157,8 @@ export const LyricWordMenu = ({
       }
       const newLine = {
         ...newLyricLine(),
-        isBG: state.lyricLines[lineIndex].isBG,
-        isDuet: state.lyricLines[lineIndex].isDuet,
+        isBG: state.lyricLines[lineIndex]?.isBG,
+        isDuet: state.lyricLines[lineIndex]?.isDuet,
       } as LyricLine;
       newLine.words.push(...selectedWords);
       normalizeLineTime(newLine);

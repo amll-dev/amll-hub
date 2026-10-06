@@ -119,7 +119,7 @@ export const AdvancedSegmentationDialog = memo(() => {
     const indices = new Set<number>();
     let currentIndex = 0;
     for (let i = 0; i < parts.length - 1; i++) {
-      currentIndex += parts[i].length;
+      currentIndex += parts[i]?.length ?? 0;
       indices.add(currentIndex);
     }
     setManualSplitIndices(indices);
@@ -140,9 +140,9 @@ export const AdvancedSegmentationDialog = memo(() => {
     try {
       const tempLine = { ...newLyricLine(), words: [testWord] };
       const processedLines = segmentLyricLines([tempLine], segmentationConfig);
-      const resultWords = processedLines[0].words;
+      const resultWords = processedLines[0]?.words;
 
-      if (resultWords.length === 0) return;
+      if (!resultWords || resultWords.length === 0) return;
 
       return (
         <Flex gap="1" wrap="wrap" align="center">

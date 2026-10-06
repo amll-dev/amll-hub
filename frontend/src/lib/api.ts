@@ -33,7 +33,7 @@ import type {
   UserActivity,
   TtmlValidationResult,
 } from './types';
-import type { CaptchaConfig, LoginResult, UserProfile } from './auth';
+import type { CaptchaConfig, LoginResult, QrTicket, QrTicketStatus, UserProfile } from './auth';
 import { clearAuth, getToken } from './auth';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
@@ -330,6 +330,18 @@ export const api = {
   /** 获取验证码配置 GET /api/v1/auth/captcha */
   getCaptcha(): Promise<CaptchaConfig> {
     return request<CaptchaConfig>('/api/v1/auth/captcha');
+  },
+
+  /** 申请扫码登录票据 POST /api/v1/auth/qrcode */
+  createQrTicket(): Promise<QrTicket> {
+    return request<QrTicket>('/api/v1/auth/qrcode', { method: 'POST' });
+  },
+
+  /** 轮询扫码登录票据状态 GET /api/v1/auth/qrcode/status */
+  getQrTicketStatus(ticket: string): Promise<QrTicketStatus> {
+    return request<QrTicketStatus>(
+      `/api/v1/auth/qrcode/status?ticket=${encodeURIComponent(ticket)}`
+    );
   },
 
   /** 获取个人资料 GET /api/v1/auth/profile */

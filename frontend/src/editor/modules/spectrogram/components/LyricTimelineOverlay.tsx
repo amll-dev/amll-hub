@@ -149,10 +149,11 @@ export const LyricTimelineOverlay: FC<LyricTimelineOverlayProps> = ({
           }
 
           const deltaTimeMs = Math.round((deltaX / zoom) * 1000);
-          let newTime =
-            (segmentIndex === -1
+          const baseTime =
+            segmentIndex === -1
               ? lineBeingDragged.startTime
-              : lineBeingDragged.segments[segmentIndex].endTime) + deltaTimeMs;
+              : (lineBeingDragged.segments[segmentIndex]?.endTime ?? lineBeingDragged.startTime);
+          let newTime = baseTime + deltaTimeMs;
 
           if (!event.shiftKey) {
             let closestSnapTime: number | null = null;

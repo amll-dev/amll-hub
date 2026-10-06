@@ -23,8 +23,8 @@ function drawWaveform() {
   const AMPLITUDE_SCALE = 0.6;
 
   for (let i = 0; i < tripletCount; i++) {
-    const progress = peaksBuffer[i * 3];
-    const maxVal = peaksBuffer[i * 3 + 2];
+    const progress = peaksBuffer[i * 3] ?? 0;
+    const maxVal = peaksBuffer[i * 3 + 2] ?? 0;
 
     const x = progress * canvasWidth;
     const yMax = halfH - maxVal * halfH * AMPLITUDE_SCALE;
@@ -34,8 +34,8 @@ function drawWaveform() {
   }
 
   for (let i = tripletCount - 1; i >= 0; i--) {
-    const progress = peaksBuffer[i * 3];
-    const minVal = peaksBuffer[i * 3 + 1];
+    const progress = peaksBuffer[i * 3] ?? 0;
+    const minVal = peaksBuffer[i * 3 + 1] ?? 0;
 
     const x = progress * canvasWidth;
     const yMin = halfH - minVal * halfH * AMPLITUDE_SCALE;
@@ -119,11 +119,11 @@ self.onmessage = (e: MessageEvent) => {
         analyzerPort?.postMessage({ type: 'BUFFER_RETURN', payload: buffer }, [buffer]);
       } else if (pType === 'PEAKS_FINALIZE') {
         if (peaksCount >= 3) {
-          const maxProgress = peaksBuffer[peaksCount - 3];
+          const maxProgress = peaksBuffer[peaksCount - 3] ?? 0;
           if (maxProgress > 0 && maxProgress < 1.0) {
             const tripletCount = Math.floor(peaksCount / 3);
             for (let i = 0; i < tripletCount; i++) {
-              peaksBuffer[i * 3] /= maxProgress;
+              peaksBuffer[i * 3] = (peaksBuffer[i * 3] ?? 0) / maxProgress;
             }
           }
         }

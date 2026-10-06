@@ -357,10 +357,11 @@ const MetadataItemEditor = memo(
       (index: number) => {
         setLyricLines((prev) => {
           const metadataIndex = prev.metadata.findIndex((item) => item.key === option.value);
-          if (metadataIndex === -1) return;
+          const entry = prev.metadata[metadataIndex];
+          if (metadataIndex === -1 || !entry) return;
 
-          prev.metadata[metadataIndex].value.splice(index, 1);
-          if (prev.metadata[metadataIndex].value.length === 0) {
+          entry.value.splice(index, 1);
+          if (entry.value.length === 0) {
             prev.metadata.splice(metadataIndex, 1);
           }
         });

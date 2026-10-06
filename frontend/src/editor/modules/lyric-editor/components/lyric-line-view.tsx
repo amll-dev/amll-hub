@@ -187,13 +187,15 @@ const SubLineEdit = memo(
         if (newValue !== line[type]) {
           editLyricLines((state: Draft<TTMLLyric>) => {
             const targetLine = state.lyricLines[lineIndex];
+            if (!targetLine) return;
             const previousValue = targetLine[type];
             targetLine[type] = newValue;
             const syncByLang = (byLang?: Record<string, string>) => {
               if (!byLang) return;
               const keys = Object.keys(byLang);
-              if (keys.length === 1) {
-                byLang[keys[0]] = newValue;
+              const onlyKey = keys[0];
+              if (keys.length === 1 && onlyKey !== undefined) {
+                byLang[onlyKey] = newValue;
                 return;
               }
               const matched = Object.entries(byLang).find(([, value]) => {
@@ -697,7 +699,7 @@ export const LyricLineView: FC<{
                             evt.preventDefault();
                             evt.stopPropagation();
                             editLyricLines((state: Draft<TTMLLyric>) => {
-                              state.lyricLines[lineIndex].words.splice(wi, 0, newLyricWord());
+                              state.lyricLines[lineIndex]?.words.splice(wi, 0, newLyricWord());
                             });
                           }}
                         >
@@ -758,7 +760,7 @@ export const LyricLineView: FC<{
                       evt.preventDefault();
                       evt.stopPropagation();
                       editLyricLines((state: Draft<TTMLLyric>) => {
-                        state.lyricLines[lineIndex].words.push(newLyricWord());
+                        state.lyricLines[lineIndex]?.words.push(newLyricWord());
                       });
                     }}
                   >
@@ -782,7 +784,7 @@ export const LyricLineView: FC<{
                         const { word, enableRuby } = parseRubyShortcut(evt.currentTarget.value);
                         editLyricLines((state: Draft<TTMLLyric>) => {
                           const newWord = newLyricWord();
-                          state.lyricLines[lineIndex].words.push({
+                          state.lyricLines[lineIndex]?.words.push({
                             ...newWord,
                             word,
                             ruby: enableRuby
@@ -841,6 +843,7 @@ export const LyricLineView: FC<{
                                     evt.stopPropagation();
                                     editLyricLines((state: Draft<TTMLLyric>) => {
                                       const targetLine = state.lyricLines[lineIndex];
+                                      if (!targetLine) return;
                                       const currentIds = parseLineVocalIds(targetLine.vocal);
                                       const existingIndex = currentIds.indexOf(id);
                                       if (existingIndex > -1) {
@@ -866,6 +869,7 @@ export const LyricLineView: FC<{
                                 evt.stopPropagation();
                                 editLyricLines((state: Draft<TTMLLyric>) => {
                                   const targetLine = state.lyricLines[lineIndex];
+                                  if (!targetLine) return;
                                   targetLine.vocal = allSelected ? [] : [...vocalTagIds];
                                 });
                               }}

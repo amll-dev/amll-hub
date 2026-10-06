@@ -114,11 +114,13 @@ export const LyricLineMenu = ({ lineIndex }: { lineIndex: number }) => {
       if (!combineEnabled) return;
       const { minIdx, maxIdx } = combineEnabled;
       const target = state.lyricLines[minIdx];
+      if (!target) return;
       for (let i = minIdx + 1; i <= maxIdx; i++) {
         const line = state.lyricLines[i];
+        if (!line) continue;
         target.words.push(...line.words);
       }
-      target.endTime = state.lyricLines[maxIdx].endTime;
+      target.endTime = state.lyricLines[maxIdx]?.endTime ?? target.endTime;
       state.lyricLines.splice(minIdx + 1, maxIdx - minIdx);
     });
   }

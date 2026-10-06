@@ -66,11 +66,18 @@ export const TimeShiftDialog = () => {
     const targetLineIndices = new Set<number>();
     const targetLineIds: string[] = [];
 
-    if (scope === 'all') {
-      for (let i = 0; i < totalLines; i++) {
+    /** 把 [from, to) 闭开区间的行加入目标集合。 */
+    const addRange = (from: number, to: number) => {
+      for (let i = Math.max(0, from); i < Math.min(totalLines, to); i++) {
+        const line = lyricLines.lyricLines[i];
+        if (!line) continue;
         targetLineIndices.add(i);
-        targetLineIds.push(lyricLines.lyricLines[i].id);
+        targetLineIds.push(line.id);
       }
+    };
+
+    if (scope === 'all') {
+      addRange(0, totalLines);
     } else if (scope === 'selected') {
       lyricLines.lyricLines.forEach((line, index) => {
         if (selectedLines.has(line.id)) {
@@ -88,19 +95,13 @@ export const TimeShiftDialog = () => {
         }
       });
       if (firstSelectedIndex !== -1) {
-        for (let i = firstSelectedIndex; i < totalLines; i++) {
-          targetLineIndices.add(i);
-          targetLineIds.push(lyricLines.lyricLines[i].id);
-        }
+        addRange(firstSelectedIndex, totalLines);
       }
     } else if (scope === 'custom') {
       const start = parseInt(customStart, 10);
       const end = parseInt(customEnd, 10);
       if (!Number.isNaN(start) && !Number.isNaN(end)) {
-        for (let i = Math.max(0, start - 1); i < Math.min(totalLines, end); i++) {
-          targetLineIndices.add(i);
-          targetLineIds.push(lyricLines.lyricLines[i].id);
-        }
+        addRange(start - 1, end);
       }
     }
 

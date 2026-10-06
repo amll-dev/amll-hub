@@ -94,7 +94,8 @@ export const useLyricListDrag = ({
             });
 
             for (let i = minBoundary; i <= maxBoundary; i++) {
-              next.add(currentLines[i].id);
+              const line = currentLines[i];
+              if (line) next.add(line.id);
             }
           } else {
             next.add(lineId);
@@ -182,11 +183,12 @@ export const useLyricListDrag = ({
         parseFloat(computedContainerStyle.rowGap || computedContainerStyle.gap) || 0;
 
       for (let i = 0; i < items.length; i++) {
-        const rect = items[i].getBoundingClientRect();
-        const itemAbsoluteIndex = parseInt(items[i].getAttribute('data-absolute-index') || '0', 10);
+        const item = items[i]!;
+        const rect = item.getBoundingClientRect();
+        const itemAbsoluteIndex = parseInt(item.getAttribute('data-absolute-index') || '0', 10);
 
         if (clientY >= rect.top && clientY <= rect.bottom) {
-          const lineId = items[i].getAttribute('data-line-id');
+          const lineId = item.getAttribute('data-line-id');
           if (lineId && ctx.current.draggedIds.has(lineId)) {
             showIndicator = false;
             ctx.current.dropIndex = null;
@@ -197,7 +199,7 @@ export const useLyricListDrag = ({
         const mid = rect.top + rect.height / 2;
         if (clientY < mid) {
           foundInsertIndex = itemAbsoluteIndex;
-          const style = window.getComputedStyle(items[i]);
+          const style = window.getComputedStyle(item);
           const marginTop = parseFloat(style.marginTop) || 0;
           targetY =
             rect.top -
@@ -211,6 +213,7 @@ export const useLyricListDrag = ({
 
       if (foundInsertIndex === -1 && showIndicator) {
         const lastItem = items[items.length - 1];
+        if (!lastItem) return;
         const lastRect = lastItem.getBoundingClientRect();
         const lastAbsoluteIndex = parseInt(lastItem.getAttribute('data-absolute-index') || '0', 10);
         foundInsertIndex = lastAbsoluteIndex + 1;

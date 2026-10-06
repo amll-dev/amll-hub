@@ -94,9 +94,14 @@ export function getUpdatedLineForDivider(
     if (leftSegment) {
       newSegments[segmentIndex] = { ...leftSegment, endTime: clampedTime };
     }
-  } else {
+  } else if (leftSegment) {
+    // 中间分支：leftSegment 可能为 null（相邻段被删等），此时无处可夹取
     const originalTime = leftSegment.endTime;
-    if (isGapCreation) {
+
+    if (!rightSegment) {
+      // 右侧没有相邻段，只能收束左段
+      newSegments[segmentIndex] = { ...leftSegment, endTime: clampedTime };
+    } else if (isGapCreation) {
       const effectiveDirection = lockedGapDirection !== undefined ? lockedGapDirection : null;
 
       if (
@@ -194,7 +199,7 @@ export function getUpdatedLineForWordPan(
   const segmentIndex = processedLine.segments.findIndex((s) => s.id === wordId);
   if (segmentIndex === -1) return processedLine;
 
-  const segment = processedLine.segments[segmentIndex];
+  const segment = processedLine.segments[segmentIndex]!;
   if (segment.type !== 'word') return processedLine;
 
   const leftSegment = processedLine.segments[segmentIndex - 1] || null;
@@ -334,7 +339,7 @@ export function tryFixPartialInitialization(line: Draft<LyricLine>): boolean {
   let didChange = false;
 
   for (let i = 0; i < line.words.length; i++) {
-    const anchorWord = line.words[i];
+    const anchorWord = line.words[i]!;
 
     if (anchorWord.startTime !== 0 || anchorWord.endTime !== 0) {
       const groupToProcess = [anchorWord];
@@ -342,10 +347,10 @@ export function tryFixPartialInitialization(line: Draft<LyricLine>): boolean {
 
       while (
         lookaheadIndex < line.words.length &&
-        line.words[lookaheadIndex].startTime === 0 &&
-        line.words[lookaheadIndex].endTime === 0
+        line.words[lookaheadIndex]!.startTime === 0 &&
+        line.words[lookaheadIndex]!.endTime === 0
       ) {
-        groupToProcess.push(line.words[lookaheadIndex]);
+        groupToProcess.push(line.words[lookaheadIndex]!);
         lookaheadIndex++;
       }
 
@@ -401,7 +406,7 @@ export function shiftLineStartTime(line: Draft<LyricLine>, newStartTime: number)
 
 export function adjustLineEndTime(line: Draft<LyricLine>, newEndTime: number) {
   const currentLastWordEnd =
-    line.words.length > 0 ? line.words[line.words.length - 1].endTime : line.endTime;
+    line.words.length > 0 ? line.words[line.words.length - 1]!.endTime : line.endTime;
 
   const diff = currentLastWordEnd - newEndTime;
 
@@ -412,7 +417,7 @@ export function adjustLineEndTime(line: Draft<LyricLine>, newEndTime: number) {
 
   if (diff < 0) {
     line.endTime = newEndTime;
-    const lastWord = line.words[line.words.length - 1];
+    const lastWord = line.words[line.words.length - 1]!;
     if (newEndTime > lastWord.startTime) {
       lastWord.endTime = newEndTime;
     }
@@ -456,7 +461,7 @@ export function adjustLineEndTime(line: Draft<LyricLine>, newEndTime: number) {
     for (let i = targets.length - 1; i >= 0; i--) {
       if (remainingReduction <= 0) break;
 
-      const target = targets[i];
+      const target = targets[i]!;
       const maxReducible = Math.max(0, target.duration - MIN_DURATION);
       const reduceAmount = Math.min(remainingReduction, maxReducible);
 

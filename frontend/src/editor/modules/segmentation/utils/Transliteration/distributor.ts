@@ -37,7 +37,7 @@ class RomanDistributor {
     }
 
     for (let i = 0; i < this.words.length; i++) {
-      const word = this.words[i];
+      const word = this.words[i]!;
 
       if (this.shouldSkipWord(word, i)) {
         continue;
@@ -86,7 +86,7 @@ class RomanDistributor {
     if (isPunctuationOnly(word.word)) {
       const currentToken = this.buffer.peek(0);
       if (currentToken && isPunctuationOnly(currentToken)) {
-        this.results[index] = this.buffer.consume(1)[0];
+        this.results[index] = this.buffer.consume(1)[0] ?? '';
       } else {
         this.results[index] = '';
       }
@@ -155,7 +155,7 @@ class RomanDistributor {
 
     if (currentIndex + 1 >= this.words.length) return true;
 
-    const nextWord = this.words[currentIndex + 1];
+    const nextWord = this.words[currentIndex + 1]!;
     const nextWordText = nextWord.word.trim();
 
     // 可靠锚点
@@ -209,7 +209,7 @@ class RomanDistributor {
 
       if (matchResult.type === 'Exact') {
         // 精确匹配，直接消耗
-        this.results[index] = this.buffer.consume(1)[0];
+        this.results[index] = this.buffer.consume(1)[0] ?? '';
       } else {
         // 前缀匹配
         // 例，Token="suki", Expected="su" -> Anchor拿走"su", 剩下的 "ki" 留给后面
@@ -261,7 +261,8 @@ class RomanDistributor {
     let accumulatedWeight = 0;
 
     for (let i = 0; i < wordCount; i++) {
-      const weight = weights[i];
+      const weight = weights[i]!;
+      const pending = this.pendingWords[i]!;
       accumulatedWeight += weight;
 
       // 基于权重比例分配 Token
@@ -276,10 +277,10 @@ class RomanDistributor {
 
       if (takeCount > 0) {
         const chunk = tokens.slice(currentTokenIndex, currentTokenIndex + takeCount);
-        this.results[this.pendingWords[i].index] = chunk.join(' ');
+        this.results[pending.index] = chunk.join(' ');
         currentTokenIndex += takeCount;
       } else {
-        this.results[this.pendingWords[i].index] = '';
+        this.results[pending.index] = '';
       }
     }
 
@@ -340,8 +341,8 @@ function evaluateMatch(token: string, expectedCandidates: string[]): MatchResult
       // 只有当切分点是合法的才允许后缀匹配
       // 如果锚点以元音开头 (如 "i")，前缀不能以非 n 的辅音结尾 (如 "g")
       // 阻止 "gi" -> "g"(Buffer) + "i"(Anchor) 的错误拆分
-      if (ROMAJI_VOWELS.has(firstCharOfExpected)) {
-        const isPrefixConsonant = !ROMAJI_VOWELS.has(lastCharOfPrefix) && lastCharOfPrefix !== 'n';
+      if (ROMAJI_VOWELS.has(firstCharOfExpected!)) {
+        const isPrefixConsonant = !ROMAJI_VOWELS.has(lastCharOfPrefix!) && lastCharOfPrefix !== 'n';
 
         if (isPrefixConsonant) {
           continue;

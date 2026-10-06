@@ -65,6 +65,14 @@ var ErrCasdoorPermissionDenied = errors.New("casdoor permission denied")
 // ErrDestLookupFailed Casdoor 侧按目标地址反查用户失败。
 var ErrDestLookupFailed = errors.New("destination lookup failed")
 
+// 扫码登录模块
+
+// ErrQRTicketExpired 扫码登录票据已过期或已被使用
+var ErrQRTicketExpired = errors.New("qr ticket expired")
+
+// ErrQRTicketAlreadyScanned 票据已被其他用户扫码，等待本人确认
+var ErrQRTicketAlreadyScanned = errors.New("qr ticket already scanned by another user")
+
 // 投稿模块
 
 // ErrSubmissionNotFound 投稿不存在

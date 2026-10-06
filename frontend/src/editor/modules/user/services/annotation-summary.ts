@@ -183,7 +183,10 @@ export const parseAnnotationSummary = (summary: string): AnnotationSummarySegmen
     if (match.index > last) {
       segments.push({ kind: 'text', text: summary.slice(last, match.index) });
     }
-    segments.push({ kind: 'code', text: match[1] });
+    const code = match[1];
+    if (code !== undefined) {
+      segments.push({ kind: 'code', text: code });
+    }
     last = match.index + match[0].length;
     match = re.exec(summary);
   }
