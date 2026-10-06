@@ -13,7 +13,7 @@ AMLL Hub 的 Android 原生客户端。当前阶段只实现**账号登录**与*
 | 导航 | Navigation Compose |
 | 扫码 | CameraX + ML Kit 条码识别 |
 | 图片 | Coil 3 |
-| 构建 | AGP 9.4.1 / Gradle 9.8.0 / Kotlin 2.2.21 / KSP 2.2.21-2.0.5 / Hilt 2.60.1 / JDK 17 |
+| 构建 | AGP 9.4.1 / Gradle 9.8.0 / Kotlin 2.3.21 / KSP 2.3.12 / Hilt 2.60.1 / JDK 17 |
 
 配色对齐网页端 `frontend/src/index.css` 的 `--amll-*` 设计 token（深色 `#101014`、品牌红 `#F0424F`）。
 
@@ -42,16 +42,14 @@ AMLL_API_BASE_URL=http://192.168.1.10:8080 ./gradlew assembleDebug
 
 ### AGP 9 说明
 
-项目已迁移到 **AGP 9**，但因为要用 Hilt（走 KSP），**关闭了 AGP 的内置 Kotlin**：
+项目使用 **AGP 9.4.1** 的内置 Kotlin：
 
-- `gradle.properties` 里 `android.builtInKotlin=false`，
-  同时保留 `org.jetbrains.kotlin.android` 插件 —— KSP 目前不兼容 AGP 内置 Kotlin
+- `gradle.properties` 里 `android.builtInKotlin=true`
+- **不要**声明 `org.jetbrains.kotlin.android` 插件（会报 `ClassCastException: BaseExtension`）
 - `android.kotlinOptions {}` 已被 AGP 9 移除，改用顶层 `kotlin.compilerOptions {}`
-- 仍需保留 `kotlin-compose` 与 `kotlin-serialization` 插件
-- Kotlin 固定在 **2.2.21**：KSP 官方最高只发布到该版本，2.3+ 已并入 Kotlin 内置编译器
-
-如果哪天确认 KSP 已支持内置 Kotlin，可以把 `android.builtInKotlin` 改回 `true`
-并移除 `kotlin-android` 插件。
+- 仍需保留 `kotlin-compose` 与 `kotlin-serialization` 插件（内置 Kotlin 不含它们）
+- **KSP 必须是 2.3.12+**（更早版本不支持 AGP 9 内置 Kotlin）。KSP 2 起改用独立版本号，
+  不再是 `2.x.y-ksp` 格式，也不再绑定 Kotlin 版本
 
 ## 登录方式
 
