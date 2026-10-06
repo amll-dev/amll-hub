@@ -136,6 +136,7 @@ fun QrScannerView(
 }
 
 /** 识别单帧，命中二维码则回调一次 */
+@OptIn(ExperimentalGetImage::class)
 private fun analyzeFrame(
     proxy: ImageProxy,
     scanner: BarcodeScanner,
