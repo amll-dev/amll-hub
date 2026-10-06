@@ -74,7 +74,8 @@ fun ScanScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            when (state) {
+            // state是by 委托属性，when 分支内无法 smart cast，先落到局部变量
+            when (val current = state) {
                 // 扫描器只在「等待扫码 / 出错重扫」时显示
                 is ScanState.Idle -> ScannerPane(
                     errorMessage = null,
@@ -84,7 +85,7 @@ fun ScanScreen(
                 )
 
                 is ScanState.Error -> ScannerPane(
-                    errorMessage = state.message,
+                    errorMessage = current.message,
                     onQrScanned = viewModel::onScanned,
                     onDismissError = viewModel::reset,
                     onBack = onBack,

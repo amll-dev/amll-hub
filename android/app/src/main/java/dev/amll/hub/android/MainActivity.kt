@@ -12,7 +12,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.core.net.toUri
 import dagger.hilt.android.AndroidEntryPoint
 import dev.amll.hub.android.nav.AmllNavGraph
 import dev.amll.hub.android.ui.theme.AmllHubTheme
@@ -55,7 +54,7 @@ class MainActivity : ComponentActivity() {
         val data = intent?.data ?: return null
         if (data.scheme != "amllhub") return null
         return data.getQueryParameter("ticket")?.takeIf { it.isNotBlank() }
-            ?: data.toUri().lastPathSegment?.takeIf { it.isNotBlank() }
+            ?: data.lastPathSegment?.takeIf { it.isNotBlank() }
     }
 }
 
