@@ -1,6 +1,6 @@
-# AMLl Hub Android 客户端
+# AMLL Hub Android 客户端
 
-AMLl Hub 的 Android 原生客户端。当前阶段只实现**账号登录**与**扫码登录**。
+AMLL Hub 的 Android 原生客户端。当前阶段只实现**账号登录**与**扫码登录**。
 
 ## 技术栈
 
@@ -13,13 +13,13 @@ AMLl Hub 的 Android 原生客户端。当前阶段只实现**账号登录**与*
 | 导航 | Navigation Compose |
 | 扫码 | CameraX + ML Kit 条码识别 |
 | 图片 | Coil 3 |
-| 构建 | AGP 8.13.2 / Kotlin 2.2.20 / Gradle 8.14.3 / JDK 17 |
+| 构建 | AGP 9.4.1 / Gradle 9.8.0 / Kotlin 2.2.21 / KSP 2.2.21-2.0.5 / Hilt 2.60.1 / JDK 17 |
 
 配色对齐网页端 `frontend/src/index.css` 的 `--amll-*` 设计 token（深色 `#101014`、品牌红 `#F0424F`）。
 
 ## 构建
 
-需要 JDK 17 与 Android SDK（compileSdk 36）。
+需要 **JDK 17+**、Android SDK（`platforms;android-36` + `build-tools;36.0.0`）。
 
 ```bash
 cd android
@@ -39,6 +39,16 @@ AMLL_API_BASE_URL=http://192.168.1.10:8080 ./gradlew assembleDebug
 ```
 
 > `local.properties` 不进版本库，CI 上通过 `AMLL_API_BASE_URL` 环境变量注入。
+
+### AGP 9 说明
+
+项目已迁移到 **AGP 9**，它内置了 Kotlin 支持，因此：
+
+- **不要**声明 `org.jetbrains.kotlin.android` 插件（会报 `extension already registered`）
+- `android.kotlinOptions {}` 已移除，改用顶层 `kotlin.compilerOptions {}`
+- `gradle.properties` 里 `android.builtInKotlin=true` 为默认值
+- 仍需保留 `kotlin-compose` 与 `kotlin-serialization` 插件（内置 Kotlin 不含它们）
+- Kotlin 固定在 **2.2.21**：KSP 官方最高只发布到该版本，2.3+ 已并入 Kotlin 内置编译器
 
 ## 登录方式
 

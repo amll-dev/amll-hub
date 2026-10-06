@@ -1,8 +1,9 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    // AGP 9 内置 Kotlin，不再应用 org.jetbrains.kotlin.android
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
@@ -23,6 +24,8 @@ val apiBaseUrl: String = run {
 android {
     namespace = "dev.amll.hub.android"
     compileSdk = 36
+    // AGP 9.4 要求 Build Tools 36.0.0+
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "dev.amll.hub.android"
@@ -55,10 +58,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -68,6 +67,13 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+}
+
+// AGP 9 移除了 android.kotlinOptions{}，改用顶层 kotlin.compilerOptions{}
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
