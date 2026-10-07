@@ -135,9 +135,7 @@ export function BindAccount() {
                   name="account"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-sm font-normal text-ink-2">
-                        用户名或邮箱
-                      </FormLabel>
+                      <FormLabel className="text-sm font-normal text-ink-2">用户名或邮箱</FormLabel>
                       <FormControl>
                         <Input
                           type="text"

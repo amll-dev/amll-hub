@@ -28,7 +28,13 @@ function formatTime(iso?: string): string {
 }
 
 /** 迁移进度明细 */
-function TaskProgress({ task, startPrNumber }: { task: GithubMigrationTask; startPrNumber: number }) {
+function TaskProgress({
+  task,
+  startPrNumber,
+}: {
+  task: GithubMigrationTask;
+  startPrNumber: number;
+}) {
   const percent =
     task.totalPrs > 0 ? Math.min(100, Math.round((task.processedPrs / task.totalPrs) * 100)) : 0;
 
@@ -208,9 +214,7 @@ export function ProfileMigration() {
                 </span>
               )}
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {status.githubLogin}
-                </p>
+                <p className="truncate text-sm font-medium text-foreground">{status.githubLogin}</p>
                 <p className="truncate text-xs text-ink-3">
                   {status.githubEmail || '未公开邮箱'} · 绑定于 {formatTime(status.boundAt)}
                 </p>
@@ -262,11 +266,7 @@ export function ProfileMigration() {
             <TaskProgress task={currentTask} startPrNumber={status.startPrNumber} />
 
             <div className="flex flex-wrap gap-3">
-              <Button
-                disabled={!canStart}
-                {...buttonTap}
-                onClick={() => startMutation.mutate()}
-              >
+              <Button disabled={!canStart} {...buttonTap} onClick={() => startMutation.mutate()}>
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                 {currentTask.status === 'completed' ? '重新迁移' : '开始迁移'}
               </Button>
@@ -301,11 +301,7 @@ export function ProfileMigration() {
                 ? '尚未执行过迁移，点击下方按钮开始。'
                 : '请先绑定 GitHub 账号后再开始迁移。'}
             </p>
-            <Button
-              disabled={!canStart}
-              {...buttonTap}
-              onClick={() => startMutation.mutate()}
-            >
+            <Button disabled={!canStart} {...buttonTap} onClick={() => startMutation.mutate()}>
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
               开始迁移
             </Button>
@@ -334,9 +330,7 @@ export function ProfileMigration() {
                 </span>{' '}
                 个
                 {migratedList.total > migratedList.items.length && (
-                  <span className="text-ink-3">
-                    （仅展示最近 {migratedList.items.length} 条）
-                  </span>
+                  <span className="text-ink-3">（仅展示最近 {migratedList.items.length} 条）</span>
                 )}
               </p>
               <ul className="divide-y divide-line">
@@ -351,9 +345,7 @@ export function ProfileMigration() {
                       </p>
                       <p className="truncate text-xs text-ink-3">
                         PR #{item.prNumber}
-                        {item.submissionTitle && item.prTitle
-                          ? ` · ${item.submissionTitle}`
-                          : ''}
+                        {item.submissionTitle && item.prTitle ? ` · ${item.submissionTitle}` : ''}
                       </p>
                     </div>
                     {(item.submissionId || item.fileName) && (

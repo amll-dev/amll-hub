@@ -41,7 +41,8 @@ data class SendCodeRequest(
     val checkType: String,
     val dest: String,
     val method: String = "login",
-    val captchaType: String = "none",
+    /** 空串表示交由后端按 Casdoor 配置自动补齐人机验证（勿传 "none"） */
+    val captchaType: String = "",
     val captchaToken: String = "",
 )
 

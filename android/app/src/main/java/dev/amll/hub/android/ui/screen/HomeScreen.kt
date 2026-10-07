@@ -21,13 +21,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import dev.amll.hub.android.data.remote.UserProfile
 
@@ -36,13 +33,15 @@ import dev.amll.hub.android.data.remote.UserProfile
  */
 @Composable
 fun HomeScreen(
+    profile: UserProfile?,
     onScanQr: () -> Unit,
     onLoggedOut: () -> Unit,
-    viewModel: LoginViewModel = hiltViewModel(),
+    onRefreshProfile: () -> Unit,
 ) {
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-
-    LaunchedEffect(Unit) { viewModel.restoreSession() }
+    // 登录态已恢复但资料缺失（如离线启动）时补拉一次
+    LaunchedEffect(profile) {
+        if (profile == null) onRefreshProfile()
+    }
 
     Surface(color = MaterialTheme.colorScheme.background) {
         Column(
@@ -58,7 +57,7 @@ fun HomeScreen(
             )
             Spacer(Modifier.height(24.dp))
 
-            state.profile?.let { ProfileCard(it) }
+            profile?.let { ProfileCard(it) }
 
             Spacer(Modifier.height(24.dp))
 
@@ -78,10 +77,7 @@ fun HomeScreen(
             Spacer(Modifier.height(8.dp))
 
             OutlinedButton(
-                onClick = {
-                    viewModel.logout()
-                    onLoggedOut()
-                },
+                onClick = onLoggedOut,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(

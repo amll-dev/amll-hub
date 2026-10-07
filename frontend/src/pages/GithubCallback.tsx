@@ -44,7 +44,11 @@ export function GithubCallback() {
         <>
           <h1 className="text-2xl font-bold tracking-tight">正在登录…</h1>
           <p className="mt-3 text-ink-2">正在完成 GitHub 授权，请稍候</p>
-          <Button variant="outline" className="mt-8" onClick={() => navigate('/', { replace: true })}>
+          <Button
+            variant="outline"
+            className="mt-8"
+            onClick={() => navigate('/', { replace: true })}
+          >
             返回首页
           </Button>
         </>

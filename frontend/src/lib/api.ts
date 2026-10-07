@@ -36,7 +36,14 @@ import type {
   UserActivity,
   TtmlValidationResult,
 } from './types';
-import type { CaptchaConfig, GithubBindInfo, LoginResult, QrTicket, QrTicketStatus, UserProfile } from './auth';
+import type {
+  CaptchaConfig,
+  GithubBindInfo,
+  LoginResult,
+  QrTicket,
+  QrTicketStatus,
+  UserProfile,
+} from './auth';
 import { clearAuth, getToken } from './auth';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';

@@ -7,7 +7,6 @@ import dev.amll.hub.android.data.remote.ApiException
 import dev.amll.hub.android.data.remote.AuthRepository
 import dev.amll.hub.android.data.remote.LoginResult
 import dev.amll.hub.android.data.remote.UnauthorizedException
-import dev.amll.hub.android.data.remote.UserProfile
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,8 +36,6 @@ data class LoginUiState(
     /** 验证码发送成功后的倒计时秒数，0 表示未在倒计时 */
     val countdown: Int = 0,
     val error: String? = null,
-    val profile: UserProfile? = null,
-    val loggedIn: Boolean = false,
 ) {
     val canSubmit: Boolean
         get() = !submitting && when (tab) {
@@ -56,19 +53,6 @@ class LoginViewModel @Inject constructor(
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
     private var countdownJob: Job? = null
-
-    /** 冷启动时恢复登录态，有 token 就直接拉一次资料 */
-    fun restoreSession() {
-        viewModelScope.launch {
-            val token = repo.currentToken()
-            if (token.isNullOrBlank()) return@launch
-            runCatching { repo.profile() }
-                .onSuccess { user ->
-                    _uiState.update { it.copy(profile = user, loggedIn = true) }
-                }
-                .onFailure { if (it !is UnauthorizedException) repo.logout() }
-        }
-    }
 
     fun switchTab(tab: LoginTab) = _uiState.update {
         it.copy(tab = tab, error = null, countdown = 0)
@@ -128,20 +112,13 @@ class LoginViewModel @Inject constructor(
             }
                 .onSuccess { result ->
                     _uiState.update {
-                        it.copy(submitting = false, loggedIn = true, password = "", code = "")
+                        it.copy(submitting = false, password = "", code = "")
                     }
                     onSuccess(result)
                 }
                 .onFailure { e ->
                     _uiState.update { it.copy(submitting = false, error = e.userMessage()) }
                 }
-        }
-    }
-
-    fun logout() {
-        viewModelScope.launch {
-            repo.logout()
-            _uiState.update { LoginUiState() }
         }
     }
 }
