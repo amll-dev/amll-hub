@@ -111,3 +111,10 @@ export function clearAuth(): void {
   clearToken();
   clearStoredUser();
 }
+
+// 后端 POST /api/v1/auth/github/bind/info 返回（绑定页预填信息）
+export interface GithubBindInfo {
+  githubLogin: string;
+  githubEmail: string;
+  githubAvatar: string;
+}

@@ -25,6 +25,8 @@ type RouterDeps struct {
 	OnlineSearch *handler.OnlineSearchHandler
 	CloudMusic   *handler.CloudMusicHandler
 	Auth         *handler.AuthHandler
+	AuthGithub   *handler.AuthGithubHandler
+	Migration    *handler.MigrationHandler
 	Submission   *handler.SubmissionHandler
 	Review       *handler.ReviewHandler
 	Revision     *handler.RevisionHandler
@@ -56,6 +58,8 @@ func New(deps RouterDeps) *gin.Engine {
 	onlineSearchH := deps.OnlineSearch
 	cloudMusicH := deps.CloudMusic
 	authH := deps.Auth
+	authGithubH := deps.AuthGithub
+	migrationH := deps.Migration
 	submissionH := deps.Submission
 	reviewH := deps.Review
 	revisionH := deps.Revision
@@ -178,6 +182,13 @@ func New(deps RouterDeps) *gin.Engine {
 			auth.POST("/qrcode", authH.CreateQRCode)
 			auth.GET("/qrcode/status", authH.QRCodeStatus)
 
+			// GitHub OAuth 登录/绑定（公开部分）
+			auth.GET("/github/login", authGithubH.Login)
+			auth.GET("/github/callback", authGithubH.Callback)
+			auth.POST("/github/bind/info", authGithubH.BindInfo)
+			auth.POST("/github/bind/login", authGithubH.BindLogin)
+			auth.POST("/github/bind/register", authGithubH.BindRegister)
+
 			// 受保护接口
 			protected := auth.Group("")
 			protected.Use(middleware.Auth(jwtSecret))
@@ -192,6 +203,7 @@ func New(deps RouterDeps) *gin.Engine {
 			protected.POST("/qrcode/scanned", authH.MarkQRCodeScanned)
 			protected.POST("/qrcode/confirm", authH.ConfirmQRCode)
 			protected.POST("/qrcode/cancel", authH.CancelQRCode)
+			protected.GET("/github/bind-url", authGithubH.BindURL)
 		}
 
 		// 投稿模块
@@ -251,6 +263,16 @@ func New(deps RouterDeps) *gin.Engine {
 
 			// 个人中心活动统计
 			sub.GET("/users/me/activity", userActivityH.Get)
+
+			// GitHub 绑定解绑
+			sub.DELETE("/user/github/binding", authGithubH.Unbind)
+
+			// 投稿数据迁移（个人中心 → 数据迁移）
+			sub.GET("/migration/github/status", migrationH.Status)
+			sub.GET("/migration/github/migrated", migrationH.ListMigrated)
+			sub.POST("/migration/github/start", migrationH.Start)
+			sub.GET("/migration/github/tasks/:id", migrationH.GetTask)
+			sub.POST("/migration/github/tasks/:id/retry", migrationH.Retry)
 
 			// 搜索IP显示投稿
 			sub.POST("/search-ip/submissions", searchIpH.Create)

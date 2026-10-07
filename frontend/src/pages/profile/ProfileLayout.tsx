@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Home, Loader2, ShieldCheck, User, type LucideIcon } from 'lucide-react';
+import { Github, Home, Loader2, ShieldCheck, User, type LucideIcon } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { buttonTap } from '@/lib/motion';
 import { cn } from '@/lib/utils';
@@ -20,6 +20,7 @@ const navItems: NavItem[] = [
   { to: '/profile', label: '首页', icon: Home, end: true },
   { to: '/profile/info', label: '我的信息', icon: User },
   { to: '/profile/security', label: '账号安全', icon: ShieldCheck },
+  { to: '/profile/migration', label: '数据迁移', icon: Github },
 ];
 
 /** 个人中心布局 */

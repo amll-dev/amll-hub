@@ -11,6 +11,9 @@ pub struct Config {
     pub rabbitmq: RabbitMqConfig,
     pub meilisearch: MeiliSearchConfig,
     pub github: GitHubConfig,
+    pub github_app: GitHubAppConfig,
+    pub casdoor: CasdoorConfig,
+    pub migration: MigrationConfig,
     pub worker: WorkerConfig,
     pub ncm: NcmConfig,
 }
@@ -102,6 +105,16 @@ pub struct RabbitMqConfig {
     pub nf_queue: String,
     #[serde(default = "default_nf_dlq")]
     pub nf_dlq: String,
+    /// 迁移队列（消费 migration.user）
+    #[serde(default = "default_migration_queue")]
+    pub migration_queue: String,
+    #[serde(default = "default_migration_dlq")]
+    pub migration_dlq: String,
+    /// 关闭 PR 队列（消费 migration.close_pr）
+    #[serde(default = "default_migration_close_queue")]
+    pub migration_close_queue: String,
+    #[serde(default = "default_migration_close_dlq")]
+    pub migration_close_dlq: String,
 }
 
 fn default_dlq() -> String {
@@ -112,6 +125,96 @@ fn default_nf_queue() -> String {
 }
 fn default_nf_dlq() -> String {
     "not_found_parse_queue.dlq".to_string()
+}
+fn default_migration_queue() -> String {
+    "migration.user".to_string()
+}
+fn default_migration_dlq() -> String {
+    "migration.user.dlq".to_string()
+}
+fn default_migration_close_queue() -> String {
+    "migration.close_pr".to_string()
+}
+fn default_migration_close_dlq() -> String {
+    "migration.close_pr.dlq".to_string()
+}
+
+/// 迁移队列的 exchange / DLX（与后端 RabbitMQ 拓扑保持一致）
+pub const MIGRATION_EXCHANGE: &str = "ttml.migration";
+pub const MIGRATION_DLX_EXCHANGE: &str = "ttml.migration.dlx";
+pub const MIGRATION_DLQ_ROUTING: &str = "migration.failed";
+pub const MIGRATION_USER_ROUTING: &str = "migration.user";
+pub const MIGRATION_CLOSE_ROUTING: &str = "migration.close_pr";
+
+/// GitHub App 配置（迁移统一使用安装令牌）
+#[derive(Debug, Clone, Deserialize)]
+pub struct GitHubAppConfig {
+    #[serde(default)]
+    pub app_id: u64,
+    #[serde(default)]
+    pub installation_id: u64,
+    #[serde(default)]
+    pub private_key_path: String,
+}
+
+impl GitHubAppConfig {
+    /// 三项配置齐全才算启用
+    pub fn enabled(&self) -> bool {
+        self.app_id != 0 && self.installation_id != 0 && !self.private_key_path.is_empty()
+    }
+}
+
+/// Casdoor 配置（迁移写库时把 GitHub login 解析为站点用户展示名/头像）
+#[derive(Debug, Clone, Deserialize)]
+pub struct CasdoorConfig {
+    #[serde(default)]
+    pub endpoint: String,
+    #[serde(default)]
+    pub client_id: String,
+    #[serde(default)]
+    pub client_secret: String,
+    #[serde(default)]
+    pub organization: String,
+}
+
+impl CasdoorConfig {
+    /// 四项齐全才可用；缺失时回退为 GitHub 原始信息
+    pub fn enabled(&self) -> bool {
+        !self.endpoint.is_empty()
+            && !self.client_id.is_empty()
+            && !self.client_secret.is_empty()
+            && !self.organization.is_empty()
+    }
+}
+
+/// 投稿数据迁移配置
+#[derive(Debug, Clone, Deserialize)]
+pub struct MigrationConfig {
+    /// 迁移起始 PR 号（小于该号的 PR 丢弃）；实际以消息体 since_pr_number 为准
+    #[serde(default = "default_migration_start_pr")]
+    pub start_pr_number: i64,
+    /// GitHub 请求并发上限（≤10）
+    #[serde(default = "default_migration_concurrency")]
+    pub concurrency: usize,
+    /// 每处理多少条刷新一次进度与断点游标
+    #[serde(default = "default_migration_batch_size")]
+    pub batch_size: usize,
+    /// 前端站点地址，用于关闭 PR 时的迁移地址评论
+    #[serde(default)]
+    pub site_url: String,
+    /// 是否在迁移完成后自动关闭已迁移的 GitHub PR（默认关闭）
+    #[serde(default)]
+    pub close_pr_enabled: bool,
+}
+
+fn default_migration_start_pr() -> i64 {
+    7390
+}
+fn default_migration_concurrency() -> usize {
+    10
+}
+fn default_migration_batch_size() -> usize {
+    20
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -217,7 +320,14 @@ fn find_dotenv() -> Option<PathBuf> {
 pub fn load() -> anyhow::Result<Config> {
     let dotenv_path = find_dotenv();
     if let Some(ref path) = dotenv_path {
-        let _ = dotenvy::from_path(path);
+        // 解析失败必须显式告警：dotenvy 遇到非法行会中断，其后的变量全部不会生效
+        if let Err(e) = dotenvy::from_path(path) {
+            tracing::warn!(
+                error = %e,
+                path = %path.display(),
+                ".env 解析失败，该行之后的变量不会生效（常见原因：双引号内出现 \\a \\b 等非法转义）"
+            );
+        }
         tracing::info!(path = %path.display(), "加载 .env 文件");
     } else {
         tracing::warn!("未找到 .env 文件，使用默认配置");
@@ -276,6 +386,22 @@ pub fn load() -> anyhow::Result<Config> {
         .set_override("rabbitmq.nf_queue", env_or("RABBITMQ_NF_QUEUE", "not_found_parse_queue"))?
         .set_override("rabbitmq.nf_dlq", env_or("RABBITMQ_NF_DLQ", "not_found_parse_queue.dlq"))?
         .set_override(
+            "rabbitmq.migration_queue",
+            env_or("RABBITMQ_MIGRATION_QUEUE", "migration.user"),
+        )?
+        .set_override(
+            "rabbitmq.migration_dlq",
+            env_or("RABBITMQ_MIGRATION_DLQ", "migration.user.dlq"),
+        )?
+        .set_override(
+            "rabbitmq.migration_close_queue",
+            env_or("RABBITMQ_MIGRATION_CLOSE_QUEUE", "migration.close_pr"),
+        )?
+        .set_override(
+            "rabbitmq.migration_close_dlq",
+            env_or("RABBITMQ_MIGRATION_CLOSE_DLQ", "migration.close_pr.dlq"),
+        )?
+        .set_override(
             "meilisearch.host",
             env_or("MEILISEARCH_HOST", "http://localhost:7700"),
         )?
@@ -287,6 +413,59 @@ pub fn load() -> anyhow::Result<Config> {
             env_or("GITHUB_REPO", "amll-dev/amll-ttml-db"),
         )?
         .set_override("github.branch", env_or("GITHUB_BRANCH", "main"))?
+        .set_override(
+            "github_app.app_id",
+            env_or("GITHUB_APP_ID", "0").parse::<u64>().unwrap_or(0),
+        )?
+        .set_override(
+            "github_app.installation_id",
+            env_or("GITHUB_INSTALLATION_ID", "0")
+                .parse::<u64>()
+                .unwrap_or(0),
+        )?
+        .set_override(
+            "github_app.private_key_path",
+            env_or("GITHUB_PRIVATE_KEY_PATH", ""),
+        )?
+        .set_override("casdoor.endpoint", env_or("CASDOOR_ENDPOINT", ""))?
+        .set_override("casdoor.client_id", env_or("CASDOOR_CLIENT_ID", ""))?
+        .set_override(
+            "casdoor.client_secret",
+            env_or("CASDOOR_CLIENT_SECRET", ""),
+        )?
+        .set_override(
+            "casdoor.organization",
+            env_or("CASDOOR_ORGANIZATION", "amll-ttml-user"),
+        )?
+        .set_override(
+            "migration.start_pr_number",
+            env_or("MIGRATION_PR_START_NUMBER", "7390")
+                .parse::<i64>()
+                .unwrap_or(7390),
+        )?
+        .set_override(
+            "migration.concurrency",
+            env_or("MIGRATION_CONCURRENCY", "10")
+                .parse::<i64>()
+                .unwrap_or(10),
+        )?
+        .set_override(
+            "migration.batch_size",
+            env_or("MIGRATION_BATCH_SIZE", "20")
+                .parse::<i64>()
+                .unwrap_or(20),
+        )?
+        .set_override("migration.site_url", env_or("SITE_URL", ""))?
+        .set_override(
+            "migration.close_pr_enabled",
+            matches!(
+                env_or("MIGRATION_CLOSE_PR_ENABLED", "false")
+                    .trim()
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "1" | "true" | "yes" | "on"
+            ),
+        )?
         .set_override(
             "worker.concurrency",
             env_or("WORKER_CONCURRENCY", "20")

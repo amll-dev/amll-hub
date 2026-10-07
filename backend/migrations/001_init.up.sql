@@ -436,3 +436,70 @@ CREATE INDEX idx_notifications_created ON notifications (created_at DESC);
 ALTER TABLE notifications
     ADD CONSTRAINT ck_notifications_type
     CHECK (type IN ('system', 'review', 'submission', 'comment'));
+
+--  GitHub 绑定表：一个站点用户（JWT claims.name）最多绑定一个 GitHub 账号
+CREATE TABLE user_github_bindings (
+    id            BIGSERIAL PRIMARY KEY,
+    username      VARCHAR(100) NOT NULL,
+    github_id     BIGINT       NOT NULL,
+    github_login  VARCHAR(100) NOT NULL,
+    github_email  VARCHAR(255),
+    github_avatar VARCHAR(500),
+    bound_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- 一个站点用户只能绑定一个 GitHub
+CREATE UNIQUE INDEX uq_user_github_bindings_username ON user_github_bindings(username);
+-- 一个 GitHub 账号只能绑定一个站点用户
+CREATE UNIQUE INDEX uq_user_github_bindings_github_id ON user_github_bindings(github_id);
+
+CREATE TRIGGER trg_user_github_bindings_updated_at
+    BEFORE UPDATE ON user_github_bindings
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+--  已迁移 PR 记录表：全局去重核心，任何用户迁移时命中 pr_number 即跳过
+CREATE TABLE github_migrated_prs (
+    id            BIGSERIAL PRIMARY KEY,
+    pr_number     INT          NOT NULL,
+    username      VARCHAR(100) NOT NULL,
+    submission_id BIGINT,
+    migrated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- 全局唯一：同一 PR 只迁移一次
+CREATE UNIQUE INDEX uq_github_migrated_prs_number ON github_migrated_prs(pr_number);
+CREATE INDEX idx_github_migrated_prs_username ON github_migrated_prs(username);
+
+--  迁移任务与进度表
+CREATE TABLE github_migration_tasks (
+    id              BIGSERIAL PRIMARY KEY,
+    username        VARCHAR(100) NOT NULL,
+    github_login    VARCHAR(100) NOT NULL,
+    status          VARCHAR(20)  NOT NULL DEFAULT 'pending',
+    total_prs       INT          NOT NULL DEFAULT 0,
+    processed_prs   INT          NOT NULL DEFAULT 0,
+    created_count   INT          NOT NULL DEFAULT 0,
+    skipped_count   INT          NOT NULL DEFAULT 0,
+    failed_count    INT          NOT NULL DEFAULT 0,
+    cursor          VARCHAR(64),
+    error           TEXT,
+    close_pr_status VARCHAR(20)  NOT NULL DEFAULT 'pending',
+    closed_pr_count INT          NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    completed_at    TIMESTAMPTZ
+);
+
+COMMENT ON COLUMN github_migration_tasks.status IS 'pending/running/completed/failed';
+COMMENT ON COLUMN github_migration_tasks.close_pr_status IS 'pending/running/completed/failed';
+COMMENT ON COLUMN github_migration_tasks.cursor IS '断点游标（GraphQL endCursor），重试时从此继续';
+
+CREATE INDEX idx_github_migration_tasks_user ON github_migration_tasks(username, created_at DESC);
+CREATE INDEX idx_github_migration_tasks_status ON github_migration_tasks(status);
+
+CREATE TRIGGER trg_github_migration_tasks_updated_at
+    BEFORE UPDATE ON github_migration_tasks
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();

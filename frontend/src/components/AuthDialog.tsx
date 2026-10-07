@@ -12,7 +12,7 @@ import {
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, Eye, EyeOff, Loader2, Mail, X } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Github, Loader2, Mail, X } from 'lucide-react';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
 import { useAliyunCaptcha } from '@/hooks/useAliyunCaptcha';
@@ -707,6 +707,15 @@ export function AuthDialog() {
                 <span className="relative bg-card px-3 text-xs text-ink-3">其他方式登录</span>
               </div>
               <div className="flex items-center justify-center gap-6">
+                {/* GitHub 登录：整页跳转到后端 OAuth 授权入口 */}
+                <a
+                  href={api.githubLoginURL()}
+                  onClick={() => handleClose()}
+                  className="flex flex-col items-center gap-1 text-ink-3 transition-colors hover:text-primary"
+                >
+                  <Github className="h-6 w-6" />
+                  <span className="text-[10px]">GitHub 登录</span>
+                </a>
                 <button
                   type="button"
                   className="flex flex-col items-center gap-1 text-ink-3 transition-colors hover:text-primary"

@@ -22,6 +22,8 @@ type Config struct {
 	MeiliSearch  MeiliSearchConfig
 	GitHub       GitHubConfig
 	GitHubApp    GitHubAppConfig
+	GitHubOAuth  GitHubOAuthConfig
+	Migration    MigrationConfig
 	Sync         SyncConfig
 	NCM          NCMConfig
 	OnlineSearch OnlineSearchConfig
@@ -123,6 +125,39 @@ type GitHubAppConfig struct {
 	RepoOwner      string
 	RepoName       string
 	UploadFolder   string
+}
+
+// GitHubOAuthConfig 自建 GitHub OAuth 登录配置
+type GitHubOAuthConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURI  string
+	// SiteURL 前端站点地址，OAuth 回调后跳转目标
+	SiteURL string
+}
+
+// Enabled 是否已配置 GitHub OAuth
+func (c GitHubOAuthConfig) Enabled() bool {
+	return c.ClientID != "" && c.ClientSecret != ""
+}
+
+// MigrationConfig 投稿数据迁移配置（后端只负责创建任务与投递消息）
+type MigrationConfig struct {
+	// Exchange 迁移交换机（ttml.migration）
+	Exchange string
+	// Queue migration.user 队列
+	Queue string
+	// DLQ migration.user.dlq
+	DLQ string
+	// CloseQueue migration.close_pr 队列
+	CloseQueue string
+	// CloseDLQ migration.close_pr.dlq
+	CloseDLQ string
+	// StartPrNumber 迁移起始 PR 号（含）
+	StartPrNumber int
+	// RepoOwner / RepoName 迁移来源仓库
+	RepoOwner string
+	RepoName  string
 }
 
 // SubmissionConfig 投稿模块配置
@@ -261,6 +296,19 @@ func Load() (*Config, error) {
 	v.SetDefault("GITHUB_APP_REPO_NAME", "amll-ttml-db")
 	v.SetDefault("GITHUB_APP_UPLOAD_FOLDER", "raw-lyrics")
 
+	// GitHub OAuth（自建登录/绑定）
+	v.SetDefault("GITHUB_OAUTH_CLIENT_ID", "")
+	v.SetDefault("GITHUB_OAUTH_CLIENT_SECRET", "")
+	v.SetDefault("GITHUB_OAUTH_REDIRECT_URI", "http://localhost:8080/api/v1/auth/github/callback")
+
+	// 投稿数据迁移（后端只投递消息）
+	v.SetDefault("RABBITMQ_MIGRATION_EXCHANGE", "ttml.migration")
+	v.SetDefault("RABBITMQ_MIGRATION_QUEUE", "migration.user")
+	v.SetDefault("RABBITMQ_MIGRATION_DLQ", "migration.user.dlq")
+	v.SetDefault("RABBITMQ_MIGRATION_CLOSE_QUEUE", "migration.close_pr")
+	v.SetDefault("RABBITMQ_MIGRATION_CLOSE_DLQ", "migration.close_pr.dlq")
+	v.SetDefault("MIGRATION_PR_START_NUMBER", 7390)
+
 	// Submission 投稿模块
 	v.SetDefault("SUBMISSION_AUTO_REJECT_INTERVAL", "1h")
 	v.SetDefault("SUBMISSION_AUTO_REJECT_AFTER", "96h")
@@ -354,6 +402,22 @@ func Load() (*Config, error) {
 			RepoName:       v.GetString("GITHUB_APP_REPO_NAME"),
 			UploadFolder:   v.GetString("GITHUB_APP_UPLOAD_FOLDER"),
 		},
+		GitHubOAuth: GitHubOAuthConfig{
+			ClientID:     v.GetString("GITHUB_OAUTH_CLIENT_ID"),
+			ClientSecret: v.GetString("GITHUB_OAUTH_CLIENT_SECRET"),
+			RedirectURI:  v.GetString("GITHUB_OAUTH_REDIRECT_URI"),
+			SiteURL:      strings.TrimSuffix(v.GetString("SITE_URL"), "/"),
+		},
+		Migration: MigrationConfig{
+			Exchange:      v.GetString("RABBITMQ_MIGRATION_EXCHANGE"),
+			Queue:         v.GetString("RABBITMQ_MIGRATION_QUEUE"),
+			DLQ:           v.GetString("RABBITMQ_MIGRATION_DLQ"),
+			CloseQueue:    v.GetString("RABBITMQ_MIGRATION_CLOSE_QUEUE"),
+			CloseDLQ:      v.GetString("RABBITMQ_MIGRATION_CLOSE_DLQ"),
+			StartPrNumber: v.GetInt("MIGRATION_PR_START_NUMBER"),
+			RepoOwner:     v.GetString("GITHUB_APP_REPO_OWNER"),
+			RepoName:      v.GetString("GITHUB_APP_REPO_NAME"),
+		},
 		Submission: SubmissionConfig{
 			AutoRejectInterval: v.GetDuration("SUBMISSION_AUTO_REJECT_INTERVAL"),
 			AutoRejectAfter:    v.GetDuration("SUBMISSION_AUTO_REJECT_AFTER"),
@@ -385,6 +449,10 @@ func Load() (*Config, error) {
 
 	if cfg.GitHubApp.AppID == 0 || cfg.GitHubApp.InstallationID == 0 || cfg.GitHubApp.PrivateKeyPath == "" {
 		logrus.Warnf("GitHub App config incomplete (GITHUB_APP_ID/GITHUB_INSTALLATION_ID/GITHUB_PRIVATE_KEY_PATH), submission approve upload will be disabled")
+	}
+
+	if !cfg.GitHubOAuth.Enabled() {
+		logrus.Warnf("GitHub OAuth config incomplete (GITHUB_OAUTH_CLIENT_ID/GITHUB_OAUTH_CLIENT_SECRET), GitHub login/binding will be disabled")
 	}
 
 	if os.Getenv("APP_ENV") == "production" {

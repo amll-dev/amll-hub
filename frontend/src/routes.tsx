@@ -21,6 +21,12 @@ const loadProfileInfo = () =>
   import('@/pages/profile/ProfileInfo').then((m) => ({ default: m.ProfileInfo }));
 const loadProfileSecurity = () =>
   import('@/pages/profile/ProfileSecurity').then((m) => ({ default: m.ProfileSecurity }));
+const loadProfileMigration = () =>
+  import('@/pages/profile/ProfileMigration').then((m) => ({ default: m.ProfileMigration }));
+const loadBindAccount = () =>
+  import('@/pages/BindAccount').then((m) => ({ default: m.BindAccount }));
+const loadGithubCallback = () =>
+  import('@/pages/GithubCallback').then((m) => ({ default: m.GithubCallback }));
 const loadMessagesPage = () =>
   import('@/pages/MessagesPage').then((m) => ({ default: m.MessagesPage }));
 const loadCreatorCenter = () =>
@@ -53,6 +59,9 @@ export const ProfileLayout = lazy(loadProfileLayout);
 export const ProfileHome = lazy(loadProfileHome);
 export const ProfileInfo = lazy(loadProfileInfo);
 export const ProfileSecurity = lazy(loadProfileSecurity);
+export const ProfileMigration = lazy(loadProfileMigration);
+export const BindAccount = lazy(loadBindAccount);
+export const GithubCallback = lazy(loadGithubCallback);
 export const MessagesPage = lazy(loadMessagesPage);
 export const CreatorCenter = lazy(loadCreatorCenter);
 export const ReviewCenter = lazy(loadReviewCenter);
@@ -80,6 +89,8 @@ export const pagePreloads: Record<string, () => Promise<unknown>> = {
   '/profile': loadProfileLayout,
   '/profile/info': loadProfileInfo,
   '/profile/security': loadProfileSecurity,
+  '/profile/migration': loadProfileMigration,
+  '/bind-account': loadBindAccount,
   '/messages': loadMessagesPage,
   '/creator': loadCreatorCenter,
   '/creator/lyrics/detail': loadSubmissionDetailPage,

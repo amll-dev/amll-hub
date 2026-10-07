@@ -120,3 +120,31 @@ var ErrImageNotFound = errors.New("search ip image not found")
 
 // ErrNotificationNotFound 消息不存在或不属于当前用户
 var ErrNotificationNotFound = errors.New("notification not found")
+
+// GitHub 登录/绑定模块
+
+// ErrGithubOAuthDisabled 未配置 GitHub OAuth（client_id / client_secret 缺失）
+var ErrGithubOAuthDisabled = errors.New("github oauth disabled")
+
+// ErrOAuthStateInvalid OAuth state 无效或已过期（可能是伪造/重放）
+var ErrOAuthStateInvalid = errors.New("github oauth state invalid")
+
+// ErrBindTokenExpired 绑定令牌已过期，需重新发起 GitHub 授权
+var ErrBindTokenExpired = errors.New("github bind token expired")
+
+// ErrAccountAlreadyBound 该站点账号已绑定其他 GitHub
+var ErrAccountAlreadyBound = errors.New("account already bound to another github")
+
+// ErrGithubAlreadyBound 该 GitHub 账号已被其他站点账号绑定
+var ErrGithubAlreadyBound = errors.New("github already bound to another account")
+
+// ErrNotBound 当前用户尚未绑定 GitHub
+var ErrNotBound = errors.New("github not bound")
+
+// 投稿数据迁移模块
+
+// ErrMigrationInProgress 已有进行中的迁移任务
+var ErrMigrationInProgress = errors.New("migration already in progress")
+
+// ErrMigrationTaskNotFound 迁移任务不存在或不属于当前用户
+var ErrMigrationTaskNotFound = errors.New("migration task not found")

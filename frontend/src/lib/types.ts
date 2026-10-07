@@ -629,3 +629,60 @@ export interface NotificationListResult {
   total: number;
   unread: number;
 }
+
+// ===== GitHub 投稿数据迁移 =====
+
+/** 迁移任务/关闭 PR 状态 */
+export type MigrationStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+/** 迁移任务（对应 backend model.GithubMigrationTask） */
+export interface GithubMigrationTask {
+  id: number;
+  username: string;
+  githubLogin: string;
+  status: MigrationStatus;
+  totalPrs: number;
+  processedPrs: number;
+  createdCount: number;
+  skippedCount: number;
+  failedCount: number;
+  cursor?: string;
+  error?: string;
+  closePrStatus: MigrationStatus;
+  closedPrCount: number;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+/** 迁移页状态概览（对应 backend service.MigrationStatus） */
+export interface GithubMigrationStatus {
+  bound: boolean;
+  githubLogin?: string;
+  githubEmail?: string;
+  githubAvatar?: string;
+  boundAt?: string;
+  hasActive: boolean;
+  activeTask?: GithubMigrationTask;
+  latestTask?: GithubMigrationTask;
+  /** 迁移起始 PR 号（数据截止点） */
+  startPrNumber: number;
+}
+
+/** 已迁移的单个 PR（迁移页展示） */
+export interface GithubMigratedPr {
+  prNumber: number;
+  /** GitHub PR 标题 */
+  prTitle: string;
+  submissionId?: number;
+  /** 站点稿件标题（取自 TTML 元数据） */
+  submissionTitle: string;
+  fileName: string;
+  migratedAt: string;
+}
+
+/** 已迁移 PR 列表结果（对应 backend service.MigrationList） */
+export interface GithubMigratedList {
+  total: number;
+  items: GithubMigratedPr[];
+}

@@ -3,8 +3,10 @@ import { Layout } from '@/App';
 import { RouteErrorBoundary } from '@/components/ErrorBoundary';
 import { LyricEditorShell } from '@/components/review/LyricEditorShell';
 import {
+  BindAccount,
   CreatorCenter,
   DailyRecommend,
+  GithubCallback,
   Home,
   LyricEditorPage,
   MessagesPage,
@@ -16,6 +18,7 @@ import {
   ProfileHome,
   ProfileInfo,
   ProfileLayout,
+  ProfileMigration,
   ProfileSecurity,
   Ranking,
   Register,
@@ -36,6 +39,12 @@ export const router = createBrowserRouter([
         <LyricEditorPage />
       </LyricEditorShell>
     ),
+    errorElement: <RouteErrorBoundary />,
+  },
+  // GitHub OAuth 回调落地页：不套站点布局，写入 token 后立即跳转
+  {
+    path: '/auth/github/callback',
+    element: <GithubCallback />,
     errorElement: <RouteErrorBoundary />,
   },
   {
@@ -59,8 +68,10 @@ export const router = createBrowserRouter([
           { index: true, element: <ProfileHome /> },
           { path: 'info', element: <ProfileInfo /> },
           { path: 'security', element: <ProfileSecurity /> },
+          { path: 'migration', element: <ProfileMigration /> },
         ],
       },
+      { path: '/bind-account', element: <BindAccount /> },
       { path: '/messages', element: <MessagesPage /> },
       { path: '/creator', element: <CreatorCenter /> },
       {
