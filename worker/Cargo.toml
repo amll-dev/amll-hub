@@ -51,6 +51,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 config = "0.14"
 dotenvy = "0.15"
 
+# GitHub App JWT（RS256 签发，用于换取 installation access token）
+jsonwebtoken = "9"
+
 # Errors
 anyhow = "1"
 

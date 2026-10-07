@@ -52,7 +52,7 @@ func Run() {
 		logrus.Fatalf("init minio: %v", err)
 	}
 
-	mq, err := infrastructure.NewRabbitMQ(cfg.RabbitMQ)
+	mq, err := infrastructure.NewRabbitMQ(cfg.RabbitMQ, cfg.Migration)
 	if err != nil {
 		logrus.Fatalf("init rabbitmq: %v", err)
 	}
@@ -95,6 +95,10 @@ func Run() {
 	adminRepo := repository.NewAdminRepo(db)
 	notifRepo := repository.NewNotificationRepo(db)
 
+	// GitHub 登录/迁移 repository
+	githubBindingRepo := repository.NewGithubBindingRepo(db)
+	githubMigrationRepo := repository.NewGithubMigrationRepo(db)
+
 	// 搜索IP投稿 repository
 	searchIpRepo := repository.NewSearchIPRepo(db)
 
@@ -117,6 +121,20 @@ func Run() {
 		cfg.Casdoor.JWTTTL,
 		cfg.Casdoor.Organization,
 	)
+
+	// GitHub OAuth 登录/绑定 + 投稿数据迁移
+	githubOAuthClient := infrastructure.NewGithubOAuthClient(cfg.GitHubOAuth)
+	githubBindSvc := service.NewGithubBindService(
+		githubOAuthClient,
+		authSvc,
+		githubBindingRepo,
+		redisClient,
+		cfg.Casdoor.JWTSecret,
+		cfg.Casdoor.JWTTTL,
+		cfg.Casdoor.Organization,
+		cfg.GitHubOAuth.SiteURL,
+	)
+	migrationSvc := service.NewMigrationService(githubBindingRepo, githubMigrationRepo, mq, cfg.Migration)
 
 	// 投稿模块 service
 	fileSvc := service.NewFileService(cfg, minioClient)
@@ -224,6 +242,8 @@ func Run() {
 	onlineSearchH := handler.NewOnlineSearchHandler(onlineSearchSvc)
 	cloudMusicH := handler.NewCloudMusicHandler(cloudMusicSvc)
 	authH := handler.NewAuthHandler(authSvc, reviewerCache, adminCache)
+	authGithubH := handler.NewAuthGithubHandler(githubBindSvc, reviewerCache, adminCache)
+	migrationH := handler.NewMigrationHandler(migrationSvc)
 
 	// 投稿 handler
 	submissionH := handler.NewSubmissionHandler(submissionSvc, reviewerCache)
@@ -252,6 +272,8 @@ func Run() {
 		OnlineSearch: onlineSearchH,
 		CloudMusic:   cloudMusicH,
 		Auth:         authH,
+		AuthGithub:   authGithubH,
+		Migration:    migrationH,
 		Submission:   submissionH,
 		Review:       reviewH,
 		Revision:     revisionH,

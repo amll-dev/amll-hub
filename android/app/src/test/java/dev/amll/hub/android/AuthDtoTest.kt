@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import dev.amll.hub.android.data.remote.ApiResponse
 import dev.amll.hub.android.data.remote.LoginResult
 import dev.amll.hub.android.data.remote.QrTicketStatus
+import dev.amll.hub.android.data.remote.SendCodeRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -49,5 +50,25 @@ class AuthDtoTest {
         val body = """{"status":"scanned","brandNewField":"whatever"}"""
         val status = json.decodeFromString<QrTicketStatus>(body)
         assertTrue(status.isScanned)
+    }
+
+    @Test
+    fun `无 data 字段的成功响应应可解析`() {
+        // 后端 OKWithMsg(c, nil, ...)（发码 / 扫码确认取消）因 `data,omitempty`
+        // 会直接省略 data 字段，客户端不能把 data 缺失当成错误
+        val resp = json.decodeFromString<ApiResponse<Unit>>(
+            """{"code":200,"message":"验证码已发送"}"""
+        )
+        assertEquals(200, resp.code)
+        assertEquals("验证码已发送", resp.message)
+        assertNull(resp.data)
+    }
+
+    @Test
+    fun `发码请求省略可选项，由后端补齐人机验证参数`() {
+        // Json 未开启 encodeDefaults（默认 false），带默认值的字段不会出现在请求体里。
+        // 后端因此走 captchaType == "" 分支，按 Casdoor 配置自动补齐；method 默认 login。
+        val body = json.encodeToString(SendCodeRequest(checkType = "phone", dest = "13800000000"))
+        assertEquals("""{"checkType":"phone","dest":"13800000000"}""", body)
     }
 }

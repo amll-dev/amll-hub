@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useAtom } from 'jotai';
@@ -19,6 +19,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useAliyunCaptcha } from '@/hooks/useAliyunCaptcha';
 import { useCountdown } from '@/hooks/useCountdown';
 import { api } from '@/lib/api';
+import { compressAvatar } from '@/lib/image';
 import { queryKeys } from '@/lib/query';
 import { buttonTap } from '@/lib/motion';
 import type { CaptchaConfig } from '@/lib/auth';
@@ -35,6 +36,7 @@ import {
 import type { Control, FieldPath } from 'react-hook-form';
 import type { ReactNode } from 'react';
 import { PageContainer } from '@/components/PageContainer';
+import { AvatarUploadDialog } from '@/components/profile/AvatarUploadDialog';
 
 /** 注册表单 schema：字段必填 + 密码长度 + 两次密码一致 */
 const registerSchema = z
@@ -63,6 +65,11 @@ const codeLabelClass = 'mb-2 block text-sm font-normal text-ink-2';
 export function Register() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  // 来自 GitHub 绑定流程的凭证（/register#token=<uuid>，放在 fragment 中避免入日志）
+  const bindToken = useMemo(() => {
+    const hash = window.location.hash.replace(/^#/, '');
+    return new URLSearchParams(hash).get('token') ?? '';
+  }, []);
 
   // 页面状态存全局 atoms（卸载时复位，语义同原 useState）
   const [avatarFile, setAvatarFile] = useAtom(avatarFileAtom);
@@ -80,6 +87,10 @@ export function Register() {
   useEffect(() => () => resetRegisterForm(), []);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // 待裁剪的原图：确认缩放后才写回 avatarFile，保证上传的是裁切压缩后的文件
+  const [rawAvatarFile, setRawAvatarFile] = useState<File | null>(null);
+  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false);
+  const [avatarProcessing, setAvatarProcessing] = useState(false);
 
   const form = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
@@ -111,6 +122,36 @@ export function Register() {
     : (captchaQuery.data ?? { type: 'none' });
   const captchaLoading = captchaQuery.isFetching;
 
+  // GitHub 绑定场景：拉取 GitHub 资料用于预填
+  const bindInfoQuery = useQuery({
+    queryKey: ['github-bind-info', bindToken],
+    queryFn: () => api.getGithubBindInfo(bindToken),
+    enabled: !!bindToken,
+    retry: false,
+  });
+  const bindInfo = bindInfoQuery.data;
+
+  useEffect(() => {
+    if (!bindInfo) return;
+    form.reset({
+      username: bindInfo.githubLogin,
+      displayName: bindInfo.githubLogin,
+      email: bindInfo.githubEmail || '',
+      password: '',
+      confirmPassword: '',
+      phone: '',
+      phoneCode: '',
+      emailCode: '',
+    });
+  }, [bindInfo, form]);
+
+  useEffect(() => {
+    if (bindInfoQuery.isError) {
+      setError('授权已过期，请重新使用 GitHub 登录');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bindInfoQuery.isError]);
+
   const {
     captchaVerifyParam,
     isReady: captchaReady,
@@ -125,9 +166,11 @@ export function Register() {
 
   // 倒计时由 useCountdown 提供
 
-  // 头像选择
+  // 头像选择：先弹裁剪框调缩放，确认后再压缩（与个人中心「更换头像」一致）
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // 清空 value，取消弹窗后重选同一张图也能再次触发 change
+    e.target.value = '';
     if (!file) return;
     if (!file.type.startsWith('image/')) {
       setError('请选择图片文件');
@@ -138,8 +181,27 @@ export function Register() {
       return;
     }
     setError('');
-    setAvatarFile(file);
-    setAvatarPreview(URL.createObjectURL(file));
+    setRawAvatarFile(file);
+    setAvatarDialogOpen(true);
+  };
+
+  const closeAvatarDialog = () => {
+    setAvatarDialogOpen(false);
+    setRawAvatarFile(null);
+  };
+
+  const handleAvatarConfirm = async (zoom: number) => {
+    if (!rawAvatarFile) return;
+    setAvatarProcessing(true);
+    try {
+      const compressed = await compressAvatar(rawAvatarFile, zoom);
+      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+      setAvatarFile(compressed);
+      setAvatarPreview(URL.createObjectURL(compressed));
+      closeAvatarDialog();
+    } finally {
+      setAvatarProcessing(false);
+    }
   };
 
   // 实际发送验证码（target: phone / email）
@@ -222,8 +284,21 @@ export function Register() {
   }, [captchaVerifyParam, captchaModalOpen]);
 
   // 提交注册：注册 → 自动登录 → 上传头像（失败不阻塞）
+  // GitHub 绑定场景改为调用 bind/register，后端直接返回登录态与绑定结果
   const registerMutation = useMutation({
     mutationFn: async (vars: RegisterValues) => {
+      if (bindToken) {
+        return api.githubBindRegister({
+          token: bindToken,
+          username: vars.username,
+          password: vars.password,
+          phone: vars.phone,
+          code: vars.phoneCode,
+          email: vars.email,
+          emailCode: vars.emailCode,
+          displayName: vars.displayName,
+        });
+      }
       await api.register({
         username: vars.username,
         password: vars.password,
@@ -233,24 +308,23 @@ export function Register() {
         emailCode: vars.emailCode,
         displayName: vars.displayName,
       });
-      return { username: vars.username, password: vars.password };
+      try {
+        return await api.login(vars.username, vars.password);
+      } catch {
+        throw new Error('注册成功，请手动登录');
+      }
     },
     onMutate: () => setError(''),
-    onSuccess: async ({ username, password: pwd }) => {
-      try {
-        const result = await api.login(username, pwd);
-        login(result.token, result.user);
-        if (avatarFile) {
-          try {
-            await api.uploadAvatar(avatarFile);
-          } catch {
-            // 头像上传失败不阻塞
-          }
+    onSuccess: async (result) => {
+      login(result.token, result.user);
+      if (avatarFile) {
+        try {
+          await api.uploadAvatar(avatarFile);
+        } catch {
+          // 头像上传失败不阻塞
         }
-        navigate('/profile');
-      } catch {
-        setError('注册成功，请手动登录');
       }
+      navigate(bindToken ? '/profile/migration' : '/profile');
     },
     onError: (e: Error) => setError(e.message || '注册失败'),
   });
@@ -279,8 +353,28 @@ export function Register() {
     <PageContainer width="form">
       <div className="rounded-xl border border-line bg-card p-8 shadow-sm">
         <h1 className="mb-6 text-center text-2xl font-bold tracking-tight text-foreground">
-          注册账号
+          {bindToken ? '注册并绑定 GitHub' : '注册账号'}
         </h1>
+
+        {bindInfo && (
+          <div className="mb-6 flex items-center gap-3 rounded-lg border border-line bg-surface-2 p-4">
+            {bindInfo.githubAvatar ? (
+              <img
+                src={bindInfo.githubAvatar}
+                alt={bindInfo.githubLogin}
+                className="h-10 w-10 rounded-full object-cover"
+              />
+            ) : null}
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-foreground">
+                即将绑定：{bindInfo.githubLogin}
+              </p>
+              {bindInfo.githubEmail && (
+                <p className="truncate text-xs text-ink-3">{bindInfo.githubEmail}</p>
+              )}
+            </div>
+          </div>
+        )}
 
         <Form {...form}>
           <form
@@ -301,8 +395,12 @@ export function Register() {
                 onClick={() => fileInputRef.current?.click()}
                 className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-2 border-line bg-surface-2 transition-colors hover:border-primary"
               >
-                {avatarPreview ? (
-                  <img src={avatarPreview} alt="头像预览" className="h-full w-full object-cover" />
+                {avatarPreview || bindInfo?.githubAvatar ? (
+                  <img
+                    src={avatarPreview || bindInfo?.githubAvatar}
+                    alt="头像预览"
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   <div className="flex flex-col items-center gap-1 text-ink-3">
                     <Camera className="h-5 w-5" />
@@ -311,7 +409,19 @@ export function Register() {
                 )}
               </button>
             </div>
-            <p className="-mt-2 text-center text-xs text-ink-3">头像可选，其余均为必填</p>
+            <p className="-mt-2 text-center text-xs text-ink-3">
+              {bindInfo?.githubAvatar && !avatarPreview
+                ? '将使用你的 GitHub 头像，点击可更换'
+                : '头像可选，其余均为必填'}
+            </p>
+
+            <AvatarUploadDialog
+              open={avatarDialogOpen}
+              file={rawAvatarFile}
+              pending={avatarProcessing}
+              onCancel={closeAvatarDialog}
+              onConfirm={handleAvatarConfirm}
+            />
 
             {/* 两列布局：用户名 + 昵称 */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

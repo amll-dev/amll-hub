@@ -23,6 +23,7 @@ type RabbitMQ struct {
 	NFQueue amqp.Queue // 无歌词解析队列
 	NFDLQ   amqp.Queue // 无歌词死信队列
 	cfg     config.RabbitMQConfig
+	migCfg  config.MigrationConfig
 }
 
 // 无歌词解析相关常量
@@ -35,9 +36,17 @@ const (
 	NFDLQName     = "not_found_parse_queue.dlq"
 )
 
+// 投稿数据迁移相关常量（独立 exchange + DLQ）
+const (
+	MigDLXExchange  = "ttml.migration.dlx"
+	MigDLQRouting   = "migration.failed"
+	MigRoutingUser  = "migration.user"
+	MigRoutingClose = "migration.close_pr"
+)
+
 // NewRabbitMQ 初始化 RabbitMQ，声明主队列 + 死信队列
-func NewRabbitMQ(cfg config.RabbitMQConfig) (*RabbitMQ, error) {
-	r := &RabbitMQ{cfg: cfg}
+func NewRabbitMQ(cfg config.RabbitMQConfig, migCfg config.MigrationConfig) (*RabbitMQ, error) {
+	r := &RabbitMQ{cfg: cfg, migCfg: migCfg}
 	if err := r.connect(); err != nil {
 		return nil, err
 	}
@@ -179,7 +188,63 @@ func (r *RabbitMQ) declareTopology(ch *amqp.Channel) (queue, dlq, nfQueue, nfDlq
 		err = fmt.Errorf("bind nf queue: %w", err)
 		return
 	}
+
+	// === 投稿数据迁移队列（独立交换机/队列/DLQ；后端只声明+投递，消费在 Worker） ===
+	if err = r.declareMigrationTopology(ch); err != nil {
+		return
+	}
 	return
+}
+
+// declareMigrationTopology 声明迁移交换机、两个队列及其 DLQ。
+// 拓扑与 Worker 侧保持一致：exchange=ttml.migration(direct)，DLX=ttml.migration.dlx。
+func (r *RabbitMQ) declareMigrationTopology(ch *amqp.Channel) error {
+	if err := ch.ExchangeDeclare(
+		MigDLXExchange, "direct", true, false, false, false, nil,
+	); err != nil {
+		return fmt.Errorf("declare migration dlx exchange: %w", err)
+	}
+
+	declDLQ := func(name string) error {
+		q, err := ch.QueueDeclare(name, true, false, false, false, nil)
+		if err != nil {
+			return fmt.Errorf("declare migration dlq %s: %w", name, err)
+		}
+		return ch.QueueBind(q.Name, MigDLQRouting, MigDLXExchange, false, nil)
+	}
+	if err := declDLQ(r.migCfg.DLQ); err != nil {
+		return err
+	}
+	if err := declDLQ(r.migCfg.CloseDLQ); err != nil {
+		return err
+	}
+
+	if err := ch.ExchangeDeclare(
+		r.migCfg.Exchange, "direct", true, false, false, false, nil,
+	); err != nil {
+		return fmt.Errorf("declare migration exchange: %w", err)
+	}
+
+	declQueue := func(name, routingKey string) error {
+		q, err := ch.QueueDeclare(
+			name, true, false, false, false,
+			amqp.Table{
+				"x-dead-letter-exchange":    MigDLXExchange,
+				"x-dead-letter-routing-key": MigDLQRouting,
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("declare migration queue %s: %w", name, err)
+		}
+		return ch.QueueBind(q.Name, routingKey, r.migCfg.Exchange, false, nil)
+	}
+	if err := declQueue(r.migCfg.Queue, MigRoutingUser); err != nil {
+		return err
+	}
+	if err := declQueue(r.migCfg.CloseQueue, MigRoutingClose); err != nil {
+		return err
+	}
+	return nil
 }
 
 // 关闭旧连接并重新建立
@@ -318,6 +383,36 @@ func (r *RabbitMQ) PublishNotFoundParse(msg NotFoundParseMessage) error {
 			DeliveryMode: amqp.Persistent,
 			Timestamp:    time.Now(),
 			MessageId:    fmt.Sprintf("%s:%s", msg.Platform, msg.PlatformID),
+			Body:         body,
+		},
+	)
+}
+
+// PublishMigrationUser 投递一条按用户迁移任务到 migration.user 队列
+func (r *RabbitMQ) PublishMigrationUser(body []byte, messageID string) error {
+	return r.publish(
+		r.migCfg.Exchange,
+		MigRoutingUser,
+		amqp.Publishing{
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			MessageId:    messageID,
+			Timestamp:    time.Now(),
+			Body:         body,
+		},
+	)
+}
+
+// PublishMigrationClosePr 投递一条关闭 PR 任务到 migration.close_pr 队列
+func (r *RabbitMQ) PublishMigrationClosePr(body []byte, messageID string) error {
+	return r.publish(
+		r.migCfg.Exchange,
+		MigRoutingClose,
+		amqp.Publishing{
+			ContentType:  "application/json",
+			DeliveryMode: amqp.Persistent,
+			MessageId:    messageID,
+			Timestamp:    time.Now(),
 			Body:         body,
 		},
 	)

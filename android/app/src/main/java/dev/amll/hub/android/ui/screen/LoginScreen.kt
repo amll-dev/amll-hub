@@ -41,12 +41,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.amll.hub.android.data.remote.UserProfile
 import dev.amll.hub.android.ui.component.ErrorBanner
 
 @Composable
 fun LoginScreen(
-    onLoggedIn: () -> Unit,
-    onScanQr: () -> Unit,
+    onLoggedIn: (UserProfile) -> Unit,
     viewModel: LoginViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -105,7 +105,7 @@ fun LoginScreen(
             Spacer(Modifier.height(24.dp))
 
             Button(
-                onClick = { viewModel.submit { onLoggedIn() } },
+                onClick = { viewModel.submit { onLoggedIn(it.user) } },
                 enabled = state.canSubmit,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -120,12 +120,6 @@ fun LoginScreen(
                 } else {
                     Text("登录")
                 }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            TextButton(onClick = onScanQr) {
-                Text("扫码登录网页端")
             }
         }
     }

@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod db;
 mod infra;
+mod migration;
 mod not_found;
 mod search;
 mod storage;
@@ -91,6 +92,62 @@ async fn main() -> Result<()> {
         }
     });
 
+    // 启动迁移消费者（GitHub App 未配置时不启动，不影响既有同步功能）
+    let mut mig_handles = Vec::new();
+    match build_github_app(&cfg) {
+        Some(github_app) => {
+            // migration.user 消费者
+            let mig_app = app.clone();
+            let mig_shutdown = shutdown.clone();
+            let mig_channel = mq.mig_channel.clone();
+            let mig_publish_channel = mq.mig_publish_channel.clone();
+            let mig_queue = cfg.rabbitmq.migration_queue.clone();
+            let gh = github_app.clone();
+            mig_handles.push(tokio::spawn(async move {
+                if let Err(e) = migration::consumer::consume_user_loop(
+                    mig_channel,
+                    mig_publish_channel,
+                    mig_queue,
+                    mig_app,
+                    gh,
+                    mig_shutdown,
+                )
+                .await
+                {
+                    error!(error = %e, "migration consumer exited with error");
+                }
+            }));
+
+            // migration.close_pr 消费者：仅在「自动关闭 PR」开关打开时启动
+            if cfg.migration.close_pr_enabled {
+                let close_app = app.clone();
+                let close_shutdown = shutdown.clone();
+                let close_channel = mq.mig_close_channel.clone();
+                let close_queue = cfg.rabbitmq.migration_close_queue.clone();
+                mig_handles.push(tokio::spawn(async move {
+                    if let Err(e) = migration::consumer::consume_close_pr_loop(
+                        close_channel,
+                        close_queue,
+                        close_app,
+                        github_app,
+                        close_shutdown,
+                    )
+                    .await
+                    {
+                        error!(error = %e, "migration close_pr consumer exited with error");
+                    }
+                }));
+            } else {
+                info!("自动关闭 PR 已禁用（MIGRATION_CLOSE_PR_ENABLED=false），不启动 migration.close_pr 消费者");
+            }
+        }
+        None => {
+            warn!(
+                "GitHub App 未配置（GITHUB_APP_ID / GITHUB_INSTALLATION_ID / GITHUB_PRIVATE_KEY_PATH），投稿数据迁移功能不可用"
+            );
+        }
+    }
+
     // 主消费循环（sync 任务）
     worker::consumer::consume_loop(channel, queue_name, app, shutdown.clone())
         .await
@@ -98,9 +155,31 @@ async fn main() -> Result<()> {
 
     // 等待 not_found 消费者退出
     let _ = nf_handle.await;
+    for handle in mig_handles {
+        let _ = handle.await;
+    }
 
     info!("ttml-worker exited gracefully");
     Ok(())
+}
+
+/// 构建 GitHub App 客户端；未配置或私钥不可用时返回 None（不阻塞既有同步功能）
+fn build_github_app(cfg: &Arc<config::Config>) -> Option<Arc<infra::github_app::GithubAppClient>> {
+    if !cfg.github_app.enabled() {
+        return None;
+    }
+    match infra::github_app::GithubAppClient::new(cfg.github_app.clone()) {
+        Ok(client) => {
+            if !client.enabled() {
+                return None;
+            }
+            Some(Arc::new(client))
+        }
+        Err(e) => {
+            warn!(error = %e, "GitHub App 私钥加载失败，投稿数据迁移功能不可用");
+            None
+        }
+    }
 }
 
 async fn run_health_server(port: u16) -> Result<()> {

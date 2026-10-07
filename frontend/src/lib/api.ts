@@ -4,6 +4,9 @@ import type {
   DailyRecommendation,
   DailyRecListResult,
   EditorContext,
+  GithubMigratedList,
+  GithubMigrationStatus,
+  GithubMigrationTask,
   IdentityMethod,
   IdentityStatus,
   LatestSongItem,
@@ -33,7 +36,14 @@ import type {
   UserActivity,
   TtmlValidationResult,
 } from './types';
-import type { CaptchaConfig, LoginResult, QrTicket, QrTicketStatus, UserProfile } from './auth';
+import type {
+  CaptchaConfig,
+  GithubBindInfo,
+  LoginResult,
+  QrTicket,
+  QrTicketStatus,
+  UserProfile,
+} from './auth';
 import { clearAuth, getToken } from './auth';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
@@ -1021,6 +1031,90 @@ export const api = {
     return request<{ title: string }>('/api/v1/admin/notifications/broadcast', {
       method: 'POST',
       body: JSON.stringify(params),
+    });
+  },
+
+  //GitHub OAuth 登录/绑定
+
+  /** GitHub 授权跳转地址（匿名登录/注册，整页跳转） */
+  githubLoginURL(): string {
+    return `${API_BASE}/api/v1/auth/github/login`;
+  },
+
+  /** 取已登录用户绑定 GitHub 的授权地址（前端取到后整页跳转，避免 JWT 入 URL） */
+  async githubBindStart(): Promise<string> {
+    const res = await request<{ url: string }>('/api/v1/auth/github/bind-url');
+    return res.url;
+  },
+
+  /** 绑定页预填信息 POST /api/v1/auth/github/bind/info（票据走请求体，避免入日志） */
+  getGithubBindInfo(token: string): Promise<GithubBindInfo> {
+    return request<GithubBindInfo>('/api/v1/auth/github/bind/info', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  },
+
+  /** 登录已有账号并绑定 GitHub POST /api/v1/auth/github/bind/login */
+  githubBindLogin(params: {
+    token: string;
+    account: string;
+    password: string;
+  }): Promise<LoginResult> {
+    return request<LoginResult>('/api/v1/auth/github/bind/login', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  /** 注册新账号并绑定 GitHub POST /api/v1/auth/github/bind/register */
+  githubBindRegister(params: {
+    token: string;
+    username: string;
+    password: string;
+    phone: string;
+    code: string;
+    email: string;
+    emailCode: string;
+    displayName: string;
+  }): Promise<LoginResult> {
+    return request<LoginResult>('/api/v1/auth/github/bind/register', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  /** 解绑 GitHub DELETE /api/v1/user/github/binding */
+  unbindGithub(): Promise<void> {
+    return request<void>('/api/v1/user/github/binding', { method: 'DELETE' });
+  },
+
+  // ===== 投稿数据迁移 =====
+
+  /** 迁移页状态 GET /api/v1/migration/github/status */
+  getMigrationStatus(): Promise<GithubMigrationStatus> {
+    return request<GithubMigrationStatus>('/api/v1/migration/github/status');
+  },
+
+  /** 创建迁移任务 POST /api/v1/migration/github/start */
+  startMigration(): Promise<GithubMigrationTask> {
+    return request<GithubMigrationTask>('/api/v1/migration/github/start', { method: 'POST' });
+  },
+
+  /** 查询迁移任务进度 GET /api/v1/migration/github/tasks/:id */
+  getMigrationTask(id: number): Promise<GithubMigrationTask> {
+    return request<GithubMigrationTask>(`/api/v1/migration/github/tasks/${id}`);
+  },
+
+  /** 已迁移 PR 列表（含 PR 标题） GET /api/v1/migration/github/migrated */
+  getMigratedPrs(limit = 100): Promise<GithubMigratedList> {
+    return request<GithubMigratedList>(`/api/v1/migration/github/migrated?limit=${limit}`);
+  },
+
+  /** 重试迁移任务 POST /api/v1/migration/github/tasks/:id/retry */
+  retryMigration(id: number): Promise<GithubMigrationTask> {
+    return request<GithubMigrationTask>(`/api/v1/migration/github/tasks/${id}/retry`, {
+      method: 'POST',
     });
   },
 };

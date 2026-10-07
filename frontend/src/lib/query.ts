@@ -117,6 +117,10 @@ export const queryKeys = {
   // 审核员管理
   reviewers: ['admin', 'reviewers'] as const,
 
+  // GitHub 投稿数据迁移
+  githubMigration: ['github-migration', 'status'] as const,
+  githubMigrated: ['github-migration', 'migrated'] as const,
+
   // 消息中心（统一前缀，removeQueries(['notifications']) 可一并清除）
   // 列表单独加一段 'list'：与未读数 query（形状为 { unread }）区分，
   // 否则按 ['notifications'] 前缀做乐观更新会命中未读数缓存并抛错。
