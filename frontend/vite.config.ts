@@ -5,6 +5,32 @@ import wasm from 'vite-plugin-wasm';
 import path from 'node:path';
 export type CoepMode = 'credentialless' | 'require-corp' | 'off';
 
+function packageNameOf(id: string): string | null {
+  const marker = 'node_modules/';
+  const i = id.lastIndexOf(marker);
+  if (i < 0) return null;
+  const rest = id.slice(i + marker.length);
+  const parts = rest.split('/');
+  return rest.startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0];
+}
+
+const REACT_PKGS = new Set([
+  'react',
+  'react-dom',
+  'react-is',
+  'scheduler',
+  'sonner',
+  'aria-hidden',
+  'react-remove-scroll',
+  'react-remove-scroll-bar',
+  'react-style-singleton',
+  'use-callback-ref',
+  'use-sidecar',
+  'use-sync-external-store',
+]);
+
+const REACT_SCOPES = ['@radix-ui/', '@griffel/', '@floating-ui/', '@fluentui/', '@tanstack/'];
+
 function resolveCoepMode(raw) {
   const v = (raw ?? '').trim().toLowerCase();
   if (v === 'off' || v === 'none' || v === 'false' || v === '0') return 'off';
@@ -33,7 +59,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
-        '$': path.resolve(__dirname, './src/editor'),
+        $: path.resolve(__dirname, './src/editor'),
       },
     },
     build: {
@@ -46,52 +72,57 @@ export default defineConfig(({ mode }) => {
           manualChunks(id) {
             if (id.includes('vite/preload-helper')) return 'vendor-react';
             if (!id.includes('node_modules')) return undefined;
+            const pkg = packageNameOf(id);
+            if (!pkg) return 'vendor-react';
+
             if (
-              id.includes('@applemusic-like-lyrics') ||
-              id.includes('gl-matrix') ||
-              id.includes('pixi') ||
-              id.includes('earcut') ||
-              id.includes('figma-squircle') ||
-              id.includes('corner-smoothing')
+              pkg.startsWith('@applemusic-like-lyrics/') ||
+              pkg === 'gl-matrix' ||
+              pkg === 'pixi.js' ||
+              pkg.startsWith('@pixi/') ||
+              pkg === 'earcut' ||
+              pkg === 'figma-squircle' ||
+              pkg === 'corner-smoothing'
             )
               return 'vendor-amll';
-            if (id.includes('lucide-react')) return 'vendor-icons';
+            if (pkg === 'lucide-react') return 'vendor-icons';
             // 媒体/文件处理：jszip(+pako 压缩)、music-metadata(+file-type)、截图、ID3 写入
             if (
-              id.includes('music-metadata') ||
-              id.includes('jszip') ||
-              id.includes('pako') ||
-              id.includes('file-type') ||
-              id.includes('modern-screenshot') ||
-              id.includes('browser-id3-writer')
+              pkg === 'music-metadata' ||
+              pkg === 'jszip' ||
+              pkg === 'pako' ||
+              pkg === 'file-type' ||
+              pkg === 'modern-screenshot' ||
+              pkg === 'browser-id3-writer'
             )
               return 'vendor-media';
-            if (
-              id.includes('framer-motion') ||
-              id.includes('motion-dom') ||
-              id.includes('motion-utils')
-            )
+            if (pkg === 'framer-motion' || pkg === 'motion-dom' || pkg === 'motion-utils')
               return 'vendor-motion';
-            // react 本体 + 首屏必需生态（jotai/@remix-ui/router 与 react 同 chunk，
-            // 消除 vendor-react ↔ vendor-misc 循环依赖）
+            // react 本体 + 整个 react 生态（radix/griffel/tanstack/fluentui…）
             if (
-              id.includes('react') ||
-              id.includes('scheduler') ||
-              id.includes('jotai') ||
-              id.includes('router')
+              REACT_PKGS.has(pkg) ||
+              pkg === 'react-hook-form' ||
+              pkg === 'react-i18next' ||
+              pkg === 'react-router' ||
+              pkg === 'react-router-dom' ||
+              pkg === '@hookform/resolvers' ||
+              pkg === 'jotai' ||
+              pkg.startsWith('jotai-') ||
+              pkg.startsWith('react-') ||
+              REACT_SCOPES.some((s) => pkg.startsWith(s))
             )
               return 'vendor-react';
             // markdown 渲染 + 二维码：marked、qrcode 及其依赖（pngjs/url 等）
             if (
-              id.includes('marked') ||
-              id.includes('qrcode') ||
-              id.includes('pngjs') ||
-              id.includes('dijkstrajs') ||
-              id.includes('yargs') ||
-              id.includes('/url/')
+              pkg === 'marked' ||
+              pkg === 'qrcode' ||
+              pkg === 'pngjs' ||
+              pkg === 'dijkstrajs' ||
+              pkg === 'yargs' ||
+              pkg === 'url'
             )
               return 'vendor-markdown';
-            return 'vendor-misc';
+            return 'vendor-react';
           },
         },
       },
