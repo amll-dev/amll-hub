@@ -1,4 +1,3 @@
-import { Card } from '@radix-ui/themes';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { audioEngine } from '$/modules/audio/audio-engine';
@@ -127,13 +126,9 @@ export const AudioSlider = () => {
   );
 
   return (
-    <Card
-      style={{
-        alignSelf: 'center',
-        width: '100%',
-        height: '2.5em',
-        padding: '0',
-      }}
+    <div
+      className="w-full self-center overflow-hidden rounded-lg border border-line bg-card"
+      style={{ height: '2.5em', padding: 0 }}
     >
       <section
         className={styles.waveformContainer}
@@ -171,6 +166,6 @@ export const AudioSlider = () => {
           isDraggingRef={isDraggingRef}
         />
       </section>
-    </Card>
+    </div>
   );
 };

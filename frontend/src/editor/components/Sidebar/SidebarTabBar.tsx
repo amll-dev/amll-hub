@@ -1,7 +1,6 @@
-import { DismissRegular } from '@fluentui/react-icons';
 import { AnimatePresence, motion } from 'framer-motion';
+import { X } from 'lucide-react';
 import { type FC, useEffect, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
 import type { SidebarPanelType } from '$/states/sidebar.ts';
 import type { SidebarTab } from './index';
 import styles from './SidebarTabBar.module.css';
@@ -19,7 +18,6 @@ export const SidebarTabBar: FC<SidebarTabBarProps> = ({
   onSelectTab,
   onCloseTab,
 }) => {
-  const { t } = useTranslation();
   const prevTabIdsRef = useRef<Set<string>>(new Set());
 
   const prevTabIds = prevTabIdsRef.current;
@@ -32,7 +30,7 @@ export const SidebarTabBar: FC<SidebarTabBarProps> = ({
   if (singleTab) {
     return (
       <div className={styles.singleTitleContainer}>
-        <span className={styles.singleTitle}>{singleTab.getTitle(t)}</span>
+        <span className={styles.singleTitle}>{singleTab.title}</span>
       </div>
     );
   }
@@ -67,17 +65,17 @@ export const SidebarTabBar: FC<SidebarTabBarProps> = ({
                 }
               }}
             >
-              <span className={styles.tabTitle}>{tab.getTitle(t)}</span>
+              <span className={styles.tabTitle}>{tab.title}</span>
               <button
                 type="button"
                 className={styles.closeButton}
-                aria-label={t('common.close', '关闭')}
+                aria-label="关闭"
                 onClick={(e) => {
                   e.stopPropagation();
                   onCloseTab(tab.id);
                 }}
               >
-                <DismissRegular style={{ fontSize: 15 }} />
+                <X className="size-[15px]" />
               </button>
             </motion.div>
           );

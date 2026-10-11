@@ -9,7 +9,6 @@
  * https://github.com/amll-dev/amll-ttml-tool/blob/main/LICENSE
  */
 
-import { Flex, Separator, Text } from '@radix-ui/themes';
 import { motion } from 'framer-motion';
 import {
   type FC,
@@ -22,26 +21,11 @@ import {
 
 export const RibbonSection: FC<PropsWithChildren<{ label: string }>> = ({ children, label }) => (
   <>
-    <Flex
-      direction="column"
-      gap="1"
-      flexShrink="0"
-      style={{
-        alignSelf: 'stretch',
-      }}
-    >
-      <Flex flexGrow="1" align="center" justify="center">
-        {children}
-      </Flex>
-      <Text align="center" wrap="nowrap" color="gray" size="1">
-        {label}
-      </Text>
-    </Flex>
-    <Separator
-      orientation="vertical"
-      size="4"
-      style={{ height: 'unset', alignSelf: 'stretch', minWidth: '1px' }}
-    />
+    <div className="flex shrink-0 flex-col gap-1 self-stretch">
+      <div className="flex flex-1 items-center justify-center">{children}</div>
+      <span className="whitespace-nowrap text-center text-xs leading-none text-ink-3">{label}</span>
+    </div>
+    <div aria-hidden className="w-px shrink-0 self-stretch bg-line" />
   </>
 );
 
@@ -59,28 +43,16 @@ export const RibbonFrame = forwardRef<HTMLDivElement, PropsWithChildren>(({ chil
   }, []);
 
   return (
-    <Flex
-      p="3"
-      direction="row"
-      gap="3"
-      align="center"
-      style={{
-        overflowX: 'auto',
-        overflowY: 'visible',
-        height: '100%',
-      }}
-      asChild
+    <motion.div
+      initial={{ x: 10, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ x: -10, opacity: 0 }}
+      layout
+      ref={frameRef}
+      onWheel={handleWheel}
+      className="flex h-full flex-row items-center gap-3 overflow-x-auto overflow-y-visible p-3"
     >
-      <motion.div
-        initial={{ x: 10, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
-        exit={{ x: -10, opacity: 0 }}
-        layout
-        ref={frameRef}
-        onWheel={handleWheel}
-      >
-        {children}
-      </motion.div>
-    </Flex>
+      {children}
+    </motion.div>
   );
 });

@@ -2,7 +2,6 @@
  * @description 手动分词组件
  */
 
-import { Flex } from '@radix-ui/themes';
 import { Fragment, memo, useMemo } from 'react';
 import styles from './ManualWordSplitter.module.css';
 
@@ -17,19 +16,7 @@ export const ManualWordSplitter = memo(
     const manualGraphemes = useMemo(() => Array.from(word), [word]);
 
     return (
-      <Flex
-        align="center"
-        justify="center"
-        style={{
-          backgroundColor: 'var(--gray-4)',
-          borderRadius: 'var(--radius-2)',
-          padding: 'var(--space-4)',
-          minHeight: '4em',
-          userSelect: 'none',
-          overflowX: 'auto',
-          whiteSpace: 'nowrap',
-        }}
-      >
+      <div className="flex min-h-[4em] items-center justify-center overflow-x-auto whitespace-nowrap rounded-md bg-muted p-4 select-none">
         {manualGraphemes.map((grapheme, index) => (
           <Fragment
             key={`${grapheme}-${
@@ -48,7 +35,7 @@ export const ManualWordSplitter = memo(
             <span className={styles.grapheme}>{grapheme}</span>
           </Fragment>
         ))}
-      </Flex>
+      </div>
     );
   }
 );

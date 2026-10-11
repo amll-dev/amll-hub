@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAtomValue } from 'jotai';
+import { useAtom } from 'jotai';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -27,7 +27,7 @@ import {
   User,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
-import { themeAtom, setTheme, type ThemePreference } from '@/atoms/theme';
+import { themeAtom, type ThemePreference } from '@/atoms/theme';
 import { preloadRoute } from '@/routes';
 
 /**
@@ -37,7 +37,7 @@ import { preloadRoute } from '@/routes';
  */
 export function UserMenu() {
   const { user, logout } = useAuth();
-  const theme = useAtomValue(themeAtom);
+  const [theme, setThemePreference] = useAtom(themeAtom);
   const [open, setOpen] = useState(false);
   const closeTimer = useRef(0);
 
@@ -117,7 +117,7 @@ export function UserMenu() {
             >
               <DropdownMenuRadioGroup
                 value={theme}
-                onValueChange={(v) => setTheme(v as ThemePreference)}
+                onValueChange={(v) => setThemePreference(v as ThemePreference)}
               >
                 <DropdownMenuRadioItem value="system" className="cursor-pointer">
                   <Monitor className="h-4 w-4" />

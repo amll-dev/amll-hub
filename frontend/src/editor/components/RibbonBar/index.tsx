@@ -9,7 +9,6 @@
  * https://github.com/amll-dev/amll-ttml-tool/blob/main/LICENSE
  */
 
-import { Card, Inset } from '@radix-ui/themes';
 import { AnimatePresence } from 'framer-motion';
 import { useAtomValue } from 'jotai';
 import { forwardRef, lazy, memo } from 'react';
@@ -25,42 +24,30 @@ export const RibbonBar = memo(
     const toolMode = useAtomValue(toolModeAtom);
 
     return (
-      <Card
-        m="2"
-        mb="0"
-        style={{
-          minHeight: 'fit-content',
-          flexShrink: '0',
-        }}
+      <div
         ref={ref}
+        className="mx-2 mt-2 min-h-fit shrink-0 overflow-hidden rounded-lg border border-line bg-card"
       >
-        <Inset>
-          <div
-            style={{
-              height: '130px',
-              overflowY: 'clip',
-            }}
-          >
-            <AnimatePresence mode="wait">
-              {toolMode === ToolMode.Edit && (
-                <SuspensePlaceHolder key="edit">
-                  <EditModeRibbonBar />
-                </SuspensePlaceHolder>
-              )}
-              {toolMode === ToolMode.Sync && (
-                <SuspensePlaceHolder key="sync">
-                  <SyncModeRibbonBar />
-                </SuspensePlaceHolder>
-              )}
-              {toolMode === ToolMode.Preview && (
-                <SuspensePlaceHolder key="preview">
-                  <PreviewModeRibbonBar />
-                </SuspensePlaceHolder>
-              )}
-            </AnimatePresence>
-          </div>
-        </Inset>
-      </Card>
+        <div className="h-[130px] overflow-y-clip">
+          <AnimatePresence mode="wait">
+            {toolMode === ToolMode.Edit && (
+              <SuspensePlaceHolder key="edit">
+                <EditModeRibbonBar />
+              </SuspensePlaceHolder>
+            )}
+            {toolMode === ToolMode.Sync && (
+              <SuspensePlaceHolder key="sync">
+                <SyncModeRibbonBar />
+              </SuspensePlaceHolder>
+            )}
+            {toolMode === ToolMode.Preview && (
+              <SuspensePlaceHolder key="preview">
+                <PreviewModeRibbonBar />
+              </SuspensePlaceHolder>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
     );
   })
 );

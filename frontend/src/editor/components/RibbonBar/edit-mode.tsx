@@ -9,22 +9,16 @@
  * https://github.com/amll-dev/amll-ttml-tool/blob/main/LICENSE
  */
 
-import { Add16Regular } from '@fluentui/react-icons';
-import {
-  Button,
-  Checkbox,
-  Flex,
-  Grid,
-  IconButton,
-  RadioGroup,
-  Select,
-  Text,
-  TextField,
-  Tooltip,
-} from '@radix-ui/themes';
 import type { Draft } from 'immer';
 import { atom, useAtom, useAtomValue, useSetAtom, useStore } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
+import { Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Radio, RadioGroup } from '@/components/ui/radio-group';
+import { Select } from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import {
   type FC,
   forwardRef,
@@ -36,7 +30,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useTranslation } from 'react-i18next';
 import { I18nEditor } from '$/modules/lyric-editor/tools/i18nEditor.tsx';
 import {
   LayoutMode,
@@ -89,14 +82,14 @@ function EditField<
   const [fieldInput, setFieldInput] = useState<string | undefined>(undefined);
   const [fieldPlaceholder, setFieldPlaceholder] = useState<string>('');
   const [durationInputInvalid, setDurationInputInvalid] = useState(false);
-  const [showDurationInput, setShowDurationInput] = useAtom(showEndTimeAsDurationAtom);
+  /** 时间字段固定按「结束时间」展示，不再提供「持续时间」切换 */
+  const showDurationInput = useAtomValue(showEndTimeAsDurationAtom);
   const itemAtom = useMemo(
     () => (isWordField ? selectedWordsAtom : selectedLinesAtom),
     [isWordField]
   );
 
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
-  const { t } = useTranslation();
   const setEditingTimeField = useSetAtom(editingTimeFieldAtom);
 
   const [requestFocus, setRequestFocus] = useAtom(requestFocusAtom);
@@ -388,7 +381,7 @@ function EditField<
     if (fieldName === 'endTime' && showDurationInput) {
       if (durationValue === MULTIPLE_VALUES) {
         setFieldInput('');
-        setFieldPlaceholder(t('ribbonBar.editMode.multipleValues', '多个值...'));
+        setFieldPlaceholder('多个值...');
         return;
       }
       if (typeof durationValue === 'number') {
@@ -402,34 +395,22 @@ function EditField<
     }
     if (currentValue === MULTIPLE_VALUES) {
       setFieldInput('');
-      setFieldPlaceholder(t('ribbonBar.editMode.multipleValues', '多个值...'));
+      setFieldPlaceholder('多个值...');
       return;
     }
     setFieldInput(currentValue);
     setFieldPlaceholder('');
-  }, [currentValue, durationValue, fieldName, showDurationInput, t]);
+  }, [currentValue, durationValue, fieldName, showDurationInput]);
+
+  const invalid = durationInputInvalid || hasError;
 
   return (
     <>
-      {fieldName === 'endTime' ? (
-        <Button
-          size="1"
-          variant="ghost"
-          onClick={() => setShowDurationInput((v) => !v)}
-          style={{ justifyContent: 'flex-start' }}
-        >
-          {showDurationInput ? t('ribbonBar.editMode.duration', '持续时间') : label}
-        </Button>
-      ) : (
-        <Text wrap="nowrap" size="1">
-          {label}
-        </Text>
-      )}
-      <TextField.Root
+      <span className="flex h-7 w-16 items-center whitespace-nowrap text-xs">{label}</span>
+      <Input
         ref={inputRef}
-        size="1"
-        color={durationInputInvalid || hasError ? 'red' : undefined}
-        variant={durationInputInvalid || hasError ? 'soft' : undefined}
+        aria-invalid={invalid}
+        className={cn('h-7 text-xs', invalid && 'border-error bg-error/10')}
         style={{ width: '8em', ...textFieldStyle }}
         value={fieldInput ?? ''}
         placeholder={fieldPlaceholder}
@@ -519,37 +500,14 @@ function CheckboxField<
   const isDisabledAtom = useMemo(() => atom((get) => get(itemAtom).size === 0), [itemAtom]);
   const isDisabledBase = useAtomValue(isDisabledAtom);
 
-  // 对于 isDuet 字段，检查选中的行是否设置了 agent
-  const hasAgentAtom = useMemo(
-    () =>
-      atom((get) => {
-        if (fieldName !== 'isDuet' || isWordField) return false;
-        const selectedItems = get(itemAtom);
-        const lyricLines = get(lyricLinesAtom);
-        if (selectedItems.size === 0) return false;
-        const selectedLines = selectedItems as Set<string>;
-        for (const line of lyricLines.lyricLines) {
-          if (selectedLines.has(line.id)) {
-            // 如果任何一个选中的行设置了 agent，则禁用 checkbox
-            if (line.agent) {
-              return true;
-            }
-          }
-        }
-        return false;
-      }),
-    [fieldName, isWordField, itemAtom]
-  );
-  const hasAgent = useAtomValue(hasAgentAtom);
-
-  const isDisabled = isDisabledBase || hasAgent;
+  const isDisabled = isDisabledBase;
   const checkboxId = useId();
 
   return (
     <>
-      <Text wrap="nowrap" size="1">
-        <label htmlFor={checkboxId}>{label}</label>
-      </Text>
+      <label htmlFor={checkboxId} className="whitespace-nowrap text-xs">
+        {label}
+      </label>
       <Checkbox
         disabled={isDisabled}
         id={checkboxId}
@@ -561,7 +519,6 @@ function CheckboxField<
             : defaultValue
         }
         onCheckedChange={(value) => {
-          if (value === 'indeterminate') return;
           editLyricLines((state: Draft<TTMLLyric>) => {
             const selectedItems = store.get(itemAtom);
             for (const line of state.lyricLines) {
@@ -587,21 +544,28 @@ function CheckboxField<
 
 function EditModeField({ simpleModeLabel = '简单模式', advanceModeLabel = '高级模式' }) {
   const [layoutMode, setLayoutMode] = useAtom(layoutModeAtom);
+  const name = useId();
   return (
-    <RadioGroup.Root
-      value={layoutMode}
-      onValueChange={(v) => setLayoutMode(v as LayoutMode)}
-      size="1"
-    >
-      <Flex gapY="3" direction="column">
-        <Text wrap="nowrap" size="1">
-          <RadioGroup.Item value={LayoutMode.Simple}>{simpleModeLabel}</RadioGroup.Item>
-        </Text>
-        <Text wrap="nowrap" size="1">
-          <RadioGroup.Item value={LayoutMode.Advance}>{advanceModeLabel}</RadioGroup.Item>
-        </Text>
-      </Flex>
-    </RadioGroup.Root>
+    <RadioGroup className="gap-3">
+      <label className="flex items-center gap-2 whitespace-nowrap text-xs">
+        <Radio
+          name={name}
+          value={LayoutMode.Simple}
+          checked={layoutMode === LayoutMode.Simple}
+          onChange={() => setLayoutMode(LayoutMode.Simple)}
+        />
+        {simpleModeLabel}
+      </label>
+      <label className="flex items-center gap-2 whitespace-nowrap text-xs">
+        <Radio
+          name={name}
+          value={LayoutMode.Advance}
+          checked={layoutMode === LayoutMode.Advance}
+          onChange={() => setLayoutMode(LayoutMode.Advance)}
+        />
+        {advanceModeLabel}
+      </label>
+    </RadioGroup>
   );
 }
 
@@ -623,7 +587,6 @@ const SONG_PART_OPTIONS = [
 const NONE_VALUE = '__none__';
 
 const SongPartField: FC = () => {
-  const { t } = useTranslation();
   const selectedLines = useAtomValue(selectedLinesAtom);
   const lyricLines = useAtomValue(lyricLinesAtom);
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
@@ -673,70 +636,68 @@ const SongPartField: FC = () => {
 
   return (
     <>
-      <Text size="1" id={songPartLabelId}>
-        {t('ribbonBar.editMode.songPart', 'Song Part')}
-      </Text>
-      <Select.Root value={displayValue} onValueChange={handleSongPartChange} size="1">
-        <Select.Trigger
-          placeholder={
-            selectedLines.size === 0
-              ? t('ribbonBar.editMode.noSelection', 'No selection')
-              : currentSongPart === undefined
-                ? t('ribbonBar.editMode.multipleValues', 'Multiple values...')
-                : t('ribbonBar.editMode.none', 'None')
-          }
+      <label className="whitespace-nowrap text-xs" id={songPartLabelId}>
+        Song Part
+      </label>
+      <div className="flex items-center gap-1">
+        <Select
+          value={displayValue}
+          onChange={(e) => {
+            if (e.target.value === '__add_custom__') {
+              setIsAddingCustom(true);
+              return;
+            }
+            handleSongPartChange(e.target.value);
+          }}
           disabled={selectedLines.size === 0}
-          style={{ minWidth: '6em' }}
+          className="h-7 min-w-[6em] text-xs"
           aria-labelledby={songPartLabelId}
-        />
-        <Select.Content>
-          <Select.Item value={NONE_VALUE}>{t('ribbonBar.editMode.none', 'None')}</Select.Item>
+          title={
+            selectedLines.size === 0
+              ? 'No selection'
+              : currentSongPart === undefined
+                ? 'Multiple values...'
+                : 'None'
+          }
+        >
+          <option value={NONE_VALUE}>None</option>
           {SONG_PART_OPTIONS.map((option) => (
-            <Select.Item key={option.value} value={option.value}>
+            <option key={option.value} value={option.value}>
               {option.label}
-            </Select.Item>
+            </option>
           ))}
-          <Select.Separator />
-          {isAddingCustom ? (
-            <Flex gap="2" p="2" align="center">
-              <TextField.Root
-                size="1"
-                placeholder={t('ribbonBar.editMode.customPartPlaceholder', 'Custom part')}
-                value={customPart}
-                onChange={(e) => setCustomPart(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleAddCustomPart();
-                  }
-                }}
-                style={{ width: '120px' }}
-              />
-              <IconButton size="1" variant="soft" onClick={handleAddCustomPart}>
-                <Add16Regular />
-              </IconButton>
-            </Flex>
-          ) : (
-            <Select.Item
-              value="__add_custom__"
-              onClick={(e) => {
-                e.preventDefault();
-                setIsAddingCustom(true);
+          <option value="__add_custom__">＋ 自定义…</option>
+        </Select>
+        {isAddingCustom && (
+          <>
+            <Input
+              className="h-7 w-[120px] px-2 text-xs"
+              placeholder="Custom part"
+              value={customPart}
+              autoFocus
+              onChange={(e) => setCustomPart(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleAddCustomPart();
+                }
               }}
+            />
+            <Button
+              variant="secondary"
+              className="h-7 px-2"
+              onClick={handleAddCustomPart}
+              title="确认添加"
             >
-              <Flex gap="2" align="center">
-                <Add16Regular />
-                {t('ribbonBar.editMode.addCustomPart', 'Add custom')}
-              </Flex>
-            </Select.Item>
-          )}
-        </Select.Content>
-      </Select.Root>
+              <Plus className="size-4" />
+            </Button>
+          </>
+        )}
+      </div>
     </>
   );
 };
 
 const AgentField: FC = () => {
-  const { t } = useTranslation();
   const selectedLines = useAtomValue(selectedLinesAtom);
   const lyricLines = useAtomValue(lyricLinesAtom);
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
@@ -876,44 +837,41 @@ const AgentField: FC = () => {
 
   return (
     <>
-      <Text size="1" id={agentLabelId}>
-        {t('ribbonBar.editMode.agent', 'Agent')}
-      </Text>
-      <Select.Root
+      <label className="whitespace-nowrap text-xs" id={agentLabelId}>
+        Agent
+      </label>
+      <Select
         value={displayValue}
-        onValueChange={handleAgentChange}
-        size="1"
+        onChange={(e) => handleAgentChange(e.target.value)}
         disabled={isAgentSelectDisabled}
+        className="h-7 min-w-[6em] text-xs"
+        aria-labelledby={agentLabelId}
+        title={
+          !hasAgents
+            ? 'No agents'
+            : selectedLines.size === 0
+              ? 'No selection'
+              : hasSelectedBGLine
+                ? 'BG line selected'
+                : 'None'
+        }
       >
-        <Select.Trigger
-          placeholder={
-            !hasAgents
-              ? t('ribbonBar.editMode.noAgents', 'No agents')
-              : selectedLines.size === 0
-                ? t('ribbonBar.editMode.noSelection', 'No selection')
-                : hasSelectedBGLine
-                  ? t('ribbonBar.editMode.bgLineDisabled', 'BG line selected')
-                  : t('ribbonBar.editMode.none', 'None')
-          }
-          aria-labelledby={agentLabelId}
-        />
-        <Select.Content>
-          {agentOptions.map((option) =>
-            option.type === 'separator' ? (
-              <Select.Separator key={option.value} />
-            ) : (
-              <Tooltip
-                key={option.value}
-                content={option.names.join(', ') || option.value}
-                side="left"
-                align="center"
-              >
-                <Select.Item value={option.value}>{option.label}</Select.Item>
-              </Tooltip>
-            )
-          )}
-        </Select.Content>
-      </Select.Root>
+        {agentOptions.map((option) =>
+          option.type === 'separator' ? (
+            <option key={option.value} disabled>
+              ──────
+            </option>
+          ) : (
+            <option
+              key={option.value}
+              value={option.value}
+              title={option.names.join(', ') || option.value}
+            >
+              {option.label}
+            </option>
+          )
+        )}
+      </Select>
     </>
   );
 };
@@ -924,45 +882,38 @@ const AuxiliaryDisplayField: FC = () => {
   const [showWordRomanizationInput, setShowWordRomanizationInput] = useAtom(
     showWordRomanizationInputAtom
   );
-  const { t } = useTranslation();
 
   const idTranslation = useId();
   const idRomanization = useId();
   const idPerWord = useId();
 
   return (
-    <Grid columns="1fr auto" gapX="4" gapY="1" flexGrow="1" align="center">
-      <Text size="1" asChild>
-        <label htmlFor={idTranslation}>
-          {t('ribbonBar.editMode.showTranslation', '显示翻译行')}
-        </label>
-      </Text>
+    <div className="grid flex-1 grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1">
+      <label htmlFor={idTranslation} className="whitespace-nowrap text-xs">
+        显示翻译行
+      </label>
       <Checkbox
         id={idTranslation}
         checked={showTranslation}
         onCheckedChange={(c) => setShowTranslation(Boolean(c))}
       />
-      <Text size="1" asChild>
-        <label htmlFor={idRomanization}>
-          {t('ribbonBar.editMode.showRomanization', '显示音译行')}
-        </label>
-      </Text>
+      <label htmlFor={idRomanization} className="whitespace-nowrap text-xs">
+        显示音译行
+      </label>
       <Checkbox
         id={idRomanization}
         checked={showRomanization}
         onCheckedChange={(c) => setShowRomanization(Boolean(c))}
       />
-      <Text size="1" asChild>
-        <label htmlFor={idPerWord}>
-          {t('ribbonBar.editMode.showWordRomanizationInput', '显示逐字音译')}
-        </label>
-      </Text>
+      <label htmlFor={idPerWord} className="whitespace-nowrap text-xs">
+        显示逐字音译
+      </label>
       <Checkbox
         id={idPerWord}
         checked={showWordRomanizationInput}
         onCheckedChange={(c) => setShowWordRomanizationInput(Boolean(c))}
       />
-    </Grid>
+    </div>
   );
 };
 
@@ -975,81 +926,80 @@ export const EditModeRibbonBar: FC = forwardRef<HTMLDivElement>((_props, ref) =>
   const idBpm = useId();
 
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
-  const { t } = useTranslation();
 
   return (
     <RibbonFrame ref={ref}>
-      <RibbonSection label={t('ribbonBar.editMode.new', '新建')}>
-        <Grid columns="1" gap="1" gapY="1" flexGrow="1" align="center">
+      <RibbonSection label="新建">
+        <div className="grid flex-1 grid-cols-1 items-center gap-1">
           <Button
-            size="1"
-            variant="soft"
+            variant="secondary"
+            className="h-7 px-2 text-xs"
             onClick={() =>
               editLyricLines((draft: Draft<TTMLLyric>) => {
                 draft.lyricLines.push(newLyricLine());
               })
             }
           >
-            {t('ribbonBar.editMode.lyricLine', '歌词行')}
+            歌词行
           </Button>
-        </Grid>
+        </div>
       </RibbonSection>
-      <RibbonSection label={t('ribbonBar.editMode.lineTiming', '行时间戳')}>
-        <Grid columns="0fr 1fr" gap="2" gapY="1" flexGrow="1" align="center">
+      <RibbonSection label="行时间戳">
+        <div className="grid flex-1 grid-cols-[4rem_1fr] items-center gap-x-2 gap-y-1">
           <EditField
-            label={t('ribbonBar.editMode.startTime', '起始时间')}
+            label="起始时间"
             fieldName="startTime"
             parser={parseTimespan}
             formatter={msToTimestamp}
           />
           <EditField
-            label={t('ribbonBar.editMode.endTime', '结束时间')}
+            label="结束时间"
             fieldName="endTime"
             parser={parseTimespan}
             formatter={msToTimestamp}
           />
-        </Grid>
+        </div>
       </RibbonSection>
-      <RibbonSection label={t('ribbonBar.editMode.lineProperties', '行属性')}>
-        <Grid columns="0fr 0fr" gap="4" gapY="1" flexGrow="1" align="center">
+      <RibbonSection label="行属性">
+        <div className="grid flex-1 grid-cols-[auto_auto] items-center gap-x-4 gap-y-1">
           <CheckboxField
-            label={t('ribbonBar.editMode.bgLyric', '背景歌词')}
+            label="背景歌词"
             defaultValue={false}
             isWordField={false}
             fieldName="isBG"
           />
           <CheckboxField
-            label={t('ribbonBar.editMode.duetLyric', '对唱歌词')}
+            label="对唱歌词"
             isWordField={false}
             fieldName="isDuet"
             defaultValue={false}
           />
           <CheckboxField
-            label={t('ribbonBar.editMode.ignoreSync', '忽略打轴')}
+            label="忽略打轴"
             isWordField={false}
             fieldName="ignoreSync"
             defaultValue={false}
           />
-        </Grid>
+        </div>
       </RibbonSection>
-      <RibbonSection label={t('ribbonBar.editMode.wordTiming', '词时间戳')}>
-        <Grid columns="0fr 1fr" gap="2" gapY="1" flexGrow="1" align="center">
+      <RibbonSection label="词时间戳">
+        <div className="grid flex-1 grid-cols-[4rem_1fr] items-center gap-x-2 gap-y-1">
           <EditField
-            label={t('ribbonBar.editMode.startTime', '起始时间')}
+            label="起始时间"
             fieldName="startTime"
             isWordField
             parser={parseTimespan}
             formatter={msToTimestamp}
           />
           <EditField
-            label={t('ribbonBar.editMode.endTime', '结束时间')}
+            label="结束时间"
             fieldName="endTime"
             isWordField
             parser={parseTimespan}
             formatter={msToTimestamp}
           />
           <EditField
-            label={t('ribbonBar.editMode.emptyBeatCount', '空拍数量')}
+            label="空拍数量"
             fieldName="emptyBeat"
             isWordField
             parser={(v) => {
@@ -1058,80 +1008,65 @@ export const EditModeRibbonBar: FC = forwardRef<HTMLDivElement>((_props, ref) =>
             }}
             formatter={String}
           />
-        </Grid>
+        </div>
       </RibbonSection>
-      <RibbonSection label={t('ribbonBar.editMode.wordProperties', '单词属性')}>
-        <Grid columns="0fr 1fr" gap="2" gapY="1" flexGrow="1" align="center">
+      <RibbonSection label="单词属性">
+        <div className="grid flex-1 grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
           <EditField
-            label={t('ribbonBar.editMode.wordContent', '单词内容')}
+            label="单词内容"
             fieldName="word"
             isWordField
             parser={(v) => v}
             formatter={(v) => v}
           />
           <EditField
-            label={t('ribbonBar.editMode.romanWord', '单词音译')}
+            label="单词音译"
             fieldName="romanWord"
             isWordField
             parser={(v) => v}
             formatter={(v) => v || ''}
           />
-          <CheckboxField
-            label={t('ribbonBar.editMode.obscene', '不雅用语')}
-            isWordField
-            fieldName="obscene"
-            defaultValue={false}
-          />
-        </Grid>
+          <CheckboxField label="不雅用语" isWordField fieldName="obscene" defaultValue={false} />
+        </div>
       </RibbonSection>
-      <RibbonSection label={t('ribbonBar.editMode.secondaryContent', '次要内容')}>
-        <Grid columns="0fr 1fr" gap="2" gapY="1" flexGrow="1" align="center">
+      <RibbonSection label="次要内容">
+        <div className="grid flex-1 grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
           <EditField
-            label={t('ribbonBar.editMode.translatedLyric', '翻译歌词')}
+            label="翻译歌词"
             fieldName="translatedLyric"
             parser={(v) => v}
             formatter={(v) => v}
             textFieldStyle={{ width: '20em' }}
           />
           <EditField
-            label={t('ribbonBar.editMode.romanLyric', '音译歌词')}
+            label="音译歌词"
             fieldName="romanLyric"
             parser={(v) => v}
             formatter={(v) => v}
             textFieldStyle={{ width: '20em' }}
           />
-        </Grid>
+        </div>
       </RibbonSection>
-      <RibbonSection label={t('ribbonBar.editMode.multilingual', '多语言')}>
+      <RibbonSection label="多语言">
         <I18nEditor />
       </RibbonSection>
-      <RibbonSection label={t('ribbonBar.editMode.layoutMode', '布局模式')}>
-        <EditModeField
-          simpleModeLabel={t('settings.common.layoutModeOptions.simple', '简单模式')}
-          advanceModeLabel={t('settings.common.layoutModeOptions.advance', '高级模式')}
-        />
+      <RibbonSection label="布局模式">
+        <EditModeField simpleModeLabel="简单模式" advanceModeLabel="高级模式" />
       </RibbonSection>
-      <RibbonSection label={t('ribbonBar.editMode.auxiliaryLineDisplay', '辅助行显示')}>
+      <RibbonSection label="辅助行显示">
         <AuxiliaryDisplayField />
       </RibbonSection>
-      <RibbonSection label={t('ribbonBar.editMode.amllTags', 'AM 标记')}>
-        <Grid columns="auto 1fr" gap="2" gapY="1" flexGrow="1" align="center">
+      <RibbonSection label="AM 标记">
+        <div className="grid flex-1 grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
           <SongPartField />
           <AgentField />
-        </Grid>
+        </div>
       </RibbonSection>
-      <RibbonSection label={t('ribbonBar.editMode.views', '视图')}>
-        <Grid columns="1fr auto" gapX="3" gapY="1" flexGrow="1" align="center">
-          <Text size="1" asChild>
-            <label
-              htmlFor={idOutline}
-              style={{
-                userSelect: 'none',
-              }}
-            >
-              {t('ribbonBar.editMode.showOutline', '大纲')}
-            </label>
-          </Text>
+      <RibbonSection label="视图">
+        <div className="grid flex-1 grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1">
+          <label htmlFor={idOutline} className="select-none whitespace-nowrap text-xs">
+            大纲
+          </label>
           <Checkbox
             id={idOutline}
             checked={isOutlineOpen}
@@ -1139,16 +1074,9 @@ export const EditModeRibbonBar: FC = forwardRef<HTMLDivElement>((_props, ref) =>
               toggleTab({ tabId: 'outline', open: Boolean(checked) });
             }}
           />
-          <Text size="1" asChild>
-            <label
-              htmlFor={idBpm}
-              style={{
-                userSelect: 'none',
-              }}
-            >
-              {t('ribbonBar.editMode.showBpmPanel', 'BPM')}
-            </label>
-          </Text>
+          <label htmlFor={idBpm} className="select-none whitespace-nowrap text-xs">
+            BPM
+          </label>
           <Checkbox
             id={idBpm}
             checked={isBpmOpen}
@@ -1156,7 +1084,7 @@ export const EditModeRibbonBar: FC = forwardRef<HTMLDivElement>((_props, ref) =>
               toggleTab({ tabId: 'bpm', open: Boolean(checked) });
             }}
           />
-        </Grid>
+        </div>
       </RibbonSection>
     </RibbonFrame>
   );

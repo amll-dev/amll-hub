@@ -1,18 +1,17 @@
-import { Add16Regular } from '@fluentui/react-icons';
-import { Grid, IconButton, Select, Text } from '@radix-ui/themes';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
+import { Plus } from 'lucide-react';
 import { type FC, useCallback, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import { addLanguageDialogAtom } from '$/states/dialogs';
 import { lyricLinesAtom } from '$/states/main.ts';
 
 export const I18nEditor: FC = () => {
-  const { t } = useTranslation();
   const lyricLines = useAtomValue(lyricLinesAtom);
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
   const setAddLanguageDialog = useSetAtom(addLanguageDialogAtom);
-  const placeholder = t('ribbonBar.editMode.multilingualPlaceholder', '请选择语言');
+  const placeholder = '请选择语言';
 
   /** 只有一个 und 条目时，说明这行没有指定语言，退回 und 处理。 */
   const isOnlyUndEntry = (entries: [string, string][]) =>
@@ -325,85 +324,82 @@ export const I18nEditor: FC = () => {
   }, [applyWordRomanizationLang, editLyricLines, setAddLanguageDialog]);
 
   return (
-    <Grid columns="0fr 1fr auto" gap="2" gapY="1" flexGrow="1" align="center">
-      <Text wrap="nowrap" size="1">
-        {t('ribbonBar.editMode.translation', '翻译')}
-      </Text>
-      <Select.Root
-        value={currentTranslationLang}
-        onValueChange={applyTranslationLang}
+    <div className="grid flex-1 grid-cols-[auto_1fr_auto] items-center gap-x-2 gap-y-1">
+      <span className="whitespace-nowrap text-xs">翻译</span>
+      <Select
+        value={currentTranslationLang ?? ''}
+        onChange={(e) => applyTranslationLang(e.target.value)}
         disabled={translationLanguages.length === 0}
-        size="1"
+        className="h-7 text-xs"
       >
-        <Select.Trigger placeholder={placeholder} />
-        <Select.Content>
-          {translationLanguages.map((lang) => (
-            <Select.Item key={lang} value={lang}>
-              {lang}
-            </Select.Item>
-          ))}
-        </Select.Content>
-      </Select.Root>
-      <IconButton
-        variant="soft"
-        size="1"
+        <option value="" disabled>
+          {placeholder}
+        </option>
+        {translationLanguages.map((lang) => (
+          <option key={lang} value={lang}>
+            {lang}
+          </option>
+        ))}
+      </Select>
+      <Button
+        variant="secondary"
+        size="icon"
+        className="size-7 shrink-0"
         onClick={openAddTranslationDialog}
-        aria-label={t('addLanguageDialog.addTranslation', '新增翻译语言')}
+        aria-label="新增翻译语言"
       >
-        <Add16Regular />
-      </IconButton>
-      <Text wrap="nowrap" size="1">
-        {t('ribbonBar.editMode.romanization', '音译')}
-      </Text>
-      <Select.Root
-        value={currentRomanizationLang}
-        onValueChange={applyRomanizationLang}
+        <Plus className="size-4" />
+      </Button>
+      <span className="whitespace-nowrap text-xs">音译</span>
+      <Select
+        value={currentRomanizationLang ?? ''}
+        onChange={(e) => applyRomanizationLang(e.target.value)}
         disabled={romanizationLanguages.length === 0}
-        size="1"
+        className="h-7 text-xs"
       >
-        <Select.Trigger placeholder={placeholder} />
-        <Select.Content>
-          {romanizationLanguages.map((lang) => (
-            <Select.Item key={lang} value={lang}>
-              {lang}
-            </Select.Item>
-          ))}
-        </Select.Content>
-      </Select.Root>
-      <IconButton
-        variant="soft"
-        size="1"
+        <option value="" disabled>
+          {placeholder}
+        </option>
+        {romanizationLanguages.map((lang) => (
+          <option key={lang} value={lang}>
+            {lang}
+          </option>
+        ))}
+      </Select>
+      <Button
+        variant="secondary"
+        size="icon"
+        className="size-7 shrink-0"
         onClick={openAddRomanizationDialog}
-        aria-label={t('addLanguageDialog.addRomanization', '新增音译语言')}
+        aria-label="新增音译语言"
       >
-        <Add16Regular />
-      </IconButton>
-      <Text wrap="nowrap" size="1">
-        {t('ribbonBar.editMode.wordRomanization', '逐字音译')}
-      </Text>
-      <Select.Root
-        value={currentWordRomanizationLang}
-        onValueChange={applyWordRomanizationLang}
+        <Plus className="size-4" />
+      </Button>
+      <span className="whitespace-nowrap text-xs">逐字音译</span>
+      <Select
+        value={currentWordRomanizationLang ?? ''}
+        onChange={(e) => applyWordRomanizationLang(e.target.value)}
         disabled={wordRomanizationLanguages.length === 0}
-        size="1"
+        className="h-7 text-xs"
       >
-        <Select.Trigger placeholder={placeholder} />
-        <Select.Content>
-          {wordRomanizationLanguages.map((lang) => (
-            <Select.Item key={lang} value={lang}>
-              {lang}
-            </Select.Item>
-          ))}
-        </Select.Content>
-      </Select.Root>
-      <IconButton
-        variant="soft"
-        size="1"
+        <option value="" disabled>
+          {placeholder}
+        </option>
+        {wordRomanizationLanguages.map((lang) => (
+          <option key={lang} value={lang}>
+            {lang}
+          </option>
+        ))}
+      </Select>
+      <Button
+        variant="secondary"
+        size="icon"
+        className="size-7 shrink-0"
         onClick={openAddWordRomanizationDialog}
-        aria-label={t('addLanguageDialog.addWordRomanization', '新增逐字音译语言')}
+        aria-label="新增逐字音译语言"
       >
-        <Add16Regular />
-      </IconButton>
-    </Grid>
+        <Plus className="size-4" />
+      </Button>
+    </div>
   );
 };

@@ -1,9 +1,8 @@
-import { Dismiss16Regular } from '@fluentui/react-icons';
-import { Box, IconButton } from '@radix-ui/themes';
 import { motion } from 'framer-motion';
 import { useAtom, type WritableAtom } from 'jotai';
+import { X } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
 import styles from './ResizableSidebar.module.css';
 
 const SNAP_CLOSE_THRESHOLD = 20;
@@ -43,7 +42,6 @@ export const ResizableSidebar = <Panel extends string>({
   headerSingle,
   children,
 }: ResizableSidebarProps<Panel>) => {
-  const { t } = useTranslation();
   const [activePanel, setActivePanel] = useAtom(panelAtom);
   const [savedWidth, setSavedWidth] = useAtom(widthAtom);
 
@@ -134,17 +132,17 @@ export const ResizableSidebar = <Panel extends string>({
         <div className={styles.inner} style={{ width: contentWidth, minWidth: contentWidth }}>
           <div className={styles.header} data-single-tab={headerSingle}>
             <div className={styles.title}>{isOpen ? (titles[activePanel] ?? null) : null}</div>
-            <IconButton
+            <Button
               variant="ghost"
-              color="gray"
-              radius="full"
+              size="icon"
+              className="size-8 shrink-0 rounded-full"
               onClick={close}
-              aria-label={t('common.close', '关闭')}
+              aria-label="关闭"
             >
-              <Dismiss16Regular />
-            </IconButton>
+              <X className="size-4" />
+            </Button>
           </div>
-          <Box className={styles.content}>{children}</Box>
+          <div className={styles.content}>{children}</div>
         </div>
       </motion.div>
       {side === 'left' && resizer}

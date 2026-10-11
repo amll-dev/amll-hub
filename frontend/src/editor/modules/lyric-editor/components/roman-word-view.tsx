@@ -1,12 +1,12 @@
-import { Button, TextField } from '@radix-ui/themes';
-import classNames from 'classnames';
 import { type Atom, useAtom, useAtomValue, type WritableAtom } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { lyricLinesAtom } from '$/states/main';
 import type { LyricWord } from '$/types/ttml';
 import { applyGeneratedRuby } from '$/modules/lyric-editor/utils/ruby-generator';
-import styles from './roman-word-view.module.css';
 
 interface RomanWordViewProps {
   wordAtom: Atom<LyricWord>;
@@ -91,10 +91,12 @@ export const RomanWordView = ({
 
   if (isEditing) {
     return (
-      <TextField.Root
+      <Input
         ref={inputRef}
-        size="1"
-        className={classNames(styles.romanWordView, word.romanWarning && styles.warning)}
+        className={cn(
+          'inline-block h-auto w-auto px-2 py-1 text-left text-xs',
+          word.romanWarning && 'border-warning bg-warning/10'
+        )}
         value={inputValue}
         onChange={(e) => setInputValue(e.currentTarget.value)}
         onBlur={(e) => saveAndStopEditing(e.currentTarget.value)}
@@ -105,13 +107,11 @@ export const RomanWordView = ({
 
   return (
     <Button
-      size="1"
-      variant="soft"
-      color="gray"
-      className={classNames(
-        styles.romanWordView,
-        !word.romanWord && styles.placeholder,
-        word.romanWarning && styles.warning
+      variant="secondary"
+      className={cn(
+        'inline-block h-auto w-auto px-2 py-1 text-left text-xs font-normal',
+        !word.romanWord && 'italic text-ink-3',
+        word.romanWarning && 'border border-warning bg-warning/10'
       )}
       onClick={(e) => {
         e.stopPropagation();

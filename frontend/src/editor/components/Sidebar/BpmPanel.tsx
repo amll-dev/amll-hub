@@ -1,25 +1,10 @@
-import {
-  ArrowLeft16Regular,
-  ArrowResetRegular,
-  Dismiss16Regular,
-  ErrorCircle16Regular,
-  Info16Regular,
-  Timer16Regular,
-} from '@fluentui/react-icons';
-import {
-  Box,
-  Button,
-  Callout,
-  Card,
-  Checkbox,
-  Flex,
-  IconButton,
-  Text,
-  Tooltip,
-} from '@radix-ui/themes';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
+import { AlertCircle, ArrowLeft, Info, RotateCcw, Timer, X } from 'lucide-react';
 import { type FC, useCallback, useId, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Alert, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { SimpleTooltip } from '@/components/ui/tooltip';
 import { KeyBinding } from '$/components/KeyBinding';
 import { useBpmControl, useBpmTapEngine } from '$/modules/audio/hooks';
 import {
@@ -39,7 +24,6 @@ function formatCalculationTime(timeMs: number): string {
 }
 
 export const BpmPanel: FC = () => {
-  const { t } = useTranslation();
   const followRateCheckboxId = useId();
   const showBeatLinesCheckboxId = useId();
   const {
@@ -104,7 +88,7 @@ export const BpmPanel: FC = () => {
     bpmValueText = `${currentBpm ?? Math.round(bpmState.result.bpm)}`;
     durationText = formatCalculationTime(bpmState.calculationTime);
   } else if (bpmState.status === 'analyzing') {
-    bpmValueText = t('sidebar.bpm.analyzing', '正在分析');
+    bpmValueText = '正在分析';
   }
 
   const isAnalyzing = bpmState.status === 'analyzing';
@@ -113,314 +97,214 @@ export const BpmPanel: FC = () => {
     isAdjusted || tapTimes.length > 0 || (isCompleted && bpmState.calculationTime === 0);
 
   return (
-    <Box p="4">
-      <Flex direction="column" gap="4">
-        <Flex
-          direction="column"
-          align="center"
-          gap="1"
-          style={{ position: 'relative', width: '100%' }}
-        >
-          <Text size="1" color="gray" weight="medium">
-            BPM
-          </Text>
+    <div className="p-4">
+      <div className="flex flex-col gap-4">
+        <div className="relative flex w-full flex-col items-center gap-1">
+          <span className="text-xs font-medium text-ink-3">BPM</span>
 
-          <Flex align="center" justify="center" gap="5" style={{ width: '100%' }}>
-            <Tooltip content={t('sidebar.bpm.halve', '减半 BPM')}>
+          <div className="flex w-full items-center justify-center gap-5">
+            <SimpleTooltip label="减半 BPM">
               <Button
-                size="2"
-                variant="soft"
-                color="gray"
+                variant="secondary"
+                className="h-8 font-mono"
                 disabled={!isCompleted}
                 onClick={halveBpm}
-                style={{ fontFamily: 'var(--default-font-family-mono)' }}
               >
                 ÷2
               </Button>
-            </Tooltip>
+            </SimpleTooltip>
 
-            <Text
-              size={isAnalyzing ? '6' : '8'}
-              weight="bold"
-              style={{
-                fontFamily: 'var(--default-font-family-mono)',
-                fontVariantNumeric: 'tabular-nums',
-              }}
+            <span
+              className={`font-mono font-bold tabular-nums ${
+                isAnalyzing ? 'text-2xl' : 'text-4xl'
+              }`}
             >
               {bpmValueText}
-            </Text>
+            </span>
 
-            <Tooltip content={t('sidebar.bpm.double', '加倍 BPM')}>
+            <SimpleTooltip label="加倍 BPM">
               <Button
-                size="2"
-                variant="soft"
-                color="gray"
+                variant="secondary"
+                className="h-8 font-mono"
                 disabled={!isCompleted}
                 onClick={doubleBpm}
-                style={{ fontFamily: 'var(--default-font-family-mono)' }}
               >
                 ×2
               </Button>
-            </Tooltip>
-          </Flex>
+            </SimpleTooltip>
+          </div>
 
           {isCompleted && isModified && (
-            <Tooltip content={t('sidebar.bpm.reset', '重置 BPM')}>
-              <IconButton
-                size="2"
+            <SimpleTooltip label="重置 BPM">
+              <Button
                 variant="ghost"
-                color="gray"
+                size="icon"
+                className="absolute right-0 top-full size-8 -translate-y-1/2"
                 onClick={handleResetBpm}
-                style={{
-                  position: 'absolute',
-                  right: 0,
-                  top: '100%',
-                  transform: 'translateY(-50%)',
-                }}
               >
-                <ArrowResetRegular style={{ fontSize: 18 }} />
-              </IconButton>
-            </Tooltip>
+                <RotateCcw className="size-[18px]" />
+              </Button>
+            </SimpleTooltip>
           )}
-        </Flex>
+        </div>
 
-        <Flex align="center" justify="center" gap="2">
-          <Timer16Regular style={{ color: 'var(--gray-10)' }} />
-          <Text size="2" color="gray" style={{ fontFamily: 'var(--default-font-family-mono)' }}>
-            {durationText}
-          </Text>
-        </Flex>
+        <div className="flex items-center justify-center gap-2">
+          <Timer className="size-4 text-ink-3" />
+          <span className="font-mono text-sm text-ink-3">{durationText}</span>
+        </div>
 
         {bpmState.status === 'error' && (
-          <Callout.Root color="red" size="1">
-            <Callout.Icon>
-              <ErrorCircle16Regular />
-            </Callout.Icon>
-            <Callout.Text>{bpmState.error}</Callout.Text>
-          </Callout.Root>
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>{bpmState.error}</AlertTitle>
+          </Alert>
         )}
 
-        <Flex align="center" gap="2" mt="2">
+        <div className="mt-2 flex items-center gap-2">
           <Checkbox
             id={followRateCheckboxId}
             checked={followPlaybackRate}
             onCheckedChange={(checked) => setFollowPlaybackRate(Boolean(checked))}
           />
-          <Text size="2" asChild>
-            <label htmlFor={followRateCheckboxId} style={{ userSelect: 'none', cursor: 'pointer' }}>
-              {t('sidebar.bpm.followPlaybackRate', '跟随音频播放倍速')}
-            </label>
-          </Text>
-        </Flex>
+          <label htmlFor={followRateCheckboxId} className="cursor-pointer select-none text-sm">
+            跟随音频播放倍速
+          </label>
+        </div>
 
-        <Flex align="center" gap="2">
+        <div className="flex items-center gap-2">
           <Checkbox
             id={showBeatLinesCheckboxId}
             checked={showBeatLines}
             onCheckedChange={(checked) => setShowBeatLines(Boolean(checked))}
           />
-          <Text size="2" asChild>
-            <label
-              htmlFor={showBeatLinesCheckboxId}
-              style={{ userSelect: 'none', cursor: 'pointer' }}
-            >
-              {t('sidebar.bpm.showBeatLines', '在频谱图上显示拍子')}
-            </label>
-          </Text>
-        </Flex>
+          <label htmlFor={showBeatLinesCheckboxId} className="cursor-pointer select-none text-sm">
+            在频谱图上显示拍子
+          </label>
+        </div>
 
         {!hasSeenTapWindowTip && (isKeyTapMode || isSpectrogramTapMode) && (
-          <Callout.Root
-            color="blue"
-            size="1"
-            variant="soft"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              paddingRight: '10px',
-            }}
-          >
-            <Callout.Icon style={{ display: 'flex', alignItems: 'center' }}>
-              <Info16Regular style={{ display: 'block' }} />
-            </Callout.Icon>
-
-            <Callout.Text size="1" style={{ flex: 1 }}>
-              {t('sidebar.bpm.slidingWindowTip', '只会使用最近 10 次校准数据计算 BPM')}
-            </Callout.Text>
-
-            <IconButton
-              size="1"
+          <Alert variant="info" className="flex items-center gap-2 px-3 py-2">
+            <Info className="size-4 shrink-0" />
+            <div className="flex-1 text-xs">只会使用最近 10 次校准数据计算 BPM</div>
+            <Button
               variant="ghost"
-              color="gray"
+              size="icon"
+              className="size-6 shrink-0"
               onClick={() => setHasSeenTapWindowTip(true)}
-              style={{
-                margin: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
+              aria-label="关闭提示"
             >
-              <Dismiss16Regular />
-            </IconButton>
-          </Callout.Root>
+              <X className="size-3.5" />
+            </Button>
+          </Alert>
         )}
 
         {!isKeyTapMode && !isSpectrogramTapMode && (
-          <Flex direction="column" gap="2" align="start">
+          <div className="flex flex-col items-start gap-2">
             <Button
-              size="2"
-              variant="soft"
+              variant="secondary"
+              className="h-8 cursor-pointer self-start"
               disabled={!audioLoaded}
               onClick={() => setTapMode('key')}
-              style={{ alignSelf: 'flex-start', cursor: 'pointer' }}
             >
-              {t('sidebar.bpm.manualCalibration', '手动打拍校准')}
+              手动打拍校准
             </Button>
             <Button
-              size="2"
-              variant="soft"
+              variant="secondary"
+              className="h-8 cursor-pointer self-start"
               disabled={!audioLoaded}
               onClick={() => setTapMode('spectrogram')}
-              style={{ alignSelf: 'flex-start', cursor: 'pointer' }}
             >
-              {t('sidebar.bpm.spectrogramCalibration', '使用频谱图校准')}
+              使用频谱图校准
             </Button>
-          </Flex>
+          </div>
         )}
 
         {isKeyTapMode && (
-          <Card size="2">
-            <Flex direction="column" gap="3" style={{ position: 'relative' }}>
-              <Flex align="center" justify="start">
-                <IconButton
-                  size="1"
+          <div className="rounded-lg border border-line bg-card p-3">
+            <div className="relative flex flex-col gap-3">
+              <div className="flex items-center justify-start">
+                <Button
                   variant="ghost"
-                  color="gray"
+                  size="icon"
+                  className="absolute left-0 top-0 size-7 cursor-pointer"
                   onClick={() => {
                     setTapMode('off');
                     resetTapTimes();
                   }}
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    top: 0,
-                    cursor: 'pointer',
-                  }}
+                  aria-label="返回"
                 >
-                  <ArrowLeft16Regular />
-                </IconButton>
+                  <ArrowLeft className="size-4" />
+                </Button>
 
-                <Flex
-                  align="center"
-                  justify="center"
-                  style={{
-                    width: '100%',
-                    paddingLeft: '28px',
-                    paddingRight: '28px',
-                  }}
-                >
-                  <Text
-                    size="2"
-                    weight={isHighlighted ? 'bold' : 'medium'}
+                <div className="flex w-full items-center justify-center px-7">
+                  <span
+                    className={`cursor-pointer select-none text-center text-sm ${
+                      isHighlighted ? 'font-bold text-primary' : 'font-medium'
+                    }`}
                     onClick={() => triggerTap()}
-                    style={{
-                      textAlign: 'center',
-                      color: isHighlighted ? 'var(--accent-11)' : undefined,
-                      cursor: 'pointer',
-                      userSelect: 'none',
-                    }}
                   >
-                    {t('sidebar.bpm.tapInstructionPrefix', '根据节拍按下 ')}
-                    <KeyBinding kbdAtom={keySyncNextAtom} />
-                    {t('sidebar.bpm.tapInstructionSuffix', ' 或点击此处')}
-                  </Text>
-                </Flex>
-              </Flex>
+                    根据节拍按下 <KeyBinding kbdAtom={keySyncNextAtom} /> 或点击此处
+                  </span>
+                </div>
+              </div>
 
-              <Flex gap="1" style={{ width: '100%' }} justify="center">
+              <div className="flex w-full justify-center gap-1">
                 {Array.from({ length: 10 }).map((_, index) => (
-                  <Box
-                    // biome-ignore lint/suspicious/noArrayIndexKey: fixed 10 indicator bars
+                  <div
                     key={index}
-                    style={{
-                      flex: 1,
-                      height: '4px',
-                      borderRadius: '2px',
-                      backgroundColor:
-                        index < Math.min(tapTimes.length, 10) ? 'var(--accent-9)' : 'var(--gray-5)',
-                    }}
+                    className={`h-1 flex-1 rounded-sm ${
+                      index < Math.min(tapTimes.length, 10) ? 'bg-primary' : 'bg-muted'
+                    }`}
                   />
                 ))}
-              </Flex>
-            </Flex>
-          </Card>
+              </div>
+            </div>
+          </div>
         )}
 
         {isSpectrogramTapMode && (
-          <Card size="2">
-            <Flex direction="column" gap="3" style={{ position: 'relative' }}>
-              <Flex align="center" justify="start">
-                <IconButton
-                  size="1"
+          <div className="rounded-lg border border-line bg-card p-3">
+            <div className="relative flex flex-col gap-3">
+              <div className="flex items-center justify-start">
+                <Button
                   variant="ghost"
-                  color="gray"
+                  size="icon"
+                  className="absolute left-0 top-0 size-7 cursor-pointer"
                   onClick={() => {
                     setTapMode('off');
                     resetTapTimes();
                   }}
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    top: 0,
-                    cursor: 'pointer',
-                  }}
+                  aria-label="返回"
                 >
-                  <ArrowLeft16Regular />
-                </IconButton>
+                  <ArrowLeft className="size-4" />
+                </Button>
 
-                <Flex
-                  align="center"
-                  justify="center"
-                  style={{
-                    width: '100%',
-                    paddingLeft: '28px',
-                    paddingRight: '28px',
-                  }}
-                >
-                  <Text
-                    size="2"
-                    weight={isHighlighted ? 'bold' : 'medium'}
-                    style={{
-                      textAlign: 'center',
-                      color: isHighlighted ? 'var(--accent-11)' : undefined,
-                      userSelect: 'none',
-                    }}
+                <div className="flex w-full items-center justify-center px-7">
+                  <span
+                    className={`select-none text-center text-sm ${
+                      isHighlighted ? 'font-bold text-primary' : 'font-medium'
+                    }`}
                   >
-                    {t('sidebar.bpm.clickOnSpectrogramToCalibrate', '在频谱图上点击以校准')}
-                  </Text>
-                </Flex>
-              </Flex>
+                    在频谱图上点击以校准
+                  </span>
+                </div>
+              </div>
 
-              <Flex gap="1" style={{ width: '100%' }} justify="center">
+              <div className="flex w-full justify-center gap-1">
                 {Array.from({ length: 10 }).map((_, index) => (
-                  <Box
-                    // biome-ignore lint/suspicious/noArrayIndexKey: fixed 10 indicator bars
+                  <div
                     key={index}
-                    style={{
-                      flex: 1,
-                      height: '4px',
-                      borderRadius: '2px',
-                      backgroundColor:
-                        index < Math.min(tapTimes.length, 10) ? 'var(--accent-9)' : 'var(--gray-5)',
-                    }}
+                    className={`h-1 flex-1 rounded-sm ${
+                      index < Math.min(tapTimes.length, 10) ? 'bg-primary' : 'bg-muted'
+                    }`}
                   />
                 ))}
-              </Flex>
-            </Flex>
-          </Card>
+              </div>
+            </div>
+          </div>
         )}
-      </Flex>
-    </Box>
+      </div>
+    </div>
   );
 };
 

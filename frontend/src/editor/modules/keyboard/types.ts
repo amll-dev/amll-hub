@@ -1,8 +1,6 @@
-import type { ParseKeys } from 'i18next';
 import type { WritableAtom } from 'jotai';
 import type { RESET_KEYBINDING } from '$/utils/keybindings';
-
-export type I18nKey = ParseKeys<'translation'>;
+export type I18nKey = string;
 export type KeyBindingsConfig = string[];
 
 export interface KeyBindingCommand {

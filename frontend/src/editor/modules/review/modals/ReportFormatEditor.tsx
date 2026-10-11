@@ -1,14 +1,8 @@
-import { Box, Button, Flex, Switch, Text, TextArea } from '@radix-ui/themes';
+import { RotateCcw, Bold, Italic, Heading1, Heading2, Heading3, AlignJustify } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
-import {
-  ArrowReset20Regular,
-  TextBold20Regular,
-  TextHeader120Regular,
-  TextHeader220Regular,
-  TextHeader320Regular,
-  TextItalic20Regular,
-  TextLineSpacing20Regular,
-} from '@fluentui/react-icons';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import {
   DEFAULT_REVIEW_REPORT_FORMAT,
   resetReviewReportBlockFormat,
@@ -126,55 +120,24 @@ export const ReportFormatEditor = ({ value, onChange, report }: ReportFormatEdit
   const insertVariable = (name: string) => insertTemplateText(`{{${name}}}`);
 
   return (
-    <Flex
-      direction="column"
-      gap="3"
-      style={{ flex: '1 1 auto', minHeight: 0, width: '100%', maxWidth: '100%' }}
-    >
+    <div className="flex w-full max-w-full min-h-0 flex-1 flex-col gap-3">
       {/* 区块列表 + 恢复默认 */}
-      <Flex align="center" justify="between" gap="2" style={{ flexShrink: 0 }}>
-        <Text size="1" color="gray">
-          选择要编辑的区块，模板里用 {'{{变量}}'} 引用内容
-        </Text>
+      <div className="flex shrink-0 items-center justify-between gap-2">
+        <span className="text-xs text-ink-3">选择要编辑的区块，模板里用 {'{{变量}}'} 引用内容</span>
         <Button
-          size="1"
-          variant="soft"
-          color="gray"
+          type="button"
+          size="sm"
+          variant="secondary"
           onClick={() => onChange(DEFAULT_REVIEW_REPORT_FORMAT)}
         >
-          <ArrowReset20Regular />
+          <RotateCcw />
           恢复默认
         </Button>
-      </Flex>
+      </div>
 
-      <Box
-        style={{
-          display: 'flex',
-          gap: 12,
-          alignItems: 'stretch',
-          flex: '1 1 auto',
-          minHeight: 0,
-          width: '100%',
-          maxWidth: '100%',
-          overflow: 'hidden',
-        }}
-      >
+      <div className="flex w-full max-w-full min-h-0 flex-1 items-stretch gap-3 overflow-hidden">
         {/* 左：区块列表（独立滚动） */}
-        <Flex
-          direction="column"
-          gap="2"
-          style={{
-            flex: '0 0 clamp(140px, 22%, 200px)',
-            minWidth: 0,
-            maxWidth: 200,
-            alignSelf: 'stretch',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            minHeight: 0,
-            maxHeight: '100%',
-            paddingRight: 2,
-          }}
-        >
+        <div className="flex min-h-0 max-h-full max-w-[200px] min-w-0 shrink-0 grow-0 basis-[clamp(140px,22%,200px)] flex-col gap-2 self-stretch overflow-x-hidden overflow-y-auto pr-0.5">
           {reviewReportFormatBlockDefinitions.map((definition) => {
             const selected = selectedDefinition.kind === definition.kind;
             const changed = changedKinds.has(definition.kind);
@@ -183,43 +146,16 @@ export const ReportFormatEditor = ({ value, onChange, report }: ReportFormatEdit
                 key={definition.kind}
                 type="button"
                 onClick={() => setSelectedKind(definition.kind)}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'flex-start',
-                  gap: 4,
-                  width: '100%',
-                  minWidth: 0,
-                  padding: '8px 10px',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  borderRadius: 6,
-                  border: `1px solid ${selected ? 'var(--amll-primary)' : 'var(--amll-border)'}`,
-                  background: selected
-                    ? 'var(--amll-primary-soft)'
+                className={`flex w-full min-w-0 cursor-pointer flex-col items-start gap-1 rounded-md border px-2.5 py-2 text-left text-inherit transition-colors ${
+                  selected
+                    ? 'border-primary bg-primary-soft'
                     : changed
-                      ? 'var(--amll-muted)'
-                      : 'var(--amll-card)',
-                  color: 'inherit',
-                }}
+                      ? 'border-line bg-muted'
+                      : 'border-line bg-card hover:bg-surface-2'
+                }`}
               >
-                <span
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    maxWidth: '100%',
-                    fontSize: 13,
-                    fontWeight: 600,
-                  }}
-                >
-                  <span
-                    style={{
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
+                <span className="flex max-w-full items-center gap-1.5 text-[13px] font-semibold">
+                  <span className="overflow-hidden text-ellipsis whitespace-nowrap">
                     {definition.label}
                   </span>
                   {/*
@@ -227,181 +163,125 @@ export const ReportFormatEditor = ({ value, onChange, report }: ReportFormatEdit
                    * 星号太弱，用户会以为是标点符号而不是状态。
                    */}
                   {changed && (
-                    <span
-                      style={{
-                        flexShrink: 0,
-                        fontSize: 10,
-                        lineHeight: 1.4,
-                        fontWeight: 500,
-                        padding: '0 5px',
-                        borderRadius: 999,
-                        background: 'var(--amll-primary)',
-                        color: 'var(--amll-primary-foreground)',
-                      }}
-                    >
+                    <span className="shrink-0 rounded-full bg-primary px-1.5 text-[10px] leading-[1.4] font-medium text-primary-foreground">
                       已改
                     </span>
                   )}
                 </span>
-                <span
-                  style={{
-                    maxWidth: '100%',
-                    fontSize: 11,
-                    lineHeight: 1.4,
-                    color: 'var(--amll-muted-foreground)',
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                  }}
-                >
+                <span className="line-clamp-2 max-w-full text-[11px] leading-[1.4] text-muted-foreground">
                   {definition.description}
                 </span>
               </button>
             );
           })}
-        </Flex>
+        </div>
 
         {/* 右：模板编辑区（独立滚动，宽度不撑破卡片） */}
-        <Flex
-          direction="column"
-          gap="3"
-          style={{
-            flex: '1 1 auto',
-            minWidth: 0,
-            maxWidth: '100%',
-            alignSelf: 'stretch',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            minHeight: 0,
-            maxHeight: '100%',
-            paddingRight: 2,
-          }}
-        >
-          <Flex align="center" justify="between" gap="2" style={{ flexShrink: 0 }}>
-            <Text size="2" weight="bold">
-              {selectedDefinition.label}
-            </Text>
+        <div className="flex min-h-0 max-h-full max-w-full min-w-0 flex-1 flex-col gap-3 self-stretch overflow-x-hidden overflow-y-auto pr-0.5">
+          <div className="flex shrink-0 items-center justify-between gap-2">
+            <span className="text-sm font-bold text-foreground">{selectedDefinition.label}</span>
             <Button
-              size="1"
-              variant="soft"
-              color="gray"
+              type="button"
+              size="sm"
+              variant="secondary"
               onClick={() => onChange(resetReviewReportBlockFormat(value, selectedDefinition.kind))}
             >
-              <ArrowReset20Regular />
+              <RotateCcw />
               重置此项
             </Button>
-          </Flex>
+          </div>
 
-          <TextArea
+          <Textarea
             ref={templateInputRef}
             value={selectedFormat.template}
             onChange={(e) => updateSelectedFormat({ template: e.currentTarget.value })}
             placeholder="报告条目模板"
-            style={{ minHeight: 88, fontFamily: 'monospace' }}
+            className="min-h-[88px] font-mono"
           />
 
           {/* 工具栏：加粗 / 倾斜 / 大纲 / 换行 */}
-          <Flex align="center" gap="1" wrap="wrap">
+          <div className="flex flex-wrap items-center gap-1">
             <Button
-              size="1"
-              variant="soft"
+              type="button"
+              size="sm"
+              variant="secondary"
               title="加粗"
               aria-label="加粗"
               onClick={() => wrapTemplateSelection('**', '**')}
             >
-              <TextBold20Regular />
+              <Bold />
             </Button>
             <Button
-              size="1"
-              variant="soft"
+              type="button"
+              size="sm"
+              variant="secondary"
               title="倾斜"
               aria-label="倾斜"
               onClick={() => wrapTemplateSelection('_', '_')}
             >
-              <TextItalic20Regular />
+              <Italic />
             </Button>
             <Button
-              size="1"
-              variant="soft"
+              type="button"
+              size="sm"
+              variant="secondary"
               title="一级大纲"
               aria-label="一级大纲"
               onClick={() => applyHeadingLevel(1)}
             >
-              <TextHeader120Regular />
+              <Heading1 />
             </Button>
             <Button
-              size="1"
-              variant="soft"
+              type="button"
+              size="sm"
+              variant="secondary"
               title="二级大纲"
               aria-label="二级大纲"
               onClick={() => applyHeadingLevel(2)}
             >
-              <TextHeader220Regular />
+              <Heading2 />
             </Button>
             <Button
-              size="1"
-              variant="soft"
+              type="button"
+              size="sm"
+              variant="secondary"
               title="三级大纲"
               aria-label="三级大纲"
               onClick={() => applyHeadingLevel(3)}
             >
-              <TextHeader320Regular />
+              <Heading3 />
             </Button>
             <Button
-              size="1"
-              variant="soft"
+              type="button"
+              size="sm"
+              variant="secondary"
               title="插入换行符"
               aria-label="插入换行符"
               onClick={() => insertTemplateText('\n')}
             >
-              <TextLineSpacing20Regular />
+              <AlignJustify />
             </Button>
-          </Flex>
+          </div>
 
-          <Flex align="center" gap="2">
+          <div className="flex items-center gap-2">
             <Switch
               checked={selectedFormat.listItem}
               onCheckedChange={(checked) => updateSelectedFormat({ listItem: checked })}
             />
-            <Text size="2">作为 Markdown 列表项输出</Text>
-          </Flex>
+            <span className="text-sm text-foreground">作为 Markdown 列表项输出</span>
+          </div>
 
           {/* 可用变量：点击插入到光标处 */}
-          <Flex direction="column" gap="2">
-            <Text size="2" weight="medium">
-              可用变量
-            </Text>
-            <Box
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(min(170px, 100%), 1fr))',
-                width: '100%',
-                maxWidth: '100%',
-                overflow: 'hidden',
-                gap: 6,
-              }}
-            >
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium text-foreground">可用变量</span>
+            <div className="grid w-full max-w-full grid-cols-[repeat(auto-fill,minmax(min(170px,100%),1fr))] gap-1.5 overflow-hidden">
               {selectedDefinition.variables.map((variable) => (
                 <button
                   key={variable.name}
                   type="button"
                   onClick={() => insertVariable(variable.name)}
                   title={`插入 {{${variable.name}}}`}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 2,
-                    minWidth: 0,
-                    maxWidth: '100%',
-                    overflow: 'hidden',
-                    textAlign: 'left',
-                    padding: '4px 8px',
-                    borderRadius: 4,
-                    border: '1px solid var(--amll-border)',
-                    background: 'var(--amll-card)',
-                    cursor: 'pointer',
-                  }}
+                  className="flex max-w-full min-w-0 cursor-pointer flex-col gap-0.5 overflow-hidden rounded border border-line bg-card px-2 py-1 text-left transition-colors hover:bg-surface-2"
                 >
                   {/*
                    * 变量名/ 标题（label） / 说明（description）分三层显示。
@@ -411,76 +291,40 @@ export const ReportFormatEditor = ({ value, onChange, report }: ReportFormatEdit
                    * 哪个是变量含义、哪个是示例 —— 用户反馈
                    *「变量没有分清标题和介绍」。
                    */}
-                  <code
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: 'var(--accent-11)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
+                  <code className="overflow-hidden text-xs font-bold text-ellipsis whitespace-nowrap text-primary">
                     {'{{'}
                     {variable.name}
                     {'}}'}
                   </code>
-                  <span
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: 'var(--amll-foreground)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
+                  <span className="overflow-hidden text-xs font-semibold text-ellipsis whitespace-nowrap text-foreground">
                     {variable.label}
                   </span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      lineHeight: 1.4,
-                      color: 'var(--amll-muted-foreground)',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                    }}
-                  >
+                  <span className="line-clamp-2 text-[11px] leading-[1.4] text-muted-foreground">
                     {variable.description}
                   </span>
                 </button>
               ))}
-            </Box>
-          </Flex>
+            </div>
+          </div>
 
           {/* 空报告文本 */}
-          <Flex direction="column" gap="2">
-            <Text size="2" weight="medium">
-              空报告文本
-            </Text>
-            <TextArea
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium text-foreground">空报告文本</span>
+            <Textarea
               value={value.emptyText}
               onChange={(e) => onChange({ ...value, emptyText: e.currentTarget.value })}
-              style={{ minHeight: 48 }}
+              className="min-h-12"
             />
-          </Flex>
+          </div>
 
           {/* 实时预览 */}
-          <Flex direction="column" gap="2">
-            <Text size="2" weight="medium">
-              当前报告预览
-            </Text>
-            <TextArea
-              readOnly
-              value={renderedPreview}
-              style={{ minHeight: 120, fontFamily: 'monospace' }}
-            />
-          </Flex>
-        </Flex>
-      </Box>
-    </Flex>
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium text-foreground">当前报告预览</span>
+            <Textarea readOnly value={renderedPreview} className="min-h-[120px] font-mono" />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

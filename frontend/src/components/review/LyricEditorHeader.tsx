@@ -1,9 +1,16 @@
 import { useAtom } from 'jotai';
-import { ArrowLeft, Loader2, Save, Tags } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Loader2, Music, Save, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ToolMode, toolModeAtom } from '@/editor/states/main.ts';
 import { metadataEditorDialogAtom } from '@/editor/states/dialogs.ts';
 import { EditorMenuBar } from '@/components/review/EditorTopMenu';
+import { UserMenu } from '@/components/UserMenu';
 import { cn } from '@/lib/utils';
 
 export interface EditorHeaderProps {
@@ -15,6 +22,59 @@ export interface EditorHeaderProps {
   onBack: () => void;
   onSave: () => void;
   saving: boolean;
+}
+
+/** 参考音频选择器 */
+function AudioSourceSelect({
+  sources,
+  audioIndex,
+  onAudioIndexChange,
+}: Pick<EditorHeaderProps, 'sources' | 'audioIndex' | 'onAudioIndexChange'>) {
+  if (sources.length <= 1) return null;
+
+  const current = sources[audioIndex] ?? sources[0];
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title="切换参考音频"
+          className={cn(
+            'group flex h-8 max-w-56 items-center gap-1.5 rounded-md border border-input bg-card pl-2 pr-1.5',
+            'text-xs font-medium text-ink transition-colors hover:border-primary/60',
+            'focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30',
+            'data-[state=open]:border-primary'
+          )}
+        >
+          <Music className="size-3.5 shrink-0 text-ink-3" />
+          <span className="shrink-0 text-ink-3">参考音频</span>
+          <span className="min-w-0 flex-1 truncate text-left">{current?.label ?? '未选择'}</span>
+          <ChevronDown
+            className="size-3.5 shrink-0 text-ink-3 transition-transform group-data-[state=open]:rotate-180"
+            aria-hidden="true"
+          />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="max-w-72">
+        {sources.map((source, index) => (
+          <DropdownMenuItem
+            key={source.key}
+            onSelect={() => onAudioIndexChange(index)}
+            className="gap-2"
+          >
+            <Check
+              className={cn('size-4 shrink-0 text-primary', index !== audioIndex && 'invisible')}
+              aria-hidden="true"
+            />
+            <span className="min-w-0 flex-1 truncate" title={source.label}>
+              {source.label}
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function ToolModeSwitch() {
@@ -83,6 +143,11 @@ export function LyricEditorHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        <AudioSourceSelect
+          sources={sources}
+          audioIndex={audioIndex}
+          onAudioIndexChange={onAudioIndexChange}
+        />
         <ToolModeSwitch />
         <EditorMenuBar />
         {/* 分隔：菜单类操作与右侧的「元数据 / 提交」动作按钮区分开 */}
@@ -96,24 +161,11 @@ export function LyricEditorHeader({
           <Tags className="size-4" />
           元数据
         </Button>
-        {sources.length > 1 && (
-          <select
-            value={audioIndex}
-            onChange={(e) => onAudioIndexChange(Number(e.target.value))}
-            className="max-w-40 rounded border border-border bg-background px-2 py-1 text-xs"
-            title="切换参考音频"
-          >
-            {sources.map((s, i) => (
-              <option key={s.key} value={i}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        )}
         <Button size="sm" onClick={onSave} disabled={saving} title="提交审核结果（Enter）">
           {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
           提交
         </Button>
+        <UserMenu />
       </div>
     </div>
   );

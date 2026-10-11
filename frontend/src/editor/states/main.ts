@@ -121,7 +121,18 @@ export const saveStatusAtom = atom<SaveStatus>(SaveStatus.Saved);
 export const lastSavedTimeAtom = atom<number | null>(null);
 
 export const undoableLyricLinesAtom = withHistory(lyricLinesAtom, 256);
-export const isDirtyAtom = atom((get) => get(undoableLyricLinesAtom).canUndo);
+
+export const savedLyricBaselineAtom = atom<string | null>(null);
+
+export const markLyricLinesSavedAtom = atom(null, (get, set) => {
+  set(savedLyricBaselineAtom, JSON.stringify(get(lyricLinesAtom)));
+});
+
+export const isDirtyAtom = atom((get) => {
+  const baseline = get(savedLyricBaselineAtom);
+  if (baseline === null) return false;
+  return JSON.stringify(get(lyricLinesAtom)) !== baseline;
+});
 export const reviewOperationLogAtom = atom<ReviewOperationRecord[]>([]);
 export const reviewOperationRedoStackAtom = atom<ReviewOperationRecord[]>([]);
 

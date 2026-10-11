@@ -1,4 +1,3 @@
-import type { TFunction } from 'i18next';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { type FC, useMemo } from 'react';
 import {
@@ -18,19 +17,19 @@ const MAX_WIDTH = 650;
 
 export interface SidebarTab {
   id: Exclude<SidebarPanelType, 'none'>;
-  getTitle: (t: TFunction) => string;
+  title: string;
   component: FC;
 }
 
 export const SIDEBAR_TABS: SidebarTab[] = [
   {
     id: 'outline',
-    getTitle: (t) => t('sidebar.outline.title', '大纲'),
+    title: '大纲',
     component: OutlinePanel,
   },
   {
     id: 'bpm',
-    getTitle: (t) => t('sidebar.bpm.title', 'BPM'),
+    title: 'BPM',
     component: BpmPanel,
   },
 ];

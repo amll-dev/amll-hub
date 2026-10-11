@@ -1,13 +1,22 @@
-import { Button, Checkbox, Dialog, Flex, Text, TextField } from '@radix-ui/themes';
 import { useAtom, useAtomValue } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
 import { memo, useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { replaceWordDialogAtom } from '$/states/dialogs';
 import { editingWordStateAtom, lyricLinesAtom } from '$/states/main';
 
 export const ReplaceWordDialog = memo(() => {
-  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useAtom(replaceWordDialogAtom);
   const editingState = useAtomValue(editingWordStateAtom);
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
@@ -61,64 +70,52 @@ export const ReplaceWordDialog = memo(() => {
   };
 
   return (
-    <Dialog.Root open={isOpen} onOpenChange={setIsOpen}>
-      <Dialog.Content maxWidth="400px">
-        <Dialog.Title>{t('replaceWordDialog.title', '替换单词')}</Dialog.Title>
-        <Dialog.Description size="2" mb="4">
-          {t('replaceWordDialog.description', '新的单词内容:')}
-        </Dialog.Description>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogContent className="max-w-[400px]">
+        <DialogTitle>替换单词</DialogTitle>
+        <DialogDescription>新的单词内容:</DialogDescription>
 
-        <Flex direction="column" gap="3">
-          <TextField.Root
+        <div className="flex flex-col gap-3">
+          <Input
             value={replacementText}
             onChange={(e) => setReplacementText(e.target.value)}
-            placeholder={t('replaceWordDialog.placeholder', '新单词')}
+            placeholder="新单词"
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleConfirm();
             }}
             autoFocus
           />
 
-          <Flex direction="column" gap="2">
-            <Text as="label" size="2">
-              <Flex gap="2" align="center">
-                <Checkbox
-                  checked={applyToAll}
-                  onCheckedChange={(c) => setApplyToAll(c as boolean)}
-                />
-                {t('replaceWordDialog.applyToAll', '将替换应用于所有相同的单词')}
-              </Flex>
-            </Text>
+          <div className="flex flex-col gap-2">
+            <Label className="font-normal">
+              <Checkbox checked={applyToAll} onCheckedChange={(c) => setApplyToAll(Boolean(c))} />
+              将替换应用于所有相同的单词
+            </Label>
 
-            <Text
-              as="label"
-              size="2"
+            <Label
+              className="font-normal"
               style={{
                 opacity: applyToAll ? 1 : 0.5,
                 pointerEvents: applyToAll ? 'auto' : 'none',
               }}
             >
-              <Flex gap="2" align="center">
-                <Checkbox
-                  checked={ignoreCase}
-                  onCheckedChange={(c) => setIgnoreCase(c as boolean)}
-                  disabled={!applyToAll}
-                />
-                {t('replaceWordDialog.ignoreCase', '忽略大小写')}
-              </Flex>
-            </Text>
-          </Flex>
-        </Flex>
+              <Checkbox
+                checked={ignoreCase}
+                onCheckedChange={(c) => setIgnoreCase(Boolean(c))}
+                disabled={!applyToAll}
+              />
+              忽略大小写
+            </Label>
+          </div>
+        </div>
 
-        <Flex gap="3" mt="4" justify="end">
-          <Dialog.Close>
-            <Button variant="soft" color="gray">
-              {t('common.cancel', '取消')}
-            </Button>
-          </Dialog.Close>
-          <Button onClick={handleConfirm}>{t('common.confirm', '确认')}</Button>
-        </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="secondary">取消</Button>
+          </DialogClose>
+          <Button onClick={handleConfirm}>确认</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 });

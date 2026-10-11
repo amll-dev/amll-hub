@@ -1,16 +1,17 @@
-import { ContextMenu } from '@radix-ui/themes';
 import { atom, useAtomValue } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
 import * as React from 'react';
-import { useTranslation } from 'react-i18next';
+import {
+  ContextMenuCheckboxItem,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '@/components/ui/context-menu';
 import { lyricLinesAtom, selectedLinesAtom } from '$/states/main';
 import { type LyricLine, newLyricLine, newLyricWord } from '$/types/ttml';
 
 const selectedLinesSizeAtom = atom((get) => get(selectedLinesAtom).size);
 
 export const LyricLineMenu = ({ lineIndex }: { lineIndex: number }) => {
-  const { t } = useTranslation();
-
   const selectedLinesSize = useAtomValue(selectedLinesSizeAtom);
   const selectedLines = useAtomValue(selectedLinesAtom);
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
@@ -56,41 +57,38 @@ export const LyricLineMenu = ({ lineIndex }: { lineIndex: number }) => {
 
   return (
     <>
-      <ContextMenu.CheckboxItem checked={Bgchecked} onCheckedChange={bgOnCheck}>
-        {t('contextMenu.bgLyric', '背景歌词')}
-      </ContextMenu.CheckboxItem>
-      <ContextMenu.CheckboxItem checked={DuetChecked} onCheckedChange={duetOnCheck}>
-        {t('contextMenu.duetLyric', '对唱歌词')}
-      </ContextMenu.CheckboxItem>
-      <ContextMenu.Separator />
-      <ContextMenu.Item
+      <ContextMenuCheckboxItem checked={Bgchecked} onCheckedChange={bgOnCheck}>
+        背景歌词
+      </ContextMenuCheckboxItem>
+      <ContextMenuCheckboxItem checked={DuetChecked} onCheckedChange={duetOnCheck}>
+        对唱歌词
+      </ContextMenuCheckboxItem>
+      <ContextMenuSeparator />
+      <ContextMenuItem
         onSelect={() => {
           editLyricLines((state) => {
             state.lyricLines.splice(lineIndex, 0, newLyricLine());
           });
         }}
       >
-        {t('contextMenu.insertLineBefore', '在前插入空行')}
-      </ContextMenu.Item>
-      <ContextMenu.Item
+        在前插入空行
+      </ContextMenuItem>
+      <ContextMenuItem
         onSelect={() => {
           editLyricLines((state) => {
             state.lyricLines.splice(lineIndex + 1, 0, newLyricLine());
           });
         }}
       >
-        {t('contextMenu.insertLineAfter', '在后插入空行')}
-      </ContextMenu.Item>
-      <ContextMenu.Item onSelect={copyLines} disabled={selectedLinesSize === 0}>
-        {t('contextMenu.copyLine', {
-          count: selectedLinesSize,
-          defaultValue: '复制行',
-        })}
-      </ContextMenu.Item>
-      <ContextMenu.Item onSelect={combineLines} disabled={!combineEnabled}>
-        {t('contextMenu.combineLine', '合并行')}
-      </ContextMenu.Item>
-      <ContextMenu.Item
+        在后插入空行
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={copyLines} disabled={selectedLinesSize === 0}>
+        复制行
+      </ContextMenuItem>
+      <ContextMenuItem onSelect={combineLines} disabled={!combineEnabled}>
+        合并行
+      </ContextMenuItem>
+      <ContextMenuItem
         onSelect={() => {
           editLyricLines((state) => {
             if (selectedLinesSize === 0) {
@@ -101,11 +99,8 @@ export const LyricLineMenu = ({ lineIndex }: { lineIndex: number }) => {
           });
         }}
       >
-        {t('contextMenu.deleteLine', {
-          count: selectedLinesSize,
-          defaultValue: '删除行',
-        })}
-      </ContextMenu.Item>
+        删除行
+      </ContextMenuItem>
     </>
   );
 

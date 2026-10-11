@@ -1,57 +1,4 @@
-.radix-themes.editor-radix-theme {
-  height: 100%;
-  min-height: 0;
-}
-
-body .rt-DialogOverlay {
-  position: fixed !important;
-  inset: 0 !important;
-  min-height: 0 !important;
-}
-
-body .rt-DialogOverlay {
-  --color-overlay: rgb(0 0 0 / 0.45);
-}
-
-body.editor-body:has(.dark),
-body.editor-body.dark {
-  --color-overlay: rgb(0 0 0 / 0.6);
-}
-
-body .rt-DialogOverlay[data-has-background='true'] {
-  background-color: transparent !important;
-}
-
-/* 兜底：不给data-has-background 也保持透明 */
-body .rt-DialogOverlay {
-  background-color: transparent !important;
-}
-
-body .rt-DialogOverlay::before,
-body .rt-DialogOverlay:where([data-state='open'])::before {
-  background-color: rgb(0 0 0 / 0.45) !important;
-}
-
-body.editor-body:has(.dark) .rt-DialogOverlay::before,
-body.editor-body.dark .rt-DialogOverlay::before,
-body.editor-body:has(.dark) .rt-DialogOverlay:where([data-state='open'])::before,
-body.editor-body.dark .rt-DialogOverlay:where([data-state='open'])::before {
-  background-color: rgb(0 0 0 / 0.6) !important;
-}
-
-body .rt-DialogOverlay,
-body .rt-DialogScroll,
-body .rt-DialogContent {
-  z-index: 400 !important;
-}
-
-body .rt-DialogContent .rt-ScrollAreaRoot {
-  min-height: 0 !important;
-  flex: 1 1 auto !important;
-}
-
-.radix-themes.editor-radix-theme,
-body.editor-body [data-accent-color] {
+body.editor-body {
   --accent-1: #fff5f6;
   --accent-2: #feeaec;
   --accent-3: #fbdde0;
@@ -85,8 +32,8 @@ body.editor-body [data-accent-color] {
   --accent-track: #fbdde0;
 }
 
-.radix-themes.editor-radix-theme:where(.dark, .dark-theme),
-body.editor-body [data-accent-color]:where(.dark, .dark-theme) {
+body.editor-body:has(.dark),
+body.editor-body.dark {
   --accent-1: #2a1418;
   --accent-2: #3a1a20;
   --accent-3: #4a2127;

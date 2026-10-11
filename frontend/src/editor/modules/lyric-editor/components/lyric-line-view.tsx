@@ -9,15 +9,11 @@
  * https://github.com/amll-dev/amll-ttml-tool/blob/main/LICENSE
  */
 
-import {
-  AddFilled,
-  LinkMultiple20Regular,
-  People24Regular,
-  TextAlignRightFilled,
-  VideoBackgroundEffectFilled,
-} from '@fluentui/react-icons';
-import { Button, ContextMenu, Flex, IconButton, Text, TextField } from '@radix-ui/themes';
-import classNames from 'classnames';
+import { Link2, Plus, Users } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import type { Draft } from 'immer';
 import { type Atom, atom, useAtomValue, useStore } from 'jotai';
@@ -35,7 +31,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useTranslation } from 'react-i18next';
 import { LyricLineMenu } from '$/components/Menus/lyric-line-menu.tsx';
 import { predictLineRomanization } from '$/modules/segmentation/utils/Transliteration/distributor';
 import {
@@ -60,6 +55,7 @@ import { type LyricLine, newLyricLine, newLyricWord, type TTMLLyric } from '$/ty
 import { containsRadicalChar } from '$/utils/detect-radical.ts';
 import { msToTimestamp } from '@/lib/format';
 import styles from './index.module.css';
+import { BackgroundLyricIcon, DuetLyricIcon } from './line-marker-icons.tsx';
 import LyricWordView from './lyric-word-view.tsx';
 import { RomanWordView } from './roman-word-view.tsx';
 
@@ -178,7 +174,6 @@ const SubLineEdit = memo(
     const line = useAtomValue(lineAtom);
     const [editing, setEditing] = useState(false);
     const [inputValue, setInputValue] = useState('');
-    const { t } = useTranslation();
 
     const onEnter = useCallback(
       (evt: SyntheticEvent<HTMLInputElement>) => {
@@ -228,17 +223,11 @@ const SubLineEdit = memo(
       }
     }, [editing, line, type]);
 
-    const label = useMemo(
-      () =>
-        type === 'translatedLyric'
-          ? t('lyricLineView.translatedLabel', '翻译：')
-          : t('lyricLineView.romanLabel', '音译：'),
-      [type, t]
-    );
+    const label = useMemo(() => (type === 'translatedLyric' ? '翻译：' : '音译：'), [type]);
 
     return (
-      <Flex align="baseline">
-        <Text size="2">{label}</Text>
+      <div className="flex items-center">
+        <span className="shrink-0 text-sm text-ink-2">{label}</span>
         {editing ? (
           <div
             className={styles.autoSizeInput}
@@ -259,10 +248,9 @@ const SubLineEdit = memo(
               {`${inputValue}  `}
             </div>
 
-            <TextField.Root
+            <Input
               className={styles.autoSizeInputField}
               autoFocus
-              size="1"
               value={inputValue}
               onChange={(evt) => setInputValue(evt.currentTarget.value)}
               onBlur={onEnter}
@@ -273,24 +261,18 @@ const SubLineEdit = memo(
           </div>
         ) : (
           <Button
-            size="2"
-            color="gray"
             variant="ghost"
+            className="h-6 min-h-0 max-w-[calc(100%-4rem)] break-all rounded px-1 text-left text-sm font-normal text-ink-2"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(evt) => {
               evt.stopPropagation();
               setEditing(true);
             }}
-            style={{
-              textAlign: 'left',
-              maxWidth: 'calc(100% - 4rem)',
-              wordBreak: 'break-all',
-            }}
           >
-            {line[type] || <Text color="gray">{t('lyricLineView.empty', '无')}</Text>}
+            {line[type] || <span className="text-ink-3">无</span>}
           </Button>
         )}
-      </Flex>
+      </div>
     );
   }
 );
@@ -306,7 +288,6 @@ export const LyricLineView: FC<{
     allowDrag?: boolean
   ) => void;
 }> = memo(({ lineAtom, lineIndex, playbackHighlightedLineId, onPointerDown }) => {
-  const { t } = useTranslation();
   const lyricState = useAtomValue(lyricLinesAtom);
   /*
    * `?? []` 每次渲染都会产生**新的数组引用**，会让下面两个 useMemo
@@ -569,13 +550,9 @@ export const LyricLineView: FC<{
       />
       {enableInsert && (
         <Button
-          mx="2"
-          my="1"
-          variant="soft"
-          size="1"
-          style={{
-            width: 'calc(100% - var(--space-4))',
-          }}
+          variant="secondary"
+          className="mx-2 my-1 h-7 px-2 text-xs"
+          style={{ width: 'calc(100% - 16px)' }}
           onClick={() => {
             editLyricLines((state: Draft<TTMLLyric>) => {
               state.lyricLines.splice(lineIndex, 0, newLyricLine());
@@ -584,10 +561,10 @@ export const LyricLineView: FC<{
             setEnableInsert(false);
           }}
         >
-          {t('lyricLineView.insertLine', '在此插入新行')}
+          {'在此插入新行'}
         </Button>
       )}
-      <ContextMenu.Root
+      <ContextMenu
         onOpenChange={(opened) => {
           if (opened) {
             if (!store.get(selectedLinesAtom).has(line.id)) {
@@ -596,12 +573,10 @@ export const LyricLineView: FC<{
           }
         }}
       >
-        <ContextMenu.Trigger disabled={toolMode !== ToolMode.Edit}>
-          <Flex
-            mx="2"
-            my="1"
-            direction="row"
-            className={classNames(
+        <ContextMenuTrigger asChild disabled={toolMode !== ToolMode.Edit}>
+          <div
+            className={cn(
+              'mx-2 my-1 flex flex-row items-center gap-x-4',
               styles.lyricLine,
               isPlaybackHighlighted && styles.playbackHighlighted,
               lineSelected && styles.selected,
@@ -612,18 +587,12 @@ export const LyricLineView: FC<{
               hasAgentWarning && toolMode === ToolMode.Edit && styles.agentWarning,
               hasRadical && styles.radical
             )}
-            align="center"
-            gapX="4"
             data-line-id={line.id}
             data-absolute-index={lineIndex}
             data-is-dragged={isDragged}
             onPointerDown={(evt) => {
               const target = evt.target as HTMLElement | null;
-              if (
-                target?.closest(
-                  "button, input, textarea, select, a, .rt-TextFieldRoot, [contenteditable='true']"
-                )
-              ) {
+              if (target?.closest("button, input, textarea, select, a, [contenteditable='true']")) {
                 return;
               }
               if (toolMode === ToolMode.Edit || toolMode === ToolMode.Sync) {
@@ -642,30 +611,29 @@ export const LyricLineView: FC<{
                 }}
               />
             )}
-            <Flex direction="column" align="center" justify="center" ml="3">
-              <Text
-                className={classNames(
+            <div className="ml-3 flex flex-col items-center justify-center">
+              <span
+                className={cn(
+                  'text-center',
                   styles.lineNumber,
                   isPlaybackHighlighted && styles.playbackActiveLineNumber,
                   line.ignoreSync && styles.ignored
                 )}
-                align="center"
-                color="gray"
               >
                 {displayNumber}
-              </Text>
-              {line.isBG && <VideoBackgroundEffectFilled color="#4466FF" />}
-              {line.isDuet && <TextAlignRightFilled color="#44AA33" />}
-            </Flex>
+              </span>
+              {line.isBG && <BackgroundLyricIcon />}
+              {line.isDuet && <DuetLyricIcon />}
+            </div>
             <div
-              className={classNames(
+              className={cn(
                 styles.lyricLineContainer,
                 toolMode === ToolMode.Edit && styles.edit,
                 toolMode === ToolMode.Sync && styles.sync
               )}
             >
               <div
-                className={classNames(
+                className={cn(
                   styles.lyricWordsContainer,
                   toolMode === ToolMode.Edit && styles.edit,
                   toolMode === ToolMode.Sync && styles.sync,
@@ -681,7 +649,7 @@ export const LyricLineView: FC<{
                       {ghostsHere.map((ghost) => (
                         <span
                           key={`annotation-add-${ghost.itemKey}-${ghost.index}`}
-                          className={classNames(
+                          className={cn(
                             styles.annotationGhostWord,
                             styles.annotationAdded,
                             ghost.focused && styles.annotationFocused
@@ -692,9 +660,10 @@ export const LyricLineView: FC<{
                         </span>
                       ))}
                       {enableInsert && (
-                        <IconButton
-                          size="1"
-                          variant="soft"
+                        <Button
+                          variant="secondary"
+                          size="icon"
+                          className="size-6 shrink-0"
                           onClick={(evt) => {
                             evt.preventDefault();
                             evt.stopPropagation();
@@ -703,15 +672,13 @@ export const LyricLineView: FC<{
                             });
                           }}
                         >
-                          <AddFilled />
-                        </IconButton>
+                          <Plus className="size-3.5" />
+                        </Button>
                       )}
-                      <Flex
-                        direction="column"
-                        align="stretch"
-                        gap="3"
+                      <div
                         data-word-index={wi}
-                        className={classNames(
+                        className={cn(
+                          'flex flex-col items-stretch gap-3',
                           styles.wordGroup,
                           annotationWordMarks.added.has(String(wi)) && styles.annotationAdded,
                           annotationWordMarks.removed.has(String(wi)) && styles.annotationRemoved,
@@ -733,7 +700,7 @@ export const LyricLineView: FC<{
                             suggestedRoman={suggestedRomans[wi]}
                           />
                         )}
-                      </Flex>
+                      </div>
                     </Fragment>
                   );
                 })}
@@ -742,7 +709,7 @@ export const LyricLineView: FC<{
                   .map((ghost) => (
                     <span
                       key={`annotation-add-tail-${ghost.itemKey}-${ghost.index}`}
-                      className={classNames(
+                      className={cn(
                         styles.annotationGhostWord,
                         styles.annotationAdded,
                         ghost.focused && styles.annotationFocused
@@ -753,9 +720,10 @@ export const LyricLineView: FC<{
                     </span>
                   ))}
                 {enableInsert && (
-                  <IconButton
-                    size="1"
-                    variant="soft"
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    className="size-6 shrink-0"
                     onClick={(evt) => {
                       evt.preventDefault();
                       evt.stopPropagation();
@@ -764,13 +732,14 @@ export const LyricLineView: FC<{
                       });
                     }}
                   >
-                    <AddFilled />
-                  </IconButton>
+                    <Plus className="size-3.5" />
+                  </Button>
                 )}
                 {toolMode === ToolMode.Edit && (
-                  <TextField.Root
-                    placeholder={t('lyricLineView.insertWord', '插入单词…')}
-                    className={classNames(
+                  <Input
+                    placeholder="插入单词…"
+                    className={cn(
+                      'h-[1.9em] w-[10em] min-w-[6em] shrink-0 rounded-md px-2 py-0 text-sm',
                       styles.insertWordField,
                       words.length === 0 && styles.empty
                     )}
@@ -814,9 +783,9 @@ export const LyricLineView: FC<{
                     <SubLineEdit lineAtom={lineAtom} lineIndex={lineIndex} type="romanLyric" />
                   )}
                   {vocalTagIds.length > 0 && (
-                    <Flex align="center" gap="2" className={styles.vocalTagsRow}>
-                      <Text size="2">{t('lyricLineView.vocalTagsLabel', '演唱者：')}</Text>
-                      <Flex gap="1" wrap="wrap" className={styles.vocalTagsButtons}>
+                    <div className={cn('flex items-center gap-2', styles.vocalTagsRow)}>
+                      <span className="text-sm">演唱者：</span>
+                      <div className={cn('flex flex-wrap gap-1', styles.vocalTagsButtons)}>
                         {(() => {
                           const selectedIds = parseLineVocalIds(line.vocal);
                           const selectedSet = new Set(selectedIds);
@@ -834,10 +803,8 @@ export const LyricLineView: FC<{
                               return (
                                 <Button
                                   key={`line-${lineIndex}-vocal-${id}`}
-                                  size="1"
-                                  variant={isActive ? 'solid' : 'soft'}
-                                  color={isActive ? 'green' : 'gray'}
-                                  className={styles.vocalTagButton}
+                                  variant={isActive ? 'default' : 'secondary'}
+                                  className={cn('h-6 px-2 text-xs', styles.vocalTagButton)}
                                   title={tagName || undefined}
                                   onClick={(evt) => {
                                     evt.stopPropagation();
@@ -861,10 +828,8 @@ export const LyricLineView: FC<{
                             }),
                             <Button
                               key={`line-${lineIndex}-vocal-all`}
-                              size="1"
-                              variant={allSelected ? 'solid' : 'soft'}
-                              color={allSelected ? 'green' : 'gray'}
-                              className={styles.vocalTagButton}
+                              variant={allSelected ? 'default' : 'secondary'}
+                              className={cn('h-6 px-2 text-xs', styles.vocalTagButton)}
                               onClick={(evt) => {
                                 evt.stopPropagation();
                                 editLyricLines((state: Draft<TTMLLyric>) => {
@@ -874,53 +839,49 @@ export const LyricLineView: FC<{
                                 });
                               }}
                             >
-                              <Flex align="center" gap="1">
-                                <People24Regular />
-                                {t('lyricLineView.vocalTagsAll', '全体成员')}
-                              </Flex>
+                              <span className="flex items-center gap-1">
+                                <Users className="size-4" />
+                                全体成员
+                              </span>
                             </Button>,
                           ];
                         })()}
-                      </Flex>
-                    </Flex>
+                      </div>
+                    </div>
                   )}
                 </>
               )}
             </div>
             {toolMode === ToolMode.Edit && (
-              <Flex p="3">
-                <IconButton
-                  size="1"
-                  variant={enableInsert ? 'solid' : 'soft'}
+              <div className="p-3">
+                <Button
+                  variant={enableInsert ? 'default' : 'secondary'}
+                  size="icon"
+                  className="size-6 shrink-0"
                   onClick={(evt) => {
                     evt.preventDefault();
                     evt.stopPropagation();
                     setEnableInsert((v) => !v);
                   }}
                 >
-                  <AddFilled />
-                </IconButton>
-              </Flex>
+                  <Plus className="size-3.5" />
+                </Button>
+              </div>
             )}
             {toolMode === ToolMode.Sync && showTimestamps && (
-              <Flex pr="3" gap="1" direction="column" align="stretch">
+              <div className="flex flex-col items-stretch gap-1 pr-3">
                 <div className={styles.startTime} ref={startTimeRef}>
                   {msToTimestamp(line.startTime)}
                 </div>
                 <button
                   type="button"
-                  className={classNames(styles.endTime, styles.endTimeButton)}
+                  className={cn(styles.endTime, styles.endTimeButton)}
                   ref={endTimeRef}
                   onClick={onToggleEndTimeLink}
                 >
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                    }}
-                  >
+                  <span className="inline-flex items-center">
                     {endTimeLinked ? (
-                      <LinkMultiple20Regular />
+                      <Link2 className="size-4" />
                     ) : showEndTimeAsDuration ? (
                       `+${line.endTime - line.startTime}ms`
                     ) : (
@@ -928,23 +889,19 @@ export const LyricLineView: FC<{
                     )}
                   </span>
                 </button>
-              </Flex>
+              </div>
             )}
-          </Flex>
-        </ContextMenu.Trigger>
-        <ContextMenu.Content>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
           <LyricLineMenu lineIndex={lineIndex} />
-        </ContextMenu.Content>
-      </ContextMenu.Root>
+        </ContextMenuContent>
+      </ContextMenu>
       {enableInsert && (
         <Button
-          mx="2"
-          my="1"
-          variant="soft"
-          size="1"
-          style={{
-            width: 'calc(100% - var(--space-4))',
-          }}
+          variant="secondary"
+          className="mx-2 my-1 h-7 px-2 text-xs"
+          style={{ width: 'calc(100% - 16px)' }}
           onClick={() => {
             editLyricLines((state: Draft<TTMLLyric>) => {
               state.lyricLines.splice(lineIndex + 1, 0, newLyricLine());
@@ -953,7 +910,7 @@ export const LyricLineView: FC<{
             setEnableInsert(false);
           }}
         >
-          {t('lyricLineView.insertLine', '在此插入新行')}
+          在此插入新行
         </Button>
       )}
     </>

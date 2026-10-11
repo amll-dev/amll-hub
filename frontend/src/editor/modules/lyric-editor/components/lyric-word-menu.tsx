@@ -1,7 +1,6 @@
-import { ContextMenu } from '@radix-ui/themes';
 import { type Atom, atom, useAtomValue, useSetAtom, useStore } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
-import { useTranslation } from 'react-i18next';
+import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu';
 import { replaceWordDialogAtom, splitWordDialogAtom } from '$/states/dialogs';
 import {
   editingWordStateAtom,
@@ -24,8 +23,6 @@ export const LyricWordMenu = ({
   wordAtom: Atom<LyricWord>;
   lineIndex: number;
 }) => {
-  const { t } = useTranslation();
-
   const store = useStore();
   const selectedWordsSize = useAtomValue(selectedWordsSizeAtom);
   const selectedLinesSize = useAtomValue(selectedLinesSizeAtom);
@@ -37,7 +34,7 @@ export const LyricWordMenu = ({
 
   return (
     <>
-      <ContextMenu.Item
+      <ContextMenuItem
         disabled={selectedWordsSize !== 1}
         onSelect={() => {
           setEditingWordState({
@@ -48,9 +45,9 @@ export const LyricWordMenu = ({
           setOpenSplitWordDialog(true);
         }}
       >
-        {t('contextMenu.splitWord', '拆分单词…')}
-      </ContextMenu.Item>
-      <ContextMenu.Item
+        拆分单词…
+      </ContextMenuItem>
+      <ContextMenuItem
         disabled={selectedWordsSize !== 1}
         onSelect={() => {
           setEditingWordState({
@@ -61,9 +58,9 @@ export const LyricWordMenu = ({
           setOpenReplaceWordDialog(true);
         }}
       >
-        {t('contextMenu.replaceWord', '替换单词…')}
-      </ContextMenu.Item>
-      <ContextMenu.Item
+        替换单词…
+      </ContextMenuItem>
+      <ContextMenuItem
         disabled={!(selectedWordsSize > 1 && selectedLinesSize === 1)}
         onSelect={() => {
           editLyricLines((state) => {
@@ -93,10 +90,10 @@ export const LyricWordMenu = ({
           });
         }}
       >
-        {t('contextMenu.combineWords', '合并单词')}
-      </ContextMenu.Item>
+        合并单词
+      </ContextMenuItem>
 
-      <ContextMenu.Item
+      <ContextMenuItem
         disabled={selectedWordsSize === 0}
         onSelect={() => {
           editLyricLines((state) => {
@@ -110,26 +107,20 @@ export const LyricWordMenu = ({
           });
         }}
       >
-        {t('contextMenu.deleteWords', {
-          count: selectedWordsSize,
-          defaultValue: '删除选定单词',
-        })}
-      </ContextMenu.Item>
+        删除选定单词
+      </ContextMenuItem>
 
-      <ContextMenu.Separator />
+      <ContextMenuSeparator />
 
-      <ContextMenu.Item disabled={selectedWordsSize !== 1} onSelect={() => afterToNewLine()}>
-        {t('contextMenu.moveFollowingWordToNewLine', '此后单词拆至新行')}
-      </ContextMenu.Item>
+      <ContextMenuItem disabled={selectedWordsSize !== 1} onSelect={() => afterToNewLine()}>
+        此后单词拆至新行
+      </ContextMenuItem>
 
-      <ContextMenu.Item disabled={selectedWordsSize === 0} onSelect={() => selectedToNewLine()}>
-        {t('contextMenu.moveWordToNewLine', {
-          count: selectedWordsSize,
-          defaultValue: '所选单词拆至新行',
-        })}
-      </ContextMenu.Item>
+      <ContextMenuItem disabled={selectedWordsSize === 0} onSelect={() => selectedToNewLine()}>
+        所选单词拆至新行
+      </ContextMenuItem>
 
-      <ContextMenu.Separator />
+      <ContextMenuSeparator />
     </>
   );
 

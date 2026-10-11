@@ -229,6 +229,7 @@ func (h *UploadHandler) ServeFile(c *gin.Context) {
 
 	c.Header("Content-Type", fileContentType(key))
 	c.Header("Cache-Control", "public, max-age=3600")
+	c.Header("Cross-Origin-Resource-Policy", "cross-origin")
 	// http.ServeContent 支持 Range 请求，浏览器可流式播放与 seek
 	http.ServeContent(c.Writer, c.Request, path.Base(key), modTime, obj)
 	_ = size

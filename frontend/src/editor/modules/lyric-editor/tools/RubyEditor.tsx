@@ -1,10 +1,11 @@
-import { Add20Regular, TranslateRegular } from '@fluentui/react-icons';
-import { IconButton, TextField } from '@radix-ui/themes';
-import classNames from 'classnames';
 import type { Draft } from 'immer';
 import { type Atom, useAtomValue, useStore } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
+import { Languages, Plus } from 'lucide-react';
 import { type ComponentPropsWithoutRef, useCallback, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { recalculateWordTime } from '$/modules/segmentation/utils/segmentation.ts';
 import { useSegmentationConfig } from '$/modules/segmentation/utils/useSegmentationConfig.ts';
 import { lyricLinesAtom } from '$/states/main.ts';
@@ -18,7 +19,7 @@ const AutoSizeTextField = ({
   placeholder,
   inputRef,
   ...rest
-}: ComponentPropsWithoutRef<typeof TextField.Root> & {
+}: ComponentPropsWithoutRef<'input'> & {
   inputRef?: React.Ref<HTMLInputElement>;
 }) => {
   const valueString = value === undefined || value === null ? '' : String(value);
@@ -29,9 +30,9 @@ const AutoSizeTextField = ({
         ? placeholder
         : '    ';
   return (
-    <span className={classNames(styles.autoSizeInput, className)} style={style}>
+    <span className={cn(styles.autoSizeInput, className)} style={style}>
       <span className={styles.autoSizeInputText}>{mirrorText}</span>
-      <TextField.Root
+      <Input
         className={styles.autoSizeInputField}
         value={value}
         placeholder={placeholder}
@@ -173,16 +174,21 @@ export const RubyEditor = ({
   if (!forceShow && rubyWords.length === 0) return null;
 
   return (
-    <span className={classNames(styles.rubyEditor, className)}>
+    <span className={cn(styles.rubyEditor, className)}>
       {showIcon && (
-        <IconButton size="1" variant="soft" onClick={applyRubyToAllSameWords}>
-          <TranslateRegular />
-        </IconButton>
+        <Button
+          variant="secondary"
+          size="icon"
+          className="size-7 shrink-0"
+          onClick={applyRubyToAllSameWords}
+          title="应用到所有相同单词"
+        >
+          <Languages className="size-4" />
+        </Button>
       )}
       {rubyWords.map((rubyWord, index) => (
         <AutoSizeTextField
           key={`${word.id}-ruby-${index}`}
-          size="1"
           inputRef={(el) => {
             inputRefs.current[index] = el;
           }}
@@ -209,9 +215,15 @@ export const RubyEditor = ({
           }}
         />
       ))}
-      <IconButton size="1" variant="soft" onClick={addRubyWord}>
-        <Add20Regular />
-      </IconButton>
+      <Button
+        variant="secondary"
+        size="icon"
+        className="size-7 shrink-0"
+        onClick={addRubyWord}
+        title="添加注音"
+      >
+        <Plus className="size-4" />
+      </Button>
     </span>
   );
 };

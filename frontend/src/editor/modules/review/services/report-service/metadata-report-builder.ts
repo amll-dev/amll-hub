@@ -2,11 +2,22 @@ import type { TTMLLyric, TTMLMetadata } from '$/types/ttml';
 import { createReviewReport, createReviewReportBlockId } from './normalize-service';
 import type { ReviewReportBlock } from './types';
 
-/** 元数据 key → 中文标签。只覆盖投稿里常见的，其余回退到 key 本身。 */
 const METADATA_LABELS: Record<string, string> = {
+  // —— 编辑器面板内置 key ——
+  musicName: '歌曲名称',
+  artists: '歌曲的艺术家',
+  songwriter: '词曲作者',
+  album: '歌曲的专辑名',
+  ncmMusicId: '网易云音乐 ID',
+  qqMusicId: 'QQ 音乐 ID',
+  spotifyId: 'Spotify 音乐 ID',
+  appleMusicId: 'Apple Music 音乐 ID',
+  isrc: '歌曲的 ISRC 号码',
+  ttmlAuthorGithub: '歌词作者 GitHub ID',
+  ttmlAuthorGithubLogin: '歌词作者 GitHub 用户名',
+  // —— 其它常见元数据 key ——
   title: '标题',
   artist: '歌手',
-  album: '专辑',
   albumArtist: '专辑歌手',
   byArtist: '演唱者',
   composer: '作曲',
@@ -54,12 +65,16 @@ function sameValues(a: string[], b: string[]): boolean {
 }
 
 /** 逐 key 做集合差：返回「旧里有新没有」与「新里有旧没有」 */
-function diffValues(oldValues: string[], newValues: string[]): string[] {
+function diffValues(
+  oldValues: string[],
+  newValues: string[]
+): { removed: string[]; added: string[] } {
   const oldSet = new Set(oldValues);
   const newSet = new Set(newValues);
-  const removed = oldValues.filter((v) => !newSet.has(v));
-  const added = newValues.filter((v) => !oldSet.has(v));
-  return [...removed.map((v) => `- ${v}`), ...added.map((v) => `+ ${v}`)];
+  return {
+    removed: oldValues.filter((v) => !newSet.has(v)),
+    added: newValues.filter((v) => !oldSet.has(v)),
+  };
 }
 
 /** 把 TTMLLyric 的 metadata 压成 Map（同一个 key 出现多次时合并 value） */
@@ -87,26 +102,33 @@ export const buildMetadataChanges = (freeze: TTMLLyric, staged: TTMLLyric): Revi
 
     if (sameValues(oldValues, newValues)) continue;
 
+    const { removed, added } = diffValues(oldValues, newValues);
     const label = getLabel(key);
-    let content: string;
 
-    if (oldValues.length === 0) {
-      content = `**${label}**：新增 ${newValues.map((v) => `\`${v}\``).join('、')}`;
-    } else if (newValues.length === 0) {
-      content = `**${label}**：删除 ${oldValues.map((v) => `\`${v}\``).join('、')}`;
-    } else {
-      const detail = diffValues(oldValues, newValues).join('，');
-      content = `**${label}**：${detail}`;
+    // 一个 key 同时有增有删时拆成两条 —— 语义单一，模板统一为
+    // 「元数据（类型）需要增加/删除内容为 xxx 的数据」。
+    if (added.length > 0) {
+      blocks.push({
+        id: createReviewReportBlockId('metadata'),
+        kind: 'metadata',
+        enabled: true,
+        action: 'add',
+        key,
+        label,
+        items: added,
+      });
     }
-
-    blocks.push({
-      id: createReviewReportBlockId('metadata'),
-      kind: 'manual',
-      enabled: true,
-      // 独立成段，不和歌词 diff 混在一起
-      lineBreakBefore: true,
-      content,
-    });
+    if (removed.length > 0) {
+      blocks.push({
+        id: createReviewReportBlockId('metadata'),
+        kind: 'metadata',
+        enabled: true,
+        action: 'remove',
+        key,
+        label,
+        items: removed,
+      });
+    }
   }
 
   return blocks;

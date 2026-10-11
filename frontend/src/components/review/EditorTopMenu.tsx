@@ -1,8 +1,16 @@
-import { DropdownMenu } from '@radix-ui/themes';
 import { atom, useAtom, useAtomValue, useSetAtom, useStore } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
-import { useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
+import { type ComponentProps, useCallback } from 'react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { segmentLyricLines } from '$/modules/segmentation/utils/segmentation';
 import { useSegmentationConfig } from '$/modules/segmentation/utils/useSegmentationConfig';
 import {
@@ -33,8 +41,23 @@ const canRedoAtom = atom((get) => get(undoableLyricLinesAtom).canRedo);
 const triggerClass =
   'rounded px-2 py-1 text-xs font-medium text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink';
 
+/** 菜单项：在右侧展示快捷键 */
+function MenuItem({
+  shortcut,
+  children,
+  ...props
+}: ComponentProps<typeof DropdownMenuItem> & { shortcut?: string }) {
+  return (
+    <DropdownMenuItem {...props}>
+      {children}
+      {shortcut ? (
+        <span className="ml-auto pl-4 font-mono text-xs text-ink-3">{shortcut}</span>
+      ) : null}
+    </DropdownMenuItem>
+  );
+}
+
 function EditMenu() {
-  const { t } = useTranslation();
   const store = useStore();
   const setUndo = useSetAtom(undoLyricLinesAtom);
   const setRedo = useSetAtom(redoLyricLinesAtom);
@@ -67,52 +90,51 @@ function EditMenu() {
   }, [store]);
 
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <button type="button" className={triggerClass}>
-          {t('topBar.menu.edit', '编辑')}
+          编辑
         </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content>
-        <DropdownMenu.Item
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <MenuItem
           onSelect={() => setUndo()}
           shortcut={formatKeyBindings(undoKey)}
           disabled={undoDisabled}
         >
-          {t('topBar.menu.undo', '撤销')}
-        </DropdownMenu.Item>
-        <DropdownMenu.Item
+          撤销
+        </MenuItem>
+        <MenuItem
           onSelect={() => setRedo()}
           shortcut={formatKeyBindings(redoKey)}
           disabled={redoDisabled}
         >
-          {t('topBar.menu.redo', '重做')}
-        </DropdownMenu.Item>
-        <DropdownMenu.Separator />
-        <DropdownMenu.Item onSelect={onSelectAll} shortcut={formatKeyBindings(selectAllKey)}>
-          {t('topBar.menu.selectAllLines', '选中所有歌词行')}
-        </DropdownMenu.Item>
-        <DropdownMenu.Item onSelect={onUnselectAll} shortcut={formatKeyBindings(unselectAllKey)}>
-          {t('topBar.menu.unselectAllLines', '取消选中所有歌词行')}
-        </DropdownMenu.Item>
-        <DropdownMenu.Item onSelect={onInvert} shortcut={formatKeyBindings(invertKey)}>
-          {t('topBar.menu.invertSelectAllLines', '反选所有歌词行')}
-        </DropdownMenu.Item>
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
+          重做
+        </MenuItem>
+        <DropdownMenuSeparator />
+        <MenuItem onSelect={onSelectAll} shortcut={formatKeyBindings(selectAllKey)}>
+          选中所有歌词行
+        </MenuItem>
+        <MenuItem onSelect={onUnselectAll} shortcut={formatKeyBindings(unselectAllKey)}>
+          取消选中所有歌词行
+        </MenuItem>
+        <MenuItem onSelect={onInvert} shortcut={formatKeyBindings(invertKey)}>
+          反选所有歌词行
+        </MenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 /* 工具 */
 
 function ToolMenu() {
-  const { t } = useTranslation();
-  const store = useStore();
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
   const { config: segmentationConfig } = useSegmentationConfig();
   const [, setConfirmDialog] = useAtom(confirmDialogAtom);
   const setTimeShiftDialog = useSetAtom(timeShiftDialogAtom);
   const setAdvancedSegmentation = useSetAtom(advancedSegmentationDialogAtom);
+  const setReduceStutter = useSetAtom(reduceStutterDialogAtom);
   const onAutoSegment = useCallback(() => {
     editLyricLines((draft) => {
       draft.lyricLines = segmentLyricLines(draft.lyricLines, segmentationConfig);
@@ -151,58 +173,46 @@ function ToolMenu() {
 
     setConfirmDialog({
       open: true,
-      title: t('confirmDialog.syncLineTimestamps.title', '确认同步行时间戳'),
-      description: t(
-        'confirmDialog.syncLineTimestamps.description',
-        '此操作将根据每行单词的时间戳自动同步所有行的起始和结束时间为第一个和最后一个音节的开始和结束时间。确定要继续吗？'
-      ),
+      title: '确认同步行时间戳',
+      description:
+        '此操作将根据每行单词的时间戳自动同步所有行的起始和结束时间为第一个和最后一个音节的开始和结束时间。确定要继续吗？',
       onConfirm: action,
     });
-  }, [editLyricLines, setConfirmDialog, t]);
+  }, [editLyricLines, setConfirmDialog]);
 
   const onReduceStutter = useCallback(() => {
-    store.set(reduceStutterDialogAtom, { open: true });
-  }, [store]);
+    setReduceStutter({ open: true });
+  }, [setReduceStutter]);
 
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <button type="button" className={triggerClass}>
-          {t('topBar.menu.tool', '工具')}
+          工具
         </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content>
-        <DropdownMenu.Sub>
-          <DropdownMenu.SubTrigger>
-            {t('topBar.menu.segmentationTools', '分词')}
-          </DropdownMenu.SubTrigger>
-          <DropdownMenu.SubContent>
-            <DropdownMenu.Item onSelect={onAutoSegment}>
-              {t('topBar.menu.autoSegment', '自动分词')}
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => setAdvancedSegmentation(true)}>
-              {t('topBar.menu.advancedSegment', '高级分词...')}
-            </DropdownMenu.Item>
-          </DropdownMenu.SubContent>
-        </DropdownMenu.Sub>
-        <DropdownMenu.Sub>
-          <DropdownMenu.SubTrigger>
-            {t('topBar.menu.timestampTools.index', '时间戳')}
-          </DropdownMenu.SubTrigger>
-          <DropdownMenu.SubContent>
-            <DropdownMenu.Item onSelect={onSyncLineTimestamps}>
-              {t('topBar.menu.timestampTools.syncLineTimestamps', '同步行时间戳')}
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={onReduceStutter}>
-              {t('topBar.menu.timestampTools.reduceStutter', '消减卡顿')}
-            </DropdownMenu.Item>
-            <DropdownMenu.Item onSelect={() => setTimeShiftDialog(true)}>
-              {t('topBar.menu.timeShift', '平移时间...')}
-            </DropdownMenu.Item>
-          </DropdownMenu.SubContent>
-        </DropdownMenu.Sub>
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>分词</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuItem onSelect={onAutoSegment}>自动分词</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setAdvancedSegmentation(true)}>
+              高级分词...
+            </DropdownMenuItem>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>时间戳</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuItem onSelect={onSyncLineTimestamps}>同步行时间戳</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onReduceStutter}>消减卡顿</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setTimeShiftDialog(true)}>
+              平移时间...
+            </DropdownMenuItem>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

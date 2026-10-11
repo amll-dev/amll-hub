@@ -1,8 +1,9 @@
-import { EyeFilled, EyeOffFilled, MusicNote2Filled, Timer16Regular } from '@fluentui/react-icons';
-import { Flex, IconButton, Slider, Text, Theme, Tooltip } from '@radix-ui/themes';
+import { Eye, EyeOff, Music, Timer } from 'lucide-react';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { type FC, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
+import { SimpleTooltip } from '@/components/ui/tooltip';
 import { audioEngine } from '$/modules/audio/audio-engine.ts';
 import { useBpmTapEngine } from '$/modules/audio/hooks';
 import {
@@ -146,8 +147,6 @@ export const AudioSpectrogram: FC = () => {
   const isDragging = useAtomValue(isDraggingAtom);
 
   const rulerRef = useRef<TimelineRulerHandle>(null);
-
-  const { t } = useTranslation();
 
   const { tileCache, requestTileIfNeeded, lastTileTimestamp } = useSpectrogramWorker(
     pcmDataReady,
@@ -300,19 +299,16 @@ export const AudioSpectrogram: FC = () => {
 
   if (isSpectrogramTapMode) {
     const nextBeatIndex = totalTapCount + 1;
-    hoverTimeFormatted = `${t('spectrogram.clickToCalibrateBeatN', '点击校准第 {{n}} 拍', { n: nextBeatIndex })}: ${hoverTimeFormatted}`;
+    hoverTimeFormatted = `点击校准第 ${nextBeatIndex} 拍: ${hoverTimeFormatted}`;
     tooltipBgColor = 'var(--green-9)';
     hoverLineColor = 'var(--green-9)';
   } else if (isInvalidEndTime) {
-    hoverTimeFormatted = t('spectrogram.invalidEndTime', '不能选择此结束时间');
+    hoverTimeFormatted = '不能选择此结束时间';
     tooltipBgColor = 'var(--red-9)';
     hoverLineColor = 'var(--red-9)';
   } else if (editingTimeField && !editingTimeField.isWord) {
-    const fieldName =
-      editingTimeField.field === 'startTime'
-        ? t('ribbonBar.editMode.startTime', '起始时间')
-        : t('ribbonBar.editMode.endTime', '结束时间');
-    hoverTimeFormatted = `${t('common.clickToSet', '点击设置')}${fieldName}: ${hoverTimeFormatted}`;
+    const fieldName = editingTimeField.field === 'startTime' ? '起始时间' : '结束时间';
+    hoverTimeFormatted = `${'点击设置'}${fieldName}: ${hoverTimeFormatted}`;
     tooltipBgColor = 'var(--accent-9)';
   }
 
@@ -347,23 +343,20 @@ export const AudioSpectrogram: FC = () => {
 
       <div className={styles.innerContainer}>
         <div className={`${styles.sidebar} ${styles.leftSidebar}`}>
-          <Flex direction="column" align="center" gap="2" style={{ height: '100%', width: '100%' }}>
-            <Flex
-              direction="column"
-              align="center"
-              justify="end"
-              style={{ flex: 1, width: '100%', padding: '4px 0' }}
-            >
+          <div className="flex h-full w-full flex-col items-center gap-2">
+            <div className="flex w-full flex-1 flex-col items-center justify-end py-1">
               <div className={styles.gainSliderContainer} style={{ height: '95%' }}>
                 <Slider
                   orientation="vertical"
-                  size="1"
                   min={minGain}
                   max={maxGain}
                   step={0.5}
-                  value={[gain]}
-                  onValueChange={(v) => setGain(v[0] ?? gain)}
-                  style={{ flex: 1, width: '18px', zIndex: 10 }}
+                  value={gain}
+                  onValueChange={setGain}
+                  aria-label="频谱图增益"
+                  className="flex-1"
+                  style={{ flex: 1, zIndex: 10 }}
+                  trackColor="var(--gray-a6)"
                 />
                 <div
                   className={styles.gainTooltip}
@@ -374,29 +367,25 @@ export const AudioSpectrogram: FC = () => {
                   {gain}x
                 </div>
               </div>
-            </Flex>
-          </Flex>
+            </div>
+          </div>
         </div>
 
         <div className={styles.mainContent}>
           {!pcmDataReady ? (
             <div className={styles.emptyState}>
-              <Flex direction="column" align="center" gap="3">
-                <MusicNote2Filled fontSize={48} color="var(--gray-8)" style={{ opacity: 0.5 }} />
+              <div className="flex flex-col items-center gap-3">
+                <Music className="size-12 text-ink-3 opacity-50" strokeWidth={1.5} />
                 {/**
                  * 审核页不提供「加载本地音频文件」入口 ——
                  * 参考音频来自后端投稿，由 `LyricEditorPage` 注入。
                  */}
                 {engineState === 'idle' ? (
-                  <Text color="gray" size="3">
-                    {t('spectrogram.noAudioLoaded', '参考音频未就绪，频谱图不可用')}
-                  </Text>
+                  <span className="text-base text-ink-3">参考音频未就绪，频谱图不可用</span>
                 ) : (
-                  <Text color="gray" size="3">
-                    {t('spectrogram.decoding', '正在解码音频，请稍候...')}
-                  </Text>
+                  <span className="text-base text-ink-3">正在解码音频，请稍候...</span>
                 )}
-              </Flex>
+              </div>
             </div>
           ) : (
             <>
@@ -488,7 +477,8 @@ export const AudioSpectrogram: FC = () => {
                     <div className={styles.rangePreviewRegion} style={previewStyle} />
                   )}
                   <SpectrogramContext.Provider value={contextValue}>
-                    <Theme appearance="dark">
+                    {/* 频谱图恒定深色底（canvas 配色依赖），用 .dark 作用域替代原 <Theme appearance="dark"> */}
+                    <div className="dark">
                       {showBeatLines && <BeatLinesOverlay clientWidth={containerWidth} />}
                       {reviewTimingOverlayEnabled ? (
                         <ReviewLyricTimelineOverlay
@@ -515,7 +505,7 @@ export const AudioSpectrogram: FC = () => {
                           />
                         </div>
                       )}
-                    </Theme>
+                    </div>
                   </SpectrogramContext.Provider>
                 </div>
               </div>
@@ -524,22 +514,26 @@ export const AudioSpectrogram: FC = () => {
         </div>
 
         <div className={`${styles.sidebar} ${styles.rightSidebar}`}>
-          <Tooltip content={t('spectrogram.showBeatLines', '在频谱图上显示拍子')} side="left">
-            <IconButton
-              variant={showBeatLines ? 'solid' : 'outline'}
+          <SimpleTooltip label="在频谱图上显示拍子" side="left">
+            <Button
+              type="button"
+              size="icon"
+              variant={showBeatLines ? 'default' : 'outline'}
               onClick={() => setShowBeatLines((prev) => !prev)}
             >
-              <Timer16Regular />
-            </IconButton>
-          </Tooltip>
-          <Tooltip content={t('spectrogram.showUnselectedLines', '显示未选中行')} side="left">
-            <IconButton
-              variant={showUnselectedLines ? 'solid' : 'outline'}
+              <Timer />
+            </Button>
+          </SimpleTooltip>
+          <SimpleTooltip label="显示未选中行" side="left">
+            <Button
+              type="button"
+              size="icon"
+              variant={showUnselectedLines ? 'default' : 'outline'}
               onClick={() => setShowUnselectedLines((prev) => !prev)}
             >
-              {showUnselectedLines ? <EyeFilled /> : <EyeOffFilled />}
-            </IconButton>
-          </Tooltip>
+              {showUnselectedLines ? <Eye /> : <EyeOff />}
+            </Button>
+          </SimpleTooltip>
         </div>
       </div>
     </div>

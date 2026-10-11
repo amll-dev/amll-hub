@@ -12,7 +12,6 @@ import {
 import { openDB } from 'idb';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
 import { uid } from 'uid';
 import { audioEngine } from '$/modules/audio/audio-engine';
 import { getProjectList } from '$/modules/project/autosave/autosave';
@@ -30,6 +29,7 @@ import {
   fileUpdateSessionAtom,
   isDirtyAtom,
   lyricLinesAtom,
+  markLyricLinesSavedAtom,
   newLyricLinesAtom,
   projectIdAtom,
   saveFileNameAtom,
@@ -167,13 +167,13 @@ export const useFileOpener = () => {
   const setProjectId = useSetAtom(projectIdAtom);
   const setSaveFileName = useSetAtom(saveFileNameAtom);
   const setSourceFileContent = useSetAtom(sourceFileContentAtom);
+  const setMarkSaved = useSetAtom(markLyricLinesSavedAtom);
   const setConfirmDialog = useSetAtom(confirmDialogAtom);
   const isDirty = useAtomValue(isDirtyAtom);
   const fileUpdateSession = useAtomValue(fileUpdateSessionAtom);
   const defaultTtmlAuthorGithub = useAtomValue(defaultTtmlAuthorGithubAtom);
   const defaultTtmlAuthorGithubLogin = useAtomValue(defaultTtmlAuthorGithubLoginAtom);
   const handleTtmlError = useTtmlErrorHandler();
-  const { t } = useTranslation();
   const setPushNotification = useSetAtom(pushNotificationAtom);
 
   const normalizeLyricLines = useCallback((lyricLines: LyricLine[]): TTMLLyric => {
@@ -269,9 +269,7 @@ export const useFileOpener = () => {
           lyricData = normalizeLyricLines(rawLines);
         } else {
           setPushNotification({
-            title: t('error.unsupportedFileFormat', '不支持的文件格式: {ext}', {
-              ext,
-            }),
+            title: `不支持的文件格式: ${ext}`,
             level: 'error',
             source: 'useFileOpener',
           });
@@ -313,7 +311,7 @@ export const useFileOpener = () => {
       } catch (e) {
         fileOpenerLogger.error(`Failed to open file: ${file.name}`, e);
         setPushNotification({
-          title: t('error.openFileFailed', '打开文件失败'),
+          title: '打开文件失败',
           level: 'error',
           source: 'useFileOpener',
         });
@@ -328,7 +326,6 @@ export const useFileOpener = () => {
       normalizeLyricLines,
       defaultTtmlAuthorGithub,
       defaultTtmlAuthorGithubLogin,
-      t,
       setPushNotification,
       handleTtmlError,
     ]
@@ -364,18 +361,15 @@ export const useFileOpener = () => {
       if (isDirty) {
         setConfirmDialog({
           open: true,
-          title: t('confirmDialog.openFile.title', '确认打开文件'),
-          description: t(
-            'confirmDialog.openFile.description',
-            '当前文件有未保存的更改。如果继续，这些更改将会丢失。确定要打开新文件吗？'
-          ),
+          title: '确认打开文件',
+          description: '当前文件有未保存的更改。如果继续，这些更改将会丢失。确定要打开新文件吗？',
           onConfirm: run,
         });
       } else {
         run();
       }
     },
-    [fileUpdateSession, isDirty, performOpenFile, setConfirmDialog, t]
+    [fileUpdateSession, isDirty, performOpenFile, setConfirmDialog]
   );
 
   const openCachedAudio = useCallback(async () => {
@@ -383,7 +377,7 @@ export const useFileOpener = () => {
       const record = await readAudioCache();
       if (!record?.file) {
         setPushNotification({
-          title: t('audioPanel.cachedAudioMissing', '未找到缓存音频'),
+          title: '未找到缓存音频',
           level: 'warning',
           source: 'useFileOpener',
         });
@@ -394,19 +388,19 @@ export const useFileOpener = () => {
       const file = new File([record.file], name, { type });
       await loadAudioFile(file, { extractMetadata: false });
       setPushNotification({
-        title: t('audioPanel.cachedAudioLoaded', '已从缓存加载音频'),
+        title: '已从缓存加载音频',
         level: 'success',
         source: 'useFileOpener',
       });
     } catch (error) {
       fileOpenerLogger.error('Failed to load cached audio', error);
       setPushNotification({
-        title: t('audioPanel.cachedAudioFailed', '读取缓存音频失败'),
+        title: '读取缓存音频失败',
         level: 'error',
         source: 'useFileOpener',
       });
     }
-  }, [loadAudioFile, setPushNotification, t]);
+  }, [loadAudioFile, setPushNotification]);
 
   const loadTtmlContent = useCallback(
     async (ttml: string, options?: { projectId?: string; fileName?: string }) => {
@@ -435,6 +429,7 @@ export const useFileOpener = () => {
         });
         return { ...prev, metadata: nextMetadata };
       });
+      setMarkSaved();
       return true;
     },
     [
@@ -442,6 +437,7 @@ export const useFileOpener = () => {
       defaultTtmlAuthorGithubLogin,
       handleTtmlError,
       setLyricLines,
+      setMarkSaved,
       setNewLyricLines,
       setProjectId,
       setSaveFileName,

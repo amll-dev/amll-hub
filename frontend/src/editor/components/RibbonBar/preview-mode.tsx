@@ -9,10 +9,10 @@
  * https://github.com/amll-dev/amll-ttml-tool/blob/main/LICENSE
  */
 
-import { Checkbox, Grid, Text, TextField } from '@radix-ui/themes';
 import { useAtom } from 'jotai';
 import { forwardRef } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import {
   hideObsceneWordsAtom,
   lyricWordFadeWidthAtom,
@@ -26,41 +26,27 @@ export const PreviewModeRibbonBar = forwardRef<HTMLDivElement>((_props, ref) => 
   const [showRomanLine, setShowRomanLine] = useAtom(showRomanLinesAtom);
   const [hideObsceneWords, setHideObsceneWords] = useAtom(hideObsceneWordsAtom);
   const [lyricWordFadeWidth, setLyricWordFadeWidth] = useAtom(lyricWordFadeWidthAtom);
-  const { t } = useTranslation();
 
   return (
     <RibbonFrame ref={ref}>
-      <RibbonSection label={t('ribbonBar.previewMode.lyrics', '歌词')}>
-        <Grid columns="0fr 0fr" gap="2" gapY="1" flexGrow="1" align="center">
-          <Text wrap="nowrap" size="1">
-            {t('ribbonBar.previewMode.showTranslation', '显示翻译')}
-          </Text>
+      <RibbonSection label="歌词">
+        <div className="grid flex-1 grid-cols-[auto_auto] items-center gap-x-2 gap-y-1">
+          <span className="whitespace-nowrap text-xs">显示翻译</span>
           <Checkbox
             checked={showTranslationLine}
             onCheckedChange={(v) => setShowTranslationLine(!!v)}
           />
-          <Text wrap="nowrap" size="1">
-            {t('ribbonBar.previewMode.showRoman', '显示音译')}
-          </Text>
+          <span className="whitespace-nowrap text-xs">显示音译</span>
           <Checkbox checked={showRomanLine} onCheckedChange={(v) => setShowRomanLine(!!v)} />
-          <Text wrap="nowrap" size="1">
-            {t('ribbonBar.previewMode.maskObsceneWords', '屏蔽不雅用语')}
-          </Text>
+          <span className="whitespace-nowrap text-xs">屏蔽不雅用语</span>
           <Checkbox checked={hideObsceneWords} onCheckedChange={(v) => setHideObsceneWords(!!v)} />
-        </Grid>
+        </div>
       </RibbonSection>
-      <RibbonSection label={t('ribbonBar.previewMode.word', '单词')}>
-        <Grid columns="0fr 0fr" gap="2" gapY="1" flexGrow="1" align="center">
-          <Text wrap="nowrap" size="1">
-            {t('ribbonBar.previewMode.fadeWidth', '过渡宽度')}
-          </Text>
-          <TextField.Root
-            min={0}
-            step={0}
-            size="1"
-            style={{
-              width: '4em',
-            }}
+      <RibbonSection label="单词">
+        <div className="grid flex-1 grid-cols-[auto_auto] items-center gap-x-2 gap-y-1">
+          <span className="whitespace-nowrap text-xs">过渡宽度</span>
+          <Input
+            className="h-7 w-[4em] px-2 text-xs"
             defaultValue={lyricWordFadeWidth}
             onBlur={(e) => {
               const value = Number.parseFloat(e.target.value);
@@ -69,7 +55,7 @@ export const PreviewModeRibbonBar = forwardRef<HTMLDivElement>((_props, ref) => 
               }
             }}
           />
-        </Grid>
+        </div>
       </RibbonSection>
     </RibbonFrame>
   );

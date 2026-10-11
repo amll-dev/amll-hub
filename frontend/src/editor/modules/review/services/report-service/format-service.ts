@@ -221,6 +221,15 @@ export const createReviewReportBlockVariables = (
   switch (block.kind) {
     case 'manual':
       return { content: block.content };
+    case 'metadata':
+      return {
+        label: block.label,
+        key: block.key,
+        action: block.action,
+        actionLabel: block.action === 'add' ? '增加' : '删除',
+        items: block.items.join('、'),
+        itemsCode: block.items.map(wrap).join('、'),
+      };
     case 'wordTextShared':
       return {
         lineLabels: formatLineLabelList(block.lineRefs),
@@ -381,6 +390,7 @@ const getLineMergeCategory = (block: ReviewReportBlock) => {
     case 'lineTiming':
       return 'lineTiming';
     case 'manual':
+    case 'metadata':
     case 'wordTextShared':
     case 'timeShift':
       return null;
