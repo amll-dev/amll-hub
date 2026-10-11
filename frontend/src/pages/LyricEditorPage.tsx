@@ -132,7 +132,11 @@ export function LyricEditorPage() {
           console.info('[editor-audio] 本次加载被更新的请求取代，忽略', { audioSrc });
           return;
         }
-        console.error('[editor-audio] 加载失败', { audioSrc, audioIndex: safeAudioIndex, error: err });
+        console.error('[editor-audio] 加载失败', {
+          audioSrc,
+          audioIndex: safeAudioIndex,
+          error: err,
+        });
         /**
          * 不要直接 `String(err)` —— FFmpeg 链路抛出的可能是
          * `{ code, message }` 这种普通对象，`String()` 会得到

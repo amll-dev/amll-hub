@@ -362,7 +362,7 @@ html {
   --gray-12: rgb(29 29 31);
   --gray-a3: rgb(29 29 31 / 0.13);
   --gray-a4: rgb(29 29 31 / 0.26);
-/* 间距刻度：1 单位 = 4px */
+  /* 间距刻度：1 单位 = 4px */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -455,9 +455,9 @@ html {
 /* 主题切换过渡 */
 html.theme-transitioning {
   transition-property:
-    --amll-background, --amll-foreground, --amll-card, --amll-popover,
-    --amll-popover-foreground, --amll-primary, --amll-primary-hover, --amll-primary-foreground,
-    --amll-muted, --amll-muted-foreground, --amll-border, --amll-input, --amll-ring, --amll-surface,
+    --amll-background, --amll-foreground, --amll-card, --amll-popover, --amll-popover-foreground,
+    --amll-primary, --amll-primary-hover, --amll-primary-foreground, --amll-muted,
+    --amll-muted-foreground, --amll-border, --amll-input, --amll-ring, --amll-surface,
     --amll-surface-2, --amll-ink, --amll-ink-2, --amll-ink-3, --amll-line, --amll-primary-soft,
     --amll-primary-tint, --amll-header-bg, --amll-header-bg-scrolled, --amll-state-success,
     --amll-state-warning, --amll-state-error, --amll-state-info;

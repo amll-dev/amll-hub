@@ -155,8 +155,8 @@ export function ReduceStutterDialog() {
                   <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink-2">
                     {pair.prevWord.word} [{msToTimestamp(pair.prevWord.startTime)}~
                     {msToTimestamp(pair.prevWord.endTime)}] - {pair.nextWord.word} [
-                    {msToTimestamp(pair.nextWord.startTime)}~
-                    {msToTimestamp(pair.nextWord.endTime)}] : {pair.gap} ms
+                    {msToTimestamp(pair.nextWord.startTime)}~{msToTimestamp(pair.nextWord.endTime)}]
+                    : {pair.gap} ms
                   </span>
                 </div>
               ))}
