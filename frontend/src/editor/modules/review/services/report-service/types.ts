@@ -196,6 +196,18 @@ export type ReviewReportBlock =
       newStart: number;
       oldEnd: number;
       newEnd: number;
+    })
+  | (ReviewReportBlockBase & {
+      /** 元数据改动 */
+      kind: 'metadata';
+      /** 动作：新增 / 删除 */
+      action: 'add' | 'remove';
+      /** 元数据原始 key，如 musicName */
+      key: string;
+      /** 类型的中文标签，如「歌曲名称」 */
+      label: string;
+      /** 本次动作涉及的值列表 */
+      items: string[];
     });
 
 export type ReviewReport = {

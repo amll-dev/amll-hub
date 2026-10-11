@@ -1,4 +1,3 @@
-import { Theme } from '@radix-ui/themes';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { lazy, Suspense, useEffect, type ReactNode } from 'react';
@@ -12,11 +11,12 @@ import { AutosaveManager } from '@/editor/modules/project/autosave/AutosaveManag
 import { showTouchSyncPanelAtom } from '@/editor/modules/settings/states/sync.ts';
 import { ToolMode, toolModeAtom } from '@/editor/states/main.ts';
 import { MetadataEditor } from '@/editor/modules/project/modals/MetadataEditor.tsx';
+import { AdvancedSegmentationDialog } from '@/editor/modules/segmentation/components/AdvancedSegmentation.tsx';
+import { TimeShiftDialog } from '@/editor/modules/lyric-editor/tools/TimeShift.tsx';
+import { ConfirmDialog } from '@/editor/components/ConfirmDialog.tsx';
+import { ReduceStutterDialog } from '@/editor/components/ReduceStutterDialog.tsx';
 import { useMediaSession } from '@/editor/modules/audio/hooks/useMediaSession.ts';
 import { useAudioFeedback } from '@/editor/modules/audio/hooks/useAudioFeedback.ts';
-import { resolvedThemeAtom } from '@/atoms/theme';
-import '@/editor/i18n';
-import '@radix-ui/themes/styles.css';
 import './editor-theme.css';
 
 const LyricLinesView = lazy(() => import('@/editor/modules/lyric-editor/components'));
@@ -52,10 +52,11 @@ export function EditorWorkbench() {
       >
         <RibbonBar />
 
-        <div className="mt-2 flex min-h-0 flex-1 flex-row overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+          {/* 侧边栏紧贴 RibbonBar：顶部的 Tab 选中指示条需要顶到内容区最上沿 */}
           <Sidebar />
 
-          <div className="min-w-0 flex-1 overflow-hidden">
+          <div className="mt-2 min-w-0 flex-1 overflow-hidden">
             <AnimatePresence mode="wait">
               <SuspensePlaceHolder key="edit">
                 <motion.div
@@ -93,32 +94,15 @@ export function EditorWorkbench() {
 
       <DragGhostRenderer />
       <MetadataEditor />
+      {/* 顶栏「工具」菜单几个菜单项只是置位 atom，缺了这些渲染者就会点了没反应 */}
+      <AdvancedSegmentationDialog />
+      <TimeShiftDialog />
+      <ConfirmDialog />
+      <ReduceStutterDialog />
     </EditorTheme>
   );
 }
 
-/**
- * 编辑器的 Radix Theme 根。
- *
- * 导出让 `LyricEditorPage` 能把它提到页面顶层，从而把顶栏也包进来 ——
- * 否则顶栏右侧的 `EditorMenuBar`（Radix `DropdownMenu`）在 Theme 外，
- * 样式会和工具栏里的其他 Radix 组件不一致。
- */
 export function EditorTheme({ children }: { children: ReactNode }) {
-  const resolvedTheme = useAtomValue(resolvedThemeAtom);
-  const isDark = resolvedTheme === 'dark';
-
-  return (
-    <Theme
-      className="editor-radix-theme"
-      appearance={isDark ? 'dark' : 'light'}
-      panelBackground="solid"
-      accentColor={isDark ? 'jade' : 'green'}
-      grayColor="slate"
-      radius="medium"
-      scaling="100%"
-    >
-      {children}
-    </Theme>
-  );
+  return <>{children}</>;
 }

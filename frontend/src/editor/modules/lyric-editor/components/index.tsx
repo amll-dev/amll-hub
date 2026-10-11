@@ -10,7 +10,6 @@
  */
 
 import { LayoutGroup } from 'framer-motion';
-import { Box, ContextMenu, Flex, Text } from '@radix-ui/themes';
 import { atom, useAtomValue, useSetAtom } from 'jotai';
 import { splitAtom } from 'jotai/utils';
 import { useSetImmerAtom } from 'jotai-immer';
@@ -24,8 +23,13 @@ import {
   useMemo,
   useRef,
 } from 'react';
-import { useTranslation } from 'react-i18next';
 import { ViewportList, type ViewportListRef } from 'react-viewport-list';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import { useFileOpener } from '$/hooks/useFileOpener.ts';
 import { audioEngine } from '$/modules/audio/audio-engine.ts';
 import { useLyricListDrag } from '$/modules/lyric-drag/useLyricListDrag';
@@ -84,7 +88,6 @@ export const LyricLinesView: FC = forwardRef<HTMLDivElement>((_props, ref) => {
   const playbackLocatedLineIndex = useAtomValue(playbackLocatedLineIndexAtom);
   const playbackHighlightedLineId = useAtomValue(playbackHighlightedLineIdAtom);
   const setPlaybackCurrentTime = useSetAtom(playbackCurrentTimeAtom);
-  const { t } = useTranslation();
   const { openFile } = useFileOpener();
 
   const handlePasteTTML = useCallback(async () => {
@@ -96,9 +99,9 @@ export const LyricLinesView: FC = forwardRef<HTMLDivElement>((_props, ref) => {
       });
       openFile(file, 'ttml');
     } catch (e) {
-      lyricLinesViewLogger.error(t('error.pasteClipboardFailed', '读取剪贴板失败'), e);
+      lyricLinesViewLogger.error('读取剪贴板失败', e);
     }
-  }, [openFile, t]);
+  }, [openFile]);
 
   const handleNewLine = useCallback(() => {
     editLyricLines((state) => {
@@ -207,30 +210,17 @@ export const LyricLinesView: FC = forwardRef<HTMLDivElement>((_props, ref) => {
 
   const innerView =
     editLyric.length === 0 ? (
-      <Flex
-        flexGrow="1"
-        gap="2"
-        align="center"
-        justify="center"
-        direction="column"
-        height="100%"
-        style={{ width: '100%', height: '100%' }}
+      <div
+        className="flex h-full w-full flex-1 flex-col items-center justify-center gap-2"
         ref={ref}
       >
-        <Text color="gray">{t('app.empty.title', '没有歌词行')}</Text>
-        <Text color="gray">
-          {t('app.empty.description', '在顶部面板中添加新歌词行或从菜单栏打开 / 导入已有歌词')}
-        </Text>
-      </Flex>
+        <span className="text-ink-3">没有歌词行</span>
+        <span className="text-ink-3">在顶部面板中添加新歌词行或从菜单栏打开 / 导入已有歌词</span>
+      </div>
     ) : (
-      <Box
-        flexGrow="1"
-        className={styles.lyricLinesWrapper}
-        height="100%"
-        style={{ width: '100%', height: '100%' }}
-      >
-        <Box
-          flexGrow="1"
+      <div className={`h-full w-full flex-1 ${styles.lyricLinesWrapper}`}>
+        <div
+          className="flex-1"
           style={{
             padding: toolMode === ToolMode.Sync ? '20vh 0' : undefined,
             maxHeight: '100%',
@@ -253,33 +243,23 @@ export const LyricLinesView: FC = forwardRef<HTMLDivElement>((_props, ref) => {
               )}
             </ViewportList>
           </LayoutGroup>
-        </Box>
-      </Box>
+        </div>
+      </div>
     );
 
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          flexGrow: 1,
-          width: '100%',
-          height: '100%',
-          minHeight: 0,
-        }}
+    <ContextMenu>
+      <ContextMenuTrigger
+        className="flex min-h-0 w-full flex-1 flex-col"
+        style={{ height: '100%' }}
       >
         {innerView}
-      </ContextMenu.Trigger>
-      <ContextMenu.Content>
-        <ContextMenu.Item onSelect={handlePasteTTML}>
-          {t('contextMenu.pasteTTML', '粘贴 TTML')}
-        </ContextMenu.Item>
-        <ContextMenu.Item onSelect={handleNewLine}>
-          {t('contextMenu.newLine', '新建行')}
-        </ContextMenu.Item>
-      </ContextMenu.Content>
-    </ContextMenu.Root>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={handlePasteTTML}>粘贴 TTML</ContextMenuItem>
+        <ContextMenuItem onSelect={handleNewLine}>新建行</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 });
 

@@ -15,6 +15,8 @@ export const getReviewReportBlockLabel = (block: ReviewReportBlock) => {
   switch (block.kind) {
     case 'manual':
       return '手写内容';
+    case 'metadata':
+      return '元数据';
     case 'wordTextShared':
     case 'wordTextGroup':
     case 'wordText':

@@ -47,6 +47,8 @@
 .title {
   flex: 1 1 auto;
   min-width: 0;
+  align-self: stretch;
+  height: 100%;
   overflow: hidden;
 }
 

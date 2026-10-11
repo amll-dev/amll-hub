@@ -1,15 +1,4 @@
-import {
-  Box,
-  Button,
-  Checkbox,
-  Dialog,
-  Flex,
-  ScrollArea,
-  Switch,
-  Tabs,
-  Text,
-  TextArea,
-} from '@radix-ui/themes';
+import { Check, Music, Pencil, Trash2 } from 'lucide-react';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import {
   Component,
@@ -20,12 +9,13 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
-import {
-  Delete16Regular,
-  Checkmark16Regular,
-  Edit16Regular,
-  MusicNote216Regular,
-} from '@fluentui/react-icons';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import {
   reviewReportFormatAtom,
   type ReviewReportFormat,
@@ -65,17 +55,13 @@ class DialogContentBoundary extends Component<{ children: ReactNode }, { error: 
   override render() {
     if (this.state.error) {
       return (
-        <Box style={{ padding: 12 }}>
-          <Text size="2" weight="bold" color="red" as="p">
-            审阅结果面板加载失败
-          </Text>
-          <Text size="1" color="gray" as="p" mt="2">
-            {this.state.error.message}
-          </Text>
-          <Text size="1" color="gray" as="p" mt="2">
+        <div className="p-3">
+          <p className="text-sm font-bold text-error">审阅结果面板加载失败</p>
+          <p className="mt-2 text-xs text-ink-3">{this.state.error.message}</p>
+          <p className="mt-2 text-xs text-ink-3">
             详细堆栈见浏览器控制台。可以先关闭本窗口继续编辑，改用「编辑」 面板里的保存按钮提交。
-          </Text>
-        </Box>
+          </p>
+        </div>
       );
     }
     return this.props.children;
@@ -83,11 +69,7 @@ class DialogContentBoundary extends Component<{ children: ReactNode }, { error: 
 }
 
 function DialogFlexBody({ children }: { children: ReactNode }) {
-  return (
-    <Flex direction="column" style={{ flex: '1 1 auto', minHeight: 0 }}>
-      {children}
-    </Flex>
-  );
+  return <div className="flex min-h-0 flex-1 flex-col">{children}</div>;
 }
 
 export interface ReviewReportDialogProps {
@@ -130,13 +112,15 @@ function blockSummary(block: ReviewReportBlock): string {
       return `第 ${block.lineNumber} 行 · 「${block.word}」打轴调整`;
     case 'lineTiming':
       return `第 ${block.lineNumber} 行时轴调整`;
+    case 'metadata':
+      return `元数据（${block.label}）${block.action === 'add' ? '增加' : '删除'} ${block.items.join('、')}`;
     default:
       return '未知条目';
   }
 }
 
 function getReportBlockScopeLabel(block: ReviewReportBlock): string | null {
-  if (block.kind === 'manual') return null;
+  if (block.kind === 'manual' || block.kind === 'metadata') return null;
   if (block.kind === 'timeShift') {
     return block.targetCount === block.totalLineCount
       ? '全部歌词行'
@@ -153,7 +137,7 @@ function getReportBlockScopeLabel(block: ReviewReportBlock): string | null {
 }
 
 function getReportBlockScopeKey(block: ReviewReportBlock): string | null {
-  if (block.kind === 'manual') return null;
+  if (block.kind === 'manual' || block.kind === 'metadata') return null;
   if (block.kind === 'timeShift' || block.kind === 'wordTextShared') {
     return `${block.kind}:${block.id}`;
   }
@@ -218,40 +202,29 @@ function ManualReportBlockView({
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   return (
-    <Box
-      style={{
-        border: '1px solid var(--amll-border)',
-        background: 'var(--amll-muted)',
-        borderRadius: 6,
-        padding: 8,
-        opacity: block.enabled ? 1 : 0.5,
-      }}
+    <div
+      className={`rounded-md border border-line bg-muted p-2 ${
+        block.enabled ? 'opacity-100' : 'opacity-50'
+      }`}
     >
-      <Flex align="center" justify="between" gap="2" mb="2">
-        <Flex align="center" gap="2">
-          <Checkbox
-            checked={block.enabled}
-            onCheckedChange={(v) => onToggle(block.id, v === true)}
-          />
-          <Text size="2" weight="medium">
-            手写内容
-          </Text>
-        </Flex>
-        <Flex align="center" gap="2">
-          <Flex align="center" gap="1" title="在 Markdown 预览中另起一行">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Checkbox checked={block.enabled} onCheckedChange={(v) => onToggle(block.id, v)} />
+          <span className="text-sm font-medium text-foreground">手写内容</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1" title="在 Markdown 预览中另起一行">
             <Switch
-              size="1"
               checked={block.lineBreakBefore === true}
               onCheckedChange={(v) => onLineBreakChange(block.id, v)}
               aria-label="换行"
             />
-            <Text size="1" color="gray">
-              换行
-            </Text>
-          </Flex>
+            <span className="text-xs text-ink-3">换行</span>
+          </div>
           <Button
-            size="1"
-            variant="soft"
+            type="button"
+            size="sm"
+            variant="secondary"
             disabled={!canMove(block.id, -1)}
             onClick={() => onMove(block.id, -1)}
             title="将手写条目上移"
@@ -259,8 +232,9 @@ function ManualReportBlockView({
             上移
           </Button>
           <Button
-            size="1"
-            variant="soft"
+            type="button"
+            size="sm"
+            variant="secondary"
             disabled={!canMove(block.id, 1)}
             onClick={() => onMove(block.id, 1)}
             title="将手写条目下移"
@@ -268,25 +242,26 @@ function ManualReportBlockView({
             下移
           </Button>
           <Button
-            size="1"
+            type="button"
+            size="sm"
             variant="ghost"
-            color="red"
+            className="text-error hover:text-error"
             onClick={() => onDelete(block.id)}
             title="删除条目"
           >
-            <Delete16Regular />
+            <Trash2 />
           </Button>
-        </Flex>
-      </Flex>
+        </div>
+      </div>
       {focused ? (
-        <TextArea
+        <Textarea
           ref={textAreaRef}
           value={block.content}
           onChange={(e) => onChange(block.id, e.currentTarget.value)}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           placeholder="手写报告内容"
-          style={{ minHeight: 96 }}
+          className="min-h-24"
         />
       ) : (
         <button
@@ -295,25 +270,14 @@ function ManualReportBlockView({
             setFocused(true);
             window.requestAnimationFrame(() => textAreaRef.current?.focus());
           }}
-          style={{
-            display: 'block',
-            width: '100%',
-            textAlign: 'left',
-            padding: 8,
-            minHeight: 40,
-            borderRadius: 4,
-            border: '1px dashed var(--amll-border)',
-            background: 'transparent',
-            color: block.content.trim() ? 'inherit' : 'var(--amll-muted-foreground)',
-            cursor: 'text',
-            fontSize: 13,
-            lineHeight: 1.6,
-          }}
+          className={`block min-h-10 w-full cursor-text rounded border border-dashed border-line bg-transparent p-2 text-left text-[13px] leading-relaxed ${
+            block.content.trim() ? 'text-inherit' : 'text-muted-foreground'
+          }`}
         >
           {block.content.trim() || '点击展开并编辑手写内容'}
         </button>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -333,20 +297,12 @@ function StructuredReportBlockView({
   const title = getReviewReportBlockText(block, reportFormat);
 
   return (
-    <Flex
-      align="center"
-      justify="between"
-      gap="1"
-      style={{
-        border: '1px solid var(--amll-border)',
-        background: 'var(--amll-muted)',
-        borderRadius: 4,
-        padding: '4px 6px',
-        opacity: block.enabled ? 1 : 0.5,
-        minWidth: 0,
-      }}
+    <div
+      className={`flex min-w-0 items-center justify-between gap-1 rounded border border-line bg-muted px-1.5 py-1 ${
+        block.enabled ? 'opacity-100' : 'opacity-50'
+      }`}
     >
-      <Flex align="center" gap="1" style={{ flex: 1, minWidth: 0, flexWrap: 'wrap' }}>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
         {block.kind === 'wordTextGroup' ? (
           block.changes.map((change, index) => {
             const enabled = isWordTextGroupChangeEnabled(block, index);
@@ -357,16 +313,11 @@ function StructuredReportBlockView({
                 aria-pressed={enabled}
                 title={enabled ? '点击禁用该结果' : '点击启用该结果'}
                 onClick={() => onToggleGroupChange(block.id, index, !enabled)}
-                style={{
-                  border: '1px solid var(--amll-border)',
-                  borderRadius: 3,
-                  padding: '1px 5px',
-                  fontSize: 12,
-                  cursor: 'pointer',
-                  background: enabled ? 'var(--amll-primary-soft)' : 'transparent',
-                  color: enabled ? 'var(--amll-primary)' : 'var(--amll-muted-foreground)',
-                  textDecoration: enabled ? 'none' : 'line-through',
-                }}
+                className={`cursor-pointer rounded-[3px] border border-line px-1.5 py-px text-xs ${
+                  enabled
+                    ? 'bg-primary-soft text-primary no-underline'
+                    : 'bg-transparent text-muted-foreground line-through'
+                }`}
               >
                 {change.oldWord} → {change.newWord}
               </button>
@@ -378,44 +329,50 @@ function StructuredReportBlockView({
             aria-pressed={block.enabled}
             title={block.enabled ? '点击禁用该结果' : '点击启用该结果'}
             onClick={() => onToggle(block.id, !block.enabled)}
-            style={{
-              border: '1px solid var(--amll-border)',
-              borderRadius: 3,
-              padding: '1px 5px',
-              fontSize: 12,
-              cursor: 'pointer',
-              background: block.enabled ? 'var(--amll-primary-soft)' : 'transparent',
-              color: block.enabled ? 'var(--amll-primary)' : 'var(--amll-muted-foreground)',
-              textDecoration: block.enabled ? 'none' : 'line-through',
-              maxWidth: '100%',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
+            className={`max-w-full cursor-pointer overflow-hidden rounded-[3px] border border-line px-1.5 py-px text-xs text-ellipsis whitespace-nowrap ${
+              block.enabled
+                ? 'bg-primary-soft text-primary no-underline'
+                : 'bg-transparent text-muted-foreground line-through'
+            }`}
           >
             {blockSummary(block)}
           </button>
         )}
-      </Flex>
+      </div>
       <Button
-        size="1"
+        type="button"
+        size="sm"
         variant="ghost"
-        color="red"
+        className="shrink-0 text-error hover:text-error"
         onClick={() => onDelete(block.id)}
         title="删除条目"
-        style={{ flexShrink: 0 }}
       >
-        <Delete16Regular />
+        <Trash2 />
       </Button>
-      {title ? <span style={{ display: 'none' }}>{title}</span> : null}
-    </Flex>
+      {title ? <span className="hidden">{title}</span> : null}
+    </div>
   );
 }
 
 const ACTION_BUTTONS = [
-  { action: 'approve', label: '接受', color: 'green', Icon: Checkmark16Regular },
-  { action: 'revision', label: '需要修改', color: 'red', Icon: Edit16Regular },
-  { action: 'missing_audio', label: '缺少音源', color: 'orange', Icon: MusicNote216Regular },
+  {
+    action: 'approve',
+    label: '接受',
+    className: 'bg-success text-white hover:bg-success/90',
+    Icon: Check,
+  },
+  {
+    action: 'revision',
+    label: '需要修改',
+    className: 'bg-error text-white hover:bg-error/90',
+    Icon: Pencil,
+  },
+  {
+    action: 'missing_audio',
+    label: '缺少音源',
+    className: 'bg-warning text-white hover:bg-warning/90',
+    Icon: Music,
+  },
 ] as const;
 
 const BRAND_ACCENT = {
@@ -551,85 +508,58 @@ export const ReviewReportDialog = ({ onSubmit, submitting }: ReviewReportDialogP
   if (!dialog.open) return null;
 
   return (
-    <Dialog.Root
+    <Dialog
       open
       onOpenChange={(open) => {
         if (!open) close();
       }}
     >
-      <Dialog.Content
-        style={{
-          maxWidth: '1100px',
-          width: '92vw',
-          zIndex: 400,
-          position: 'relative',
-          height: '88vh',
-          maxHeight: '88vh',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          backgroundColor: 'var(--amll-card)',
-          color: 'var(--amll-foreground)',
-          border: '1px solid var(--amll-border)',
-          boxShadow: 'var(--shadow-6)',
-          ...BRAND_ACCENT,
-        }}
+      <DialogContent
+        className="w-[92vw] max-w-[1100px] h-[88vh] max-h-[88vh] flex flex-col overflow-hidden bg-card text-foreground border border-line p-0 gap-0"
+        style={{ zIndex: 400, ...BRAND_ACCENT }}
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <DialogContentBoundary>
           <DialogFlexBody>
-            <Dialog.Title style={{ fontWeight: 600, flexShrink: 0 }}>
+            <DialogTitle className="shrink-0 p-4 pb-2 font-semibold">
               对稿件【{dialog.title}】做出的审阅结果如下：
-            </Dialog.Title>
-            <Box style={{ flexShrink: 0 }}>
+            </DialogTitle>
+            <div className="shrink-0 px-4">
               <ReviewTemplateSection open={dialog.open} onInsertTemplate={insertTemplate} />
-            </Box>
+            </div>
 
-            <Tabs.Root
+            <Tabs
               value={activeTab}
               onValueChange={setActiveTab}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                flex: '1 1 auto',
-                minHeight: 0,
-              }}
+              className="flex min-h-0 flex-1 flex-col px-4"
             >
-              <Tabs.List style={{ flexShrink: 0 }}>
-                <Tabs.Trigger value="blocks">条目</Tabs.Trigger>
-                <Tabs.Trigger value="format">格式</Tabs.Trigger>
-                <Tabs.Trigger value="text">文本</Tabs.Trigger>
-                <Tabs.Trigger value="preview">预览</Tabs.Trigger>
-              </Tabs.List>
+              <TabsList className="shrink-0 px-0">
+                <TabsTrigger value="blocks">条目</TabsTrigger>
+                <TabsTrigger value="format">格式</TabsTrigger>
+                <TabsTrigger value="text">文本</TabsTrigger>
+                <TabsTrigger value="preview">预览</TabsTrigger>
+              </TabsList>
 
               {/* 条目 */}
-              <Tabs.Content
-                value="blocks"
-                style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}
-              >
-                <Text size="1" color="gray" as="p" mb="2" style={{ flexShrink: 0 }}>
+              <TabsContent value="blocks" className="flex min-h-0 flex-1 flex-col">
+                <p className="mb-2 shrink-0 text-xs text-ink-3">
                   结构化条目按系统顺序排列；手写条目可通过上移/下移插入序列。
-                </Text>
-                <ScrollArea
-                  type="auto"
-                  style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto' }}
-                >
+                </p>
+                <ScrollArea className="min-h-0 flex-1 overflow-auto">
                   {blockGroups.length === 0 ? (
-                    <Flex align="center" justify="center" style={{ height: 200 }}>
-                      <Text color="gray" size="2">
-                        暂无报告条目
-                      </Text>
-                    </Flex>
+                    <div className="flex h-[200px] items-center justify-center">
+                      <span className="text-sm text-ink-3">暂无报告条目</span>
+                    </div>
                   ) : (
-                    <Flex direction="column" gap="3">
+                    <div className="flex flex-col gap-3">
                       {blockGroups.map((group) => (
-                        <Box key={group.key} style={{ minWidth: 0 }}>
+                        <div key={group.key} className="min-w-0">
                           {group.scopeLabel && (
-                            <Text size="1" color="gray" as="p" mb="1" style={{ fontWeight: 600 }}>
+                            <p className="mb-1 text-xs font-semibold text-ink-3">
                               {group.scopeLabel}
-                            </Text>
+                            </p>
                           )}
-                          <Flex direction="column" gap="1" style={{ minWidth: 0 }}>
+                          <div className="flex min-w-0 flex-col gap-1">
                             {group.blocks.map((block) =>
                               block.kind === 'manual' ? (
                                 <ManualReportBlockView
@@ -659,103 +589,76 @@ export const ReviewReportDialog = ({ onSubmit, submitting }: ReviewReportDialogP
                                 />
                               )
                             )}
-                          </Flex>
-                        </Box>
+                          </div>
+                        </div>
                       ))}
-                    </Flex>
+                    </div>
                   )}
                 </ScrollArea>
-                <Flex
-                  justify="end"
-                  mt="2"
-                  style={{
-                    flexShrink: 0,
-                    position: 'sticky',
-                    bottom: 0,
-                    background: 'var(--amll-card)',
-                  }}
-                >
-                  <Button size="1" variant="soft" onClick={addManual}>
+                <div className="sticky bottom-0 mt-2 flex shrink-0 justify-end bg-card">
+                  <Button type="button" size="sm" variant="secondary" onClick={addManual}>
                     新增手写条目
                   </Button>
-                </Flex>
-              </Tabs.Content>
+                </div>
+              </TabsContent>
 
               {/* 格式 */}
-              <Tabs.Content
-                value="format"
-                style={{
-                  flex: '1 1 auto',
-                  minHeight: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  padding: 8,
-                }}
-              >
+              <TabsContent value="format" className="flex min-h-0 flex-1 flex-col p-2">
                 <ReportFormatEditor
                   value={reportFormat}
                   onChange={setReportFormat}
                   report={draft}
                 />
-              </Tabs.Content>
+              </TabsContent>
 
               {/* 文本 */}
-              <Tabs.Content value="text" style={{ flex: '1 1 auto', minHeight: 0 }}>
-                <ScrollArea
-                  type="auto"
-                  style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto' }}
-                >
-                  <Box style={{ padding: 8 }}>
-                    <TextArea
+              <TabsContent value="text" className="min-h-0 flex-1">
+                <ScrollArea className="min-h-0 flex-1 overflow-auto">
+                  <div className="p-2">
+                    <Textarea
                       value={renderedReport}
                       readOnly
                       aria-label="自动生成的审阅报告文本"
-                      style={{ minHeight: 400, fontFamily: 'monospace' }}
+                      className="min-h-[400px] font-mono"
                     />
-                  </Box>
+                  </div>
                 </ScrollArea>
-              </Tabs.Content>
+              </TabsContent>
 
               {/* 预览 */}
-              <Tabs.Content value="preview" style={{ flex: '1 1 auto', minHeight: 0 }}>
-                <ScrollArea
-                  type="auto"
-                  style={{ flex: '1 1 auto', minHeight: 0, overflow: 'auto' }}
-                >
-                  <Box style={{ padding: 8 }}>
+              <TabsContent value="preview" className="min-h-0 flex-1">
+                <ScrollArea className="min-h-0 flex-1 overflow-auto">
+                  <div className="p-2">
                     {renderedReport ? (
                       <div
                         className="comment-markdown"
                         dangerouslySetInnerHTML={{ __html: renderedReportHtml }}
                       />
                     ) : (
-                      <Text size="2" color="gray">
-                        （报告为空）
-                      </Text>
+                      <span className="text-sm text-ink-3">（报告为空）</span>
                     )}
-                  </Box>
+                  </div>
                 </ScrollArea>
-              </Tabs.Content>
-            </Tabs.Root>
+              </TabsContent>
+            </Tabs>
 
             {/* 底部操作栏 */}
-            <Flex align="center" gap="2" mt="3" wrap="wrap" style={{ flexShrink: 0 }}>
-              <Button size="1" variant="soft" color="red" onClick={close}>
+            <div className="flex shrink-0 flex-wrap items-center gap-2 p-4 pt-2">
+              <Button type="button" size="sm" variant="destructive" onClick={close}>
                 放弃
               </Button>
-              <Box flexGrow="1" />
-              <Flex align="center" gap="1" mr="2">
-                <Checkbox checked={uploadTtml} onCheckedChange={(v) => setUploadTtml(Boolean(v))} />
-                <Text size="1" color="gray">
-                  上传修订版
-                </Text>
-              </Flex>
-              {ACTION_BUTTONS.map(({ action: key, label, color, Icon }) => (
+              <div className="flex-1" />
+              <div className="mr-2 flex items-center gap-1">
+                <Checkbox checked={uploadTtml} onCheckedChange={(v) => setUploadTtml(v)} />
+                <span className="text-xs text-ink-3">上传修订版</span>
+              </div>
+              {ACTION_BUTTONS.map(({ action: key, label, className, Icon }) => (
                 <Button
                   key={key}
-                  size="1"
-                  color={color}
-                  variant={action === key ? 'solid' : 'soft'}
+                  type="button"
+                  size="sm"
+                  className={action === key ? className : undefined}
+                  variant={action === key ? 'default' : 'secondary'}
                   disabled={submitting}
                   onClick={() => {
                     setAction(key);
@@ -770,11 +673,11 @@ export const ReviewReportDialog = ({ onSubmit, submitting }: ReviewReportDialogP
                   {label}
                 </Button>
               ))}
-            </Flex>
+            </div>
           </DialogFlexBody>
         </DialogContentBoundary>
-      </Dialog.Content>
-    </Dialog.Root>
+      </DialogContent>
+    </Dialog>
   );
 };
 

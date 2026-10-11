@@ -62,6 +62,11 @@ class AudioEngineWrapper extends EventTarget {
     fileName: '',
   };
 
+  private _loadToken = 0;
+  private _inflightLoads = new Map<string, Promise<TTMLMetadata[]>>();
+  private _inflightUrl: string | null = null;
+  private _abortCurrent: AbortController | null = null;
+
   //#region Audio context basics
   private _ctx: AudioContext | null = null;
   get ctx() {
@@ -325,58 +330,165 @@ class AudioEngineWrapper extends EventTarget {
     return this.mapAudioMetadataToTTML();
   }
 
-  /**
-   * 从 URL 加载音频。
-   *
-   * 审核页的参考音频是后端给的直链：上传音频的
-   * `/api/v1/uploads/file/xxx`，或者**网易云解析出来的播放地址**。
-   *
-   * ## 做法：完整下载 → 交给引擎
-   *
-   * 整个文件先 `fetch` 成 `File`，再走 `loadMusic()`（内部
-   * `decodeAudioData` 一次性解码）。**不流式播放**，理由：
-   *
-   *  - 时长立刻可知，歌词编辑器的时间轴/进度条不用等
-   *  - 解码只有一次失败点（`decodeAudioData`），错误信息是浏览器给的，
-   *    比 wasm 的 `last_error` 可读得多
-   *  - 审核时经常来回拖进度、反复试听同一段，全量在手更稳
-   *
-   * 关于 CORS：`fetch` 确实要求对方带 `Access-Control-Allow-Origin`，
-   * 但本站两条音源都满足 —— 上传音频走同源 `/api/v1/uploads/file/*`，
-   * 网易云直链本身也带 CORS 头（详情页 `PlayerBoot` 早就在
-   * `fetch` + `decodeAudioData` 这么用了）。
-   *
-   * 关于文件名：`parseAudioTrackMetadata` 靠扩展名判断音频格式，
-   * 而网易云直链的 URL 里通常没有扩展名，所以从 pathname 猜一个；
-   * 猜不到就用 `audio`（此时只是读不出内嵌歌名，解码不受影响）。
-   */
   async loadMusicFromUrl(url: string): Promise<TTMLMetadata[]> {
-    let blob: Blob;
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+ 
+    const inflight = this._inflightLoads.get(url);
+    if (inflight) return inflight;
+
+    const token = ++this._loadToken;
+    if (this._inflightUrl !== null && this._inflightUrl !== url) {
+      this._abortCurrent?.abort();
+    }
+    const controller = new AbortController();
+    this._abortCurrent = controller;
+    this._inflightUrl = url;
+
+    const task = (async (): Promise<TTMLMetadata[]> => {
+      let blob: Blob;
+      try {
+        blob = await this.downloadAudioBlob(url, controller.signal);
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') {
+          throw new Error('音频加载已被更新的请求取代', { cause: e });
+        }
+        throw new Error(
+          `无法下载参考音频（${url.slice(0, 120)}）。原始错误：${
+            e instanceof Error ? e.message : String(e)
+          }`,
+          { cause: e }
+        );
       }
-      blob = await response.blob();
-    } catch (e) {
-      console.error('fetch/读取 blob 失败', e);
-      throw new Error(
-        `无法下载参考音频（${url.slice(0, 120)}）。原始错误：${
-          e instanceof Error ? e.message : String(e)
-        }`,
-        { cause: e }
-      );
-    }
 
-    if (blob.size === 0) {
-      throw new Error(`参考音频为空（${url.slice(0, 120)}）`);
-    }
+      if (token !== this._loadToken) {
+        throw new Error('音频加载已被更新的请求取代');
+      }
 
-    const name = audioFileNameFromUrl(url) || 'audio';
-    const file = new File([blob], name, {
-      type: blob.type || 'audio/*',
-    });
-    return this.loadMusic(file);
+      if (blob.size === 0) {
+        throw new Error(`参考音频为空（${url.slice(0, 120)}）`);
+      }
+
+      const name = audioFileNameFromUrl(url) || 'audio';
+      const file = new File([blob], name, {
+        type: blob.type || 'audio/*',
+      });
+      const metadata = await this.loadMusic(file);
+
+      if (token !== this._loadToken) {
+        throw new Error('音频加载已被更新的请求取代');
+      }
+      return metadata;
+    })();
+
+    this._inflightLoads.set(url, task);
+    try {
+      return await task;
+    } finally {
+      // 无论成功失败都摘掉在途登记，允许之后重试同一 URL。
+      if (this._inflightLoads.get(url) === task) {
+        this._inflightLoads.delete(url);
+      }
+      // 该 URL 已不再是「在途」时，同步清掉标记，避免下次误判为「切换源」。
+      if (this._inflightLoads.size === 0) {
+        this._inflightUrl = null;
+        this._abortCurrent = null;
+      }
+    }
+  }
+
+  private async downloadAudioBlob(url: string, signal: AbortSignal): Promise<Blob> {
+    /** 最多尝试轮次（首轮 + 续传）。按实测每次约 4~8MB 被掐断，足够拉完 20MB。 */
+    const MAX_ROUNDS = 8;
+    /** 每轮中断后的退避 */
+    const RETRY_BACKOFF_MS = 700;
+
+    const chunks: Uint8Array[] = [];
+    let received = 0;
+    let total: number | null = null;
+    let contentType = 'audio/*';
+    let lastError: unknown;
+
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      const startedAt = Date.now();
+      try {
+        const headers: Record<string, string> = {};
+        // 已收部分字节时，从断点续传
+        if (received > 0) headers.Range = `bytes=${received}-`;
+
+        const response = await fetch(url, {
+          signal,
+          cache: 'no-store',
+          credentials: 'same-origin',
+          headers,
+        });
+
+        if (round === 0) {
+          if (response.status === 206) {
+            throw new Error('服务器返回了分段内容（206），音频未完整下载');
+          }
+          if (!response.ok) {
+            // 4xx 是确定性失败（地址不对 / 无权限），重试无意义
+            const err = new Error(`HTTP ${response.status} ${response.statusText}`);
+            if (response.status >= 400 && response.status < 500) {
+              (err as { retryable?: boolean }).retryable = false;
+            }
+            throw err;
+          }
+          contentType = response.headers.get('content-type') || contentType;
+          const len = Number(response.headers.get('content-length'));
+          total = Number.isFinite(len) && len > 0 ? len : null;
+        } else if (response.status !== 206) {
+          throw new Error(`续传请求未返回 206（HTTP ${response.status}）`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          // 没有可读流（极老环境）：退回一次性 blob()
+          return await response.blob();
+        }
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value && value.length > 0) {
+            chunks.push(value);
+            received += value.length;
+          }
+        }
+
+        // 服务端声明了长度却没传完：当成本轮中断，继续续传
+        if (total !== null && received < total) {
+          throw new Error(`响应提前结束：已收 ${received}/${total} 字节`);
+        }
+
+        const blob = new Blob(chunks as BlobPart[], { type: contentType });
+        if (round > 0) {
+          console.info('[audio-engine] 音频断点续传完成', {
+            url,
+            bytes: received,
+            rounds: round + 1,
+          });
+        }
+        return blob;
+      } catch (e) {
+        // 主动 abort（被更新的请求取代）不重试
+        if (e instanceof DOMException && e.name === 'AbortError') throw e;
+        if (e instanceof Error && (e as { retryable?: boolean }).retryable === false) throw e;
+        lastError = e;
+        console.warn('音频下载中断，将断点续传', {
+          url,
+          round: round + 1,
+          received,
+          total,
+          ms: Date.now() - startedAt,
+          error: e instanceof Error ? `${e.name}: ${e.message}` : String(e),
+        });
+        if (round === MAX_ROUNDS - 1) break;
+        await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
+        if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      }
+    }
+    console.error('音频下载重试全部失败', { url, received, total, error: lastError });
+    throw lastError;
   }
 
   private mapAudioMetadataToTTML(): TTMLMetadata[] {

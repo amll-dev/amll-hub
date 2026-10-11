@@ -9,30 +9,13 @@
  * https://github.com/amll-dev/amll-ttml-tool/blob/main/LICENSE
  */
 
-import {
-  ChevronDownFilled,
-  ChevronUpFilled,
-  MyLocationRegular,
-  PauseFilled,
-  PlayFilled,
-  Speaker2Filled,
-} from '@fluentui/react-icons';
-import {
-  Button,
-  Card,
-  Flex,
-  Grid,
-  HoverCard,
-  IconButton,
-  Inset,
-  Slider,
-  Spinner,
-  Text,
-  Tooltip,
-} from '@radix-ui/themes';
 import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai';
+import { ChevronDown, ChevronUp, Loader2, LocateFixed, Pause, Play, Volume2 } from 'lucide-react';
 import { type FC, memo, useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import { Slider } from '@/components/ui/slider';
+import { SimpleTooltip } from '@/components/ui/tooltip';
 import { audioEngine } from '$/modules/audio/audio-engine';
 import { AudioSlider } from '$/modules/audio/components/AudioSlider';
 import { useBpmControl } from '$/modules/audio/hooks';
@@ -120,17 +103,9 @@ const CurrentTimeDisplay = memo(() => {
   }, []);
 
   return (
-    <Text
-      size="2"
-      ref={timeRef}
-      style={{
-        minWidth: '5.5em',
-        textAlign: 'left',
-        fontVariantNumeric: 'tabular-nums',
-      }}
-    >
+    <span ref={timeRef} className="text-left text-sm tabular-nums" style={{ minWidth: '5.5em' }}>
       00:00.000
-    </Text>
+    </span>
   );
 });
 
@@ -143,7 +118,6 @@ export const AudioControls: FC = memo(() => {
   const [volume, setVolume] = useAtom(volumeAtom);
   const [playbackRate, setPlaybackRate] = useAtom(playbackRateAtom);
   const { lyricLines } = useAtomValue(lyricLinesAtom);
-  const { t } = useTranslation();
   const openTab = useSetAtom(openTabAtom);
 
   const setLocateAction = useSetAtom(locateActionAtom);
@@ -183,120 +157,127 @@ export const AudioControls: FC = memo(() => {
   }, [playbackRate]);
 
   return (
-    <Card m="2" mt="0">
-      <Inset>
-        <AudioPlaybackKeyBinding />
-        <AuditionKeyBinding />
-        <Flex direction="column">
-          <div style={{ display: spectrogramVisible ? 'flex' : 'none' }}>
-            <AudioSpectrogram />
-          </div>
-          <Flex align="center" px="2" gapX="2">
-            <HoverCard.Root>
-              <HoverCard.Trigger>
-                <IconButton my="2" variant="soft" title={t('audioPanel.volume', '音量')}>
-                  <Speaker2Filled />
-                </IconButton>
-              </HoverCard.Trigger>
-              <HoverCard.Content>
-                <Flex direction="column" align="center">
-                  <Grid columns="0fr 7em 2em" gap="2" align="baseline">
-                    <Text wrap="nowrap">{t('audioPanel.volume', '音量')}</Text>
-                    <Slider
-                      min={0}
-                      max={1}
-                      defaultValue={[volume]}
-                      step={0.01}
-                      onValueChange={(v) => setVolume(v[0] ?? volume)}
-                    />
-                    <Text wrap="nowrap" color="gray" size="1">
-                      {(volume * 100).toFixed()}%
-                    </Text>
-                    <Text wrap="nowrap">{t('audioPanel.playbackRate', '播放速度')}</Text>
-                    <Slider
-                      min={0.1}
-                      max={2}
-                      defaultValue={[playbackRate]}
-                      step={0.05}
-                      onValueChange={(v) => setPlaybackRate(v[0] ?? playbackRate)}
-                    />
-                    <Text wrap="nowrap" color="gray" size="1">
-                      {playbackRate.toFixed(2)}x
-                    </Text>
-                    <Text wrap="nowrap">{t('audioPanel.bpm', 'BPM')}</Text>
-                    <Flex align="center">
-                      {bpmState.status === 'analyzing' && (
-                        <Button variant="soft" size="1" onClick={() => openTab('bpm')}>
-                          <Spinner size="1" />
-                        </Button>
-                      )}
-                      {bpmState.status === 'completed' && (
-                        <Button variant="soft" size="1" onClick={() => openTab('bpm')}>
-                          {currentBpm ?? Math.round(bpmState.result.bpm)}
-                        </Button>
-                      )}
-                      {bpmState.status === 'error' && (
-                        <Button variant="soft" color="red" size="1" onClick={() => openTab('bpm')}>
-                          {t('audioPanel.bpmError', '错误')}
-                        </Button>
-                      )}
-                      {bpmState.status === 'idle' && (
-                        <Button variant="soft" color="gray" size="1" onClick={() => openTab('bpm')}>
-                          -
-                        </Button>
-                      )}
-                    </Flex>
-                    <span />
-                  </Grid>
-                </Flex>
-              </HoverCard.Content>
-            </HoverCard.Root>
-            <Tooltip content={t('audioPanel.playPause', '暂停 / 播放音乐')}>
-              <IconButton
-                my="2"
-                ml="0"
-                variant="soft"
-                disabled={!audioLoaded}
-                onClick={onTogglePlay}
-              >
-                {audioPlaying ? <PauseFilled /> : <PlayFilled />}
-              </IconButton>
-            </Tooltip>
-            <CurrentTimeDisplay />
-            <AudioSlider />
-            <Text
-              size="2"
-              style={{
-                minWidth: '5.5em',
-              }}
+    <div className="mx-2 mb-2 overflow-hidden rounded-lg border border-line bg-card">
+      <AudioPlaybackKeyBinding />
+      <AuditionKeyBinding />
+      <div className="flex flex-col">
+        <div style={{ display: spectrogramVisible ? 'flex' : 'none' }}>
+          <AudioSpectrogram />
+        </div>
+        <div className="flex items-center gap-x-2 px-2">
+          <HoverCard openDelay={200} closeDelay={100}>
+            <HoverCardTrigger asChild>
+              <Button variant="secondary" size="icon" className="my-2 size-7 shrink-0" title="音量">
+                <Volume2 className="size-4" />
+              </Button>
+            </HoverCardTrigger>
+            <HoverCardContent className="w-auto">
+              <div className="grid grid-cols-[auto_7em_2em] items-baseline gap-2">
+                <span className="whitespace-nowrap">音量</span>
+                <Slider
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={volume}
+                  onValueChange={(v) => setVolume(v)}
+                />
+                <span className="whitespace-nowrap text-xs text-ink-3">
+                  {(volume * 100).toFixed()}%
+                </span>
+                <span className="whitespace-nowrap">播放速度</span>
+                <Slider
+                  min={0.1}
+                  max={2}
+                  step={0.05}
+                  value={playbackRate}
+                  onValueChange={(v) => setPlaybackRate(v)}
+                />
+                <span className="whitespace-nowrap text-xs text-ink-3">
+                  {playbackRate.toFixed(2)}x
+                </span>
+                <span className="whitespace-nowrap">BPM</span>
+                <div className="flex items-center">
+                  {bpmState.status === 'analyzing' && (
+                    <Button variant="secondary" className="h-6 px-2" onClick={() => openTab('bpm')}>
+                      <Loader2 className="size-3.5 animate-spin" />
+                    </Button>
+                  )}
+                  {bpmState.status === 'completed' && (
+                    <Button
+                      variant="secondary"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => openTab('bpm')}
+                    >
+                      {currentBpm ?? Math.round(bpmState.result.bpm)}
+                    </Button>
+                  )}
+                  {bpmState.status === 'error' && (
+                    <Button
+                      variant="destructive"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => openTab('bpm')}
+                    >
+                      错误
+                    </Button>
+                  )}
+                  {bpmState.status === 'idle' && (
+                    <Button
+                      variant="secondary"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => openTab('bpm')}
+                    >
+                      -
+                    </Button>
+                  )}
+                </div>
+                <span />
+              </div>
+            </HoverCardContent>
+          </HoverCard>
+          <SimpleTooltip label="暂停 / 播放音乐">
+            <Button
+              variant="secondary"
+              size="icon"
+              className="my-2 size-7 shrink-0"
+              disabled={!audioLoaded}
+              onClick={onTogglePlay}
             >
-              {msToTimestamp(currentDuration)}
-            </Text>
-            <Tooltip content={t('lyricEditor.locate', '定位')}>
-              <IconButton
-                my="2"
-                ml="0"
-                variant="soft"
-                onClick={handleLocate}
-                disabled={lyricLines.length === 0}
-              >
-                <MyLocationRegular fontSize={18} />
-              </IconButton>
-            </Tooltip>
-            <Tooltip content={t('audioPanel.expandSpectrogram', '展开 / 收起频谱图')}>
-              <IconButton
-                my="2"
-                ml="0"
-                variant="soft"
-                onClick={() => setSpectrogramVisible(!spectrogramVisible)}
-              >
-                {spectrogramVisible ? <ChevronDownFilled /> : <ChevronUpFilled />}
-              </IconButton>
-            </Tooltip>
-          </Flex>
-        </Flex>
-      </Inset>
-    </Card>
+              {audioPlaying ? <Pause className="size-4" /> : <Play className="size-4" />}
+            </Button>
+          </SimpleTooltip>
+          <CurrentTimeDisplay />
+          <AudioSlider />
+          <span className="text-sm" style={{ minWidth: '5.5em' }}>
+            {msToTimestamp(currentDuration)}
+          </span>
+          <SimpleTooltip label="定位">
+            <Button
+              variant="secondary"
+              size="icon"
+              className="my-2 size-7 shrink-0"
+              onClick={handleLocate}
+              disabled={lyricLines.length === 0}
+            >
+              <LocateFixed className="size-[18px]" />
+            </Button>
+          </SimpleTooltip>
+          <SimpleTooltip label="展开 / 收起频谱图">
+            <Button
+              variant="secondary"
+              size="icon"
+              className="my-2 size-7 shrink-0"
+              onClick={() => setSpectrogramVisible(!spectrogramVisible)}
+            >
+              {spectrogramVisible ? (
+                <ChevronDown className="size-4" />
+              ) : (
+                <ChevronUp className="size-4" />
+              )}
+            </Button>
+          </SimpleTooltip>
+        </div>
+      </div>
+    </div>
   );
 });
 

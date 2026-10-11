@@ -1,4 +1,5 @@
 import { atom } from 'jotai';
+import { toast } from 'sonner';
 import { uid } from 'uid';
 
 export type NotificationLevel = 'info' | 'warning' | 'error' | 'success';
@@ -39,60 +40,61 @@ export type AppNotification = {
 
 export const notificationsAtom = atom<AppNotification[]>([]);
 
+/** sonner 的 toast 级别 */
+const toSonner = (level: NotificationLevel) => {
+  switch (level) {
+    case 'success':
+      return toast.success;
+    case 'error':
+      return toast.error;
+    case 'warning':
+      return toast.warning;
+    default:
+      return toast.info;
+  }
+};
+
+const emit = (notification: AppNotification) => {
+  const notify = toSonner(notification.level);
+  notify(notification.title, {
+    id: notification.id,
+    description: notification.description,
+    duration: notification.pinned ? Number.POSITIVE_INFINITY : undefined,
+  });
+};
+
 export const pushNotificationAtom = atom(
   null,
   (
     _get,
-    set,
+    _set,
     input: Omit<AppNotification, 'id' | 'createdAt'> & {
       id?: string;
       createdAt?: string;
     }
   ) => {
-    const nextNotification: AppNotification = {
+    emit({
       ...input,
       id: input.id ?? uid(),
       createdAt: input.createdAt ?? new Date().toISOString(),
-    };
-    set(notificationsAtom, (prev) => [nextNotification, ...prev]);
+    });
   }
 );
 
 export const upsertNotificationAtom = atom(
   null,
-  (get, set, input: Omit<AppNotification, 'createdAt'> & { createdAt?: string }) => {
-    const notifications = get(notificationsAtom);
-    const existingIndex = notifications.findIndex((notification) => notification.id === input.id);
-    const existing = existingIndex >= 0 ? notifications[existingIndex] : null;
-    const nextNotification: AppNotification = {
-      ...existing,
+  (_get, _set, input: Omit<AppNotification, 'createdAt'> & { createdAt?: string }) => {
+    emit({
       ...input,
-      createdAt: input.createdAt ?? existing?.createdAt ?? new Date().toISOString(),
-    };
-    if (existingIndex >= 0) {
-      set(notificationsAtom, (prev) => {
-        const next = [...prev];
-        next[existingIndex] = nextNotification;
-        return next;
-      });
-    } else {
-      set(notificationsAtom, (prev) => [nextNotification, ...prev]);
-    }
+      createdAt: input.createdAt ?? new Date().toISOString(),
+    });
   }
 );
 
-export const removeNotificationAtom = atom(null, (get, set, id: string) => {
-  const notifications = get(notificationsAtom);
-  const next = notifications.filter(
-    (notification) => notification.id !== id || notification.dismissible === false
-  );
-  if (next.length !== notifications.length) {
-    set(notificationsAtom, next);
-  }
+export const removeNotificationAtom = atom(null, (_get, _set, id: string) => {
+  toast.dismiss(id);
 });
 
-export const clearNotificationsAtom = atom(null, (_get, set) => {
-  set(notificationsAtom, (prev) =>
-    prev.filter((notification) => notification.dismissible === false)
-  );
+export const clearNotificationsAtom = atom(null, (_get, _set) => {
+  toast.dismiss();
 });

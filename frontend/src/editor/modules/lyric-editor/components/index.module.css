@@ -113,7 +113,7 @@
   display: flex;
   gap: 0.25em;
 
-  & :global(.rt-TextFieldRoot) {
+  & input {
     min-width: 10em;
   }
 }
@@ -129,7 +129,7 @@
   color: var(--white-a6);
 }
 
-:global(.radix-themes.light) {
+:global(html:not(.dark)) {
   .startTime,
   .endTime {
     color: var(--white-a10);
@@ -226,9 +226,9 @@
   opacity: 0;
   transition: opacity 0.2s ease-in-out;
 
-  &:has(> input:active),
-  &:has(> input:focus),
-  &:has(> input:hover),
+  &:active,
+  &:focus,
+  &:hover,
   &.empty {
     opacity: 1;
   }
@@ -445,7 +445,7 @@
   background-color: var(--orange-a5);
 }
 
-:global(.radix-themes.light) .lyricWord.selected {
+:global(html:not(.dark)) .lyricWord.selected {
   .startTime,
   .endTime {
     color: var(--white-a12);
@@ -537,7 +537,7 @@
   filter: saturate(0.35);
 }
 
-.annotationRemoved :global(.rt-TextFieldRoot),
+.annotationRemoved input,
 .annotationRemoved .displayWord {
   text-decoration: line-through;
   text-decoration-color: var(--red-a8);

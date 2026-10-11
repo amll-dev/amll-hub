@@ -1,9 +1,17 @@
-import { Info16Regular } from '@fluentui/react-icons';
-import { Box, Button, Card, Checkbox, Dialog, Flex, Text } from '@radix-ui/themes';
 import { useAtom, useAtomValue } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
+import { Info } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import {
   segmentationCustomRulesAtom,
   segmentationIgnoreListTextAtom,
@@ -29,7 +37,6 @@ export const SplitWordDialog = memo(() => {
   const editingState = useAtomValue(editingWordStateAtom);
   const lyricLines = useAtomValue(lyricLinesAtom);
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
-  const { t } = useTranslation();
 
   const [splitIndices, setSplitIndices] = useState(new Set<number>());
   const [targetWordText, setTargetWordText] = useState('');
@@ -203,60 +210,50 @@ export const SplitWordDialog = memo(() => {
   ]);
 
   return (
-    <Dialog.Root open={splitWordDialog} onOpenChange={splitWordDialogOpen}>
-      <Dialog.Content>
-        <Dialog.Title>{t('splitWordDialog.title', '拆分单词')}</Dialog.Title>
-        <Flex direction="column" gap="2">
-          <Card>
-            <Flex gap="2" align="start">
-              <Info16Regular />
-              <Text size="2" color="gray">
-                {t(
-                  'splitWordDialog.tip',
-                  '拆分后新单词将会按自身单词字符平均分配原单词的始末时间，如有空拍则会被清除'
-                )}
-              </Text>
-            </Flex>
-          </Card>
+    <Dialog open={splitWordDialog} onOpenChange={splitWordDialogOpen}>
+      <DialogContent>
+        <DialogTitle>拆分单词</DialogTitle>
+        <div className="flex flex-col gap-2">
+          <div className="rounded-lg border border-line bg-card p-3">
+            <div className="flex items-start gap-2">
+              <Info className="size-4 shrink-0 text-ink-3" />
+              <span className="text-sm text-ink-3">
+                拆分后新单词将会按自身单词字符平均分配原单词的始末时间，如有空拍则会被清除
+              </span>
+            </div>
+          </div>
 
-          <Box my="3">
+          <div className="my-3">
             <ManualWordSplitter
               word={targetWordText}
               splitIndices={splitIndices}
               onSplitIndexToggle={toggleSplitPoint}
             />
-          </Box>
+          </div>
 
-          <Flex direction="column" gap="2">
-            <Text as="label" size="2">
-              <Flex gap="2" align="center">
-                <Checkbox
-                  checked={applyToAll}
-                  onCheckedChange={(c) => setApplyToAll(c as boolean)}
-                />
-                {t('splitWordDialog.applyToAll', '将此拆分规则应用于所有相同的单词')}
-              </Flex>
-            </Text>
+          <div className="flex flex-col gap-2">
+            <Label className="font-normal">
+              <Checkbox checked={applyToAll} onCheckedChange={(c) => setApplyToAll(Boolean(c))} />
+              将此拆分规则应用于所有相同的单词
+            </Label>
 
-            <Text as="label" size="2">
-              <Flex gap="2" align="center" style={{ opacity: applyToAll ? 1 : 0.5 }}>
-                <Checkbox
-                  disabled={!applyToAll}
-                  checked={ignoreCase}
-                  onCheckedChange={(c) => setIgnoreCase(c as boolean)}
-                />
-                {t('splitWordDialog.ignoreCase', '忽略大小写')}
-              </Flex>
-            </Text>
-          </Flex>
-        </Flex>
+            <Label className="font-normal" style={{ opacity: applyToAll ? 1 : 0.5 }}>
+              <Checkbox
+                disabled={!applyToAll}
+                checked={ignoreCase}
+                onCheckedChange={(c) => setIgnoreCase(Boolean(c))}
+              />
+              忽略大小写
+            </Label>
+          </div>
+        </div>
 
-        <Flex justify="end" mt="4">
-          <Dialog.Close>
-            <Button onClick={handleSplit}>{t('splitWordDialog.actionButton', '执行')}</Button>
-          </Dialog.Close>
-        </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button onClick={handleSplit}>执行</Button>
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 });

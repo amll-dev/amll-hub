@@ -1,6 +1,6 @@
-import { Kbd } from '@radix-ui/themes';
 import { useAtomValue } from 'jotai';
 import type { FC } from 'react';
+import { Kbd } from '@/components/ui/kbd';
 import { formatKeyBindings, type useKeyBindingAtom } from '$/utils/keybindings.ts';
 
 /**

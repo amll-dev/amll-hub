@@ -1,7 +1,6 @@
-import { Button, Card, Grid } from '@radix-ui/themes';
 import { useStore } from 'jotai';
 import type { FC } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
 import {
   keyMoveNextWordAtom,
   keyMovePrevWordAtom,
@@ -10,18 +9,15 @@ import {
   keySyncStartAtom,
 } from '$/states/keybindings.ts';
 import { forceInvokeKeyBindingAtom } from '$/utils/keybindings.ts';
-import styles from './index.module.css';
 
 export const TouchSyncPanel: FC = () => {
   const store = useStore();
-  const { t } = useTranslation();
   return (
-    <Card m="2" mt="0" style={{ flexShrink: '0' }}>
-      <Grid rows="2" columns="6" gap="2" className={styles.syncButtons}>
+    <div className="mx-2 mb-2 shrink-0 rounded-lg border border-line bg-card p-2">
+      <div className="grid grid-cols-6 grid-rows-2 gap-2">
         <Button
-          variant="soft"
-          size="4"
-          style={{ gridColumn: 'span 3' }}
+          variant="secondary"
+          className="col-span-3 h-12 whitespace-nowrap px-0"
           onMouseDown={(evt) =>
             forceInvokeKeyBindingAtom(store, keyMovePrevWordAtom, evt.nativeEvent)
           }
@@ -29,13 +25,12 @@ export const TouchSyncPanel: FC = () => {
             forceInvokeKeyBindingAtom(store, keyMovePrevWordAtom, evt.nativeEvent)
           }
         >
-          {t('touchSyncPanel.prevWord', '跳上词')}
+          跳上词
         </Button>
 
         <Button
-          variant="soft"
-          size="4"
-          style={{ gridColumn: 'span 3' }}
+          variant="secondary"
+          className="col-span-3 h-12 whitespace-nowrap px-0"
           onMouseDown={(evt) =>
             forceInvokeKeyBindingAtom(store, keyMoveNextWordAtom, evt.nativeEvent)
           }
@@ -43,38 +38,35 @@ export const TouchSyncPanel: FC = () => {
             forceInvokeKeyBindingAtom(store, keyMoveNextWordAtom, evt.nativeEvent)
           }
         >
-          {t('touchSyncPanel.nextWord', '跳下词')}
+          跳下词
         </Button>
         <Button
-          variant="soft"
-          size="4"
-          style={{ gridColumn: 'span 2' }}
+          variant="secondary"
+          className="col-span-2 h-12 whitespace-nowrap px-0"
           onMouseDown={(evt) => forceInvokeKeyBindingAtom(store, keySyncStartAtom, evt.nativeEvent)}
           onTouchStart={(evt) =>
             forceInvokeKeyBindingAtom(store, keySyncStartAtom, evt.nativeEvent)
           }
         >
-          {t('ribbonBar.syncMode.startSync', '起始轴')}
+          起始轴
         </Button>
         <Button
-          variant="soft"
-          size="4"
-          style={{ gridColumn: 'span 2' }}
+          variant="secondary"
+          className="col-span-2 h-12 whitespace-nowrap px-0"
           onClick={(evt) => forceInvokeKeyBindingAtom(store, keySyncNextAtom, evt.nativeEvent)}
           onTouchStart={(evt) => forceInvokeKeyBindingAtom(store, keySyncNextAtom, evt.nativeEvent)}
         >
-          {t('ribbonBar.syncMode.continuousSync', '连续轴')}
+          连续轴
         </Button>
         <Button
-          variant="soft"
-          size="4"
-          style={{ gridColumn: 'span 2' }}
+          variant="secondary"
+          className="col-span-2 h-12 whitespace-nowrap px-0"
           onMouseDown={(evt) => forceInvokeKeyBindingAtom(store, keySyncEndAtom, evt.nativeEvent)}
           onTouchStart={(evt) => forceInvokeKeyBindingAtom(store, keySyncEndAtom, evt.nativeEvent)}
         >
-          {t('ribbonBar.syncMode.endSync', '结束轴')}
+          结束轴
         </Button>
-      </Grid>
-    </Card>
+      </div>
+    </div>
   );
 };

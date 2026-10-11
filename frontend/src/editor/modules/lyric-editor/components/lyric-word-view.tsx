@@ -10,18 +10,21 @@
  */
 
 import {
-  CutRegular,
-  DeleteRegular,
-  PaddingLeftRegular,
-  PaddingRightRegular,
-  SplitVerticalRegular,
-  TaskListLtrRegular,
-} from '@fluentui/react-icons';
-import { ContextMenu, IconButton, TextField } from '@radix-ui/themes';
-import classNames from 'classnames';
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  Columns2,
+  ListChecks,
+  Scissors,
+  Trash2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { type Atom, atom, useAtomValue, useSetAtom, useStore } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
 import {
+  type ComponentPropsWithoutRef,
   type FC,
   type MouseEvent,
   memo,
@@ -34,7 +37,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useTranslation } from 'react-i18next';
 import { LyricLineMenu } from '$/components/Menus/lyric-line-menu.tsx';
 import { audioEngine } from '$/modules/audio/audio-engine.ts';
 import {
@@ -84,18 +86,14 @@ const parseRubyShortcut = (value: string) => {
 };
 
 const getDisplayWordText = (
-  t: (key: string, defaultValue: string, options?: { count?: number }) => string,
   word: string,
   isWordBlank: boolean,
   romanWord?: string,
   displayRomanizationInSync?: boolean
 ) => {
   if (displayRomanizationInSync && romanWord && romanWord.trim() !== '') return romanWord;
-  if (word === '') return t('lyricWordView.empty', '空白');
-  if (isWordBlank)
-    return t('lyricWordView.spaceCount', '空格 x{count}', {
-      count: word.length,
-    });
+  if (word === '') return '空白';
+  if (isWordBlank) return `空格 x${word.length}`;
   return word;
 };
 
@@ -182,7 +180,7 @@ const LyricWordViewEditSpan = ({
   }
 
   return (
-    <ContextMenu.Root
+    <ContextMenu
       onOpenChange={(open) => {
         if (!open) return;
         if (isWordSelected) return;
@@ -196,7 +194,7 @@ const LyricWordViewEditSpan = ({
         });
       }}
     >
-      <ContextMenu.Trigger>
+      <ContextMenuTrigger>
         <span
           draggable={toolMode === ToolMode.Edit}
           onPointerDown={(evt) => {
@@ -303,12 +301,12 @@ const LyricWordViewEditSpan = ({
         >
           {children}
         </span>
-      </ContextMenu.Trigger>
-      <ContextMenu.Content>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
         <LyricWordMenu wordAtom={wordAtom} wordIndex={wordIndex} lineIndex={lineIndex} />
         <LyricLineMenu lineIndex={lineIndex} />
-      </ContextMenu.Content>
-    </ContextMenu.Root>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };
 
@@ -318,17 +316,16 @@ function WordEditField<F extends keyof LyricWord, V extends LyricWord[F]>({
   formatter,
   parser,
   // textFieldStyle,
-  children,
+  leadingIcon,
   ...other
-}: PropsWithChildren<
-  {
-    wordAtom: Atom<LyricWord>;
-    fieldName: F;
-    formatter: (v: V) => string;
-    parser: (v: string) => V;
-    textFieldStyle?: React.CSSProperties;
-  } & TextField.RootProps
->) {
+}: {
+  wordAtom: Atom<LyricWord>;
+  fieldName: F;
+  formatter: (v: V) => string;
+  parser: (v: string) => V;
+  textFieldStyle?: React.CSSProperties;
+  leadingIcon?: React.ReactNode;
+} & ComponentPropsWithoutRef<'input'>) {
   const [fieldInput, setFieldInput] = useState<string | undefined>(undefined);
   const [fieldPlaceholder, setFieldPlaceholder] = useState<string>('');
 
@@ -382,24 +379,29 @@ function WordEditField<F extends keyof LyricWord, V extends LyricWord[F]>({
   }, [currentValue]);
 
   return (
-    <TextField.Root
-      size="1"
-      value={fieldInput ?? ''}
-      placeholder={fieldPlaceholder}
-      disabled={fieldInput === undefined}
-      onChange={(evt) => setFieldInput(evt.currentTarget.value)}
-      onKeyDown={(evt) => {
-        if (evt.key !== 'Enter') return;
-        onInputFinished(evt.currentTarget.value);
-      }}
-      onBlur={(evt) => {
-        if (evt.currentTarget.value === currentValue) return;
-        onInputFinished(evt.currentTarget.value);
-      }}
-      {...other}
-    >
-      {children}
-    </TextField.Root>
+    <div className="relative flex min-w-0 items-center">
+      {leadingIcon && (
+        <span className="pointer-events-none absolute left-1.5 flex items-center text-ink-3 [&_svg]:size-3.5">
+          {leadingIcon}
+        </span>
+      )}
+      <Input
+        value={fieldInput ?? ''}
+        placeholder={fieldPlaceholder}
+        disabled={fieldInput === undefined}
+        onChange={(evt) => setFieldInput(evt.currentTarget.value)}
+        onKeyDown={(evt) => {
+          if (evt.key !== 'Enter') return;
+          onInputFinished(evt.currentTarget.value);
+        }}
+        onBlur={(evt) => {
+          if (evt.currentTarget.value === currentValue) return;
+          onInputFinished(evt.currentTarget.value);
+        }}
+        className={cn('h-7 text-xs', leadingIcon && 'pl-6')}
+        {...other}
+      />
+    </div>
   );
 }
 
@@ -433,7 +435,7 @@ const LyricWordViewEditAdvance = ({
 
   const className = useMemo(
     () =>
-      classNames(
+      cn(
         styles.lyricWord,
         styles.edit,
         styles.advance,
@@ -447,8 +449,8 @@ const LyricWordViewEditAdvance = ({
   );
 
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger>
+    <ContextMenu>
+      <ContextMenuTrigger>
         <LyricWordViewEditSpan
           wordAtom={wordAtom}
           wordIndex={wordIndex}
@@ -457,8 +459,6 @@ const LyricWordViewEditAdvance = ({
           line={line}
         >
           <WordEditField
-            size="1"
-            color="green"
             wordAtom={wordAtom}
             fieldName="startTime"
             formatter={msToTimestamp}
@@ -466,15 +466,13 @@ const LyricWordViewEditAdvance = ({
             style={{
               minWidth: '0',
             }}
-          >
-            <TextField.Slot>
-              <PaddingLeftRegular />
-            </TextField.Slot>
-          </WordEditField>
+            leadingIcon={<ArrowLeftToLine />}
+          />
           <div className={styles.advanceBar}>
-            <IconButton
-              variant="soft"
-              size="1"
+            <Button
+              variant="secondary"
+              size="icon"
+              className="size-6 shrink-0"
               onClick={() => {
                 setSplitState({
                   wordIndex,
@@ -484,10 +482,9 @@ const LyricWordViewEditAdvance = ({
                 setOpenSplitWordDialog(true);
               }}
             >
-              <CutRegular />
-            </IconButton>
+              <Scissors className="size-3.5" />
+            </Button>
             <WordEditField
-              size="1"
               wordAtom={wordAtom}
               fieldName="word"
               formatter={String}
@@ -496,9 +493,10 @@ const LyricWordViewEditAdvance = ({
                 minWidth: '0em',
               }}
             />
-            <IconButton
-              variant="soft"
-              size="1"
+            <Button
+              variant="secondary"
+              size="icon"
+              className="size-6 shrink-0"
               onClick={() => {
                 editLyricLines((state) => {
                   const selectedWords = store.get(selectedWordsAtom);
@@ -508,8 +506,8 @@ const LyricWordViewEditAdvance = ({
                 });
               }}
             >
-              <DeleteRegular />
-            </IconButton>
+              <Trash2 className="size-3.5" />
+            </Button>
           </div>
           <div className={styles.rubyAdvanceRow}>
             <RubyEditor
@@ -520,8 +518,6 @@ const LyricWordViewEditAdvance = ({
             />
           </div>
           <WordEditField
-            size="1"
-            color="red"
             wordAtom={wordAtom}
             fieldName="endTime"
             formatter={msToTimestamp}
@@ -529,14 +525,10 @@ const LyricWordViewEditAdvance = ({
             style={{
               minWidth: '0',
             }}
-          >
-            <TextField.Slot>
-              <PaddingRightRegular />
-            </TextField.Slot>
-          </WordEditField>
+            leadingIcon={<ArrowRightToLine />}
+          />
           <div className={styles.advanceBar}>
             <WordEditField
-              size="1"
               type="number"
               min={0}
               wordAtom={wordAtom}
@@ -546,14 +538,12 @@ const LyricWordViewEditAdvance = ({
               style={{
                 minWidth: '0',
               }}
-            >
-              <TextField.Slot>
-                <SplitVerticalRegular />
-              </TextField.Slot>
-            </WordEditField>
-            <IconButton
-              variant="soft"
-              size="1"
+              leadingIcon={<Columns2 />}
+            />
+            <Button
+              variant="secondary"
+              size="icon"
+              className="size-6 shrink-0"
               onClick={() => {
                 editLyricLines((state) => {
                   for (const line of state.lyricLines)
@@ -562,21 +552,20 @@ const LyricWordViewEditAdvance = ({
                 });
               }}
             >
-              <TaskListLtrRegular />
-            </IconButton>
+              <ListChecks className="size-3.5" />
+            </Button>
           </div>
         </LyricWordViewEditSpan>
-      </ContextMenu.Trigger>
-      <ContextMenu.Content>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
         <LyricWordMenu wordAtom={wordAtom} wordIndex={wordIndex} lineIndex={lineIndex} />
         <LyricLineMenu lineIndex={lineIndex} />
-      </ContextMenu.Content>
-    </ContextMenu.Root>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };
 
 const LyricWorldViewEdit = ({ wordAtom, wordIndex, line, lineIndex }: LyricWordViewEditProps) => {
-  const { t } = useTranslation();
   const word = useAtomValue(wordAtom);
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
   const setSelectedLines = useSetImmerAtom(selectedLinesAtom);
@@ -589,7 +578,7 @@ const LyricWorldViewEdit = ({ wordAtom, wordIndex, line, lineIndex }: LyricWordV
   const [editing, setEditing] = useState(false);
   const toolMode = useAtomValue(toolModeAtom);
   const isWordBlank = useWordBlank(word.word);
-  const displayWord = getDisplayWordText(t, word.word, isWordBlank);
+  const displayWord = getDisplayWordText(word.word, isWordBlank);
   const showRubyEditor = useMemo(() => word.ruby !== undefined, [word.ruby]);
 
   const hasError = useMemo(() => word.startTime > word.endTime, [word.startTime, word.endTime]);
@@ -598,7 +587,7 @@ const LyricWorldViewEdit = ({ wordAtom, wordIndex, line, lineIndex }: LyricWordV
 
   const className = useMemo(
     () =>
-      classNames(
+      cn(
         styles.lyricWord,
         styles.edit,
         isWordSelected && styles.selected,
@@ -631,7 +620,7 @@ const LyricWorldViewEdit = ({ wordAtom, wordIndex, line, lineIndex }: LyricWordV
   return editing ? (
     <div className={className}>
       <span className={styles.wordEditRow}>
-        <TextField.Root
+        <Input
           autoFocus
           defaultValue={word.word}
           onBlur={onEnter}
@@ -643,7 +632,7 @@ const LyricWorldViewEdit = ({ wordAtom, wordIndex, line, lineIndex }: LyricWordV
       </span>
     </div>
   ) : (
-    <ContextMenu.Root
+    <ContextMenu
       onOpenChange={(open) => {
         if (!open) return;
         if (isWordSelected) return;
@@ -657,7 +646,7 @@ const LyricWorldViewEdit = ({ wordAtom, wordIndex, line, lineIndex }: LyricWordV
         });
       }}
     >
-      <ContextMenu.Trigger>
+      <ContextMenuTrigger>
         <LyricWordViewEditSpan
           wordAtom={wordAtom}
           wordIndex={wordIndex}
@@ -673,12 +662,12 @@ const LyricWorldViewEdit = ({ wordAtom, wordIndex, line, lineIndex }: LyricWordV
             {showRubyEditor && <RubyEditor wordAtom={wordAtom} />}
           </span>
         </LyricWordViewEditSpan>
-      </ContextMenu.Trigger>
-      <ContextMenu.Content>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
         <LyricWordMenu wordAtom={wordAtom} wordIndex={wordIndex} lineIndex={lineIndex} />
         <LyricLineMenu lineIndex={lineIndex} />
-      </ContextMenu.Content>
-    </ContextMenu.Root>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 };
 
@@ -788,7 +777,7 @@ const LyricSyncWordView: FC<{
 
   const className = useMemo(
     () =>
-      classNames(
+      cn(
         styles.lyricWord,
         styles.sync,
         isWordSelected && styles.selected,
@@ -820,13 +809,13 @@ const LyricSyncWordView: FC<{
       }}
     >
       {showTimestamps && (
-        <div className={classNames(styles.startTime)} ref={startTimeRef}>
+        <div className={cn(styles.startTime)} ref={startTimeRef}>
           {msToTimestamp(startTime)}
         </div>
       )}
       <div className={styles.displayWord}>{displayWord}</div>
       {showTimestamps && (
-        <div className={classNames(styles.endTime)} ref={endTimeRef}>
+        <div className={cn(styles.endTime)} ref={endTimeRef}>
           {showEndTimeAsDuration
             ? `+${formatDurationMs(endTime - startTime, { suffix: true })}`
             : msToTimestamp(endTime)}
@@ -842,14 +831,13 @@ const LyricWorldViewSync: FC<{
   line: LyricLine;
   lineIndex: number;
 }> = ({ wordAtom, line }) => {
-  const { t } = useTranslation();
   const word = useAtomValue(wordAtom);
   const displayRomanizationInSync = useAtomValue(displayRomanizationInSyncAtom);
   const isWordBlank = useWordBlank(word.word);
   const getDisplayWord = useCallback(
     (displayText: string, isBlank: boolean, romanWord?: string, showRomanization?: boolean) =>
-      getDisplayWordText(t, displayText, isBlank, romanWord, showRomanization),
-    [t]
+      getDisplayWordText(displayText, isBlank, romanWord, showRomanization),
+    []
   );
 
   if (word.ruby && word.ruby.length > 0) {

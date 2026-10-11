@@ -288,6 +288,7 @@ const createReportChangeSelector = (context: StructuredReviewSelectionContext) =
   const selectBlockChanges = (block: ReviewReportBlock) => {
     switch (block.kind) {
       case 'manual':
+      case 'metadata':
         return [];
       case 'wordTextShared':
         return block.lineRefs.flatMap((ref) =>

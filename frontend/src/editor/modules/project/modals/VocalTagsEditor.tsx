@@ -1,9 +1,10 @@
-import { Add16Regular, Delete16Regular } from '@fluentui/react-icons';
-import { Button, Dialog, Flex, Text, TextField } from '@radix-ui/themes';
 import { useAtom } from 'jotai';
 import { useImmerAtom } from 'jotai-immer';
+import { Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { vocalTagsEditorDialogAtom } from '$/states/dialogs.ts';
 import { lyricLinesAtom } from '$/states/main.ts';
 import type { TTMLLyric } from '$/types/ttml';
@@ -54,7 +55,6 @@ const reassignVocalIds = (draft: TTMLLyric) => {
 export const VocalTagsEditor = () => {
   const [open, setOpen] = useAtom(vocalTagsEditorDialogAtom);
   const [lyricLines, setLyricLines] = useImmerAtom(lyricLinesAtom);
-  const { t } = useTranslation();
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -68,23 +68,19 @@ export const VocalTagsEditor = () => {
   }, [lyricLines.metadata]);
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Content className={styles.dialogContent}>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className={styles.dialogContent}>
         <div className={styles.dialogHeader}>
-          <Dialog.Title style={{ margin: 0 }}>
-            {t('vocalTagsDialog.title', '演唱者标签')}
-          </Dialog.Title>
+          <DialogTitle style={{ margin: 0 }}>演唱者标签</DialogTitle>
         </div>
         <div className={styles.dialogBody}>
           <section>
             <div className={styles.sectionHeader}>
-              <Flex align="center" justify="between">
-                <Text size="3" weight="medium">
-                  {t('vocalTagsDialog.mappingTitle', '演唱者标签')}
-                </Text>
-                <Flex align="center" gap="2">
+              <div className="flex items-center justify-between">
+                <span className="text-base font-medium">演唱者标签</span>
+                <div className="flex items-center gap-2">
                   <Button
-                    variant="soft"
+                    variant="secondary"
                     disabled={artistNames.length === 0}
                     onClick={() => {
                       if (artistNames.length === 0) return;
@@ -98,11 +94,11 @@ export const VocalTagsEditor = () => {
                       });
                     }}
                   >
-                    {t('vocalTagsDialog.importFromArtists', '从 artists 导入')}
+                    从 artists 导入
                   </Button>
                   <Button
-                    variant="soft"
-                    color="red"
+                    variant="secondary"
+                    className="text-error"
                     onClick={() => {
                       setLyricLines((draft) => {
                         draft.lyricLines.forEach((line) => {
@@ -111,11 +107,10 @@ export const VocalTagsEditor = () => {
                       });
                     }}
                   >
-                    {t('vocalTagsDialog.clearAssignments', '清空分配')}
+                    清空分配
                   </Button>
                   <Button
-                    color="red"
-                    variant="solid"
+                    variant="destructive"
                     onClick={() => {
                       setLyricLines((draft) => {
                         draft.vocalTags = [];
@@ -125,26 +120,22 @@ export const VocalTagsEditor = () => {
                       });
                     }}
                   >
-                    <Delete16Regular />
-                    {t('vocalTagsDialog.clear', '清空')}
+                    <Trash2 className="size-4" />
+                    清空
                   </Button>
-                </Flex>
-              </Flex>
+                </div>
+              </div>
             </div>
-            {vocalTags.length === 0 && (
-              <Text size="2" color="gray">
-                {t('vocalTagsDialog.empty', '暂无演唱者标签。')}
-              </Text>
-            )}
+            {vocalTags.length === 0 && <span className="text-sm text-ink-3">暂无演唱者标签。</span>}
             <div className={styles.tagList}>
               {vocalTags.map((tag, index) =>
                 editingIndex === index ? (
-                  <TextField.Root
+                  <Input
                     key={`vocal-tag-edit-${tag.key}`}
                     className={styles.tagControl}
                     autoFocus
                     value={editingValue}
-                    placeholder={t('vocalTagsDialog.valuePlaceholder', '显示名称')}
+                    placeholder="显示名称"
                     onChange={(e) => setEditingValue(e.currentTarget.value)}
                     onKeyDown={(e) => {
                       if (e.key !== 'Enter') return;
@@ -168,24 +159,22 @@ export const VocalTagsEditor = () => {
                   <Button
                     key={`vocal-tag-${tag.key}`}
                     className={styles.tagControl}
-                    variant="soft"
+                    variant="secondary"
                     onClick={() => {
                       setEditingIndex(index);
                       setEditingValue(tag.value ?? '');
                     }}
                   >
-                    {tag.value?.trim()
-                      ? `${tag.key}: ${tag.value}`
-                      : `${tag.key}: ${t('vocalTagsDialog.untitled', '(未命名)')}`}
+                    {tag.value?.trim() ? `${tag.key}: ${tag.value}` : `${tag.key}: ${'(未命名)'}`}
                   </Button>
                 )
               )}
               {isAdding ? (
-                <TextField.Root
+                <Input
                   className={styles.tagControl}
                   autoFocus
                   value={newTagValue}
-                  placeholder={t('vocalTagsDialog.valuePlaceholder', '显示名称')}
+                  placeholder="显示名称"
                   onChange={(e) => setNewTagValue(e.currentTarget.value)}
                   onKeyDown={(e) => {
                     if (e.key !== 'Enter') return;
@@ -208,22 +197,22 @@ export const VocalTagsEditor = () => {
               ) : (
                 <Button
                   className={styles.tagControl}
-                  variant="soft"
+                  variant="secondary"
                   onClick={() => {
                     setIsAdding(true);
                     setNewTagValue('');
                   }}
                 >
-                  <Flex align="center" gap="2">
-                    <Add16Regular />
-                    {t('vocalTagsDialog.addTag', '添加演唱者标签')}
-                  </Flex>
+                  <span className="flex items-center gap-2">
+                    <Plus className="size-4" />
+                    添加演唱者标签
+                  </span>
                 </Button>
               )}
             </div>
           </section>
         </div>
-      </Dialog.Content>
-    </Dialog.Root>
+      </DialogContent>
+    </Dialog>
   );
 };

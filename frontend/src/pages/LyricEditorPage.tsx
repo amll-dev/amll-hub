@@ -6,7 +6,13 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { audioEngine } from '@/editor/modules/audio/audio-engine';
-import { isDirtyAtom, lyricLinesAtom, ToolMode, toolModeAtom } from '@/editor/states/main.ts';
+import {
+  isDirtyAtom,
+  lyricLinesAtom,
+  markLyricLinesSavedAtom,
+  ToolMode,
+  toolModeAtom,
+} from '@/editor/states/main.ts';
 import { useFileOpener } from '@/editor/hooks/useFileOpener.ts';
 import type { ReviewReport } from '@/editor/modules/review/services/report-service/types';
 import {
@@ -20,6 +26,7 @@ import {
 } from '@/editor/modules/review/states';
 
 import { ReviewReportDialog } from '@/editor/modules/review/modals/ReviewReportDialog';
+import { AudioSourcePicker } from '@/components/review/AudioSourcePicker';
 import { EditorTheme, EditorWorkbench } from '@/components/review/EditorWorkbench';
 import { LyricEditorHeader } from '@/components/review/LyricEditorHeader';
 import { Button } from '@/components/ui/button';
@@ -27,6 +34,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
+import { buildEditorAudioSources } from '@/lib/review/audio-sources';
 import { buildEditorSaveBundle } from '@/lib/review/editor-save-bundle';
 import type { ReviewAction } from '@/lib/types';
 
@@ -42,6 +50,7 @@ export function LyricEditorPage() {
   const lyricLines = useAtomValue(lyricLinesAtom);
   const isDirty = useAtomValue(isDirtyAtom);
   const setToolMode = useSetAtom(toolModeAtom);
+  const markLyricLinesSaved = useSetAtom(markLyricLinesSavedAtom);
   const { loadTtmlContent } = useFileOpener();
 
   /** 原稿 TTML，保存时用来生成 diff 报告 */
@@ -58,8 +67,7 @@ export function LyricEditorPage() {
   const audios = useMemo(() => ctx?.audios ?? [], [ctx?.audios]);
   const ncmId = ctx?.ncmId ?? '';
 
-  // 网易云来源的投稿没有上传音频，靠解析接口拿直链当打轴基准
-  const needNcm = audios.length === 0 && !!ncmId;
+  const needNcm = !!ncmId;
   const ncmQuery = useQuery({
     queryKey: queryKeys.ncmMusic(ncmId),
     queryFn: () => api.parseNcmMusic(ncmId),
@@ -67,26 +75,24 @@ export function LyricEditorPage() {
     staleTime: 5 * 60_000,
     retry: false,
   });
-  const ncmSrc = needNcm ? (ncmQuery.data?.url ?? '') : '';
 
-  // 音源列表：上传音频在前，网易云兜底（与详情页播放器一致）
-  const sources = useMemo(() => {
-    const list = audios.map((a) => ({
-      key: a.fileName || String(a.id ?? ''),
-      src: buildAudioUrl(a),
-      label: a.title || a.artist || a.fileName || '音频',
-    }));
-    if (ncmSrc) {
-      list.push({
-        key: `ncm:${ncmId}`,
-        src: ncmSrc,
-        label: ncmQuery.data?.name || `网易云 ${ncmId}`,
-      });
-    }
-    return list;
-  }, [audios, ncmSrc, ncmId, ncmQuery.data?.name]);
+  // 音源列表
+  const sources = useMemo(
+    () => buildEditorAudioSources(audios, ncmId, ncmQuery.data ?? null),
+    [audios, ncmId, ncmQuery.data]
+  );
 
-  const audioSrc = sources[Math.min(audioIndex, Math.max(0, sources.length - 1))]?.src ?? '';
+  const safeAudioIndex = Math.min(audioIndex, Math.max(0, sources.length - 1));
+  const audioSrc = sources[safeAudioIndex]?.src ?? '';
+
+  // 音源变化诊断
+  useEffect(() => {
+    console.info('[editor-audio] sources 变化', {
+      audioIndex: safeAudioIndex,
+      audioSrc,
+      sources: sources.map((s) => ({ key: s.key, src: s.src, label: s.label })),
+    });
+  }, [sources, safeAudioIndex, audioSrc]);
 
   // 打开时标记审核中，离开时释放占用
   useEffect(() => {
@@ -115,27 +121,45 @@ export function LyricEditorPage() {
   useEffect(() => {
     if (!audioSrc) return;
     let cancelled = false;
-    void audioEngine.loadMusicFromUrl(audioSrc).catch((err) => {
+    const timer = window.setTimeout(() => {
       if (cancelled) return;
-      /**
-       * 不要直接 `String(err)` —— FFmpeg 链路抛出的可能是
-       * `{ code, message }` 这种普通对象，`String()` 会得到
-       * 字面量 "[object Object]"，把真正的原因吞掉。
-       */
-      const detail =
-        err instanceof Error
-          ? err.message
-          : typeof err === 'string'
-            ? err
-            : typeof err === 'object' && err !== null && 'message' in err
-              ? String((err as { message: unknown }).message)
-              : JSON.stringify(err);
-      toast.error(`参考音频加载失败：${detail}`);
-    });
+      console.info('[editor-audio] 开始加载', { audioSrc, audioIndex: safeAudioIndex });
+      void audioEngine.loadMusicFromUrl(audioSrc).catch((err) => {
+        if (cancelled) return;
+        // 切换音频时被更新的请求取代属于正常流程，不打扰用户
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes('已被更新的请求取代')) {
+          console.info('[editor-audio] 本次加载被更新的请求取代，忽略', { audioSrc });
+          return;
+        }
+        console.error('[editor-audio] 加载失败', { audioSrc, audioIndex: safeAudioIndex, error: err });
+        /**
+         * 不要直接 `String(err)` —— FFmpeg 链路抛出的可能是
+         * `{ code, message }` 这种普通对象，`String()` 会得到
+         * 字面量 "[object Object]"，把真正的原因吞掉。
+         */
+        const detail =
+          err instanceof Error
+            ? err.message
+            : typeof err === 'string'
+              ? err
+              : typeof err === 'object' && err !== null && 'message' in err
+                ? String((err as { message: unknown }).message)
+                : JSON.stringify(err);
+
+        const hint = detail.includes('Failed to fetch')
+          ? '（后端服务可能未启动或网络中断，请确认后端在运行后重试）'
+          : '';
+        toast.error(`参考音频加载失败：${detail}${hint}`);
+      });
+    }, 120);
+
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [audioSrc]);
+    // 依赖收敛后的索引：越界被夹回时也要重新判定，而不是只盯 URL 字符串
+  }, [audioSrc, safeAudioIndex]);
 
   // 离开前提示未保存（编辑期间有 IndexedDB 草稿，但提交才算最终保存）
   useEffect(() => {
@@ -197,6 +221,8 @@ export function LyricEditorPage() {
     onSuccess: (_data, input) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.submission(submissionId) });
       void queryClient.invalidateQueries({ queryKey: ['submissions'] });
+      // 提交成功后把当前内容记为已保存基线，顶栏不再显示「有未保存改动」
+      markLyricLinesSaved();
       setReviewDialog({ open: false, title: '' });
       toast.success(input.uploadTtml ? '修订版已提交，等待投稿者确认' : '审核结果已提交');
       void api.releaseReview(submissionId, true).catch(() => {});
@@ -289,6 +315,9 @@ export function LyricEditorPage() {
         <div className="relative min-h-0 flex-1">
           <EditorWorkbench />
 
+          {/* 音频源就绪后先让审核员确认/选择参考音频（多个时可选，单个时确认） */}
+          <AudioSourcePicker sources={sources} value={audioIndex} onConfirm={setAudioIndex} />
+
           {effectiveReport && (
             <ReviewReportDialog
               submitting={saveMutation.isPending}
@@ -319,11 +348,4 @@ export function LyricEditorPage() {
       </div>
     </EditorTheme>
   );
-}
-
-/** 上传音频的播放地址：与详情页 AudioCard 的 fileUrl 保持一致 */
-function buildAudioUrl(audio: { fileName?: string }): string {
-  const key = audio.fileName;
-  if (!key) return '';
-  return `${import.meta.env.VITE_API_BASE ?? ''}/api/v1/uploads/file/${key}`;
 }

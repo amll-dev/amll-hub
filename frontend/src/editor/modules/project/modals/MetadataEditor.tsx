@@ -1,30 +1,29 @@
 import {
-  Add16Regular,
-  AlbumRegular,
-  Delete16Regular,
-  GlobeSearch20Regular,
-  Info16Regular,
-  MusicNote1Regular,
-  NumberSymbol16Regular,
-  Open16Regular,
-  Person16Regular,
-  Sparkle20Regular,
-} from '@fluentui/react-icons';
-import {
-  Button,
-  Dialog,
-  Flex,
-  Heading,
-  IconButton,
-  Spinner,
-  Text,
-  TextField,
-} from '@radix-ui/themes';
+  Disc3,
+  ExternalLink,
+  Globe,
+  Hash,
+  Info,
+  Loader2,
+  Music,
+  Plus,
+  Sparkles,
+  Trash2,
+  User,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAtom, useAtomValue } from 'jotai';
 import { useImmerAtom } from 'jotai-immer';
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import {
   getMeatdataSuggestion,
   type MetaSuggestionResult,
@@ -113,7 +112,6 @@ const MetadataValueEditorRow = memo(
     applySuggestionValues,
     requestNeteaseMeta,
   }: MetadataValueEditorRowProps) => {
-    const { t } = useTranslation();
     const [suggestions, setSuggestions] = useState<MetaSuggestionResult[]>([]);
     const [isFocused, setIsFocused] = useState(false);
     const [isFetchingMeta, setIsFetchingMeta] = useState(false);
@@ -170,12 +168,22 @@ const MetadataValueEditorRow = memo(
     const canFetchNeteaseMeta = option.value === 'ncmMusicId' && !isFocused && value.trim() !== '';
 
     return (
-      <Flex gap="2" align="center" className={styles.valueRow}>
-        <TextField.Root
+      <div className={`flex items-center gap-2 ${styles.valueRow}`}>
+        <Input
           data-metadata-input="true"
           ref={inputRef}
           value={value}
-          className={`${styles.metadataInput} ${isDragOver ? styles.dragOverInput : ''}`}
+          className={`${styles.metadataInput} ${isDragOver ? styles.dragOverInput : ''} ${
+            hasAnyError
+              ? itemHasError
+                ? validation?.severe
+                  ? 'border-error text-error'
+                  : 'border-warning text-warning'
+                : isDuplicate
+                  ? 'border-error text-error'
+                  : ''
+              : ''
+          }`}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           onChange={(e) => updateValue(valueIndex, e.currentTarget.value)}
@@ -205,37 +213,36 @@ const MetadataValueEditorRow = memo(
             const text = e.dataTransfer.getData('text');
             if (text) updateValue(valueIndex, text);
           }}
-          variant={hasAnyError ? 'soft' : 'surface'}
-          color={
-            itemHasError ? (validation?.severe ? 'red' : 'orange') : isDuplicate ? 'red' : undefined
-          }
         />
         {hasSuggestion && suggestions.length === 1 && suggestions[0]?.matchedValue !== value && (
-          <IconButton
-            variant="soft"
+          <Button
+            type="button"
+            size="icon"
+            variant="secondary"
             onClick={() => {
               applySuggestionValues(suggestions[0]?.values ?? []);
               setSuggestions([]);
             }}
-            title={t('metadataDialog.applySuggestion', '应用建议')}
+            title="应用建议"
           >
-            <Sparkle20Regular />
-          </IconButton>
+            <Sparkles />
+          </Button>
         )}
         {hasSuggestion && suggestions.length > 1 && (
-          <Dialog.Root>
-            <Dialog.Trigger>
-              <IconButton variant="soft" title={t('metadataDialog.pickSuggestion', '选择匹配项')}>
-                <Sparkle20Regular />
-              </IconButton>
-            </Dialog.Trigger>
-            <Dialog.Content>
-              <Dialog.Title>{t('metadataDialog.pickSuggestion', '选择匹配项')}</Dialog.Title>
-              <Flex direction="column" gap="2">
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button type="button" size="icon" variant="secondary" title="选择匹配项">
+                <Sparkles />
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogTitle>选择匹配项</DialogTitle>
+              <div className="flex flex-col gap-2">
                 {suggestions.map((suggestion) => (
-                  <Dialog.Close key={suggestion.title}>
+                  <DialogClose key={suggestion.title} asChild>
                     <Button
-                      variant="soft"
+                      type="button"
+                      variant="secondary"
                       onClick={() => {
                         applySuggestionValues(suggestion.values);
                         setSuggestions([]);
@@ -243,15 +250,17 @@ const MetadataValueEditorRow = memo(
                     >
                       {suggestion.title}
                     </Button>
-                  </Dialog.Close>
+                  </DialogClose>
                 ))}
-              </Flex>
-            </Dialog.Content>
-          </Dialog.Root>
+              </div>
+            </DialogContent>
+          </Dialog>
         )}
         {canFetchNeteaseMeta && (
-          <IconButton
-            variant="soft"
+          <Button
+            type="button"
+            size="icon"
+            variant="secondary"
             disabled={isFetchingMeta}
             onClick={async () => {
               if (isFetchingMeta) return;
@@ -264,38 +273,52 @@ const MetadataValueEditorRow = memo(
                 setIsFetchingMeta(false);
               }
             }}
-            title={t('metadataDialog.fetchNeteaseMeta', '从网易云获取元数据')}
+            title="从网易云获取元数据"
           >
-            {isFetchingMeta ? <Spinner size="1" /> : <GlobeSearch20Regular />}
-          </IconButton>
+            {isFetchingMeta ? <Loader2 className="animate-spin" /> : <Globe />}
+          </Button>
         )}
         {option.isLinkable && (
-          <IconButton
+          <Button
+            type="button"
+            size="icon"
+            variant="secondary"
             disabled={!isButtonEnabled}
+            title="打开链接"
             asChild={isButtonEnabled}
-            variant="soft"
-            title={t('metadataDialog.openLink', '打开链接')}
+            onClick={
+              isButtonEnabled
+                ? undefined
+                : () => {
+                    /* 禁用态无操作 */
+                  }
+            }
           >
             {isButtonEnabled ? (
               <a href={url || ''} target="_blank" rel="noopener noreferrer">
-                <Open16Regular />
+                <ExternalLink />
               </a>
             ) : (
-              <Open16Regular />
+              <ExternalLink />
             )}
-          </IconButton>
+          </Button>
         )}
-        <IconButton variant="soft" onClick={() => removeValue(valueIndex)}>
-          <Delete16Regular />
-        </IconButton>
-      </Flex>
+        <Button
+          type="button"
+          size="icon"
+          variant="secondary"
+          onClick={() => removeValue(valueIndex)}
+          title="删除"
+        >
+          <Trash2 />
+        </Button>
+      </div>
     );
   }
 );
 
 const MetadataItemEditor = memo(
   ({ entry, option, setLyricLines, requestNeteaseMeta }: MetadataItemEditorProps) => {
-    const { t } = useTranslation();
     const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
     const [focusIndex, setFocusIndex] = useState<number | null>(null);
     const [isDraggingCategory, setIsDraggingCategory] = useState(false);
@@ -468,7 +491,7 @@ const MetadataItemEditor = memo(
         <div className={styles.valueList}>
           {values.length === 0 && (
             <div className={styles.emptyState}>
-              <Text color="gray">{t('metadataDialog.emptyItem', '此项尚未添加任何条目')}</Text>
+              <span className="text-ink-3">此项尚未添加任何条目</span>
             </div>
           )}
           {values.map((value, index) => (
@@ -497,18 +520,14 @@ const MetadataItemEditor = memo(
         </div>
 
         {validation && rowHasError && (
-          <Text color={validation.severe ? 'red' : 'orange'} size="1" wrap="wrap">
+          <span className={`text-xs ${validation.severe ? 'text-error' : 'text-warning'}`}>
             {validation.message}
-          </Text>
+          </span>
         )}
-        {rowHasDuplicate && (
-          <Text color="red" size="1" wrap="wrap">
-            {t('metadataDialog.duplicateMsg', '存在重复的元数据值')}
-          </Text>
-        )}
-        <Button variant="soft" onClick={() => addValue()}>
-          <Add16Regular />
-          {t('metadataDialog.addValue', '添加')}
+        {rowHasDuplicate && <span className="text-xs text-error">存在重复的元数据值</span>}
+        <Button type="button" variant="secondary" onClick={() => addValue()}>
+          <Plus />
+          添加
         </Button>
       </div>
     );
@@ -532,7 +551,6 @@ export const MetadataEditor = () => {
     [resolvedTheme]
   );
 
-  const { t } = useTranslation();
   /**
    * 从网易云 ID 拉取歌曲资料并填进元数据。
    *
@@ -575,140 +593,116 @@ export const MetadataEditor = () => {
     return [
       // 歌词所匹配的歌曲名
       {
-        label: t('metadataDialog.builtinOptions.musicName', '歌曲名称'),
+        label: '歌曲名称',
         value: 'musicName',
-        icon: <MusicNote1Regular />,
+        icon: <Music />,
       },
       // 歌词所匹配的歌手名
       {
-        label: t('metadataDialog.builtinOptions.artists', '歌曲的艺术家'),
+        label: '歌曲的艺术家',
         value: 'artists',
-        icon: <Person16Regular />,
+        icon: <User />,
         suggestion: true,
         validation: {
           verifier: (value: string) => !/^.+[,;&，；、].+$/.test(value),
-          message: t(
-            'metadataDialog.builtinOptions.artistsInvalidMsg',
-            '如果有多个艺术家，请多次添加该键值，避免使用分隔符'
-          ),
+          message: '如果有多个艺术家，请多次添加该键值，避免使用分隔符',
         },
       },
       // 歌词所匹配的词曲作者
       {
-        label: t('metadataDialog.builtinOptions.songwriter', '词曲作者'),
+        label: '词曲作者',
         value: 'songwriter',
-        icon: <Person16Regular />,
+        icon: <User />,
         validation: {
           verifier: (value: string) => !/^.+[,;&，；、].+$/.test(value),
-          message: t(
-            'metadataDialog.builtinOptions.songwriterInvalidMsg',
-            '如果有多个词曲作者，请多次添加该键值，避免使用分隔符'
-          ),
+          message: '如果有多个词曲作者，请多次添加该键值，避免使用分隔符',
         },
       },
       // 歌词所匹配的专辑名
       {
-        label: t('metadataDialog.builtinOptions.album', '歌曲的专辑名'),
+        label: '歌曲的专辑名',
         value: 'album',
-        icon: <AlbumRegular />,
+        icon: <Disc3 />,
       },
       // 歌词所匹配的网易云音乐 ID
       {
-        label: t('metadataDialog.builtinOptions.ncmMusicId', '网易云音乐 ID'),
+        label: '网易云音乐 ID',
         value: 'ncmMusicId',
         icon: <NeteaseIcon />,
         isLinkable: true,
         urlFormatter: (val) => getPlatformUrl('ncmMusicId', val),
         validation: {
           verifier: numeric,
-          message: t(
-            'metadataDialog.builtinOptions.ncmMusicIdInvalidMsg',
-            '网易云音乐 ID 应为纯数字'
-          ),
+          message: '网易云音乐 ID 应为纯数字',
           severe: true,
         },
       },
       // 歌词所匹配的 QQ 音乐 ID
       {
-        label: t('metadataDialog.builtinOptions.qqMusicId', 'QQ 音乐 ID'),
+        label: 'QQ 音乐 ID',
         value: 'qqMusicId',
         icon: <QQMusicIcon />,
         isLinkable: true,
         urlFormatter: (val) => getPlatformUrl('qqMusicId', val),
         validation: {
           verifier: alphanumeric,
-          message: t(
-            'metadataDialog.builtinOptions.qqMusicIdInvalidMsg',
-            'QQ 音乐 ID 应为字母或数字'
-          ),
+          message: 'QQ 音乐 ID 应为字母或数字',
           severe: true,
         },
       },
       // 歌词所匹配的 Spotify 音乐 ID
       {
-        label: t('metadataDialog.builtinOptions.spotifyId', 'Spotify 音乐 ID'),
+        label: 'Spotify 音乐 ID',
         value: 'spotifyId',
         icon: <SpotifyIcon />,
         isLinkable: true,
         urlFormatter: (val) => getPlatformUrl('spotifyId', val),
         validation: {
           verifier: alphanumeric,
-          message: t(
-            'metadataDialog.builtinOptions.spotifyIdInvalidMsg',
-            'Spotify ID 应为字母或数字'
-          ),
+          message: 'Spotify ID 应为字母或数字',
           severe: true,
         },
       },
       // 歌词所匹配的 Apple Music 音乐 ID
       {
-        label: t('metadataDialog.builtinOptions.appleMusicId', 'Apple Music 音乐 ID'),
+        label: 'Apple Music 音乐 ID',
         value: 'appleMusicId',
         icon: <AppleMusicIcon />,
         isLinkable: true,
         urlFormatter: (val) => getPlatformUrl('appleMusicId', val),
         validation: {
           verifier: numeric,
-          message: t(
-            'metadataDialog.builtinOptions.appleMusicIdInvalidMsg',
-            'Apple Music ID 应为纯数字'
-          ),
+          message: 'Apple Music ID 应为纯数字',
           severe: true,
         },
       },
       // 歌词所匹配的 ISRC 编码
       {
-        label: t('metadataDialog.builtinOptions.isrc', '歌曲的 ISRC 号码'),
+        label: '歌曲的 ISRC 号码',
         value: 'isrc',
-        icon: <NumberSymbol16Regular />,
+        icon: <Hash />,
         isLinkable: true,
         urlFormatter: (val) => getPlatformUrl('isrc', val),
         validation: {
           verifier: (value: string) => /^[A-Z]{2}-?[A-Z0-9]{3}-?\d{2}-?\d{5}$/.test(value),
-          message: t(
-            'metadataDialog.builtinOptions.isrcInvalidMsg',
-            'ISRC 编码格式应为 CC-XXX-YY-NNNNN'
-          ),
+          message: 'ISRC 编码格式应为 CC-XXX-YY-NNNNN',
           severe: true,
         },
       },
       // 逐词歌词作者 GitHub ID，例如 39523898
       {
-        label: t('metadataDialog.builtinOptions.ttmlAuthorGithub', '歌词作者 GitHub ID'),
+        label: '歌词作者 GitHub ID',
         value: 'ttmlAuthorGithub',
         icon: <GithubIcon />,
         validation: {
           verifier: numeric,
-          message: t(
-            'metadataDialog.builtinOptions.ttmlAuthorGithubInvalidMsg',
-            'GitHub ID 应为纯数字'
-          ),
+          message: 'GitHub ID 应为纯数字',
           severe: true,
         },
       },
       // 逐词歌词作者 GitHub 用户名，例如 Steve-xmh
       {
-        label: t('metadataDialog.builtinOptions.ttmlAuthorGithubLogin', '歌词作者 GitHub 用户名'),
+        label: '歌词作者 GitHub 用户名',
         value: 'ttmlAuthorGithubLogin',
         icon: <GithubIcon />,
         isLinkable: true,
@@ -716,15 +710,12 @@ export const MetadataEditor = () => {
         validation: {
           verifier: (value: string) =>
             /^(?!.*--)[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?$/.test(value),
-          message: t(
-            'metadataDialog.builtinOptions.ttmlAuthorGithubLoginInvalidMsg',
-            'GitHub username should be alphanumeric or hyphens, up to 39 characters'
-          ),
+          message: 'GitHub username should be alphanumeric or hyphens, up to 39 characters',
           severe: true,
         },
       },
     ];
-  }, [t]);
+  }, []);
 
   const customOptions: SelectOption[] = useMemo(
     () =>
@@ -733,7 +724,7 @@ export const MetadataEditor = () => {
         .map((metadata) => ({
           label: metadata.key,
           value: metadata.key,
-          icon: <Info16Regular />,
+          icon: <Info />,
         })),
     [builtinOptions, lyricLines.metadata]
   );
@@ -772,7 +763,7 @@ export const MetadataEditor = () => {
   }, [builtinOptions, setLyricLines]);
 
   return (
-    <Dialog.Root
+    <Dialog
       open={metadataEditorDialog}
       onOpenChange={(open) => {
         setMetadataEditorDialog(open);
@@ -790,38 +781,24 @@ export const MetadataEditor = () => {
         }
       }}
     >
-      <Dialog.Content
-        className={styles.dialogContent}
-        /*
-         * 主题色用**内联 style**下发，不用 CSS 类。
-         *
-         * 原因：Radix 的 `Dialog.Content` 内部又套了一层
-         * `<Theme asChild>`，它在自己所在的元素上渲染出
-         * `data-accent-color="indigo"`（Theme 的默认值），
-         * 而 Radix 的色阶正是用这个属性选择器声明的：
-         *
-         *   [data-accent-color='indigo'] { --accent-9: … }  ← 0,1,0
-         *
-         * 浮层在 body 子树里，跟工作台那套 `.editor-radix-theme`
-         * 覆写不在一条继承链上，CSS 类很难稳定压过它 ——
-         * 这就是「弹窗里按钮/复选框颜色和外面不一样」的原因。
-         *
-         * 内联 style 优先级高于任何非 `!important` 声明，
-         * 直接写在 Content 元素上必然生效，也不用去猜层叠顺序。
-         *
-         * 色值与 `components/review/editor-theme.css` 保持一致
-         * （站点品牌红 #e0303f），深色模式的提亮档在下面按需覆盖。
-         */
-        style={accentStyle}
-      >
-        <Dialog.Title className={styles.srOnly}>
-          {t('metadataDialog.title', '元数据编辑器')}
-        </Dialog.Title>
+      {/*
+       * 主题色用**内联 style**下发，不用 CSS 类。
+       *
+       * 原因：浮层 Portal 到 body，跟工作台的 CSS 覆写不在一条继承链上，
+       * CSS 类很难稳定压过浮层自身的色阶声明 —— 这就是
+       * 「弹窗里按钮/复选框颜色和外面不一样」的原因。
+       *
+       * 内联 style 优先级高于任何非 `!important` 声明，直接写在
+       * Content 元素上必然生效，也不用去猜层叠顺序。
+       *
+       * 色值与 `components/review/editor-theme.css` 保持一致
+       * （站点品牌红 #e0303f），深色模式的提亮档在下面按需覆盖。
+       */}
+      <DialogContent className={styles.dialogContent} style={accentStyle}>
+        <DialogTitle className={styles.srOnly}>元数据编辑器</DialogTitle>
 
         <aside className={styles.sidebar}>
-          <Text as="div" weight="bold" size="2" className={styles.sidebarTitle}>
-            {t('metadataDialog.title', '元数据编辑器')}
-          </Text>
+          <div className={`${styles.sidebarTitle} text-sm font-bold`}>元数据编辑器</div>
           <nav className={styles.navList}>
             {navOptions.map((option) => {
               const selected = activeOption?.value === option.value;
@@ -844,8 +821,8 @@ export const MetadataEditor = () => {
             })}
           </nav>
           <div className={styles.customKeyForm}>
-            <TextField.Root
-              placeholder={t('metadataDialog.customKey', '自定义键名')}
+            <Input
+              placeholder="自定义键名"
               value={customKey}
               onChange={(e) => setCustomKey(e.currentTarget.value)}
               onKeyDown={(e) => {
@@ -855,22 +832,18 @@ export const MetadataEditor = () => {
                 }
               }}
             />
-            <IconButton variant="soft" onClick={addCustomKey}>
-              <Add16Regular />
-            </IconButton>
+            <Button type="button" size="icon" variant="secondary" onClick={addCustomKey}>
+              <Plus />
+            </Button>
           </div>
         </aside>
 
         <section className={styles.mainPane}>
           <header className={styles.header}>
             <div className={styles.titleBlock}>
-              <Heading size="7" className={styles.pageTitle}>
-                {activeOption?.label}
-              </Heading>
+              <div className={`${styles.pageTitle} text-2xl font-bold`}>{activeOption?.label}</div>
               {activeOption && (
-                <Text size="2" color="gray" className={styles.titleMeta}>
-                  {activeOption.value}
-                </Text>
+                <div className={`${styles.titleMeta} text-sm text-ink-3`}>{activeOption.value}</div>
               )}
             </div>
           </header>
@@ -897,36 +870,29 @@ export const MetadataEditor = () => {
             </AnimatePresence>
           </div>
 
-          <Flex
-            gap="2"
-            direction={{
-              sm: 'row',
-              initial: 'column',
-            }}
-            className={styles.dialogFooter}
-          >
+          <div className={`flex flex-col gap-2 sm:flex-row ${styles.dialogFooter}`}>
             <Button
+              type="button"
               style={{ flex: '1 0 auto' }}
-              color="red"
-              variant="solid"
+              variant="destructive"
               onClick={clearAllMetadata}
             >
-              <Delete16Regular />
-              {t('metadataDialog.clear', '清空')}
+              <Trash2 />
+              清空
             </Button>
-            <Button asChild variant="soft">
+            <Button type="button" variant="secondary" asChild>
               <a
                 target="_blank"
                 rel="noreferrer"
                 href="https://github.com/amll-dev/amll-ttml-tool/wiki/%E6%AD%8C%E8%AF%8D%E5%85%83%E6%95%B0%E6%8D%AE"
               >
-                <Info16Regular />
-                {t('metadataDialog.info', '了解详情')}
+                <Info />
+                了解详情
               </a>
             </Button>
-          </Flex>
+          </div>
         </section>
-      </Dialog.Content>
-    </Dialog.Root>
+      </DialogContent>
+    </Dialog>
   );
 };

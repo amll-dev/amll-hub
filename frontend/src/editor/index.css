@@ -44,7 +44,7 @@ body,
   overscroll-behavior: none;
 }
 
-.radix-themes {
+:root {
   --default-font-family: 'MiSans', Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
 
   --default-font-family-mono:
@@ -76,18 +76,6 @@ body,
   &:hover {
     background: transparent;
   }
-}
-
-.rt-BaseButton:where(.rt-variant-soft) {
-  background-color: var(--accent-a3);
-
-  &:hover {
-    background-color: var(--accent-a4);
-  }
-}
-
-.rt-BaseButton:where(.rt-variant-soft):where(:active:not([data-state='open'])) {
-  background-color: var(--accent-a5);
 }
 
 .amll-lyric-player {

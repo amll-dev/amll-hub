@@ -313,6 +313,39 @@ export const reviewReportFormatBlockDefinitions: ReviewReportFormatBlockDefiniti
     description: '用户手动新增的报告条目',
     variables: [{ name: 'content', label: '手写内容', description: '手写条目原文' }],
   },
+  {
+    kind: 'metadata',
+    label: '元数据改动',
+    description: '歌曲元数据（曲名 / 歌手 / 专辑 / 平台 ID 等）新增或删除值时使用',
+    variables: [
+      {
+        name: 'label',
+        label: '类型',
+        description: '元数据类型的中文标签，例如：歌曲名称、歌曲的艺术家',
+      },
+      { name: 'key', label: '键名', description: '元数据的原始键名，例如：musicName' },
+      {
+        name: 'action',
+        label: '动作',
+        description: 'add 或 remove',
+      },
+      {
+        name: 'actionLabel',
+        label: '动作描述',
+        description: '中文动作词，例如：增加、删除',
+      },
+      {
+        name: 'items',
+        label: '内容列表',
+        description: '本次动作涉及的值，以顿号连接',
+      },
+      {
+        name: 'itemsCode',
+        label: '内容代码列表',
+        description: '每个值带 Markdown 行内代码标记，以顿号连接',
+      },
+    ],
+  },
 ];
 
 export const DEFAULT_REVIEW_REPORT_FORMAT: ReviewReportFormat = {
@@ -322,6 +355,10 @@ export const DEFAULT_REVIEW_REPORT_FORMAT: ReviewReportFormat = {
     manual: {
       template: '{{content}}',
       listItem: false,
+    },
+    metadata: {
+      template: '元数据（{{label}}）需要{{actionLabel}}内容为 {{itemsCode}} 的数据',
+      listItem: true,
     },
     wordTextShared: {
       template: '{{lineLabels}}：`{{oldWord}}` 存在错误，应为 `{{newWord}}`',

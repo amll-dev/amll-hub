@@ -1,6 +1,5 @@
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { useEffect, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
 import { uid } from 'uid';
 import { audioEngineStateAtom, audioErrorAtom } from '$/modules/audio/states/index.ts';
 import {
@@ -13,7 +12,6 @@ export const useAudioFeedback = () => {
   const engineState = useAtomValue(audioEngineStateAtom);
   const [errorMsg, setErrorMsg] = useAtom(audioErrorAtom);
   const notificationId = useRef<string | null>(null);
-  const { t } = useTranslation();
   const setPushNotification = useSetAtom(pushNotificationAtom);
   const upsertNotification = useSetAtom(upsertNotificationAtom);
   const removeNotification = useSetAtom(removeNotificationAtom);
@@ -25,7 +23,7 @@ export const useAudioFeedback = () => {
       }
       upsertNotification({
         id: notificationId.current,
-        title: t('audio.status.loading', '正在加载音频...'),
+        title: '正在加载音频...',
         level: 'info',
         source: 'Audio',
       });
@@ -36,12 +34,12 @@ export const useAudioFeedback = () => {
       removeNotification(notificationId.current);
       notificationId.current = null;
     }
-  }, [engineState, t, upsertNotification, removeNotification]);
+  }, [engineState, upsertNotification, removeNotification]);
 
   useEffect(() => {
     if (errorMsg) {
       setPushNotification({
-        title: `${t('audio.error.workerError', '处理音频时出错')}: ${errorMsg}`,
+        title: `处理音频时出错: ${errorMsg}`,
         level: 'error',
         source: 'Audio',
       });
@@ -52,5 +50,5 @@ export const useAudioFeedback = () => {
 
       setErrorMsg(null);
     }
-  }, [errorMsg, setErrorMsg, t, setPushNotification, removeNotification]);
+  }, [errorMsg, setErrorMsg, setPushNotification, removeNotification]);
 };

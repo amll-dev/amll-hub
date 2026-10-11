@@ -193,6 +193,9 @@ describe('审核报告：逐字时轴改动能否被检测到', () => {
  * 背景：审核员在元数据弹窗里改字段是常见操作，而 `buildEditReport` 与
  * `buildReviewReportFromDiffs` 都只看 `lyricLines`，元数据改动在报告里
  * 完全看不见 —— 用户明确要求「元数据等其他数据也要 diff」。
+ *
+ * 产出格式：每个 key 的改动按「增 / 删」拆成独立条目，模板统一为
+ * 「元数据（类型）需要增加/删除内容为 `值` 的数据」。
  */
 describe('审核报告：元数据改动能否被检测到', () => {
   function withMetadata(metadata: Array<{ key: string; value: string[] }>): TTMLLyric {
@@ -205,11 +208,32 @@ describe('审核报告：元数据改动能否被检测到', () => {
 
     const blocks = buildMetadataChanges(freeze, staged);
 
-    expect(blocks).toHaveLength(1);
+    // 改值 = 删旧 + 增新，拆成两条独立动作
+    expect(blocks).toHaveLength(2);
     const rendered = renderReviewReport(createReviewReport(blocks));
     expect(rendered).toContain('标题');
     expect(rendered).toContain('旧标题');
     expect(rendered).toContain('新标题');
+    expect(rendered).toContain('删除');
+    expect(rendered).toContain('增加');
+  });
+
+  it('元数据条目应使用专属格式（类型 + 增删动作 + 内容）', () => {
+    const freeze = withMetadata([{ key: 'title', value: ['歌'] }]);
+    const staged = withMetadata([{ key: 'title', value: ['歌', '新歌'] }]);
+
+    const blocks = buildMetadataChanges(freeze, staged);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      kind: 'metadata',
+      action: 'add',
+      key: 'title',
+      label: '标题',
+      items: ['新歌'],
+    });
+    expect(renderReviewReport(createReviewReport(blocks))).toContain(
+      '元数据（标题）需要增加内容为 `新歌` 的数据'
+    );
   });
 
   it('新增 / 删除 key 都要能识别', () => {
@@ -221,7 +245,7 @@ describe('审核报告：元数据改动能否被检测到', () => {
 
     const blocks = buildMetadataChanges(freeze, staged);
     expect(blocks).toHaveLength(1);
-    expect(renderReviewReport(createReviewReport(blocks))).toContain('新增');
+    expect(renderReviewReport(createReviewReport(blocks))).toContain('增加');
 
     // 反向：删掉 album
     const removed = buildMetadataChanges(staged, freeze);

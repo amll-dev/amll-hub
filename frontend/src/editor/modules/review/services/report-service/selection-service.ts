@@ -59,6 +59,9 @@ export const getReviewReportSelectionKey = (block: ReviewReportBlock) => {
       return block.operationId
         ? `${block.kind}:${block.operationId}:${block.lineId}`
         : `${block.kind}:${block.lineId}`;
+    case 'metadata':
+      // 元数据按「键 + 动作 + 内容」去重：同一键的增/删是两条独立条目。
+      return `${block.kind}:${block.key}:${block.action}:${block.items.join('|')}`;
   }
 };
 

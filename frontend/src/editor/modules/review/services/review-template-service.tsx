@@ -1,9 +1,11 @@
-import { Delete20Regular, Edit20Regular, LightbulbCheckmark20Regular } from '@fluentui/react-icons';
-import { Box, Button, Flex, Text, TextArea, TextField } from '@radix-ui/themes';
+import { Lightbulb, Pencil, Trash2 } from 'lucide-react';
 import { openDB } from 'idb';
 import { useSetAtom } from 'jotai';
 import { useEffect, useState } from 'react';
 import { uid } from 'uid';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { pushNotificationAtom } from '$/states/notifications';
 
 const TEMPLATE_DB_NAME = 'review-template-db';
@@ -224,99 +226,100 @@ export const ReviewTemplateSection = ({ open, onInsertTemplate }: ReviewTemplate
   };
 
   return (
-    <Flex direction="column" gap="2">
-      <Text size="2" weight="medium">
-        模板
-      </Text>
-      <Flex wrap="wrap" gap="2">
+    <div className="flex flex-col gap-2">
+      <span className="text-sm font-medium text-foreground">模板</span>
+      <div className="flex flex-wrap gap-2">
         {[...presetTemplates, ...customTemplates].map((template) => {
           const isCustom = !template.id.startsWith('preset-');
           return (
             <Button
               key={template.id}
-              size="1"
-              variant="soft"
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-auto gap-2 px-3 py-1.5 text-xs font-normal"
               onClick={() => onInsertTemplate(template.content)}
             >
-              <Flex align="center" gap="2">
-                <LightbulbCheckmark20Regular />
-                <Text size="1">{template.title}</Text>
-                {isCustom && (
-                  <>
-                    <Box
-                      as="span"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleStartEdit(template);
-                      }}
-                      style={{ cursor: 'pointer', marginLeft: '4px' }}
-                      title="编辑模板"
-                    >
-                      <Edit20Regular style={{ width: '14px', height: '14px' }} />
-                    </Box>
-                    <Box
-                      as="span"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleDeleteTemplate(template.id);
-                      }}
-                      style={{ cursor: 'pointer', marginLeft: '4px' }}
-                      title="删除模板"
-                    >
-                      <Delete20Regular style={{ width: '14px', height: '14px' }} />
-                    </Box>
-                  </>
-                )}
-              </Flex>
+              <Lightbulb className="size-3.5" />
+              <span>{template.title}</span>
+              {isCustom && (
+                <>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleStartEdit(template);
+                    }}
+                    title="编辑模板"
+                    className="ml-1 inline-flex cursor-pointer items-center text-ink-3 transition-colors hover:text-primary"
+                  >
+                    <Pencil className="size-3.5" />
+                  </span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleDeleteTemplate(template.id);
+                    }}
+                    title="删除模板"
+                    className="ml-1 inline-flex cursor-pointer items-center text-ink-3 transition-colors hover:text-error"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </span>
+                </>
+              )}
             </Button>
           );
         })}
-        {templateLoading && (
-          <Text size="1" color="gray">
-            正在加载模板...
-          </Text>
-        )}
-      </Flex>
+        {templateLoading && <span className="text-xs text-ink-3">正在加载模板...</span>}
+      </div>
       {showTemplateEditor ? (
-        <Flex direction="column" gap="2">
-          <TextField.Root
+        <div className="flex flex-col gap-2">
+          <Input
             value={templateTitle}
             onChange={(event) => setTemplateTitle(event.currentTarget.value)}
             placeholder="模板标题"
           />
-          <TextArea
+          <Textarea
             value={templateContent}
             onChange={(event) => setTemplateContent(event.currentTarget.value)}
             placeholder="模板内容"
-            style={{ minHeight: '120px' }}
+            className="min-h-[120px]"
           />
-          <Flex justify="end" gap="2">
+          <div className="flex justify-end gap-2">
             <Button
-              size="2"
-              variant="soft"
-              color="gray"
+              type="button"
+              size="sm"
+              variant="secondary"
               onClick={resetEditor}
               disabled={templateSaving}
             >
               取消
             </Button>
             <Button
-              size="2"
-              variant="soft"
+              type="button"
+              size="sm"
               onClick={editingTemplateId ? handleUpdateTemplate : handleSaveTemplate}
               disabled={templateSaving}
             >
               {editingTemplateId ? '更新模板' : '保存模板'}
             </Button>
-          </Flex>
-        </Flex>
+          </div>
+        </div>
       ) : (
-        <Flex justify="end">
-          <Button size="1" variant="soft" onClick={() => setShowTemplateEditor(true)}>
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => setShowTemplateEditor(true)}
+          >
             新增自定义模板
           </Button>
-        </Flex>
+        </div>
       )}
-    </Flex>
+    </div>
   );
 };

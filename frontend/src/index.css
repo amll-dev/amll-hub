@@ -4,29 +4,6 @@
 /* prose：法律文档正文排版（.legal-prose 仅做主题令牌桥接与少量定制） */
 @plugin '@tailwindcss/typography';
 
-/* Radix Accordion 展开动画（shadcn accordion 依赖 --animate-accordion-*） */
-@theme {
-  --animate-accordion-down: accordion-down 0.2s ease-out;
-  --animate-accordion-up: accordion-up 0.2s ease-out;
-
-  @keyframes accordion-down {
-    from {
-      height: 0;
-    }
-    to {
-      height: var(--radix-accordion-content-height);
-    }
-  }
-  @keyframes accordion-up {
-    from {
-      height: var(--radix-accordion-content-height);
-    }
-    to {
-      height: 0;
-    }
-  }
-}
-
 @property --amll-background {
   syntax: '<color>';
   inherits: true;
@@ -41,11 +18,6 @@
   syntax: '<color>';
   inherits: true;
   initial-value: #ffffff;
-}
-@property --amll-card-foreground {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: #1d1d1f;
 }
 @property --amll-popover {
   syntax: '<color>';
@@ -174,7 +146,6 @@
   --amll-foreground: #1d1d1f;
 
   --amll-card: #ffffff;
-  --amll-card-foreground: #1d1d1f;
 
   --amll-popover: #ffffff;
   --amll-popover-foreground: #1d1d1f;
@@ -222,12 +193,12 @@
 }
 
 /* 深色主题 */
-html.dark {
+html.dark,
+.dark {
   --amll-background: #101014;
   --amll-foreground: #f5f5f7;
 
   --amll-card: #1a1a1f;
-  --amll-card-foreground: #f5f5f7;
 
   --amll-popover: #1a1a1f;
   --amll-popover-foreground: #f5f5f7;
@@ -263,6 +234,45 @@ html.dark {
   --amll-state-warning: #e09a33;
   --amll-state-error: #ef4444;
   --amll-state-info: #4d9fe0;
+
+  /*
+   * Radix 色板兜底：深色档。
+   */
+  --gray-1: #111113;
+  --gray-2: #18191b;
+  --gray-3: #212225;
+  --gray-4: #272a2d;
+  --gray-5: #2e3135;
+  --gray-7: #43484e;
+  --gray-8: #5a6169;
+  --gray-9: #696e77;
+  --gray-10: #777b84;
+  --gray-11: #9ba1a8;
+  --gray-12: #eeeff1;
+  --gray-a1: rgb(255 255 255 / 0.02);
+  --gray-a2: rgb(255 255 255 / 0.06);
+  --gray-a3: rgb(255 255 255 / 0.13);
+  --gray-a4: rgb(255 255 255 / 0.19);
+  --gray-a5: rgb(255 255 255 / 0.26);
+  --gray-a6: rgb(255 255 255 / 0.34);
+  --gray-a7: rgb(255 255 255 / 0.44);
+
+  /* 白/黑透明梯：深色下白梯更不透明，保证可读 */
+  --white-a6: rgb(255 255 255 / 0.5);
+  --white-a10: rgb(255 255 255 / 0.78);
+  --white-a12: rgb(255 255 255 / 0.95);
+
+  /* 绿 / 蓝 / 橙 / 琥珀：深色下主色提亮一档 */
+  --green-8: #3cb179;
+  --green-9: #30a46c;
+  --green-11: #3dd68c;
+  --green-12: #b1f1cb;
+
+  --blue-9: #0090ff;
+
+  --amber-9: #ffc53d;
+  --amber-10: #ffd60a;
+  --amber-11: #ffca16;
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -273,7 +283,6 @@ html.dark {
   --color-foreground: var(--amll-foreground);
 
   --color-card: var(--amll-card);
-  --color-card-foreground: var(--amll-card-foreground);
 
   --color-popover: var(--amll-popover);
   --color-popover-foreground: var(--amll-popover-foreground);
@@ -324,22 +333,12 @@ html {
      深色时由 atoms/theme 写内联 color-scheme + 下方 html.dark 兜底 */
   color-scheme: light;
 }
-
-/*
- * 歌词/编辑器共用的 Radix accent 覆写
- *
- * ⚠️ 与 `components/review/editor-theme.css` 是**同一组变量**，
- * 工作台 CSS 类覆写了这里的浅色档（那边的 a3/a4/a8 是半透明红）。
- * 这里的值是**兜底默认值**，改配色时两处要一起改。
- * 名字沿用 Radix 原生 `--accent-*` 梯度语义（1~13 纯色，a1~a13 带alpha）。
- */
 :root {
   /* 行块底色（低 alpha！叠三四行仍需透光） */
   --accent-a3: rgb(224 48 63 / 0.16);
   --accent-a8: rgb(178 20 36 / 0.72);
   --accent-a11: rgb(255 255 255 / 0.45);
   --accent-a12: rgb(255 255 255 / 0.6);
-  --accent-a13: rgb(255 255 255 / 0.75);
 
   /* 选中的词：整词加底色 */
   --accent-a4: var(--color-primary);
@@ -363,16 +362,100 @@ html {
   --gray-12: rgb(29 29 31);
   --gray-a3: rgb(29 29 31 / 0.13);
   --gray-a4: rgb(29 29 31 / 0.26);
+/* 间距刻度：1 单位 = 4px */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
 
   /* 圆角 */
   --radius-1: 4px;
   --radius-2: 6px;
+  --radius-3: 8px;
+  --radius-4: 12px;
+  --radius-full: 9999px;
+
+  /* 等宽字体 */
+  --default-font-family-mono: var(--amll-font-mono);
+
+  /* 面板底色（侧栏 / 编辑区背景） */
+  --color-panel: var(--amll-surface);
+  --color-bg-1: var(--amll-background);
+
+  /* ── 中性灰阶（Radix gray，浅色） ── */
+  --gray-7: #8d8d99;
+  --gray-9: #6a6a74;
+  --gray-10: #5a5a63;
+  --gray-a1: rgb(29 29 31 / 0.02);
+  --gray-a2: rgb(29 29 31 / 0.06);
+  --gray-a5: rgb(29 29 31 / 0.36);
+  --gray-a6: rgb(29 29 31 / 0.5);
+  --gray-a7: rgb(29 29 31 / 0.62);
+
+  /* 字号刻度（Radix Theme 的 --font-size-*，仅保留遗留 CSS Module 实际引用的档位） */
+  --font-size-2: 14px;
+  --font-size-4: 18px;
+  --font-size-5: 24px;
+
+  /* ── 白/黑透明梯（用于深色底上的文字） ── */
+  --white-3: rgb(255 255 255 / 0.18);
+  --white-a6: rgb(255 255 255 / 0.5);
+  --white-a10: rgb(255 255 255 / 0.78);
+  --white-a12: rgb(255 255 255 / 0.95);
+
+  /* ── 红（Radix red，用于错误 / 结束时间） ── */
+  --red-9: #e5484d;
+  --red-11: #ce2c31;
+  --red-a2: rgb(229 72 77 / 0.08);
+  --red-a3: rgb(229 72 77 / 0.16);
+  --red-a4: rgb(229 72 77 / 0.26);
+  --red-a5: rgb(229 72 77 / 0.34);
+  --red-a8: rgb(229 72 77 / 0.7);
+  --red-a10: rgb(229 72 77 / 0.88);
+
+  /* ── 绿（Radix green，用于成功 / 起始时间） ── */
+  --green-8: #2f9e63;
+  --green-9: #30a46c;
+  --green-11: #218358;
+  --green-12: #193b2d;
+  --green-a3: rgb(48 164 108 / 0.16);
+  --green-a4: rgb(48 164 108 / 0.26);
+  --green-a5: rgb(48 164 108 / 0.34);
+  --green-a6: rgb(48 164 108 / 0.44);
+  --green-a8: rgb(48 164 108 / 0.7);
+  --green-a11: rgb(48 164 108 / 0.82);
+
+  /* ── 蓝（Radix blue，用于选中 / 信息） ── */
+  --blue-9: #0090ff;
+  --blue-a2: rgb(0 144 255 / 0.08);
+  --blue-a3: rgb(0 144 255 / 0.16);
+  --blue-a4: rgb(0 144 255 / 0.24);
+  --blue-a5: rgb(0 144 255 / 0.32);
+  --blue-a6: rgb(0 144 255 / 0.42);
+  --blue-a7: rgb(0 144 255 / 0.54);
+  --blue-a9: rgb(0 144 255 / 0.9);
+  --blue-a10: rgb(0 144 255 / 0.9);
+  --blue-a11: rgb(0 144 255 / 0.82);
+
+  /* ── 橙（Radix orange，用于警告 / agent 提示） ── */
+  --orange-a2: rgb(247 107 21 / 0.08);
+  --orange-a3: rgb(247 107 21 / 0.16);
+  --orange-a4: rgb(247 107 21 / 0.24);
+  --orange-a5: rgb(247 107 21 / 0.32);
+  --orange-a10: rgb(247 107 21 / 0.9);
+  --orange-a11: rgb(247 107 21 / 0.82);
+
+  /* ── 琥珀（Radix amber，用于待确认状态） ── */
+  --amber-9: #ffc53d;
+  --amber-10: #ffba18;
+  --amber-11: #ab6400;
 }
 
 /* 主题切换过渡 */
 html.theme-transitioning {
   transition-property:
-    --amll-background, --amll-foreground, --amll-card, --amll-card-foreground, --amll-popover,
+    --amll-background, --amll-foreground, --amll-card, --amll-popover,
     --amll-popover-foreground, --amll-primary, --amll-primary-hover, --amll-primary-foreground,
     --amll-muted, --amll-muted-foreground, --amll-border, --amll-input, --amll-ring, --amll-surface,
     --amll-surface-2, --amll-ink, --amll-ink-2, --amll-ink-3, --amll-line, --amll-primary-soft,
@@ -388,12 +471,6 @@ html.theme-transitioning *::after {
 }
 html.dark {
   color-scheme: dark;
-}
-/* 深色下日历/时钟指示器反向提亮 */
-html.dark input[type='date']::-webkit-calendar-picker-indicator,
-html.dark input[type='time']::-webkit-calendar-picker-indicator,
-html.dark input[type='datetime-local']::-webkit-calendar-picker-indicator {
-  filter: invert(0.85);
 }
 html body[data-scroll-locked] {
   padding-right: 0 !important;
@@ -421,21 +498,6 @@ select option:checked,
 select option:focus {
   background: var(--amll-primary-tint);
   color: var(--amll-primary);
-}
-
-/* date / time / datetime-local 输入框：让日历/时钟图标可见 */
-input[type='date']::-webkit-calendar-picker-indicator,
-input[type='time']::-webkit-calendar-picker-indicator,
-input[type='datetime-local']::-webkit-calendar-picker-indicator {
-  cursor: pointer;
-  filter: invert(0.5);
-  opacity: 0.7;
-}
-
-input[type='date']::-webkit-calendar-picker-indicator:hover,
-input[type='time']::-webkit-calendar-picker-indicator:hover,
-input[type='datetime-local']::-webkit-calendar-picker-indicator:hover {
-  opacity: 1;
 }
 
 /* 骨架屏 shimmer */
@@ -787,32 +849,4 @@ html.dark .amll-skeleton::after {
 * {
   scrollbar-width: thin;
   scrollbar-color: rgb(128 128 128 / 0.35) transparent;
-}
-
-.lyric-words-track {
-  /* 横向保留可见细条；纵向由组件的 overflow-y-hidden 处理 */
-  scrollbar-width: thin;
-  scrollbar-color: rgb(128 128 128 / 0.4) transparent;
-}
-.lyric-words-track::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-  background: transparent;
-  border-top: solid 1px var(--color-border);
-}
-.lyric-words-track::-webkit-scrollbar-track {
-  background: transparent;
-}
-.lyric-words-track::-webkit-scrollbar-thumb {
-  border: solid 3px transparent;
-  border-radius: 8px;
-  background-color: rgb(128 128 128 / 0.45);
-  background-clip: content-box;
-  box-shadow: none;
-}
-.lyric-words-track::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(128 128 128 / 0.7);
-}
-.lyric-words-track::-webkit-scrollbar-corner {
-  background: transparent;
 }

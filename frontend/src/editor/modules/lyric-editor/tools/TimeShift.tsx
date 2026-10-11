@@ -1,11 +1,19 @@
 /**
  * @description “平移时间” 模态框
  */
-import { ArrowLeftRegular, ArrowRightRegular } from '@fluentui/react-icons';
-import { Button, Dialog, Flex, IconButton, RadioGroup, Text, TextField } from '@radix-ui/themes';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
-import { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Radio, RadioGroup } from '@/components/ui/radio-group';
 import { timeShiftDialogAtom } from '$/states/dialogs.ts';
 import {
   lyricLinesAtom,
@@ -20,13 +28,15 @@ type ShiftDirection = 'delay' | 'advance';
 type ShiftScope = 'all' | 'selected' | 'selected-following' | 'custom';
 
 export const TimeShiftDialog = () => {
-  const { t } = useTranslation();
   const [open, setOpen] = useAtom(timeShiftDialogAtom);
   const lyricLines = useAtomValue(lyricLinesAtom);
   useAtomValue(undoableLyricLinesAtom);
   const selectedLines = useAtomValue(selectedLinesAtom);
   const setLyricLines = useSetAtom(undoableLyricLinesAtom);
   const pushReviewOperation = useSetAtom(pushReviewOperationAtom);
+
+  const directionName = useId();
+  const scopeName = useId();
 
   const [offsetStr, setOffsetStr] = useState('100');
   const [direction, setDirection] = useState<ShiftDirection>('delay');
@@ -140,106 +150,142 @@ export const TimeShiftDialog = () => {
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Content maxWidth="450px">
-        <Dialog.Title>{t('timeShiftDialog.title', '平移时间')}</Dialog.Title>
-        <Flex direction="column" gap="4">
-          <Flex direction="column" gap="1">
-            <Text size="2" weight="bold">
-              {t('timeShiftDialog.amount', '偏移量 (ms)')}
-            </Text>
-            <Flex gap="2" align="center">
-              <IconButton variant="soft" onClick={() => adjustOffset(-50)} title="- 50ms">
-                <ArrowLeftRegular />
-              </IconButton>
-              <TextField.Root
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="max-w-[450px]">
+        <DialogTitle>平移时间</DialogTitle>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-bold">偏移量 (ms)</span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="icon"
+                className="size-8 shrink-0"
+                onClick={() => adjustOffset(-50)}
+                title="- 50ms"
+              >
+                <ArrowLeft className="size-4" />
+              </Button>
+              <Input
                 type="number"
                 min="0"
                 value={offsetStr}
                 onChange={(e) => setOffsetStr(e.target.value)}
                 placeholder="100"
-                style={{ flexGrow: 1 }}
+                className="flex-1"
               />
-              <IconButton variant="soft" onClick={() => adjustOffset(50)} title="+ 50ms">
-                <ArrowRightRegular />
-              </IconButton>
-            </Flex>
-          </Flex>
+              <Button
+                variant="secondary"
+                size="icon"
+                className="size-8 shrink-0"
+                onClick={() => adjustOffset(50)}
+                title="+ 50ms"
+              >
+                <ArrowRight className="size-4" />
+              </Button>
+            </div>
+          </div>
 
-          <Flex direction="column" gap="1">
-            <Text size="2" weight="bold">
-              {t('timeShiftDialog.direction', '方向')}
-            </Text>
-            <RadioGroup.Root
-              value={direction}
-              onValueChange={(v) => setDirection(v as ShiftDirection)}
-              style={{ flexDirection: 'row', gap: '16px' }}
-            >
-              <RadioGroup.Item value="advance">
-                {t('timeShiftDialog.advance', '提前 (-)')}
-              </RadioGroup.Item>
-              <RadioGroup.Item value="delay">
-                {t('timeShiftDialog.delay', '延后 (+)')}
-              </RadioGroup.Item>
-            </RadioGroup.Root>
-          </Flex>
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-bold">方向</span>
+            <RadioGroup className="flex-row gap-4">
+              <label className="flex items-center gap-2 text-sm">
+                <Radio
+                  name={directionName}
+                  value="advance"
+                  checked={direction === 'advance'}
+                  onChange={() => setDirection('advance')}
+                />
+                提前 (-)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <Radio
+                  name={directionName}
+                  value="delay"
+                  checked={direction === 'delay'}
+                  onChange={() => setDirection('delay')}
+                />
+                延后 (+)
+              </label>
+            </RadioGroup>
+          </div>
 
-          <Flex direction="column" gap="2">
-            <Text size="2" weight="bold">
-              {t('timeShiftDialog.scopeLabel', '应用于')}
-            </Text>
-            <RadioGroup.Root value={scope} onValueChange={(v) => setScope(v as ShiftScope)}>
-              <RadioGroup.Item value="all">
-                {t('timeShiftDialog.scope.all', '所有行')}
-              </RadioGroup.Item>
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-bold">应用于</span>
+            <RadioGroup>
+              <label className="flex items-center gap-2 text-sm">
+                <Radio
+                  name={scopeName}
+                  value="all"
+                  checked={scope === 'all'}
+                  onChange={() => setScope('all')}
+                />
+                所有行
+              </label>
 
-              <RadioGroup.Item value="selected" disabled={!hasSelection}>
-                {t('timeShiftDialog.scope.selected', '所选行')}
+              <label className="flex items-center gap-2 text-sm">
+                <Radio
+                  name={scopeName}
+                  value="selected"
+                  checked={scope === 'selected'}
+                  onChange={() => setScope('selected')}
+                  disabled={!hasSelection}
+                />
+                所选行
                 {hasSelection && ` (${selectedLines.size})`}
-              </RadioGroup.Item>
+              </label>
 
-              <RadioGroup.Item value="selected-following" disabled={!hasSelection}>
-                {t('timeShiftDialog.scope.selectedFollowing', '所选行及其后续')}
-              </RadioGroup.Item>
+              <label className="flex items-center gap-2 text-sm">
+                <Radio
+                  name={scopeName}
+                  value="selected-following"
+                  checked={scope === 'selected-following'}
+                  onChange={() => setScope('selected-following')}
+                  disabled={!hasSelection}
+                />
+                所选行及其后续
+              </label>
 
-              <RadioGroup.Item value="custom">
-                {t('timeShiftDialog.scope.custom', '自定义范围')}
-              </RadioGroup.Item>
-            </RadioGroup.Root>
-          </Flex>
+              <label className="flex items-center gap-2 text-sm">
+                <Radio
+                  name={scopeName}
+                  value="custom"
+                  checked={scope === 'custom'}
+                  onChange={() => setScope('custom')}
+                />
+                自定义范围
+              </label>
+            </RadioGroup>
+          </div>
 
           {scope === 'custom' && (
-            <Flex align="center" gap="2" ml="4">
-              <Text size="2">{t('timeShiftDialog.fromLine', '从')}</Text>
-              <TextField.Root
-                style={{ width: '60px' }}
-                size="1"
+            <div className="ml-4 flex items-center gap-2">
+              <span className="text-sm">从</span>
+              <Input
+                className="w-[60px]"
                 type="number"
                 value={customStart}
                 onChange={(e) => setCustomStart(e.target.value)}
               />
-              <Text size="2">{t('timeShiftDialog.toLine', '行 到')}</Text>
-              <TextField.Root
-                style={{ width: '60px' }}
-                size="1"
+              <span className="text-sm">行 到</span>
+              <Input
+                className="w-[60px]"
                 type="number"
                 value={customEnd}
                 onChange={(e) => setCustomEnd(e.target.value)}
               />
-              <Text size="2">{t('timeShiftDialog.line', '行')}</Text>
-            </Flex>
+              <span className="text-sm">行</span>
+            </div>
           )}
-        </Flex>
+        </div>
 
-        <Flex gap="3" mt="5" justify="end">
-          <Dialog.Close>
-            <Button variant="soft" color="gray">
-              {t('common.cancel', '取消')}
-            </Button>
-          </Dialog.Close>
-          <Button onClick={handleConfirm}>{t('common.apply', '应用')}</Button>
-        </Flex>
-      </Dialog.Content>
-    </Dialog.Root>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="secondary">取消</Button>
+          </DialogClose>
+          <Button onClick={handleConfirm}>应用</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
