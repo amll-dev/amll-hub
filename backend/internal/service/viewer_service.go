@@ -44,11 +44,12 @@ func (s *ViewerService) NotifySubmissionChanged(ctx context.Context, submissionI
 		return fmt.Errorf("load submission for notify: %w", err)
 	}
 	return s.hub.PublishChanged(ctx, submissionID, map[string]any{
-		"id":        sub.ID,
-		"status":    sub.Status,
-		"title":     sub.Title,
-		"submitter": sub.Submitter,
-		"reviewer":  sub.Reviewer,
-		"updatedAt": sub.UpdatedAt,
+		"id":           sub.ID,
+		"status":       sub.Status,
+		"title":        sub.Title,
+		"submitter":    sub.Submitter,
+		"reviewer":     sub.Reviewer,
+		"reviewerInfo": sub.ReviewerInfo,
+		"updatedAt":    sub.UpdatedAt,
 	})
 }

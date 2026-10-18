@@ -139,7 +139,9 @@ type Submission struct {
 	ClosedBy            string     `gorm:"column:closed_by;type:varchar(100)" json:"closedBy,omitempty"`
 	ClosedByInfo        *UserInfo  `gorm:"column:closed_by_info;type:jsonb" json:"closedByInfo,omitempty"`
 	Reviewer            string     `gorm:"type:varchar(100)" json:"reviewer,omitempty"`
+	ReviewerInfo        *UserInfo  `gorm:"column:reviewer_info;type:jsonb" json:"reviewerInfo,omitempty"`
 	ReviewedAt          *time.Time `gorm:"column:reviewed_at;type:timestamptz" json:"reviewedAt,omitempty"`
+	ReviewLeaseAt       *time.Time `gorm:"column:review_lease_at;type:timestamptz" json:"reviewLeaseAt,omitempty"`
 	ReviewComment       string     `gorm:"column:review_comment;type:text" json:"reviewComment,omitempty"`
 
 	// 审核员修订版：编辑器保存时勾选（上传修改后的 TTML）才会写入

@@ -67,6 +67,9 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
+/** 审核占用心跳间隔：需小于后端租约时长（默认 3 分钟）才能持续续约 */
+const REVIEW_HEARTBEAT_MS = 60_000;
+
 /** 详情页顶栏：左侧 logo + 标题 + 返回，右侧在线观看者指示器 */
 function DetailTopBar({
   pageTitle,
@@ -213,8 +216,8 @@ function SubmissionDetailContent({
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  // 用 ref 跟踪最新状态，供组件卸载时判断是否需要释放审核占用
-  const statusRef = useRef<string>('');
+  // 是否持有该投稿的审核占用（进入页面即占用，离开/卸载时释放）
+  const claimedRef = useRef(false);
   // 页面状态存全局 atoms（卸载时复位，语义同原 useState）
   const [tab, setTab] = useAtom(detailTabAtom);
   const [fileView, setFileView] = useAtom(fileViewAtom);
@@ -251,31 +254,84 @@ function SubmissionDetailContent({
         ? '加载失败'
         : '';
 
-  useEffect(() => {
-    statusRef.current = detail?.status ?? '';
-  }, [detail?.status]);
+  // 审核占用租约：进入即占用
+  const claimGenRef = useRef(0);
 
-  // 审核员进入 pending 状态投稿时自动标记为审核中，并广播给列表页实时同步
-  const markedDetailRef = useRef<SubmissionDetail | null>(null);
   useEffect(() => {
-    if (!detail || !isReviewer || detail.status !== 'pending') return;
-    if (markedDetailRef.current === detail) return;
-    markedDetailRef.current = detail;
-    // 乐观更新 statusRef，防止 markReviewing 返回前离开页面
-    // 导致 release 因 statusRef 仍为 "pending" 而不执行，状态卡在审核中
-    statusRef.current = 'reviewing';
-    api
-      .markReviewing(id)
-      .then(() => {
+    if (!isReviewer) return;
+    const gen = ++claimGenRef.current;
+    const isCurrent = () => gen === claimGenRef.current;
+
+    const release = (keepalive = false) => {
+      if (!claimedRef.current) return;
+      claimedRef.current = false;
+      // keepalive：页面卸载期间也能把请求发出
+      api.releaseReview(id, keepalive).catch(() => {});
+    };
+
+    const claim = async () => {
+      try {
+        const { held } = await api.markReviewing(id);
+        // 过期实例（StrictMode 的第一轮 / 已切换稿件）：结果直接丢弃，不写状态也不释放
+        if (!isCurrent()) return;
+        claimedRef.current = held;
+        // 他人已占用（或已是终态）：不抢占，详情以服务端状态为准
+        if (!held) {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.submission(id) });
+          return;
+        }
+        // 乐观更新：pending 时立即显示“审核中”，最终以后端广播为准
         queryClient.setQueryData<SubmissionDetail>(queryKeys.submission(id), (prev) =>
-          prev ? { ...prev, status: 'reviewing' as SubmissionDetail['status'] } : prev
+          prev && prev.status === 'pending'
+            ? { ...prev, status: 'reviewing' as SubmissionDetail['status'] }
+            : prev
         );
-      })
-      .catch(() => {
-        // 标记失败：回退 statusRef，避免离开时误发 release 请求
-        statusRef.current = 'pending';
-      });
-  }, [detail, isReviewer, id, queryClient]);
+        // 首次进入时详情 GET 可能早于占用请求返回（拿到的是 pending），
+        // 且 WS 未必已连上收不到广播，这里主动拉一次保证详情展示最新状态
+        void queryClient.invalidateQueries({ queryKey: queryKeys.submission(id) });
+      } catch {
+        // 占用失败不影响阅读，交给后端租约兜底
+      }
+    };
+
+    const heartbeat = async () => {
+      // 页面不可见时不再续约：超时后自动释放，回来时重新占用
+      if (!isCurrent() || document.visibilityState !== 'visible') return;
+      try {
+        const { held, status } = await api.reviewHeartbeat(id);
+        if (!isCurrent()) return;
+        claimedRef.current = held;
+        if (!held) await claim();
+        // 他人审核完成/状态被后台释放时，把最新状态同步进本页
+        if (status) {
+          queryClient.setQueryData<SubmissionDetail>(queryKeys.submission(id), (prev) =>
+            prev && prev.status !== status
+              ? { ...prev, status: status as SubmissionDetail['status'] }
+              : prev
+          );
+        }
+      } catch {
+        // 心跳失败静默，交给后端租约超时释放
+      }
+    };
+
+    const claimTimer = setTimeout(() => void claim(), 0);
+    const timer = setInterval(() => void heartbeat(), REVIEW_HEARTBEAT_MS);
+    // pagehide 比 beforeunload 更可靠：覆盖关标签页、刷新、前进后退、bfcache
+    const onPageHide = () => release(true);
+    window.addEventListener('pagehide', onPageHide);
+
+    return () => {
+      clearTimeout(claimTimer);
+      clearInterval(timer);
+      window.removeEventListener('pagehide', onPageHide);
+      // 只有最新一代实例才负责释放；被 StrictMode 替换掉的旧实例不在这里释放
+      if (isCurrent()) {
+        release();
+        claimGenRef.current += 1;
+      }
+    };
+  }, [id, isReviewer, queryClient]);
 
   // WS 状态更新：直接补丁缓存里的详情
   useEffect(() => {
@@ -294,6 +350,8 @@ function SubmissionDetailContent({
                 ? {
                     title: (obj.title as string) ?? prev.title,
                     reviewer: (obj.reviewer as string) ?? prev.reviewer,
+                    reviewerInfo:
+                      (obj.reviewerInfo as SubmissionDetail['reviewerInfo']) ?? prev.reviewerInfo,
                     updatedAt: (obj.updatedAt as string) ?? prev.updatedAt,
                   }
                 : {}),
@@ -304,27 +362,6 @@ function SubmissionDetailContent({
     window.addEventListener('submission:status-update', handler);
     return () => window.removeEventListener('submission:status-update', handler);
   }, [id, queryClient]);
-
-  // 审核员离开详情页时，若状态仍为自己标记的“审核中”，释放占用恢复为“待审核”。
-  // 通过 beforeunload + useEffect cleanup
-  useEffect(() => {
-    if (!isReviewer) return;
-
-    const release = () => {
-      // 仅当状态为 reviewing 时释放；后端会校验是否为本人标记，非本人则 no-op，
-      // 这样页面刷新/重进后也能正确释放（避免审核中状态卡住）
-      if (statusRef.current !== 'reviewing') return;
-      // keepalive：页面卸载期间也能把请求发出；错误静默（卸载期间无需提示）
-      api.releaseReview(id, true).catch(() => {});
-    };
-
-    // 页面直接关闭/刷新时触发（React cleanup 在 unload 时不保证执行）
-    window.addEventListener('beforeunload', release);
-    return () => {
-      window.removeEventListener('beforeunload', release);
-      release();
-    };
-  }, [id, isReviewer]);
 
   // 详情刷新（审核操作/更新歌词/上传音频成功后调用）
   const loadDetail = useCallback(() => {
@@ -419,6 +456,23 @@ function SubmissionDetailContent({
             <span className="ml-2 text-base font-normal text-ink-3">#{detail.id}</span>
           </h1>
           <div className="flex items-center gap-2">
+            {detail.status === 'reviewing' && detail.reviewer && (
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs text-ink-2">
+                <Users className="h-3.5 w-3.5 text-primary" />
+                <UserAvatar
+                  avatar={detail.reviewerInfo?.avatar}
+                  name={detail.reviewerInfo?.displayName || detail.reviewer}
+                  size={16}
+                />
+                <span className="text-ink-3">审核人</span>
+                <span className="text-ink-2">
+                  <UserDisplayName
+                    displayName={detail.reviewerInfo?.displayName}
+                    username={detail.reviewer}
+                  />
+                </span>
+              </span>
+            )}
             <Badge
               variant="outline"
               className={`shrink-0 inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-medium ${meta.className} border-transparent`}

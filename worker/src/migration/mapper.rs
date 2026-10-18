@@ -187,6 +187,72 @@ pub fn map_language(raw: Option<&str>) -> (&'static str, Vec<String>) {
     (primary, vec![primary.to_string()])
 }
 
+/// 语言标签前缀
+const LANG_LABEL_PREFIX: &str = "语言";
+
+const LANGUAGE_CN_NAMES: &[(&str, &str)] = &[
+    ("日语", "ja"),
+    ("汉语", "zh"),
+    ("英语", "en"),
+    ("韩语", "ko"),
+    ("其它", "others"),
+    ("其他", "others"),
+];
+
+fn label_to_language(label: &str) -> Option<&'static str> {
+    let normalized = label.trim().replace('：', ":");
+    let mut segments = normalized
+        .split(':')
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    if segments.next()? != LANG_LABEL_PREFIX {
+        return None;
+    }
+    let name = segments.next()?;
+    LANGUAGE_CN_NAMES
+        .iter()
+        .find(|(alias, _)| *alias == name)
+        .map(|(_, code)| *code)
+}
+
+/// 从 PR 标签提取语言代码：按标签顺序去重；命中具体语言时丢弃 `others`
+pub fn labels_language(labels: &[String]) -> Vec<&'static str> {
+    let mut codes: Vec<&'static str> = Vec::new();
+    for label in labels {
+        if let Some(code) = label_to_language(label)
+            && !codes.contains(&code)
+        {
+            codes.push(code);
+        }
+    }
+    if codes.iter().any(|code| *code != "others") {
+        codes.retain(|code| *code != "others");
+    }
+    codes
+}
+
+/// 过滤掉语言标签，剩下的作为投稿 tags
+pub fn non_language_labels(labels: &[String]) -> Vec<String> {
+    labels
+        .iter()
+        .filter(|label| label_to_language(label).is_none())
+        .map(|label| label.trim().to_string())
+        .filter(|label| !label.is_empty())
+        .collect()
+}
+
+/// 判定投稿语言
+pub fn resolve_language(ttml: Option<&str>, labels: &[String]) -> (String, Vec<String>) {
+    let from_labels = labels_language(labels);
+    if let Some(primary) = from_labels.first() {
+        let languages = from_labels.iter().map(|code| code.to_string()).collect();
+        return (primary.to_string(), languages);
+    }
+    let (primary, languages) = map_language(ttml);
+    (primary.to_string(), languages)
+}
+
 /// 解析 TTML，返回站点 submissions 需要的元数据
 pub struct ParsedTtmlMeta {
     pub title: String,
@@ -202,7 +268,7 @@ pub struct ParsedTtmlMeta {
 }
 
 /// 解析 TTML 字节流（复用 ttml_processor，与 /validate 口径一致）
-pub fn parse_ttml_meta(bytes: &[u8]) -> Result<ParsedTtmlMeta> {
+pub fn parse_ttml_meta(bytes: &[u8], labels: &[String]) -> Result<ParsedTtmlMeta> {
     use ttml_processor::model::PlatformId;
 
     let text = String::from_utf8_lossy(bytes);
@@ -229,7 +295,7 @@ pub fn parse_ttml_meta(bytes: &[u8]) -> Result<ParsedTtmlMeta> {
         }
     }
 
-    let (language, languages) = map_language(meta.language.as_deref());
+    let (language, languages) = resolve_language(meta.language.as_deref(), labels);
 
     Ok(ParsedTtmlMeta {
         title: join(meta.title).chars().take(200).collect(),
@@ -239,7 +305,7 @@ pub fn parse_ttml_meta(bytes: &[u8]) -> Result<ParsedTtmlMeta> {
         qq_id,
         am_id,
         spotify_id,
-        language: language.to_string(),
+        language,
         languages,
         ttml_author_github: meta
             .author_ids
@@ -457,5 +523,112 @@ mod tests {
         assert_eq!(map_language(Some("ko")).0, "ko");
         assert_eq!(map_language(None).0, "others");
         assert_eq!(map_language(Some("fr")).0, "others");
+    }
+
+    #[test]
+    fn reads_language_from_pr_label() {
+        let labels = vec!["语言：日语".to_string()];
+        // 标签优先于 TTML metadata
+        let (primary, languages) = resolve_language(Some("zh-Hans"), &labels);
+        assert_eq!(primary, "ja");
+        assert_eq!(languages, vec!["ja".to_string()]);
+    }
+
+    #[test]
+    fn maps_all_current_language_labels() {
+        for (label, code) in [
+            ("语言：其它", "others"),
+            ("语言：日语", "ja"),
+            ("语言：汉语", "zh"),
+            ("语言：英语", "en"),
+            ("语言：韩语", "ko"),
+            // 半角冒号同样识别
+            ("语言:韩语", "ko"),
+        ] {
+            assert_eq!(
+                resolve_language(None, &[label.to_string()]).0,
+                code,
+                "标签 {} 应识别为 {}",
+                label,
+                code
+            );
+        }
+    }
+
+    #[test]
+    fn collects_multiple_label_languages_deduped() {
+        let labels = vec![
+            "语言：日语".to_string(),
+            "待更新".to_string(),
+            "语言：英语".to_string(),
+            "语言：日语".to_string(),
+        ];
+        let (primary, languages) = resolve_language(None, &labels);
+        assert_eq!(primary, "ja");
+        assert_eq!(languages, vec!["ja".to_string(), "en".to_string()]);
+    }
+
+    #[test]
+    fn explicit_others_label_wins_over_ttml() {
+        let labels = vec!["语言：其它".to_string()];
+        let (primary, languages) = resolve_language(Some("ja"), &labels);
+        assert_eq!(primary, "others");
+        assert_eq!(languages, vec!["others".to_string()]);
+    }
+
+    #[test]
+    fn drops_others_when_concrete_language_present() {
+        let labels = vec!["语言：其它".to_string(), "语言：韩语".to_string()];
+        let (primary, languages) = resolve_language(None, &labels);
+        assert_eq!(primary, "ko");
+        assert_eq!(languages, vec!["ko".to_string()]);
+    }
+
+    #[test]
+    fn falls_back_to_ttml_without_language_label() {
+        let labels = vec!["待更新".to_string(), "符合规范".to_string()];
+        let (primary, languages) = resolve_language(Some("en-US"), &labels);
+        assert_eq!(primary, "en");
+        assert_eq!(languages, vec!["en".to_string()]);
+        // 都没有 → others
+        assert_eq!(resolve_language(None, &labels).0, "others");
+    }
+
+    #[test]
+    fn strips_language_labels_from_tags() {
+        let labels = vec![
+            "语言：英语".to_string(),
+            "首次投稿".to_string(),
+            "语言：其它".to_string(),
+            "已完成".to_string(),
+        ];
+        assert_eq!(
+            non_language_labels(&labels),
+            vec!["首次投稿".to_string(), "已完成".to_string()]
+        );
+        // 非语言标签全部保留
+        let only_others = vec!["待更新".to_string(), "MSR".to_string()];
+        assert_eq!(non_language_labels(&only_others), only_others);
+    }
+
+    #[test]
+    fn ignores_labels_outside_whitelist() {
+        // 严格匹配：白名单外的标签一律忽略，不做中文名或子串推断
+        let ignored = [
+            "日语",
+            "语言",
+            "语言：法语",
+            "语言：日语（简体）",
+            "lang｜ja｜日语",
+            "lang｜fr｜法语",
+        ];
+        for label in ignored {
+            assert_eq!(
+                resolve_language(None, &[label.to_string()]).0,
+                "others",
+                "标签 {} 不应被识别",
+                label
+            );
+        }
     }
 }

@@ -689,16 +689,31 @@ export const api = {
     });
   },
 
-  /** 标记为审核中 POST /api/v1/submissions/:id/mark-reviewing */
-  markReviewing(id: number): Promise<void> {
-    return request<void>(`/api/v1/submissions/${id}/mark-reviewing`, {
+  /**
+   * 标记为审核中 POST /api/v1/submissions/:id/mark-reviewing
+   * 返回 held：是否真的由自己持有（他人已占用时 held=false，且不会抢占）
+   */
+  markReviewing(id: number): Promise<{ held: boolean }> {
+    return request<{ held: boolean }>(`/api/v1/submissions/${id}/mark-reviewing`, {
       method: 'POST',
     });
   },
 
   /**
+   * 审核占用心跳 POST /api/v1/submissions/:id/review-heartbeat
+   * held 表示该投稿当前是否仍由自己持有（租约超时被释放时 held=false）；
+   * status 为投稿最新状态，用于他人审核完成后同步本页状态
+   */
+  reviewHeartbeat(id: number): Promise<{ held: boolean; status: string }> {
+    return request<{ held: boolean; status: string }>(
+      `/api/v1/submissions/${id}/review-heartbeat`,
+      { method: 'POST' }
+    );
+  },
+
+  /**
    * 释放审核占用（恢复待审核）POST /api/v1/submissions/:id/release-review
-   * @param keepalive 页面卸载（beforeunload）期间调用时置 true，保证请求发出
+   * @param keepalive 页面卸载（pagehide/beforeunload）期间调用时置 true，保证请求发出
    */
   releaseReview(id: number, keepalive = false): Promise<void> {
     return request<void>(`/api/v1/submissions/${id}/release-review`, {

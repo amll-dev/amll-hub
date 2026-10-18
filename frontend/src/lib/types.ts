@@ -223,6 +223,8 @@ export interface SubmissionListItem {
   closedBy?: string;
   closedByInfo?: UserInfo;
   reviewer?: string;
+  /** 审核员信息（占用时写入，用于展示“谁在审核”） */
+  reviewerInfo?: UserInfo;
   reviewedAt?: string;
   reviewComment?: string;
 }

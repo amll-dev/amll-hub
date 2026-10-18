@@ -33,6 +33,8 @@ import { ListSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SearchIpDetail } from '@/components/creator/SearchIpDetail';
 import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
+import { UserAvatar } from '@/components/submission/UserAvatar';
+import { UserDisplayName } from '@/components/submission/UserDisplayName';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 
@@ -146,7 +148,12 @@ function ReviewList() {
               ...p,
               items: (p.items ?? []).map((it) =>
                 it.id === id
-                  ? { ...it, status: payload.status as SubmissionListItem['status'] }
+                  ? {
+                      ...it,
+                      status: payload.status as SubmissionListItem['status'],
+                      reviewer: payload.reviewer ?? it.reviewer,
+                      reviewerInfo: payload.reviewerInfo ?? it.reviewerInfo,
+                    }
                   : it
               ),
             })),
@@ -232,6 +239,40 @@ function ReviewList() {
                           >
                             {meta.label}
                           </Badge>
+                          <span className="text-line">|</span>
+                          {/* 投稿人：审核时先看是谁投的 */}
+                          <span className="inline-flex min-w-0 items-center gap-1">
+                            <UserAvatar
+                              avatar={item.submitterInfo?.avatar}
+                              name={item.submitterInfo?.displayName || item.submitter}
+                              size={14}
+                            />
+                            <span className="shrink-0">投稿人</span>
+                            <span className="truncate text-ink-2">
+                              <UserDisplayName
+                                displayName={item.submitterInfo?.displayName}
+                                username={item.submitter}
+                              />
+                            </span>
+                          </span>
+                          {/* 审核中：显示当前占用者，避免多个审核员重复劳动 */}
+                          {item.status === 'reviewing' && item.reviewer && (
+                            <>
+                              <span className="text-line">|</span>
+                              <span className="inline-flex items-center gap-1 text-primary">
+                                <UserAvatar
+                                  avatar={item.reviewerInfo?.avatar}
+                                  name={item.reviewerInfo?.displayName || item.reviewer}
+                                  size={14}
+                                />
+                                <span className="shrink-0">审核人</span>
+                                <UserDisplayName
+                                  displayName={item.reviewerInfo?.displayName}
+                                  username={item.reviewer}
+                                />
+                              </span>
+                            </>
+                          )}
                           <span className="text-line">|</span>
                           <span>语言：{langText(item.language)}</span>
                         </div>

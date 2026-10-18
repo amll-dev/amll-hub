@@ -80,7 +80,9 @@ func (r *SubmissionRepo) UpdateStatusWhere(ctx context.Context, tx *gorm.DB, s *
 		Updates(map[string]any{
 			"status":                s.Status,
 			"reviewer":              s.Reviewer,
+			"reviewer_info":         s.ReviewerInfo,
 			"reviewed_at":           s.ReviewedAt,
+			"review_lease_at":       s.ReviewLeaseAt,
 			"review_comment":        s.ReviewComment,
 			"revision_requested_at": s.RevisionRequestedAt,
 			"closed_at":             s.ClosedAt,
@@ -100,6 +102,57 @@ func (r *SubmissionRepo) UpdateStatusWhere(ctx context.Context, tx *gorm.DB, s *
 		return false, res.Error
 	}
 	return res.RowsAffected == 1, nil
+}
+
+// RefreshReviewLease 刷新审核占用心跳时间，仅当该投稿仍由 reviewer 持有时生效
+func (r *SubmissionRepo) RefreshReviewLease(ctx context.Context, id int64, reviewer string, at time.Time) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&model.Submission{}).
+		Where("id = ? AND status = ? AND reviewer = ?", id, model.StatusReviewing, reviewer).
+		// UpdateColumn：只刷心跳时间，不改 updated_at（避免列表“更新时间”被心跳刷屏）
+		UpdateColumn("review_lease_at", at)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// ReleaseStaleReviewing 释放超时未心跳的审核占用（reviewing → pending）
+// cutoff 之前（或从未写入租约时间）的记录视为审核员已离开
+func (r *SubmissionRepo) ReleaseStaleReviewing(ctx context.Context, cutoff time.Time) ([]model.Submission, error) {
+	const batch = 200
+
+	var candidates []model.Submission
+	if err := r.db.WithContext(ctx).
+		Select("id").
+		Where("status = ? AND (review_lease_at IS NULL OR review_lease_at < ?)", model.StatusReviewing, cutoff).
+		Order("id").
+		Limit(batch).
+		Find(&candidates).Error; err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]int64, 0, len(candidates))
+	for i := range candidates {
+		ids = append(ids, candidates[i].ID)
+	}
+
+	// 条件更新：仅释放此刻仍然超时的行，避免误释放刚刷新过心跳的占用
+	err := r.db.WithContext(ctx).Model(&model.Submission{}).
+		Where("id IN ?", ids).
+		Where("status = ? AND (review_lease_at IS NULL OR review_lease_at < ?)", model.StatusReviewing, cutoff).
+		Updates(map[string]any{
+			"status":          model.StatusPending,
+			"reviewer":        "",
+			"reviewer_info":   nil,
+			"review_lease_at": nil,
+		}).Error
+	if err != nil {
+		return nil, err
+	}
+	return candidates, nil
 }
 
 // UpdateFile 更新投稿文件
@@ -323,20 +376,45 @@ func (r *SubmissionRepo) AutoReject(ctx context.Context, tx *gorm.DB, cutoff tim
 	if tx == nil {
 		tx = r.db.WithContext(ctx)
 	}
+	const batch = 500
+
+	// FOR UPDATE SKIP LOCKED：多实例并发时各自处理不同批次，
+	// 避免重复写审核历史、重复删文件与重复通知
 	var items []model.Submission
-	// 使用 RETURNING 拿到被更新的记录，便于后续插入审核历史与删除文件
-	err := tx.WithContext(ctx).
-		Table("submissions").
+	if err := tx.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
 		Where("status = ? AND revision_requested_at < ?", model.StatusNeedRevision, cutoff).
+		Order("revision_requested_at ASC").
+		Limit(batch).
+		Find(&items).Error; err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+
+	ids := make([]int64, 0, len(items))
+	for i := range items {
+		ids = append(ids, items[i].ID)
+	}
+
+	// 条件更新：只更新仍处于 need_revision 的记录，避免覆盖并发的人工审核结果。
+	// 注意：不要用 Table+Clauses(Returning)+Updates，GORM 在没有 Model 时会 panic。
+	err := tx.WithContext(ctx).Model(&model.Submission{}).
+		Where("id IN ?", ids).
+		Where("status = ?", model.StatusNeedRevision).
 		Updates(map[string]any{
-			"status":         model.StatusRejected,
-			"reviewer":       "system",
-			"reviewed_at":    time.Now(),
-			"review_comment": gorm.Expr("COALESCE(review_comment,'') || E'\n[系统自动处理] 超过4天未修改，自动拒绝。'"),
-		}).
-		Clauses(clause.Returning{}).
-		Scan(&items).Error
-	return items, err
+			"status":          model.StatusRejected,
+			"reviewer":        "system",
+			"reviewer_info":   &model.UserInfo{Username: "system", DisplayName: "系统"},
+			"reviewed_at":     time.Now(),
+			"review_lease_at": nil,
+			"review_comment":  gorm.Expr("COALESCE(review_comment,'') || E'\n[系统自动处理] 超过4天未修改，自动拒绝。'"),
+		}).Error
+	if err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 // ReviewHistoryRepo 审核历史

@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "AMLlHub-Android"
+rootProject.name = "AMLLHub-Android"
 include(":app")

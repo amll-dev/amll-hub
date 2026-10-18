@@ -70,6 +70,7 @@ type Submission struct {
 	ClosedBy             string         `json:"closedBy,omitempty"`
 	ClosedByInfo         *UserInfo      `json:"closedByInfo,omitempty"`
 	Reviewer             string         `json:"reviewer,omitempty"`
+	ReviewerInfo         *UserInfo      `json:"reviewerInfo,omitempty"`
 	ReviewedAt           *time.Time     `json:"reviewedAt,omitempty"`
 	ReviewComment        string         `json:"reviewComment,omitempty"`
 	HasRevision          bool           `json:"hasRevision"`
@@ -825,6 +826,7 @@ func convertSubmission(m model.Submission) Submission {
 		ClosedBy:            m.ClosedBy,
 		ClosedByInfo:        convertUserInfoPtr(m.ClosedByInfo),
 		Reviewer:            m.Reviewer,
+		ReviewerInfo:        convertUserInfoPtr(m.ReviewerInfo),
 		ReviewedAt:          m.ReviewedAt,
 		ReviewComment:       m.ReviewComment,
 

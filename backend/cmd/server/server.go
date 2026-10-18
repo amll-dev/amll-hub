@@ -227,6 +227,13 @@ func Run() {
 	autoRejectJob.SetNotifier(notifSvc) // T4 触发点
 	go autoRejectJob.Run(appCtx)
 
+	// 4.3.1 启动审核占用租约清理任务（心跳超时 → 回退待审核）
+	reviewLeaseJob := job.NewReviewLeaseJob(
+		subRepo, viewerSvc,
+		cfg.Submission.ReviewLeaseTTL, cfg.Submission.ReviewLeaseInterval,
+	)
+	go reviewLeaseJob.Run(appCtx)
+
 	// 4.4 审核员/超级管理员缓存
 	reviewerCache := middleware.NewReviewerCache(reviewerRepo, cfg.Submission.ReviewerCacheTTL)
 	adminCache := middleware.NewAdminCache(adminRepo, cfg.Submission.ReviewerCacheTTL)

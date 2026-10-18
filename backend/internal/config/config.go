@@ -168,6 +168,10 @@ type SubmissionConfig struct {
 	AutoRejectAfter time.Duration
 	// ReviewerCacheTTL 审核员名单内存缓存 TTL
 	ReviewerCacheTTL time.Duration
+	// ReviewLeaseTTL 审核占用租约时长：超时未收到心跳则回退为待审核
+	ReviewLeaseTTL time.Duration
+	// ReviewLeaseInterval 审核占用租约清理任务执行间隔
+	ReviewLeaseInterval time.Duration
 	// MaxTTMLSize 单个 TTML 文件最大字节数
 	MaxTTMLSize int64
 	// MaxAudioSize 单个音频文件最大字节数
@@ -419,12 +423,14 @@ func Load() (*Config, error) {
 			RepoName:      v.GetString("GITHUB_APP_REPO_NAME"),
 		},
 		Submission: SubmissionConfig{
-			AutoRejectInterval: v.GetDuration("SUBMISSION_AUTO_REJECT_INTERVAL"),
-			AutoRejectAfter:    v.GetDuration("SUBMISSION_AUTO_REJECT_AFTER"),
-			ReviewerCacheTTL:   v.GetDuration("SUBMISSION_REVIEWER_CACHE_TTL"),
-			MaxTTMLSize:        v.GetInt64("SUBMISSION_MAX_TTML_SIZE"),
-			MaxAudioSize:       v.GetInt64("SUBMISSION_MAX_AUDIO_SIZE"),
-			MaxImageSize:       v.GetInt64("SUBMISSION_MAX_IMAGE_SIZE"),
+			AutoRejectInterval:  v.GetDuration("SUBMISSION_AUTO_REJECT_INTERVAL"),
+			AutoRejectAfter:     v.GetDuration("SUBMISSION_AUTO_REJECT_AFTER"),
+			ReviewerCacheTTL:    v.GetDuration("SUBMISSION_REVIEWER_CACHE_TTL"),
+			ReviewLeaseTTL:      v.GetDuration("SUBMISSION_REVIEW_LEASE_TTL"),
+			ReviewLeaseInterval: v.GetDuration("SUBMISSION_REVIEW_LEASE_INTERVAL"),
+			MaxTTMLSize:         v.GetInt64("SUBMISSION_MAX_TTML_SIZE"),
+			MaxAudioSize:        v.GetInt64("SUBMISSION_MAX_AUDIO_SIZE"),
+			MaxImageSize:        v.GetInt64("SUBMISSION_MAX_IMAGE_SIZE"),
 		},
 		Worker: WorkerConfig{
 			BaseURL: v.GetString("WORKER_BASE_URL"),

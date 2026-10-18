@@ -129,33 +129,70 @@ func (s *ReviewService) Review(ctx context.Context, user *SubmissionUser, id int
 	return nil
 }
 
-// MarkReviewing 审核员进入详情页时将状态标记为审核中
-func (s *ReviewService) MarkReviewing(ctx context.Context, user *SubmissionUser, id int64) error {
+// MarkReviewing 审核员进入详情页时占用该投稿（status → reviewing）。
+// 返回是否由 user 持有：他人已占用或状态不允许时返回 false，且不做任何抢占。
+func (s *ReviewService) MarkReviewing(ctx context.Context, user *SubmissionUser, id int64) (bool, error) {
 	sub, err := s.subRepo.GetByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrSubmissionNotFound
+			return false, ErrSubmissionNotFound
 		}
-		return err
+		return false, err
 	}
-	// 仅 pending 状态需要变更，避免重复标记
+	// 已由本人占用：只刷新心跳时间，避免重复变更状态
+	if sub.Status == model.StatusReviewing && sub.Reviewer == user.Name {
+		return s.subRepo.RefreshReviewLease(ctx, id, user.Name, time.Now())
+	}
+	// 仅 pending 状态可被占用；他人已占用或已到终态时保持原状
 	if sub.Status != model.StatusPending {
-		return nil
+		return false, nil
 	}
+	now := time.Now()
 	sub.Status = model.StatusReviewing
 	sub.Reviewer = user.Name
+	sub.ReviewerInfo = &model.UserInfo{
+		Username:    user.Name,
+		DisplayName: user.DisplayName,
+		Avatar:      user.Avatar,
+	}
+	sub.ReviewLeaseAt = &now
 	ok, err := s.subRepo.UpdateStatusWhere(ctx, nil, sub, []string{model.StatusPending})
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !ok {
-		// 其他审核员已抢先标记，幂等返回成功
-		return nil
+		// 并发下被其他审核员抢先占用
+		return false, nil
 	}
 	if s.viewers != nil {
 		_ = s.viewers.NotifySubmissionChanged(ctx, sub.ID)
 	}
-	return nil
+	return true, nil
+}
+
+// Heartbeat 刷新审核占用租约，返回当前是否仍由 user 持有以及投稿最新状态。
+// 租约已超时被后台释放（或已被他人接管）时会尝试重新占用。
+func (s *ReviewService) Heartbeat(ctx context.Context, user *SubmissionUser, id int64) (bool, string, error) {
+	ok, err := s.subRepo.RefreshReviewLease(ctx, id, user.Name, time.Now())
+	if err != nil {
+		return false, "", err
+	}
+	if ok {
+		return true, model.StatusReviewing, nil
+	}
+	// 租约失效：若投稿已回到 pending 则重新占用
+	held, err := s.MarkReviewing(ctx, user, id)
+	if err != nil {
+		return false, "", err
+	}
+	sub, err := s.subRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, "", ErrSubmissionNotFound
+		}
+		return false, "", err
+	}
+	return held, sub.Status, nil
 }
 
 // ReleaseReview 审核员离开详情页时释放审核占用：
@@ -173,6 +210,8 @@ func (s *ReviewService) ReleaseReview(ctx context.Context, user *SubmissionUser,
 	}
 	sub.Status = model.StatusPending
 	sub.Reviewer = ""
+	sub.ReviewerInfo = nil
+	sub.ReviewLeaseAt = nil
 	ok, err := s.subRepo.UpdateStatusWhere(ctx, nil, sub, []string{model.StatusReviewing})
 	if err != nil {
 		return err
@@ -190,7 +229,10 @@ func (s *ReviewService) ReleaseReview(ctx context.Context, user *SubmissionUser,
 func (s *ReviewService) claimAndRecord(ctx context.Context, sub *model.Submission, newStatus, comment string, reviewerInfo model.UserInfo, now time.Time, fromStatuses []string) error {
 	sub.Status = newStatus
 	sub.Reviewer = reviewerInfo.Username
+	sub.ReviewerInfo = &reviewerInfo
 	sub.ReviewedAt = &now
+	// 审核结论已落定，占用租约不再需要
+	sub.ReviewLeaseAt = nil
 	if comment != "" {
 		sub.ReviewComment = comment
 	}
@@ -216,6 +258,7 @@ func (s *ReviewService) claimAndRecord(ctx context.Context, sub *model.Submissio
 func (s *ReviewService) revertClaim(ctx context.Context, sub *model.Submission, fromStatus string) {
 	sub.Status = fromStatus
 	sub.Reviewer = ""
+	sub.ReviewerInfo = nil
 	sub.ReviewedAt = nil
 	sub.ReviewComment = ""
 	ok, err := s.subRepo.UpdateStatusWhere(ctx, nil, sub, []string{model.StatusApproved, model.StatusRejected})

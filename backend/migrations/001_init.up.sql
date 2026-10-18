@@ -210,8 +210,14 @@ CREATE TABLE submissions (
     closed_by             VARCHAR(100),
     closed_by_info        JSONB,
     reviewer              VARCHAR(100),
+    --  reviewer_info：当前/最近一位审核员的信息（username/displayName/avatar），
+    --      审核占用（reviewing）时写入，供详情页与审核中心展示“谁在审核”。
+    reviewer_info         JSONB,
     reviewed_at           TIMESTAMPTZ,
     review_comment        TEXT,
+    --  review_lease_at：审核占用心跳时间。reviewing 状态下由审核员详情页定时刷新，
+    --      超过租约时长（默认 3 分钟）未刷新视为已离开，由后台任务回退为 pending。
+    review_lease_at       TIMESTAMPTZ,
     revision_file_key     VARCHAR(500)  NOT NULL DEFAULT '',
     revision_metadata     JSONB         NOT NULL DEFAULT '{}'::jsonb,
     revision_ttml         TEXT,
@@ -228,6 +234,10 @@ COMMENT ON COLUMN submissions.revision_ttml IS
     '审核员修订版 TTML 原文，用于详情页对比展示与导出';
 COMMENT ON COLUMN submissions.revision_metadata IS
     '审核员修正后的 TTML metadata（snake_case 序列化格式）';
+COMMENT ON COLUMN submissions.review_lease_at IS
+    '审核占用心跳时间；reviewing 状态下由审核员详情页定时刷新，超时未刷新由后台任务回退为 pending';
+COMMENT ON COLUMN submissions.reviewer_info IS
+    '审核员信息（username/displayName/avatar），审核占用或审核结论时写入';
 
 CREATE INDEX idx_submissions_submitter       ON submissions(submitter);
 CREATE INDEX idx_submissions_status          ON submissions(status);
