@@ -23,7 +23,7 @@ type View = 'home' | 'content' | 'search-ip';
 /** 审核中心当前视图（首页 / 歌词审核 / IP显示投稿） */
 export const reviewViewAtom = atom<View>('home');
 /** 歌词审核列表的状态筛选 */
-export const reviewTabAtom = atom<ReviewTab>('all');
+export const reviewTabAtom = atom<ReviewTab>('pending');
 /** 歌词审核列表的搜索关键词 */
 export const reviewSearchAtom = atom('');
 /** 搜索IP投稿列表的状态筛选 */
@@ -35,7 +35,7 @@ export const searchIpDetailIdAtom = atom<number | null>(null);
 export function resetReviewCenterState() {
   const store = getDefaultStore();
   store.set(reviewViewAtom, 'home');
-  store.set(reviewTabAtom, 'all');
+  store.set(reviewTabAtom, 'pending');
   store.set(reviewSearchAtom, '');
   store.set(searchIpTabAtom, 'all');
   store.set(searchIpDetailIdAtom, null);

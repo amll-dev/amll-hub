@@ -48,7 +48,7 @@ class ScanViewModel @Inject constructor(
     fun onScanned(raw: String) {
         val ticket = extractTicket(raw)
         if (ticket.isBlank()) {
-            _state.value = ScanState.Error("这不是 AMLl Hub 的登录二维码")
+            _state.value = ScanState.Error("这不是 AMLL Hub 的登录二维码")
             return
         }
         _state.value = ScanState.AwaitingConfirm(ticket)

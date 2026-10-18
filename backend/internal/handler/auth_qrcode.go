@@ -41,6 +41,7 @@ func (h *AuthHandler) QRCodeStatus(c *gin.Context) {
 		writeAuthErr(c, err)
 		return
 	}
+	h.enrichReviewer(c, result.User)
 	pkg.OK(c, result)
 }
 

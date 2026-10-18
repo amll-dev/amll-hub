@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { getToken } from '@/lib/auth';
 import { wsUrl } from '@/lib/ws';
+import type { UserInfo } from '@/lib/types';
 
 /** 投稿状态变更推送负载 */
 export interface SubmissionChangePayload {
@@ -9,6 +10,7 @@ export interface SubmissionChangePayload {
   status?: string;
   title?: string;
   reviewer?: string;
+  reviewerInfo?: UserInfo;
   updatedAt?: string;
 }
 

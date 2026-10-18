@@ -432,7 +432,7 @@ async fn process_one_pr(
     let (path, file_name) = mapper::find_ttml_file(&files)
         .ok_or_else(|| anyhow::anyhow!("PR #{} 未找到 raw-lyrics/*.ttml 文件", number))?;
     let bytes = api.download_file(&path, &pr.head_sha).await?;
-    let meta = mapper::parse_ttml_meta(&bytes)?;
+    let meta = mapper::parse_ttml_meta(&bytes, &pr.labels)?;
 
     // 审核过程（缺失时降级处理，不阻断迁移）
     let timeline = api.list_timeline(number).await.unwrap_or_else(|e| {
@@ -621,7 +621,7 @@ async fn process_one_pr(
         am_id: meta.am_id,
         spotify_id: meta.spotify_id,
         file_name,
-        tags: serde_json::json!(pr.labels),
+        tags: serde_json::json!(mapper::non_language_labels(&pr.labels)),
         metadata,
         language: meta.language,
         languages: serde_json::json!(meta.languages),

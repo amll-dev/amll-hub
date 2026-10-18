@@ -232,6 +232,11 @@ func New(deps RouterDeps) *gin.Engine {
 				middleware.RequireReviewer(reviewerCache),
 				reviewH.MarkReviewing,
 			)
+			// 审核占用心跳（进入详情页期间定时刷新）
+			sub.POST("/submissions/:id/review-heartbeat",
+				middleware.RequireReviewer(reviewerCache),
+				reviewH.Heartbeat,
+			)
 			// 释放审核占用
 			sub.POST("/submissions/:id/release-review",
 				middleware.RequireReviewer(reviewerCache),

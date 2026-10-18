@@ -103,7 +103,7 @@ fun ScanScreen(
         AlertDialog(
             onDismissRequest = viewModel::cancel,
             title = { Text("确认授权") },
-            text = { Text("是否允许当前账号登录 AMLl Hub 网页端？确认后网页会自动完成登录。") },
+            text = { Text("是否允许当前账号登录 AMLL Hub 网页端？确认后网页会自动完成登录。") },
             confirmButton = {
                 TextButton(onClick = viewModel::confirm) { Text("确认登录") }
             },
@@ -187,7 +187,7 @@ private fun ScannerPane(
                 .padding(24.dp),
         ) {
             Text(
-                text = "将 AMLl Hub 网页端登录弹窗的二维码放入框内",
+                text = "将 AMLL Hub 网页端登录弹窗的二维码放入框内",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

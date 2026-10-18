@@ -62,7 +62,7 @@ fun LoginScreen(
         ) {
             Spacer(Modifier.height(24.dp))
             Text(
-                text = "AMLl Hub",
+                text = "AMLL Hub",
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.primary,
             )

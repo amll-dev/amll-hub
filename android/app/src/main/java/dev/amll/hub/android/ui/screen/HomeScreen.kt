@@ -51,7 +51,7 @@ fun HomeScreen(
         ) {
             Spacer(Modifier.height(16.dp))
             Text(
-                text = "AMLl Hub",
+                text = "AMLL Hub",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
