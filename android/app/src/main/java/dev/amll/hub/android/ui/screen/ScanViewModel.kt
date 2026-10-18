@@ -52,6 +52,9 @@ class ScanViewModel @Inject constructor(
             return
         }
         _state.value = ScanState.AwaitingConfirm(ticket)
+        // 通知网页端「已扫码」，让它从二维码切到「扫码成功，请在手机上确认」。
+        // 失败不影响本地确认流程，网页端到确认时仍能拿到 token。
+        viewModelScope.launch { runCatching { repo.markQrScanned(ticket) } }
     }
 
     /** 用户确认授权 */

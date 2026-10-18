@@ -46,6 +46,11 @@ class AuthRepository @Inject constructor(
 
     // ---- 扫码登录 ----
 
+    /** 上报「已扫码、等待确认」，让网页端立刻提示扫码成功 */
+    suspend fun markQrScanned(ticket: String) {
+        request { api.markQrScanned(TicketRequest(ticket)) }
+    }
+
     /** 确认把当前账号授权给该票据 */
     suspend fun confirmQrLogin(ticket: String) {
         request { api.confirmQr(TicketRequest(ticket)) }

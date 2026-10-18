@@ -12,13 +12,14 @@ import {
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, Eye, EyeOff, Github, Loader2, Mail, X } from 'lucide-react';
+import { ArrowLeft, Check, Eye, EyeOff, Github, Loader2, Mail, X } from 'lucide-react';
 import { z } from 'zod';
 import { useAuth } from '@/hooks/useAuth';
 import { useAliyunCaptcha } from '@/hooks/useAliyunCaptcha';
 import { useCountdown } from '@/hooks/useCountdown';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
+import { cn } from '@/lib/utils';
 import { buttonTap } from '@/lib/motion';
 import type { CaptchaConfig, LoginResult } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -56,7 +57,6 @@ type CodeFormValues = z.infer<ReturnType<typeof makeCodeSchema>>;
 /** 扫码登录面板：申请票据 → 渲染二维码 → 轮询状态 → 确认后写入登录态 */
 function QrLoginPanel({ onSuccess }: { onSuccess: (r: LoginResult) => void }) {
   const [dataUrl, setDataUrl] = useState('');
-  const [countdown, setCountdown] = useState(0);
 
   // 弹窗打开时申请票据；关闭后作废（refetchInterval 内会停）
   const ticketQuery = useQuery({
@@ -69,6 +69,7 @@ function QrLoginPanel({ onSuccess }: { onSuccess: (r: LoginResult) => void }) {
   });
 
   const ticket = ticketQuery.data;
+  const { refetch: refetchTicket } = ticketQuery;
 
   // 二维码渲染：qrContent 变化或票据过期重建时重新生成
   useEffect(() => {
@@ -94,27 +95,24 @@ function QrLoginPanel({ onSuccess }: { onSuccess: (r: LoginResult) => void }) {
     };
   }, [ticket?.qrContent]);
 
-  // 过期倒计时
+  // 票据到期自动换新，用户无需手动刷新
   useEffect(() => {
     if (!ticket) return;
-    setCountdown(ticket.expiresIn);
-    const timer = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return c - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [ticket]);
+    const timer = setTimeout(
+      () => {
+        setDataUrl('');
+        void refetchTicket();
+      },
+      Math.max(ticket.expiresIn, 1) * 1000
+    );
+    return () => clearTimeout(timer);
+  }, [ticket, refetchTicket]);
 
   // 轮询票据状态，confirmed 时把 token 交给外层写入登录态
   const statusQuery = useQuery({
     queryKey: [...queryKeys.qrTicket, ticket?.ticket],
     queryFn: () => api.getQrTicketStatus(ticket!.ticket),
-    enabled: !!ticket?.ticket && countdown > 0,
+    enabled: !!ticket?.ticket,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       // 已确认 / 已过期就停轮询
@@ -131,33 +129,39 @@ function QrLoginPanel({ onSuccess }: { onSuccess: (r: LoginResult) => void }) {
     if (token && user) onSuccess({ token, user });
   }, [status, statusQuery.data, onSuccess]);
 
-  const expired = countdown <= 0 || status === 'expired';
+  // 服务端判定票据失效时同样自动换新
+  useEffect(() => {
+    if (status !== 'expired') return;
+    setDataUrl('');
+    void refetchTicket();
+  }, [status, refetchTicket]);
+
   const scanned = status === 'scanned';
 
   return (
     <div className="flex flex-col items-center gap-4">
       <div className="relative mx-auto aspect-square w-44 rounded-lg border border-line bg-white p-3 shadow-sm">
-        {dataUrl && !expired && <img src={dataUrl} alt="登录二维码" className="h-full w-full" />}
-        {expired && (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center">
-            <p className="text-xs text-ink-3">二维码已过期</p>
-            <button
-              type="button"
-              onClick={() => void ticketQuery.refetch()}
-              className="text-xs font-medium text-primary hover:underline"
-            >
-              点击刷新
-            </button>
+        {dataUrl && (
+          <img
+            src={dataUrl}
+            alt="登录二维码"
+            className={cn('h-full w-full transition-opacity duration-300', scanned && 'opacity-15')}
+          />
+        )}
+        {!dataUrl && !scanned && (
+          <div className="flex h-full w-full items-center justify-center">
+            <Loader2 className="h-5 w-5 animate-spin text-ink-3" />
           </div>
         )}
-        {scanned && !expired && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-lg bg-card/92 backdrop-blur-sm">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <p className="px-3 text-center text-xs leading-relaxed text-ink-2">
-              已扫码
-              <br />
-              请在手机上确认
-            </p>
+        {scanned && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.08)]">
+              <Check className="h-7 w-7 text-primary" strokeWidth={2.5} />
+            </span>
+            <div className="text-center leading-relaxed">
+              <p className="text-xs font-medium text-ink-2">扫码成功</p>
+              <p className="text-xs text-ink-2">请在手机上确认</p>
+            </div>
           </div>
         )}
       </div>
@@ -167,8 +171,6 @@ function QrLoginPanel({ onSuccess }: { onSuccess: (r: LoginResult) => void }) {
         <br />
         扫码登录或扫码下载 APP
       </p>
-
-      {!expired && <p className="text-[11px] tabular-nums text-ink-3">{countdown}s 后失效</p>}
     </div>
   );
 }
