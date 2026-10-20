@@ -4,6 +4,8 @@ import type { JsError } from '$/modules/ttml-processor/types';
 
 export const importFromTextDialogAtom = atom(false);
 export const metadataEditorDialogAtom = atom(false);
+/** 打开元数据面板时要聚焦的 key（打开后自动清空） */
+export const metadataEditorFocusKeyAtom = atom<string | null>(null);
 export const vocalTagsEditorDialogAtom = atom(false);
 export const metaSuggestionManagerDialogAtom = atom(false);
 export const settingsDialogAtom = atom(false);

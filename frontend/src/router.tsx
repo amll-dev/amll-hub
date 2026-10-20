@@ -41,6 +41,15 @@ export const router = createBrowserRouter([
     ),
     errorElement: <RouteErrorBoundary />,
   },
+  {
+    path: '/creator/lyrics/editor/:id',
+    element: (
+      <LyricEditorShell>
+        <LyricEditorPage mode="creator" />
+      </LyricEditorShell>
+    ),
+    errorElement: <RouteErrorBoundary />,
+  },
   // GitHub OAuth 回调落地页：不套站点布局，写入 token 后立即跳转
   {
     path: '/auth/github/callback',

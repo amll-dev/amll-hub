@@ -4,7 +4,7 @@ import { atomWithStorage } from 'jotai/utils';
 /**
  * 侧边栏可显示的标签页 ID
  */
-export type SidebarTabId = 'outline' | 'bpm';
+export type SidebarTabId = 'outline' | 'bpm' | 'requirements';
 
 /**
  * 侧边栏可能显示的面板类型

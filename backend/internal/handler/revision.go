@@ -45,6 +45,30 @@ func (h *RevisionHandler) GetEditorContext(c *gin.Context) {
 	pkg.OK(c, data)
 }
 
+// GetOwnerEditorContext GET /api/v1/submissions/:id/edit-context
+// 投稿者进入编辑器时拉取：原投稿 TTML + 可选音频列表
+func (h *RevisionHandler) GetOwnerEditorContext(c *gin.Context) {
+	user := currentUser(c)
+	if user == nil {
+		pkg.Unauthorized(c)
+		return
+	}
+	id, ok := parseIDParam(c)
+	if !ok {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	data, err := h.svc.GetOwnerEditorContext(ctx, user, id)
+	if err != nil {
+		writeSubmissionErr(c, err)
+		return
+	}
+	pkg.OK(c, data)
+}
+
 // Save POST /api/v1/submissions/:id/revision
 func (h *RevisionHandler) Save(c *gin.Context) {
 	user := currentUser(c)

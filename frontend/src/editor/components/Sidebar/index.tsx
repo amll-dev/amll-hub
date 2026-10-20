@@ -9,6 +9,7 @@ import {
 } from '$/states/sidebar.ts';
 import { BpmPanel } from './BpmPanel';
 import { OutlinePanel } from './OutlinePanel';
+import { ReviewRequirementsPanel } from './ReviewRequirementsPanel';
 import { ResizableSidebar } from './ResizableSidebar';
 import { SidebarTabBar } from './SidebarTabBar';
 
@@ -26,6 +27,11 @@ export const SIDEBAR_TABS: SidebarTab[] = [
     id: 'outline',
     title: '大纲',
     component: OutlinePanel,
+  },
+  {
+    id: 'requirements',
+    title: '审核要求',
+    component: ReviewRequirementsPanel,
   },
   {
     id: 'bpm',
@@ -65,7 +71,7 @@ export const Sidebar = () => {
       minWidth={MIN_WIDTH}
       maxWidth={MAX_WIDTH}
       maxWidthRatio={0.5}
-      titles={{ outline: tabBar, bpm: tabBar }}
+      titles={{ outline: tabBar, requirements: tabBar, bpm: tabBar }}
       headerSingle={visibleTabs.length === 1}
     >
       {SIDEBAR_TABS.map((tab) => {

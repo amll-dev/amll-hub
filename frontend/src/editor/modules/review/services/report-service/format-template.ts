@@ -69,8 +69,8 @@ const lineTextVariables: ReviewReportFormatVariable[] = [
 export const reviewReportFormatBlockDefinitions: ReviewReportFormatBlockDefinition[] = [
   {
     kind: 'wordTextShared',
-    label: '跨行原文修正',
-    description: '同一原文修正出现在多行时使用',
+    label: '跨行原文修改',
+    description: '同一原文修改出现在多行时使用',
     variables: [
       {
         name: 'lineLabels',
@@ -82,8 +82,8 @@ export const reviewReportFormatBlockDefinitions: ReviewReportFormatBlockDefiniti
   },
   {
     kind: 'wordTextGroup',
-    label: '同行多处原文修正',
-    description: '同一行存在多个逐字原文修正时使用',
+    label: '同行多处原文修改',
+    description: '同一行存在多个逐字原文修改时使用',
     variables: [
       ...commonLineVariables,
       {
@@ -110,13 +110,13 @@ export const reviewReportFormatBlockDefinitions: ReviewReportFormatBlockDefiniti
   },
   {
     kind: 'wordText',
-    label: '单个原文修正',
-    description: '单个逐字原文修正时使用',
+    label: '单个原文修改',
+    description: '单个逐字原文修改时使用',
     variables: [...commonLineVariables, ...wordChangeVariables],
   },
   {
     kind: 'wordRoman',
-    label: '逐字音译修正',
+    label: '逐字音译修改',
     description: '仅逐字音译变化时使用',
     variables: [
       ...commonLineVariables,
@@ -126,19 +126,19 @@ export const reviewReportFormatBlockDefinitions: ReviewReportFormatBlockDefiniti
   },
   {
     kind: 'lineTranslation',
-    label: '翻译修正',
+    label: '翻译修改',
     description: '整行翻译变化时使用',
     variables: [...commonLineVariables, ...lineTextVariables],
   },
   {
     kind: 'lineRoman',
-    label: '整行音译修正',
+    label: '整行音译修改',
     description: '整行音译变化时使用',
     variables: [...commonLineVariables, ...lineTextVariables],
   },
   {
     kind: 'wordAndRoman',
-    label: '原文与音译修正',
+    label: '原文与音译修改',
     description: '同一个词的原文和逐字音译都变化时使用',
     variables: [...commonLineVariables, ...wordChangeVariables, ...romanChangeVariables],
   },
@@ -218,7 +218,7 @@ export const reviewReportFormatBlockDefinitions: ReviewReportFormatBlockDefiniti
   },
   {
     kind: 'timing',
-    label: '时轴修正',
+    label: '时轴调整',
     description: '时轴起止时间变化时使用',
     variables: [
       ...commonLineVariables,
@@ -256,7 +256,7 @@ export const reviewReportFormatBlockDefinitions: ReviewReportFormatBlockDefiniti
   },
   {
     kind: 'lineTiming',
-    label: '行时轴修正',
+    label: '行时轴调整',
     description: '整行起止时间变化时使用',
     variables: [
       ...commonLineVariables,
@@ -415,6 +415,79 @@ export const DEFAULT_REVIEW_REPORT_FORMAT: ReviewReportFormat = {
     },
     lineTiming: {
       template: '{{lineLabel}}：行时轴修正，{{lineTimingChanges}}',
+      listItem: true,
+    },
+  },
+};
+
+// 投稿者视角的默认报告格式
+export const DEFAULT_SUBMITTER_REPORT_FORMAT: ReviewReportFormat = {
+  version: 1,
+  emptyText: '本次未检测到改动。',
+  blocks: {
+    manual: {
+      template: '{{content}}',
+      listItem: false,
+    },
+    metadata: {
+      template: '元数据（{{label}}）：{{actionLabel}} {{itemsCode}}',
+      listItem: true,
+    },
+    wordTextShared: {
+      template: '{{lineLabels}}：将 `{{oldWord}}` 改为 `{{newWord}}`',
+      listItem: true,
+    },
+    wordTextGroup: {
+      template: '{{lineLabel}}：将 {{oldWordsCode}} 分别改为 {{newWordsCode}}',
+      listItem: true,
+    },
+    wordText: {
+      template: '{{lineLabel}}：将 `{{oldWord}}` 改为 `{{newWord}}`',
+      listItem: true,
+    },
+    wordRoman: {
+      template: '{{lineLabel}}：`{{word}}` 的音译由 `{{oldRoman}}` 改为 `{{newRoman}}`',
+      listItem: true,
+    },
+    lineTranslation: {
+      template: '{{lineLabel}}：翻译由 `{{oldText}}` 改为 `{{newText}}`',
+      listItem: true,
+    },
+    lineRoman: {
+      template: '{{lineLabel}}：音译由 `{{oldText}}` 改为 `{{newText}}`',
+      listItem: true,
+    },
+    wordAndRoman: {
+      template:
+        '{{lineLabel}}：将 `{{oldWord}}` 改为 `{{newWord}}`，音译由 `{{oldRoman}}` 改为 `{{newRoman}}`',
+      listItem: true,
+    },
+    wordAdded: {
+      template: '{{lineLabel}}：新增 `{{word}}`',
+      listItem: true,
+    },
+    wordRemoved: {
+      template: '{{lineLabel}}：删除 `{{word}}`',
+      listItem: true,
+    },
+    lineAdded: {
+      template: '{{lineLabel}}：新增歌词 `{{text}}`',
+      listItem: true,
+    },
+    lineRemoved: {
+      template: '{{lineLabel}}：删除歌词 `{{text}}`',
+      listItem: true,
+    },
+    timeShift: {
+      template: '将{{scopeLabel}}整体{{direction}} {{absoluteOffset}} 毫秒',
+      listItem: true,
+    },
+    timing: {
+      template: '{{lineLabel}}：`{{word}}` {{timingChanges}}',
+      listItem: true,
+    },
+    lineTiming: {
+      template: '{{lineLabel}}：行时轴调整，{{lineTimingChanges}}',
       listItem: true,
     },
   },

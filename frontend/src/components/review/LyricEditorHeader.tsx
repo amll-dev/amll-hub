@@ -22,6 +22,10 @@ export interface EditorHeaderProps {
   onBack: () => void;
   onSave: () => void;
   saving: boolean;
+  /** 投稿者模式：文案与保存动作不同 */
+  mode?: 'review' | 'creator';
+  /** 无参考音频：隐藏打轴与音频相关控件 */
+  textOnly?: boolean;
 }
 
 /** 参考音频选择器 */
@@ -126,13 +130,21 @@ export function LyricEditorHeader({
   onBack,
   onSave,
   saving,
+  mode = 'review',
+  textOnly = false,
 }: EditorHeaderProps) {
   const [, setMetadataEditorDialog] = useAtom(metadataEditorDialogAtom);
+  const isCreator = mode === 'creator';
 
   return (
     <div className="z-50 flex shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
-        <Button variant="outline" size="sm" onClick={onBack} title="返回审核详情">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onBack}
+          title={isCreator ? '返回投稿详情' : '返回审核详情'}
+        >
           <ArrowLeft className="size-4" />
           返回
         </Button>
@@ -143,12 +155,18 @@ export function LyricEditorHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
-        <AudioSourceSelect
-          sources={sources}
-          audioIndex={audioIndex}
-          onAudioIndexChange={onAudioIndexChange}
-        />
-        <ToolModeSwitch />
+        {textOnly ? (
+          <span className="rounded-md border border-line bg-surface-2 px-2 py-1 text-[11px] text-ink-3">
+            无参考音频 · 文本编辑
+          </span>
+        ) : (
+          <AudioSourceSelect
+            sources={sources}
+            audioIndex={audioIndex}
+            onAudioIndexChange={onAudioIndexChange}
+          />
+        )}
+        {!textOnly && <ToolModeSwitch />}
         <EditorMenuBar />
         {/* 分隔：菜单类操作与右侧的「元数据 / 提交」动作按钮区分开 */}
         <div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
@@ -161,9 +179,14 @@ export function LyricEditorHeader({
           <Tags className="size-4" />
           元数据
         </Button>
-        <Button size="sm" onClick={onSave} disabled={saving} title="提交审核结果（Enter）">
+        <Button
+          size="sm"
+          onClick={onSave}
+          disabled={saving}
+          title={isCreator ? '提交修改并重新进入审核队列' : '提交审核结果（Enter）'}
+        >
           {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-          提交
+          {isCreator ? '提交修改' : '提交'}
         </Button>
         <UserMenu />
       </div>

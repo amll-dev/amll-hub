@@ -43,7 +43,7 @@ export function ConfirmDialog() {
 
   return (
     <Dialog open={state.open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="z-[500] max-w-md" overlayClassName="z-[450]">
         <DialogHeader>
           <DialogTitle>{state.title}</DialogTitle>
           {state.description ? (

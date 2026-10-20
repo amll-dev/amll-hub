@@ -63,6 +63,24 @@ func (s *FileService) UploadTTML(ctx context.Context, fileName string, content [
 	return err
 }
 
+// UploadTTMLTemp 上传到临时对象，事务成功后再 Move 到正式 key，避免事务失败覆盖正式文件
+func (s *FileService) UploadTTMLTemp(ctx context.Context, fileName string, content []byte) (string, error) {
+	if err := validateTTMLFileName(fileName); err != nil {
+		return "", err
+	}
+	if len(content) > int(s.cfg.Submission.MaxTTMLSize) {
+		return "", fmt.Errorf("TTML 文件大小超过 %d 字节", s.cfg.Submission.MaxTTMLSize)
+	}
+	key := fmt.Sprintf("%s.tmp-%d-%s", PendingLyricsPrefix, time.Now().UnixNano(), fileName)
+	_, err := s.minio.PutObject(ctx, s.bucket, key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
+		ContentType: "application/xml; charset=utf-8",
+	})
+	if err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
 // UploadAudio 上传音频附件
 func (s *FileService) UploadAudio(ctx context.Context, submissionID int64, fileName string, content []byte) (string, error) {
 	if len(content) > int(s.cfg.Submission.MaxAudioSize) {

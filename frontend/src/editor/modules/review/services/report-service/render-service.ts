@@ -37,7 +37,7 @@ export const getReviewReportBlockLabel = (block: ReviewReportBlock) => {
     case 'timing':
       return '时轴';
     case 'lineTiming':
-      return '行时轴修正';
+      return '行时轴调整';
   }
 };
 

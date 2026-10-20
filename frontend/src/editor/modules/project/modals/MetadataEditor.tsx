@@ -12,7 +12,7 @@ import {
   User,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useAtom, useAtomValue } from 'jotai';
+import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { useImmerAtom } from 'jotai-immer';
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -28,7 +28,7 @@ import {
   getMeatdataSuggestion,
   type MetaSuggestionResult,
 } from '$/modules/project/logic/meatdata-suggestion';
-import { metadataEditorDialogAtom } from '$/states/dialogs.ts';
+import { metadataEditorDialogAtom, metadataEditorFocusKeyAtom } from '$/states/dialogs.ts';
 import { resolvedThemeAtom } from '@/atoms/theme';
 import { lyricLinesAtom } from '$/states/main.ts';
 import type { TTMLLyric, TTMLMetadata } from '$/types/ttml';
@@ -741,6 +741,15 @@ export const MetadataEditor = () => {
     if (activeOption) return;
     setActiveKey(builtinOptions[0]?.value ?? '');
   }, [activeOption, builtinOptions]);
+
+  // 从审核要求面板跳转过来时，聚焦对应元数据项
+  const focusMetadataKey = useAtomValue(metadataEditorFocusKeyAtom);
+  const setFocusMetadataKey = useSetAtom(metadataEditorFocusKeyAtom);
+  useEffect(() => {
+    if (!metadataEditorDialog || !focusMetadataKey) return;
+    setActiveKey(focusMetadataKey);
+    setFocusMetadataKey(null);
+  }, [metadataEditorDialog, focusMetadataKey, setFocusMetadataKey]);
 
   const addCustomKey = useCallback(() => {
     const nextKey = customKey.trim();

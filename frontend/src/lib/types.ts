@@ -297,6 +297,19 @@ export interface SubmissionDetail extends SubmissionListItem {
 
 // ===== 审核员修订版 =====
 
+/** 编辑器上下文里的最近一轮审核要求 */
+export interface EditorReviewRequirement {
+  /** report = 结构化审核报告；comment = 文字审核意见 */
+  source: 'report' | 'comment';
+  action?: string;
+  comment?: string;
+  reportMd?: string;
+  structured?: Record<string, unknown>;
+  reviewer?: string;
+  reviewerInfo?: UserInfo;
+  createdAt?: string;
+}
+
 /** GET /api/v1/submissions/:id/editor-context */
 export interface EditorContext {
   /** 原始投稿 TTML 原文 */
@@ -306,6 +319,18 @@ export interface EditorContext {
   ncmId?: string;
   status: string;
   hasRevision: boolean;
+  /** 最近一轮审核要求（没有则为空） */
+  review?: EditorReviewRequirement | null;
+}
+
+/** PUT /api/v1/submissions/:id/content 入参（投稿者编辑器保存） */
+export interface SaveSubmitterContentPayload {
+  /** 编辑器导出的 TTML */
+  ttml: string;
+  /** 编辑器元数据，key → 多值 */
+  metadata?: Record<string, string[]>;
+  /** 自动生成并可编辑的修改摘要（Markdown） */
+  reportMd?: string;
 }
 
 /** POST /api/v1/submissions/:id/revision 入参 */

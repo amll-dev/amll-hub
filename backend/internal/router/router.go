@@ -217,6 +217,8 @@ func New(deps RouterDeps) *gin.Engine {
 			sub.GET("/submissions/:id", submissionH.GetDetail)
 			sub.GET("/submissions/:id/ttml", submissionH.GetTtml)
 			sub.PUT("/submissions/:id/file", submissionH.UpdateFile)
+			// 投稿者编辑器保存（直接提交编辑器生成的 TTML）
+			sub.PUT("/submissions/:id/content", submissionH.SaveContent)
 			sub.POST("/submissions/:id/close", submissionH.Close)
 
 			// TTML 校验
@@ -248,6 +250,8 @@ func New(deps RouterDeps) *gin.Engine {
 				middleware.RequireReviewer(reviewerCache),
 				revisionH.GetEditorContext,
 			)
+			// 投稿者编辑器上下文（仅投稿者本人）
+			sub.GET("/submissions/:id/edit-context", revisionH.GetOwnerEditorContext)
 			sub.POST("/submissions/:id/revision",
 				middleware.RequireReviewer(reviewerCache),
 				revisionH.Save,
