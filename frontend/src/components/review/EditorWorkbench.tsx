@@ -22,7 +22,7 @@ import './editor-theme.css';
 const LyricLinesView = lazy(() => import('@/editor/modules/lyric-editor/components'));
 const AudioControls = lazy(() => import('@/editor/modules/audio/components/index.tsx'));
 
-export function EditorWorkbench() {
+export function EditorWorkbench({ textOnly = false }: { textOnly?: boolean }) {
   const toolMode = useAtomValue(toolModeAtom);
   const showTouchSyncPanel = useAtomValue(showTouchSyncPanelAtom);
   const setToolMode = useSetAtom(toolModeAtom);
@@ -35,7 +35,11 @@ export function EditorWorkbench() {
     if (toolMode === ToolMode.Preview) {
       setToolMode(ToolMode.Edit);
     }
-  }, [setToolMode, toolMode]);
+    // 无参考音频时没有打轴基准，强制留在编辑模式
+    if (textOnly && toolMode === ToolMode.Sync) {
+      setToolMode(ToolMode.Edit);
+    }
+  }, [setToolMode, textOnly, toolMode]);
 
   useEffect(() => {
     document.body.classList.add('editor-body');
@@ -45,7 +49,7 @@ export function EditorWorkbench() {
   return (
     <EditorTheme>
       <AutosaveManager />
-      {toolMode === ToolMode.Sync && <SyncKeyBinding />}
+      {!textOnly && toolMode === ToolMode.Sync && <SyncKeyBinding />}
       <div
         className="flex h-full flex-col overflow-hidden"
         style={{ background: 'var(--color-panel)' }}
@@ -73,23 +77,25 @@ export function EditorWorkbench() {
           </div>
         </div>
 
-        {showTouchSyncPanel && toolMode === ToolMode.Sync && <TouchSyncPanel />}
+        {!textOnly && showTouchSyncPanel && toolMode === ToolMode.Sync && <TouchSyncPanel />}
 
-        <AnimatePresence initial={false}>
-          <motion.div
-            key="audio-controls"
-            style={{ flexShrink: 0, overflow: 'hidden' }}
-            initial={{ height: 0, opacity: 0, y: 20 }}
-            animate={{ height: 'auto', opacity: 1, y: 0 }}
-            exit={{ height: 0, opacity: 0, y: 20 }}
-            transition={{ duration: 0.22, ease: 'easeInOut' }}
-            data-audio-controls
-          >
-            <Suspense fallback={null}>
-              <AudioControls />
-            </Suspense>
-          </motion.div>
-        </AnimatePresence>
+        {!textOnly && (
+          <AnimatePresence initial={false}>
+            <motion.div
+              key="audio-controls"
+              style={{ flexShrink: 0, overflow: 'hidden' }}
+              initial={{ height: 0, opacity: 0, y: 20 }}
+              animate={{ height: 'auto', opacity: 1, y: 0 }}
+              exit={{ height: 0, opacity: 0, y: 20 }}
+              transition={{ duration: 0.22, ease: 'easeInOut' }}
+              data-audio-controls
+            >
+              <Suspense fallback={null}>
+                <AudioControls />
+              </Suspense>
+            </motion.div>
+          </AnimatePresence>
+        )}
       </div>
 
       <DragGhostRenderer />

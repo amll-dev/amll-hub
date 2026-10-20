@@ -23,12 +23,16 @@ function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrim
 
 function DialogContent({
   className,
+  overlayClassName,
   children,
   ...props
-}: ComponentProps<typeof DialogPrimitive.Content>) {
+}: ComponentProps<typeof DialogPrimitive.Content> & {
+  /** 覆盖默认遮罩层样式，例如在嵌套弹窗中抬高遮罩层级 */
+  overlayClassName?: string;
+}) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         className={cn(
           'fixed left-1/2 top-1/2 z-[210] grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-line bg-card p-6 shadow-lg',

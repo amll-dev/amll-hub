@@ -16,8 +16,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { lyricLinesAtom } from '$/states/main.ts';
+import { confirmDialogAtom } from '$/states/dialogs.ts';
+import { countIncompleteRequirements } from '$/modules/review/requirements';
 import {
+  DEFAULT_REVIEW_REPORT_FORMAT,
+  DEFAULT_SUBMITTER_REPORT_FORMAT,
   reviewReportFormatAtom,
+  submitterReportFormatAtom,
   type ReviewReportFormat,
 } from '$/modules/review/services/report-service/format-service';
 import {
@@ -38,6 +44,7 @@ import {
   effectiveReviewReportAtom,
   reviewActionAtom,
   reviewReportDialogAtom,
+  reviewRequirementAtom,
   reviewUploadTtmlAtom,
 } from '$/modules/review/states';
 
@@ -73,10 +80,12 @@ function DialogFlexBody({ children }: { children: ReactNode }) {
 }
 
 export interface ReviewReportDialogProps {
-  /** 提交：走本站的保存修订版链路 */
+  /** 提交：审核员走修订版链路，投稿者走内容保存链路 */
   onSubmit: (input: { reportMd: string; action: string; uploadTtml: boolean }) => void;
   /** 是否正在提交 */
   submitting: boolean;
+  /** review = 审核员；creator = 投稿者修改 */
+  mode?: 'review' | 'creator';
 }
 
 /** 单个报告块的一行摘要 */
@@ -395,16 +404,30 @@ const BRAND_ACCENT = {
   '--accent-track': '#fbdde0',
 } as CSSProperties;
 
-export const ReviewReportDialog = ({ onSubmit, submitting }: ReviewReportDialogProps) => {
+export const ReviewReportDialog = ({
+  onSubmit,
+  submitting,
+  mode = 'review',
+}: ReviewReportDialogProps) => {
+  const isCreator = mode === 'creator';
   const [dialog, setDialog] = useAtom(reviewReportDialogAtom);
   const autoReport = useAtomValue(effectiveReviewReportAtom);
-  const reportFormat = useAtomValue(reviewReportFormatAtom);
-  const setReportFormat = useSetAtom(reviewReportFormatAtom);
+  const reviewFormat = useAtomValue(reviewReportFormatAtom);
+  const setReviewFormat = useSetAtom(reviewReportFormatAtom);
+  const submitterFormat = useAtomValue(submitterReportFormatAtom);
+  const setSubmitterFormat = useSetAtom(submitterReportFormatAtom);
+  const reportFormat = isCreator ? submitterFormat : reviewFormat;
+  const setReportFormat = isCreator ? setSubmitterFormat : setReviewFormat;
   const [action, setAction] = useAtom(reviewActionAtom);
   const [uploadTtml, setUploadTtml] = useAtom(reviewUploadTtmlAtom);
+  const lyricData = useAtomValue(lyricLinesAtom);
+  const requirement = useAtomValue(reviewRequirementAtom);
+  const setConfirmDialog = useSetAtom(confirmDialogAtom);
 
   const [activeTab, setActiveTab] = useState('blocks');
   const [draft, setDraft] = useState(() => createReviewReport());
+  /** 投稿者填写的「其他内容」，作为手写块放在报告最前面 */
+  const [extraContent, setExtraContent] = useState('');
 
   const initializedRef = useRef(false);
   useEffect(() => {
@@ -416,11 +439,47 @@ export const ReviewReportDialog = ({ onSubmit, submitting }: ReviewReportDialogP
     }
   }, [autoReport]);
 
-  const renderedReport = useMemo(() => renderReviewReport(draft), [draft]);
+  /** 投稿者的其他内容作为手写条目插到报告最前面 */
+  const effectiveDraft = useMemo(() => {
+    const content = extraContent.trim();
+    if (!isCreator || !content) return draft;
+    const extraBlock: ReviewReportBlock = {
+      id: 'creator-extra',
+      kind: 'manual',
+      content,
+      lineBreakBefore: false,
+      enabled: true,
+    };
+    return createReviewReport([extraBlock, ...draft.blocks]);
+  }, [draft, extraContent, isCreator]);
+
+  const renderedReport = useMemo(
+    () => renderReviewReport(effectiveDraft, reportFormat),
+    [effectiveDraft, reportFormat]
+  );
   const renderedReportHtml = useMemo(() => renderMarkdown(renderedReport), [renderedReport]);
   const blocks = useMemo(() => normalizeReviewReport(draft).blocks, [draft]);
   const blockGroups = useMemo(() => createReportBlockSequenceGroups(blocks), [blocks]);
   const close = () => setDialog({ ...dialog, open: false });
+
+  const doCreatorSubmit = () => {
+    onSubmit({ reportMd: renderedReport, action: 'submitter_edit', uploadTtml: false });
+  };
+
+  /** 投稿者提交前检查审核要求完成情况 */
+  const handleCreatorSubmit = () => {
+    const incomplete = countIncompleteRequirements(requirement, lyricData);
+    if (incomplete > 0) {
+      setConfirmDialog({
+        open: true,
+        title: '还有未完成的修改',
+        description: `还有 ${incomplete} 个要求未完成修改，是否继续提交？`,
+        onConfirm: doCreatorSubmit,
+      });
+      return;
+    }
+    doCreatorSubmit();
+  };
   const updateReportBlocks = (updater: (prev: ReviewReportBlock[]) => ReviewReportBlock[]) => {
     setDraft(createReviewReport(captureManualReviewReportPlacements(updater(blocks))));
   };
@@ -522,11 +581,15 @@ export const ReviewReportDialog = ({ onSubmit, submitting }: ReviewReportDialogP
         <DialogContentBoundary>
           <DialogFlexBody>
             <DialogTitle className="shrink-0 p-4 pb-2 font-semibold">
-              对稿件【{dialog.title}】做出的审阅结果如下：
+              {isCreator
+                ? `对稿件【${dialog.title}】的修改内容如下：`
+                : `对稿件【${dialog.title}】做出的审阅结果如下：`}
             </DialogTitle>
-            <div className="shrink-0 px-4">
-              <ReviewTemplateSection open={dialog.open} onInsertTemplate={insertTemplate} />
-            </div>
+            {!isCreator && (
+              <div className="shrink-0 px-4">
+                <ReviewTemplateSection open={dialog.open} onInsertTemplate={insertTemplate} />
+              </div>
+            )}
 
             <Tabs
               value={activeTab}
@@ -542,6 +605,21 @@ export const ReviewReportDialog = ({ onSubmit, submitting }: ReviewReportDialogP
 
               {/* 条目 */}
               <TabsContent value="blocks" className="flex min-h-0 flex-1 flex-col">
+                {isCreator && (
+                  <div className="mb-2 shrink-0 rounded-md border border-line bg-surface-2 p-2.5">
+                    <div className="mb-1.5 flex items-baseline justify-between gap-2">
+                      <span className="text-sm font-medium text-foreground">其他内容</span>
+                      <span className="text-[11px] text-ink-3">会放在报告最前面，可留空</span>
+                    </div>
+                    <Textarea
+                      value={extraContent}
+                      onChange={(e) => setExtraContent(e.target.value)}
+                      rows={3}
+                      aria-label="其他内容"
+                      placeholder="自动摘要之外想补充的内容，例如修改原因、重点说明…"
+                    />
+                  </div>
+                )}
                 <p className="mb-2 shrink-0 text-xs text-ink-3">
                   结构化条目按系统顺序排列；手写条目可通过上移/下移插入序列。
                 </p>
@@ -607,7 +685,10 @@ export const ReviewReportDialog = ({ onSubmit, submitting }: ReviewReportDialogP
                 <ReportFormatEditor
                   value={reportFormat}
                   onChange={setReportFormat}
-                  report={draft}
+                  report={effectiveDraft}
+                  defaultFormat={
+                    isCreator ? DEFAULT_SUBMITTER_REPORT_FORMAT : DEFAULT_REVIEW_REPORT_FORMAT
+                  }
                 />
               </TabsContent>
 
@@ -648,31 +729,40 @@ export const ReviewReportDialog = ({ onSubmit, submitting }: ReviewReportDialogP
                 放弃
               </Button>
               <div className="flex-1" />
-              <div className="mr-2 flex items-center gap-1">
-                <Checkbox checked={uploadTtml} onCheckedChange={(v) => setUploadTtml(v)} />
-                <span className="text-xs text-ink-3">上传修订版</span>
-              </div>
-              {ACTION_BUTTONS.map(({ action: key, label, className, Icon }) => (
-                <Button
-                  key={key}
-                  type="button"
-                  size="sm"
-                  className={action === key ? className : undefined}
-                  variant={action === key ? 'default' : 'secondary'}
-                  disabled={submitting}
-                  onClick={() => {
-                    setAction(key);
-                    onSubmit({
-                      reportMd: renderedReport,
-                      action: key,
-                      uploadTtml,
-                    });
-                  }}
-                >
-                  <Icon />
-                  {label}
+              {isCreator ? (
+                <Button type="button" size="sm" disabled={submitting} onClick={handleCreatorSubmit}>
+                  <Check />
+                  确认提交
                 </Button>
-              ))}
+              ) : (
+                <>
+                  <div className="mr-2 flex items-center gap-1">
+                    <Checkbox checked={uploadTtml} onCheckedChange={(v) => setUploadTtml(v)} />
+                    <span className="text-xs text-ink-3">上传修订版</span>
+                  </div>
+                  {ACTION_BUTTONS.map(({ action: key, label, className, Icon }) => (
+                    <Button
+                      key={key}
+                      type="button"
+                      size="sm"
+                      className={action === key ? className : undefined}
+                      variant={action === key ? 'default' : 'secondary'}
+                      disabled={submitting}
+                      onClick={() => {
+                        setAction(key);
+                        onSubmit({
+                          reportMd: renderedReport,
+                          action: key,
+                          uploadTtml,
+                        });
+                      }}
+                    >
+                      <Icon />
+                      {label}
+                    </Button>
+                  ))}
+                </>
+              )}
             </div>
           </DialogFlexBody>
         </DialogContentBoundary>

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -482,6 +483,23 @@ func (s *RevisionService) GetRevisionContent(ctx context.Context, user *Submissi
 	return *sub.RevisionTTML, nil
 }
 
+// EditorReviewRequirement 最近一轮审核要求（结构化报告或文字意见）
+type EditorReviewRequirement struct {
+	// Source report / comment
+	Source string `json:"source"`
+	// Action 审核动作或历史状态
+	Action string `json:"action"`
+	// Comment 文字审核意见
+	Comment string `json:"comment,omitempty"`
+	// ReportMD 审核报告 Markdown
+	ReportMD string `json:"reportMd,omitempty"`
+	// Structured 结构化报告，前端从中取按行条目
+	Structured   map[string]any `json:"structured,omitempty"`
+	Reviewer     string         `json:"reviewer,omitempty"`
+	ReviewerInfo model.UserInfo `json:"reviewerInfo"`
+	CreatedAt    time.Time      `json:"createdAt"`
+}
+
 // EditorContext 审核员进入编辑器所需的上下文
 type EditorContext struct {
 	// TTML 原始投稿文件内容
@@ -496,6 +514,8 @@ type EditorContext struct {
 	Status string `json:"status"`
 	// HasRevision 是否已存在待确认的修订版
 	HasRevision bool `json:"hasRevision"`
+	// Review 最近一轮审核要求
+	Review *EditorReviewRequirement `json:"review,omitempty"`
 }
 
 // GetEditorContext 审核员打开编辑器时拉取上下文
@@ -507,6 +527,25 @@ func (s *RevisionService) GetEditorContext(ctx context.Context, id int64) (*Edit
 		}
 		return nil, err
 	}
+	return s.buildEditorContext(ctx, sub)
+}
+
+// GetOwnerEditorContext 投稿者打开编辑器时拉取上下文
+func (s *RevisionService) GetOwnerEditorContext(ctx context.Context, user *SubmissionUser, id int64) (*EditorContext, error) {
+	sub, err := s.subRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrSubmissionNotFound
+		}
+		return nil, err
+	}
+	if user == nil || sub.Submitter != user.Name {
+		return nil, ErrForbidden
+	}
+	return s.buildEditorContext(ctx, sub)
+}
+
+func (s *RevisionService) buildEditorContext(ctx context.Context, sub *model.Submission) (*EditorContext, error) {
 	if sub.FileName == "" {
 		return nil, ErrMissingFile
 	}
@@ -520,9 +559,14 @@ func (s *RevisionService) GetEditorContext(ctx context.Context, id int64) (*Edit
 		return nil, fmt.Errorf("read ttml: %w", err)
 	}
 
-	audios, err := s.audioRepo.ListBySubmissionID(ctx, id)
+	audios, err := s.audioRepo.ListBySubmissionID(ctx, sub.ID)
 	if err != nil {
 		return nil, err
+	}
+	review, err := s.latestReviewRequirement(ctx, sub.ID)
+	if err != nil {
+		// 审核要求读取失败不影响编辑器打开
+		logrus.WithError(err).Warn("load editor review requirement failed")
 	}
 	return &EditorContext{
 		TTML:        raw,
@@ -531,7 +575,64 @@ func (s *RevisionService) GetEditorContext(ctx context.Context, id int64) (*Edit
 		NcmID:       firstNonEmpty(sub.NcmID, extractPlatformId(map[string]any(sub.Metadata), "ncm_music_id")),
 		Status:      sub.Status,
 		HasRevision: sub.RevisionFileKey != "",
+		Review:      review,
 	}, nil
+}
+
+// latestReviewRequirement 取最近一轮审核要求：
+// 优先结构化审核报告；若之后又有带文字的新审核意见，则用文字意见。
+func (s *RevisionService) latestReviewRequirement(ctx context.Context, submissionID int64) (*EditorReviewRequirement, error) {
+	report, err := s.reportRepo.LatestBySubmission(ctx, submissionID)
+	if err != nil {
+		return nil, err
+	}
+	history, err := s.historyRepo.ListBySubmission(ctx, submissionID)
+	if err != nil {
+		return nil, err
+	}
+	// 不依赖仓储排序实现，Service 层显式按审核时间倒序兜底
+	sort.SliceStable(history, func(i, j int) bool {
+		return history[i].ReviewedAt.After(history[j].ReviewedAt)
+	})
+	var latest *model.ReviewHistory
+	if len(history) > 0 {
+		latest = &history[0]
+	}
+
+	if report != nil {
+		hasNewerComment := latest != nil &&
+			strings.TrimSpace(latest.Comment) != "" &&
+			latest.ReviewedAt.After(report.CreatedAt)
+		if !hasNewerComment {
+			return reviewRequirementFromReport(report), nil
+		}
+	}
+	if latest != nil && strings.TrimSpace(latest.Comment) != "" {
+		return &EditorReviewRequirement{
+			Source:       "comment",
+			Action:       latest.Status,
+			Comment:      latest.Comment,
+			Reviewer:     latest.Reviewer,
+			ReviewerInfo: latest.ReviewerInfo,
+			CreatedAt:    latest.ReviewedAt,
+		}, nil
+	}
+	if report != nil {
+		return reviewRequirementFromReport(report), nil
+	}
+	return nil, nil
+}
+
+func reviewRequirementFromReport(report *model.ReviewReport) *EditorReviewRequirement {
+	return &EditorReviewRequirement{
+		Source:       "report",
+		Action:       report.Action,
+		ReportMD:     report.ReportMD,
+		Structured:   map[string]any(report.Structured),
+		Reviewer:     report.Reviewer,
+		ReviewerInfo: report.ReviewerInfo,
+		CreatedAt:    report.CreatedAt,
+	}
 }
 
 // firstNonEmpty 返回首个非空字符串，用于多来源字段的兜底

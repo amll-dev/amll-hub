@@ -17,7 +17,8 @@ function Switch({ className, checked = false, onCheckedChange, ...props }: Switc
         'relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40',
         'disabled:cursor-not-allowed disabled:opacity-50',
-        checked ? 'bg-primary' : 'bg-muted',
+        // 关闭态用更明显的中性灰，避免与 bg-muted 容器同色导致轨道看不见
+        checked ? 'bg-primary' : 'bg-ink-3/35',
         className
       )}
       {...(props as ComponentProps<'button'>)}

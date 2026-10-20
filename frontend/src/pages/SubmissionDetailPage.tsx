@@ -216,6 +216,7 @@ function SubmissionDetailContent({
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   // 是否持有该投稿的审核占用（进入页面即占用，离开/卸载时释放）
   const claimedRef = useRef(false);
   // 页面状态存全局 atoms（卸载时复位，语义同原 useState）
@@ -439,7 +440,12 @@ function SubmissionDetailContent({
   const audios: SubmissionAudio[] = detail.audios ?? (detail.audio ? [detail.audio] : []);
   const ncmSongId = platformIds.ncm[0] || detail.ncmId || '';
   const hasAudioSource = audios.length > 0 || !!ncmSongId;
-  const canEditLyric = canReview;
+  const isSubmitter = !!user && detail.submitter === user.name;
+  const canEditAsSubmitter =
+    isSubmitter &&
+    ['pending', 'reviewing', 'need_revision', 'missing_audio'].includes(detail.status);
+  // 审核中时入口可见但禁用，避免和审核员的编辑互相打架
+  const submitterEditing = detail.status === 'reviewing';
 
   return (
     <motion.div
@@ -546,7 +552,7 @@ function SubmissionDetailContent({
               </TabsList>
             </Tabs>
             <div className="flex flex-wrap gap-2">
-              {canEditLyric && (
+              {canReview && (
                 <button
                   type="button"
                   onClick={() => navigate(`/review/editor/${id}`)}
@@ -561,6 +567,23 @@ function SubmissionDetailContent({
                   <PencilLine className="h-3.5 w-3.5" />
                   编辑歌词
                   {!hasAudioSource && <span className="opacity-80">（缺音频）</span>}
+                </button>
+              )}
+              {!canReview && canEditAsSubmitter && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/creator/lyrics/editor/${id}`)}
+                  disabled={submitterEditing}
+                  className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-ink-3 disabled:hover:bg-ink-3"
+                  title={
+                    submitterEditing
+                      ? '审核员正在审核该投稿，请等待审核结果后再修改'
+                      : '打开歌词编辑器，修改歌词、时间轴与元数据后重新提交'
+                  }
+                >
+                  <PencilLine className="h-3.5 w-3.5" />
+                  编辑歌词
+                  {submitterEditing && <span className="opacity-80">（审核中）</span>}
                 </button>
               )}
               {canUpdateLyric && (

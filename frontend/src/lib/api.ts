@@ -23,6 +23,7 @@ import type {
   OnlineSongDetail,
   ReviewAction,
   SaveRevisionPayload,
+  SaveSubmitterContentPayload,
   SearchField,
   SearchIpListResult,
   SearchIpSubmissionDetail,
@@ -725,6 +726,19 @@ export const api = {
   /** 审核员编辑器上下文 GET /api/v1/submissions/:id/editor-context */
   getEditorContext(id: number): Promise<EditorContext> {
     return request<EditorContext>(`/api/v1/submissions/${id}/editor-context`);
+  },
+
+  /** 投稿者编辑器上下文 GET /api/v1/submissions/:id/edit-context */
+  getSubmitterEditorContext(id: number): Promise<EditorContext> {
+    return request<EditorContext>(`/api/v1/submissions/${id}/edit-context`);
+  },
+
+  /** 投稿者保存编辑器修改 PUT /api/v1/submissions/:id/content */
+  saveSubmitterContent(id: number, payload: SaveSubmitterContentPayload): Promise<void> {
+    return request<void>(`/api/v1/submissions/${id}/content`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
   },
 
   /** 保存审核员修订 POST /api/v1/submissions/:id/revision */

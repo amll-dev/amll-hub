@@ -3,6 +3,7 @@ import { atomWithStorage } from 'jotai/utils';
 import {
   DEFAULT_REVIEW_REPORT_EMPTY_TEXT,
   DEFAULT_REVIEW_REPORT_FORMAT,
+  DEFAULT_SUBMITTER_REPORT_FORMAT,
   type ReviewReportBlockFormat,
   type ReviewReportBlockKind,
   type ReviewReportFormat,
@@ -20,24 +21,23 @@ export type {
 export {
   DEFAULT_REVIEW_REPORT_EMPTY_TEXT,
   DEFAULT_REVIEW_REPORT_FORMAT,
+  DEFAULT_SUBMITTER_REPORT_FORMAT,
   reviewReportFormatBlockDefinitions,
 } from './format-template';
 
-const cloneDefaultFormat = (): ReviewReportFormat => ({
+const cloneFormat = (base: ReviewReportFormat): ReviewReportFormat => ({
   version: 1,
-  emptyText: DEFAULT_REVIEW_REPORT_FORMAT.emptyText,
+  emptyText: base.emptyText,
   blocks: Object.fromEntries(
-    Object.entries(DEFAULT_REVIEW_REPORT_FORMAT.blocks).map(([kind, blockFormat]) => [
-      kind,
-      { ...blockFormat },
-    ])
+    Object.entries(base.blocks).map(([kind, blockFormat]) => [kind, { ...blockFormat }])
   ) as Record<ReviewReportBlockKind, ReviewReportBlockFormat>,
 });
 
 export const normalizeReviewReportFormat = (
-  format: Partial<ReviewReportFormat> | null | undefined
+  format: Partial<ReviewReportFormat> | null | undefined,
+  baseFormat: ReviewReportFormat = DEFAULT_REVIEW_REPORT_FORMAT
 ): ReviewReportFormat => {
-  const defaults = cloneDefaultFormat();
+  const defaults = cloneFormat(baseFormat);
   if (!format || typeof format !== 'object') return defaults;
   const blocks = { ...defaults.blocks };
   for (const definition of reviewReportFormatBlockDefinitions) {
@@ -79,7 +79,7 @@ const isBlockKind = (value: unknown): value is ReviewReportBlockKind =>
   reviewReportFormatBlockDefinitions.some((item) => item.kind === value);
 
 const normalizeFormatRecords = (records: ReviewReportFormatRecord[]): ReviewReportFormat => {
-  const next = cloneDefaultFormat();
+  const next = cloneFormat(DEFAULT_REVIEW_REPORT_FORMAT);
   for (const record of records) {
     if ('emptyText' in record && typeof record.emptyText === 'string') {
       next.emptyText = record.emptyText;
@@ -140,22 +140,31 @@ export const parseReviewReportFormatText = (text: string) => {
   throw new Error('模板文件格式不正确');
 };
 
-const reviewReportFormatStorageAtom = atomWithStorage<ReviewReportFormat>(
+const createReportFormatAtom = (storageKey: string, defaultFormat: ReviewReportFormat) => {
+  const storageAtom = atomWithStorage<ReviewReportFormat>(storageKey, defaultFormat);
+  return atom(
+    (get) => normalizeReviewReportFormat(get(storageAtom), defaultFormat),
+    (
+      get,
+      set,
+      update: ReviewReportFormat | ((current: ReviewReportFormat) => ReviewReportFormat)
+    ) => {
+      const current = normalizeReviewReportFormat(get(storageAtom), defaultFormat);
+      const next = typeof update === 'function' ? update(current) : update;
+      set(storageAtom, normalizeReviewReportFormat(next, defaultFormat));
+    }
+  );
+};
+
+export const reviewReportFormatAtom = createReportFormatAtom(
   'reviewReportFormat',
   DEFAULT_REVIEW_REPORT_FORMAT
 );
 
-export const reviewReportFormatAtom = atom(
-  (get) => normalizeReviewReportFormat(get(reviewReportFormatStorageAtom)),
-  (
-    get,
-    set,
-    update: ReviewReportFormat | ((current: ReviewReportFormat) => ReviewReportFormat)
-  ) => {
-    const current = normalizeReviewReportFormat(get(reviewReportFormatStorageAtom));
-    const next = typeof update === 'function' ? update(current) : update;
-    set(reviewReportFormatStorageAtom, normalizeReviewReportFormat(next));
-  }
+/** 投稿者视角的报告格式，与审核员格式分开存储 */
+export const submitterReportFormatAtom = createReportFormatAtom(
+  'submitterReportFormat',
+  DEFAULT_SUBMITTER_REPORT_FORMAT
 );
 
 const wrap = (value: string | number) => `\`${value}\``;
@@ -584,5 +593,6 @@ export const updateReviewReportBlockFormat = (
 
 export const resetReviewReportBlockFormat = (
   format: ReviewReportFormat,
-  kind: ReviewReportBlockKind
-) => updateReviewReportBlockFormat(format, kind, DEFAULT_REVIEW_REPORT_FORMAT.blocks[kind]);
+  kind: ReviewReportBlockKind,
+  baseFormat: ReviewReportFormat = DEFAULT_REVIEW_REPORT_FORMAT
+) => updateReviewReportBlockFormat(format, kind, baseFormat.blocks[kind]);

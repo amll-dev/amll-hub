@@ -21,6 +21,18 @@ export interface EditorSaveBundle {
   structured: Record<string, unknown>;
 }
 
+/** 编辑器导出的 TTML 结果 */
+export type EditorTtmlResult = { ok: true; ttml: string } | { ok: false; error: string };
+
+/** 只导出 TTML（投稿者保存用，不生成审核报告） */
+export function buildEditorTtml(current: TTMLLyric): EditorTtmlResult {
+  const gen = generateTTMLLyric(current);
+  if (!gen.success) {
+    return { ok: false, error: gen.error?.message ?? 'TTML 生成失败' };
+  }
+  return { ok: true, ttml: gen.data };
+}
+
 /**
  * 从原始投稿与当前编辑状态，产出保存所需的三件套。
  *
@@ -35,11 +47,11 @@ export function buildEditorSaveBundle(
   manualNote = ''
 ): { ok: true; bundle: EditorSaveBundle } | { ok: false; error: string } {
   // 1. 导出 TTML
-  const gen = generateTTMLLyric(current);
-  if (!gen.success) {
-    return { ok: false, error: gen.error?.message ?? 'TTML 生成失败' };
+  const gen = buildEditorTtml(current);
+  if (!gen.ok) {
+    return { ok: false, error: gen.error };
   }
-  const ttml = gen.data;
+  const ttml = gen.ttml;
 
   const freeze = parseToEditorLyric(originalTtml);
   if (!freeze) {

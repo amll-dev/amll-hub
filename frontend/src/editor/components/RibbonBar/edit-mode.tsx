@@ -922,8 +922,10 @@ export const EditModeRibbonBar: FC = forwardRef<HTMLDivElement>((_props, ref) =>
   const toggleTab = useSetAtom(toggleTabAtom);
   const isOutlineOpen = openTabs.includes('outline');
   const isBpmOpen = openTabs.includes('bpm');
+  const isRequirementsOpen = openTabs.includes('requirements');
   const idOutline = useId();
   const idBpm = useId();
+  const idRequirements = useId();
 
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
 
@@ -1072,6 +1074,16 @@ export const EditModeRibbonBar: FC = forwardRef<HTMLDivElement>((_props, ref) =>
             checked={isOutlineOpen}
             onCheckedChange={(checked) => {
               toggleTab({ tabId: 'outline', open: Boolean(checked) });
+            }}
+          />
+          <label htmlFor={idRequirements} className="select-none whitespace-nowrap text-xs">
+            审核要求
+          </label>
+          <Checkbox
+            id={idRequirements}
+            checked={isRequirementsOpen}
+            onCheckedChange={(checked) => {
+              toggleTab({ tabId: 'requirements', open: Boolean(checked) });
             }}
           />
           <label htmlFor={idBpm} className="select-none whitespace-nowrap text-xs">

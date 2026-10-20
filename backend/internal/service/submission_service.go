@@ -516,6 +516,323 @@ func (s *SubmissionService) UpdateFile(ctx context.Context, user *SubmissionUser
 	return nil
 }
 
+// SaveSubmitterContentInput 投稿者通过编辑器保存歌词的入参
+type SaveSubmitterContentInput struct {
+	// TTML 编辑器导出的完整歌词内容
+	TTML string `json:"ttml"`
+	// Metadata 编辑器中的元数据（key → 多值），由后端映射回投稿元数据结构
+	Metadata map[string][]string `json:"metadata"`
+	// ReportMD 编辑器自动生成并可编辑的修改摘要
+	ReportMD string `json:"reportMd"`
+}
+
+// SaveSubmitterContent 投稿者在编辑器中修改歌词后重新提交
+func (s *SubmissionService) SaveSubmitterContent(ctx context.Context, user *SubmissionUser, id int64, in *SaveSubmitterContentInput) error {
+	if strings.TrimSpace(in.TTML) == "" {
+		return fmt.Errorf("%w: 歌词内容为空", ErrInvalidInput)
+	}
+	if int64(len(in.TTML)) > s.files.MaxTTMLSize() {
+		return fmt.Errorf("%w: TTML 文件大小超过限制", ErrInvalidInput)
+	}
+
+	sub, err := s.subRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrSubmissionNotFound
+		}
+		return err
+	}
+	if sub.Submitter != user.Name {
+		return ErrForbidden
+	}
+	if err := ensureSubmitterEditable(sub.Status); err != nil {
+		return err
+	}
+	if sub.FileName == "" {
+		return ErrMissingFile
+	}
+
+	// 先写临时对象；事务成功后再替换正式文件，避免事务失败时正式文件已被覆盖
+	tempKey, uploadErr := s.files.UploadTTMLTemp(ctx, sub.FileName, []byte(in.TTML))
+	if uploadErr != nil {
+		return fmt.Errorf("保存歌词文件失败: %w", uploadErr)
+	}
+	finalKey := PendingLyricKey(sub.FileName)
+	defer func() {
+		if tempKey == "" {
+			return
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.files.Delete(cleanupCtx, tempKey); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"submission_id": id,
+				"temp_key":      tempKey,
+				"error":         err,
+			}).Warn("cleanup temp ttml failed")
+		}
+	}()
+
+	metadata := mergeEditorMetadata(map[string]any(sub.Metadata), in.Metadata)
+	artists := stringValues(metadata["artist"])
+	album := stringValues(metadata["album"])
+	title := firstStringValue(metadata["title"], sub.Title)
+	now := time.Now()
+
+	// 编辑器输出是结构化 TTML，不再保留「未重排」标记
+	updates := map[string]any{
+		"title":               sanitize(title, 200),
+		"artist":              strings.Join(artists, ", "),
+		"album":               strings.Join(album, ", "),
+		"ncm_id":              platformID(metadata, "ncm_music_id"),
+		"qq_id":               platformID(metadata, "qq_music_id"),
+		"am_id":               platformID(metadata, "apple_music_id"),
+		"spotify_id":          platformID(metadata, "spotify_id"),
+		"metadata":            model.JSONObject(metadata),
+		"is_unrearranged":     false,
+		"unrearranged_reason": "",
+		"file_updated_at":     now,
+	}
+	// missing_audio 的稿件保存后仍保持缺音频，等待补音频；其余状态重新排队
+	if sub.Status != model.StatusMissingAudio {
+		updates["status"] = model.StatusPending
+	}
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		su, err := s.subRepo.GetByIDForUpdate(ctx, tx, id)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSubmissionNotFound
+			}
+			return err
+		}
+		if su.Submitter != user.Name {
+			return ErrForbidden
+		}
+		// 事务内二次校验，避免读取后状态被并发改成终态
+		if err := ensureSubmitterEditable(su.Status); err != nil {
+			return err
+		}
+		if err := tx.WithContext(ctx).Model(&model.Submission{}).
+			Where("id = ?", id).
+			Updates(updates).Error; err != nil {
+			return err
+		}
+		return s.fileHistoryRepo.Insert(ctx, tx, &model.SubmissionFileHistory{
+			SubmissionID: id,
+			Uploader:     user.Name,
+			UploaderInfo: model.UserInfo{Username: user.Name, DisplayName: user.DisplayName, Avatar: user.Avatar},
+			FileName:     su.FileName,
+			UploadedAt:   now,
+		})
+	})
+	if err != nil {
+		return err
+	}
+
+	// 事务已提交，再把临时对象替换为正式文件
+	if err := s.files.Move(ctx, tempKey, finalKey); err != nil {
+		return fmt.Errorf("保存歌词文件失败: %w", err)
+	}
+	tempKey = ""
+
+	// 修改摘要作为投稿者评论留痕，写失败不影响保存结果
+	reportMD := strings.TrimSpace(in.ReportMD)
+	if reportMD != "" {
+		if err := s.commentRepo.Insert(ctx, &model.Comment{
+			SubmissionID: id,
+			Author: model.UserInfo{
+				Username:    user.Name,
+				DisplayName: user.DisplayName,
+				Avatar:      user.Avatar,
+			},
+			Content: "**投稿者修改摘要**\n\n" + reportMD,
+		}); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"submission_id": id,
+				"error":         err,
+			}).Warn("insert submitter edit report failed")
+		}
+	}
+	return nil
+}
+
+// ensureSubmitterEditable 判断投稿者当前状态下能否在编辑器中保存。
+// reviewing 状态不允许保存，避免审核员基于旧版本审核时投稿者改稿。
+func ensureSubmitterEditable(status string) error {
+	switch status {
+	case model.StatusPending, model.StatusNeedRevision, model.StatusMissingAudio:
+		return nil
+	default:
+		return ErrInvalidStatus
+	}
+}
+
+// mergeEditorMetadata 把编辑器元数据合并回投稿元数据结构。
+// 保留 base 中与 TTML 无关的字段（如 language），并维持 platform_ids 的嵌套形状。
+func mergeEditorMetadata(base map[string]any, editor map[string][]string) map[string]any {
+	out := make(map[string]any, len(base)+4)
+	for k, v := range base {
+		out[k] = v
+	}
+
+	// 同一目标字段可能有多个编辑器 key（如 title / musicName）。
+	// 用有序别名表明确优先级，避免 map 遍历顺序导致落库值不确定。
+	aliases := []struct {
+		target string
+		keys   []string
+	}{
+		{target: "title", keys: []string{"title", "musicName"}},
+		{target: "artist", keys: []string{"artists"}},
+		{target: "album", keys: []string{"album"}},
+		{target: "songwriters", keys: []string{"songwriters", "songwriter"}},
+		{target: "isrc", keys: []string{"isrc"}},
+		{target: "author_ids", keys: []string{"ttmlAuthorGithub"}},
+		{target: "author_names", keys: []string{"ttmlAuthorGithubLogin"}},
+	}
+	known := make(map[string]struct{}, len(aliases)*2)
+	for _, alias := range aliases {
+		for _, key := range alias.keys {
+			known[key] = struct{}{}
+		}
+	}
+	for _, alias := range aliases {
+		found := false
+		var chosen []string
+		// 按优先级取第一个非空值；都为空时清空目标字段
+		for _, key := range alias.keys {
+			values, ok := editor[key]
+			if !ok {
+				continue
+			}
+			found = true
+			if filtered := filterNonEmpty(values); len(filtered) > 0 {
+				chosen = filtered
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+		if len(chosen) > 0 {
+			out[alias.target] = chosen
+		} else {
+			delete(out, alias.target)
+		}
+	}
+
+	platformKeys := map[string]string{
+		"ncmMusicId":   "ncm_music_id",
+		"qqMusicId":    "qq_music_id",
+		"spotifyId":    "spotify_id",
+		"appleMusicId": "apple_music_id",
+	}
+	pids := map[string]any{}
+	if raw, ok := out["platform_ids"].(map[string]any); ok {
+		for k, v := range raw {
+			pids[k] = v
+		}
+	}
+	for editorKey, platformKey := range platformKeys {
+		values, ok := editor[editorKey]
+		if !ok {
+			continue
+		}
+		if filtered := filterNonEmpty(values); len(filtered) > 0 {
+			pids[platformKey] = filtered
+		} else {
+			delete(pids, platformKey)
+		}
+	}
+	if len(pids) > 0 {
+		out["platform_ids"] = pids
+	} else {
+		delete(out, "platform_ids")
+	}
+
+	// 其余自定义键维持 raw_properties 形状
+	rawProps := map[string]any{}
+	if raw, ok := out["raw_properties"].(map[string]any); ok {
+		for k, v := range raw {
+			rawProps[k] = v
+		}
+	}
+	for key, values := range editor {
+		if _, ok := known[key]; ok {
+			continue
+		}
+		if _, ok := platformKeys[key]; ok {
+			continue
+		}
+		if filtered := filterNonEmpty(values); len(filtered) > 0 {
+			rawProps[key] = filtered
+		} else {
+			delete(rawProps, key)
+		}
+	}
+	if len(rawProps) > 0 {
+		out["raw_properties"] = rawProps
+	} else {
+		delete(out, "raw_properties")
+	}
+	return out
+}
+
+// filterNonEmpty 过滤空字符串并去除首尾空白
+func filterNonEmpty(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if s := strings.TrimSpace(value); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// stringValues 把 metadata 中的值转成字符串数组
+func stringValues(value any) []string {
+	switch val := value.(type) {
+	case []string:
+		return val
+	case []any:
+		out := make([]string, 0, len(val))
+		for _, item := range val {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case string:
+		if val != "" {
+			return []string{val}
+		}
+	}
+	return nil
+}
+
+// firstStringValue 返回第一个非空字符串，用于标题兜底
+func firstStringValue(value any, fallback string) string {
+	for _, s := range stringValues(value) {
+		if strings.TrimSpace(s) != "" {
+			return s
+		}
+	}
+	return fallback
+}
+
+// platformID 从合并后的 metadata 中取平台 ID 的第一个值
+func platformID(metadata map[string]any, key string) string {
+	raw, ok := metadata["platform_ids"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	values := stringValues(raw[key])
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
 // Close 关闭投稿
 func (s *SubmissionService) Close(ctx context.Context, user *SubmissionUser, id int64, isReviewer bool) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

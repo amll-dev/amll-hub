@@ -17,6 +17,8 @@ import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
 import { useFormDraft } from '@/hooks/useFormDraft';
 import { useUnrearrangedMode } from '@/hooks/useUnrearrangedMode';
 import type { TtmlValidationResult } from '@/lib/types';
+import { AudioSourcePicker } from '@/components/creator/AudioSourcePicker';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { UnrearrangedToggle } from '@/components/submission/UnrearrangedToggle';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -71,6 +73,13 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   );
   const [dragOver, setDragOver] = useState(false);
   const [showTtml, setShowTtml] = useState(false);
+  // 原创/授权声明与投稿规范确认：不随草稿恢复，每次提交都需要重新勾选
+  const [agreed, setAgreed] = useState(false);
+  // 音源附件
+  const [audioFiles, setAudioFiles] = useState<File[]>([]);
+  const [audioProgress, setAudioProgress] = useState<{ current: number; total: number } | null>(
+    null
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 选择文件后立即校验
@@ -97,7 +106,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
       // 元数据两种模式都从 /validate 的结果取；解析不到才退回文件名
       const title = validation?.metadata?.title?.[0] ?? params.file.name.replace(/\.[^.]+$/, '');
       const allLangs = [...languages, ...otherLangs];
-      return api.createSubmission({
+      const created = await api.createSubmission({
         title,
         metadata: (validation?.metadata ?? {}) as Record<string, unknown>,
         fileName,
@@ -109,23 +118,47 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
         tags: tags.length > 0 ? tags : undefined,
         status: params.status,
       });
+      // 音源为可选附件，只能挂在已创建的投稿下：逐个上传，单个失败不影响投稿本身
+      const audioFailures: string[] = [];
+      for (const [i, audioFile] of audioFiles.entries()) {
+        setAudioProgress({ current: i + 1, total: audioFiles.length });
+        try {
+          await api.uploadAudio(created.id, audioFile);
+        } catch {
+          audioFailures.push(audioFile.name);
+        }
+      }
+      setAudioProgress(null);
+      return { id: created.id, audioFailures };
     },
     onMutate: () => setSubmitMsg(null),
     onSuccess: (result, { status }) => {
-      setSubmitMsg({
-        type: 'success',
-        text: status === 'draft' ? '草稿已保存，正在跳转…' : '投稿成功，正在跳转…',
-      });
       reset();
+      // 音源失败不回滚投稿，提示去详情页补传
+      if (result.audioFailures.length > 0) {
+        setSubmitMsg({
+          type: 'error',
+          text: `${status === 'draft' ? '草稿已保存' : '投稿已创建'}，但 ${
+            result.audioFailures.length
+          } 个音源上传失败（${result.audioFailures.join('、')}），可在详情页补传`,
+        });
+      } else {
+        setSubmitMsg({
+          type: 'success',
+          text: status === 'draft' ? '草稿已保存，正在跳转…' : '投稿成功，正在跳转…',
+        });
+      }
+      const delay = result.audioFailures.length > 0 ? 3000 : 1200;
       setTimeout(() => {
         setSubmitMsg(null);
         onSuccess?.();
         if (result?.id) {
           navigate(`/creator/lyrics/detail?id=${result.id}`, { replace: true });
         }
-      }, 1200);
+      }, delay);
     },
     onError: (err) => {
+      setAudioProgress(null);
       setSubmitMsg({ type: 'error', text: err instanceof Error ? err.message : '提交失败' });
     },
   });
@@ -144,6 +177,9 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     setTags([]);
     setTagInput('');
     setShowTtml(false);
+    setAgreed(false);
+    setAudioFiles([]);
+    setAudioProgress(null);
     clearDraft();
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
@@ -236,10 +272,13 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   // 表单主体是否展开：校验模式等 valid；未重排模式等元数据解析返回（不论 valid）
   const doSubmit = (status: 'pending' | 'draft') => {
     if (!file || submitting || !formReady || reasonMissing) return;
+    // 正式提交必须勾选原创/授权声明；存草稿不受此限制
+    if (status === 'pending' && !agreed) return;
     submitMutation.mutate({ file, status });
   };
 
   const canSubmit = file !== null && formReady && !reasonMissing && !submitting;
+  const canSubmitPending = canSubmit && agreed;
 
   // 元数据辅助
   const meta = validation?.metadata;
@@ -468,6 +507,13 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
         )}
       </motion.div>
 
+      {/* 音源（可选，多选） */}
+      {formReady && (
+        <motion.div variants={fadeUp}>
+          <AudioSourcePicker files={audioFiles} onChange={setAudioFiles} disabled={submitting} />
+        </motion.div>
+      )}
+
       {/* 语言选择（多选） */}
       {formReady && (
         <motion.div variants={fadeUp}>
@@ -609,31 +655,52 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
         </Alert>
       )}
 
-      {/* 操作按钮 */}
+      {/* 原创/授权声明 + 操作按钮 */}
       {formReady && (
-        <motion.div variants={fadeUp} className="flex items-center justify-end gap-3 pt-2">
-          <button
-            type="button"
-            onClick={() => doSubmit('draft')}
-            disabled={!canSubmit}
-            className="inline-flex h-11 items-center justify-center rounded-md border border-input bg-card px-5 text-sm font-medium text-ink-2 transition-colors hover:bg-surface-2 disabled:opacity-50"
-          >
-            存为草稿
-          </button>
-          <motion.button
-            type="button"
-            onClick={() => doSubmit('pending')}
-            disabled={!canSubmit}
-            {...buttonTap}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50"
-          >
-            {submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Upload className="h-4 w-4" />
-            )}
-            提交审核
-          </motion.button>
+        <motion.div variants={fadeUp} className="space-y-4 pt-2">
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-line bg-surface-2 px-4 py-3 text-sm text-ink-2 transition-colors hover:border-primary/40">
+            <Checkbox
+              checked={agreed}
+              onCheckedChange={setAgreed}
+              className="mt-0.5"
+              aria-label="我确认歌词为本人制作或已获授权，并同意投稿规范"
+            />
+            <span>
+              我确认歌词为本人制作或已获授权，并同意
+              <span className="font-medium text-foreground">《投稿规范》</span>
+            </span>
+          </label>
+
+          {audioProgress && (
+            <p className="text-xs text-ink-3">
+              正在上传音源 {audioProgress.current}/{audioProgress.total}…
+            </p>
+          )}
+
+          <div className="flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => doSubmit('draft')}
+              disabled={!canSubmit}
+              className="inline-flex h-11 items-center justify-center rounded-md border border-input bg-card px-5 text-sm font-medium text-ink-2 transition-colors hover:bg-surface-2 disabled:opacity-50"
+            >
+              存为草稿
+            </button>
+            <motion.button
+              type="button"
+              onClick={() => doSubmit('pending')}
+              disabled={!canSubmitPending}
+              {...buttonTap}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50"
+            >
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" />
+              )}
+              提交审核
+            </motion.button>
+          </div>
         </motion.div>
       )}
     </motion.div>

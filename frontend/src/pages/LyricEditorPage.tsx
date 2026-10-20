@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAtomValue, useSetAtom } from 'jotai';
@@ -13,6 +13,7 @@ import {
   ToolMode,
   toolModeAtom,
 } from '@/editor/states/main.ts';
+import { openTabAtom } from '@/editor/states/sidebar.ts';
 import { useFileOpener } from '@/editor/hooks/useFileOpener.ts';
 import type { ReviewReport } from '@/editor/modules/review/services/report-service/types';
 import {
@@ -22,6 +23,7 @@ import {
   reviewActionAtom,
   reviewManualNoteAtom,
   reviewReportDialogAtom,
+  reviewRequirementAtom,
   reviewUploadTtmlAtom,
 } from '@/editor/modules/review/states';
 
@@ -38,11 +40,14 @@ import { buildEditorAudioSources } from '@/lib/review/audio-sources';
 import { buildEditorSaveBundle } from '@/lib/review/editor-save-bundle';
 import type { ReviewAction } from '@/lib/types';
 
-export function LyricEditorPage() {
+export type LyricEditorMode = 'review' | 'creator';
+
+export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode }) {
   const { id } = useParams<{ id: string }>();
   const submissionId = Number(id);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const isCreator = mode === 'creator';
 
   const [audioIndex, setAudioIndex] = useState(0);
 
@@ -51,14 +56,20 @@ export function LyricEditorPage() {
   const isDirty = useAtomValue(isDirtyAtom);
   const setToolMode = useSetAtom(toolModeAtom);
   const markLyricLinesSaved = useSetAtom(markLyricLinesSavedAtom);
+  const setReviewRequirement = useSetAtom(reviewRequirementAtom);
+  const openSidebarTab = useSetAtom(openTabAtom);
+  const autoOpenedRequirementRef = useRef(false);
   const { loadTtmlContent } = useFileOpener();
 
   /** 原稿 TTML，保存时用来生成 diff 报告 */
   const [originalTtml, setOriginalTtml] = useState('');
 
   const ctxQuery = useQuery({
-    queryKey: queryKeys.editorContext(submissionId),
-    queryFn: () => api.getEditorContext(submissionId),
+    queryKey: isCreator
+      ? queryKeys.submitterEditorContext(submissionId)
+      : queryKeys.editorContext(submissionId),
+    queryFn: () =>
+      isCreator ? api.getSubmitterEditorContext(submissionId) : api.getEditorContext(submissionId),
     enabled: Number.isFinite(submissionId),
     retry: false,
   });
@@ -66,6 +77,24 @@ export function LyricEditorPage() {
   const ctx = ctxQuery.data;
   const audios = useMemo(() => ctx?.audios ?? [], [ctx?.audios]);
   const ncmId = ctx?.ncmId ?? '';
+
+  // 左侧「审核要求」面板数据
+  useEffect(() => {
+    setReviewRequirement(ctx?.review ?? null);
+    return () => setReviewRequirement(null);
+  }, [ctx?.review, setReviewRequirement]);
+
+  // 切换稿件时允许重新自动展开
+  useEffect(() => {
+    autoOpenedRequirementRef.current = false;
+  }, [submissionId]);
+
+  // 投稿者进入编辑器时，有审核要求就自动打开面板（只自动展开一次）
+  useEffect(() => {
+    if (!isCreator || !ctx?.review || autoOpenedRequirementRef.current) return;
+    autoOpenedRequirementRef.current = true;
+    openSidebarTab('requirements');
+  }, [ctx?.review, isCreator, openSidebarTab]);
 
   const needNcm = !!ncmId;
   const ncmQuery = useQuery({
@@ -94,28 +123,28 @@ export function LyricEditorPage() {
     });
   }, [sources, safeAudioIndex, audioSrc]);
 
-  // 打开时标记审核中，离开时释放占用
+  // 打开时标记审核中，离开时释放占用（仅审核员）
   useEffect(() => {
-    if (!ctx) return;
+    if (!ctx || isCreator) return;
     if (ctx.status === 'pending') {
       void api.markReviewing(submissionId).catch(() => {});
     }
     return () => {
       void api.releaseReview(submissionId, true).catch(() => {});
     };
-  }, [ctx, submissionId]);
+  }, [ctx, isCreator, submissionId]);
 
-  // 把后端 TTML 灌进编辑器，并默认停在打轴模式
+  // 把后端 TTML 灌进编辑器：审核员默认打轴，投稿者默认编辑
   useEffect(() => {
     if (!ctx?.ttml) return;
     setOriginalTtml(ctx.ttml);
     void loadTtmlContent(ctx.ttml, {
-      projectId: String(submissionId),
+      // 投稿者与审核员各用独立草稿空间，避免同一稿件互相覆盖本地草稿
+      projectId: isCreator ? `creator-${submissionId}` : String(submissionId),
       fileName: ctx.fileName,
     });
-    // 审核的主要工作是校时间轴而不是改文本，所以默认打轴模式
-    setToolMode(ToolMode.Sync);
-  }, [ctx?.ttml, ctx?.fileName, loadTtmlContent, setToolMode, submissionId]);
+    setToolMode(isCreator ? ToolMode.Edit : ToolMode.Sync);
+  }, [ctx?.ttml, ctx?.fileName, isCreator, loadTtmlContent, setToolMode, submissionId]);
 
   // 加载参考音频：频谱、波形、打轴都依赖 audioEngine
   useEffect(() => {
@@ -237,14 +266,54 @@ export function LyricEditorPage() {
     },
   });
 
+  // 投稿者提交编辑器修改：使用报告弹窗里确认后的摘要，校验通过后保存
+  const submitMutation = useMutation({
+    mutationFn: async (input: { reportMd: string }) => {
+      if (lyricLines.lyricLines.length === 0) {
+        throw new Error('歌词尚未加载完成，请稍后再试');
+      }
+      const bundle = buildEditorSaveBundle(originalTtml, lyricLines);
+      if (!bundle.ok) {
+        throw new Error(bundle.error);
+      }
+      const validation = await api.validateTtml(bundle.bundle.ttml);
+      if (!validation.valid) {
+        const reason = validation.errors?.[0] || validation.parseError || 'TTML 校验未通过';
+        throw new Error(`校验未通过：${reason}`);
+      }
+      await api.saveSubmitterContent(submissionId, {
+        ttml: bundle.bundle.ttml,
+        metadata: Object.fromEntries(lyricLines.metadata.map((m) => [m.key, m.value])),
+        reportMd: input.reportMd,
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.submission(submissionId) });
+      void queryClient.invalidateQueries({ queryKey: ['submissions'] });
+      markLyricLinesSaved();
+      setReviewDialog({ open: false, title: '' });
+      toast.success('歌词已提交修改');
+      navigate(`/creator/lyrics/detail?id=${submissionId}`);
+    },
+    onError: (err) => {
+      toast.error(err instanceof Error ? err.message : '提交失败');
+    },
+  });
+
+  const backPath = isCreator
+    ? `/creator/lyrics/detail?id=${submissionId}`
+    : `/review/detail?id=${submissionId}`;
+
   const goBack = useCallback(() => {
     if (isDirty && !confirm('有未保存的改动，确定离开吗？')) return;
-    navigate('/review/detail?id=' + submissionId);
-  }, [isDirty, navigate, submissionId]);
+    navigate(backPath);
+  }, [backPath, isDirty, navigate]);
 
-  // 解析 ncm 音频期间不能判成「无音频」，否则会闪一下空状态
+  // 解析 ncm 音频期间不能判成「无音频」，否则会闪一下空状态/文本模式
   const resolvingAudio = needNcm && ncmQuery.isLoading;
-  const noAudio = !ctxQuery.isLoading && !resolvingAudio && sources.length === 0 && !ctxQuery.error;
+  const noAudio =
+    !isCreator && !ctxQuery.isLoading && !resolvingAudio && sources.length === 0 && !ctxQuery.error;
+  const textOnly = !ctxQuery.isLoading && !resolvingAudio && sources.length === 0;
 
   if (noAudio) {
     return (
@@ -257,7 +326,7 @@ export function LyricEditorPage() {
               : '打轴需要音频作为时间基准。请先在详情页上传音频，或把该投稿标记为「缺音频」。'
           }
           action={
-            <Button variant="outline" onClick={() => navigate('/review/detail?id=' + submissionId)}>
+            <Button variant="outline" onClick={goBack}>
               <ArrowLeft className="size-4" />
               返回审核详情
             </Button>
@@ -286,9 +355,9 @@ export function LyricEditorPage() {
             ctxQuery.error instanceof Error ? ctxQuery.error.message : '加载投稿内容失败'
           }
           action={
-            <Button variant="outline" onClick={() => navigate('/review/detail?id=' + submissionId)}>
+            <Button variant="outline" onClick={goBack}>
               <ArrowLeft className="size-4" />
-              返回审核详情
+              {isCreator ? '返回投稿详情' : '返回审核详情'}
             </Button>
           }
         />
@@ -306,26 +375,33 @@ export function LyricEditorPage() {
         <LyricEditorHeader
           title={title}
           subtitle={`${lyricLines.lyricLines.length} 行 · ${isDirty ? '有未保存改动' : '未改动'}${
-            ctx.hasRevision ? ' · 已存在待确认的修订版' : ''
-          }`}
+            textOnly ? ' · 无音频文本模式' : ''
+          }${!isCreator && ctx.hasRevision ? ' · 已存在待确认的修订版' : ''}`}
           sources={sources}
           audioIndex={audioIndex}
           onAudioIndexChange={setAudioIndex}
           onBack={goBack}
           onSave={openReviewDialog}
-          saving={saveMutation.isPending}
+          saving={isCreator ? submitMutation.isPending : saveMutation.isPending}
+          mode={mode}
+          textOnly={textOnly}
         />
 
         <div className="relative min-h-0 flex-1">
-          <EditorWorkbench />
+          <EditorWorkbench textOnly={textOnly} />
 
           {/* 音频源就绪后先让审核员确认/选择参考音频（多个时可选，单个时确认） */}
           <AudioSourcePicker sources={sources} value={audioIndex} onConfirm={setAudioIndex} />
 
           {effectiveReport && (
             <ReviewReportDialog
-              submitting={saveMutation.isPending}
+              mode={mode}
+              submitting={isCreator ? submitMutation.isPending : saveMutation.isPending}
               onSubmit={(input) => {
+                if (isCreator) {
+                  submitMutation.mutate({ reportMd: input.reportMd });
+                  return;
+                }
                 setAction(input.action as ReviewAction);
                 setUploadTtml(input.uploadTtml);
                 saveMutation.mutate({
@@ -346,6 +422,12 @@ export function LyricEditorPage() {
             <div className="pointer-events-none fixed bottom-24 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-4 py-2 text-xs text-background shadow-lg">
               <Loader2 className="size-4 animate-spin" />
               正在提交审核结果…
+            </div>
+          )}
+          {submitMutation.isPending && (
+            <div className="pointer-events-none fixed bottom-24 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-ink px-4 py-2 text-xs text-background shadow-lg">
+              <Loader2 className="size-4 animate-spin" />
+              正在校验并提交…
             </div>
           )}
         </div>

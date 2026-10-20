@@ -91,6 +91,8 @@ export const queryKeys = {
   submissionTtml: (id: number) => ['submission', id, 'ttml'] as const,
   /** 审核员编辑器上下文 */
   editorContext: (id: number) => ['submission', id, 'editor-context'] as const,
+  /** 投稿者编辑器上下文 */
+  submitterEditorContext: (id: number) => ['submission', id, 'submitter-editor-context'] as const,
   /** 审核员修订版 TTML 原文 */
   revisionTtml: (id: number) => ['submission', id, 'revision-ttml'] as const,
   userActivity: (year: number) => ['user-activity', year] as const,

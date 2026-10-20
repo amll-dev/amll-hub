@@ -20,9 +20,16 @@ export type ReportFormatEditorProps = {
   onChange: (v: ReviewReportFormat) => void;
   /** 用于实时预览的报告。 */
   report: ReviewReport;
+  /** 恢复默认时使用的基准格式（审核员 / 投稿者视角不同）。 */
+  defaultFormat?: ReviewReportFormat;
 };
 
-export const ReportFormatEditor = ({ value, onChange, report }: ReportFormatEditorProps) => {
+export const ReportFormatEditor = ({
+  value,
+  onChange,
+  report,
+  defaultFormat = DEFAULT_REVIEW_REPORT_FORMAT,
+}: ReportFormatEditorProps) => {
   const templateInputRef = useRef<HTMLTextAreaElement>(null);
   const [selectedKind, setSelectedKind] = useState<ReviewReportBlockKind>('wordText');
   const changedKinds = useMemo(
@@ -31,13 +38,12 @@ export const ReportFormatEditor = ({ value, onChange, report }: ReportFormatEdit
         reviewReportFormatBlockDefinitions
           .filter(
             (d) =>
-              value.blocks[d.kind].template !==
-                DEFAULT_REVIEW_REPORT_FORMAT.blocks[d.kind].template ||
-              value.blocks[d.kind].listItem !== DEFAULT_REVIEW_REPORT_FORMAT.blocks[d.kind].listItem
+              value.blocks[d.kind].template !== defaultFormat.blocks[d.kind].template ||
+              value.blocks[d.kind].listItem !== defaultFormat.blocks[d.kind].listItem
           )
           .map((d) => d.kind)
       ),
-    [value]
+    [defaultFormat, value]
   );
 
   // 定义表是代码内固定常量，至少有一项；空数组只可能来自外部数据异常。
@@ -124,12 +130,7 @@ export const ReportFormatEditor = ({ value, onChange, report }: ReportFormatEdit
       {/* 区块列表 + 恢复默认 */}
       <div className="flex shrink-0 items-center justify-between gap-2">
         <span className="text-xs text-ink-3">选择要编辑的区块，模板里用 {'{{变量}}'} 引用内容</span>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={() => onChange(DEFAULT_REVIEW_REPORT_FORMAT)}
-        >
+        <Button type="button" size="sm" variant="secondary" onClick={() => onChange(defaultFormat)}>
           <RotateCcw />
           恢复默认
         </Button>
@@ -184,7 +185,11 @@ export const ReportFormatEditor = ({ value, onChange, report }: ReportFormatEdit
               type="button"
               size="sm"
               variant="secondary"
-              onClick={() => onChange(resetReviewReportBlockFormat(value, selectedDefinition.kind))}
+              onClick={() =>
+                onChange(
+                  resetReviewReportBlockFormat(value, selectedDefinition.kind, defaultFormat)
+                )
+              }
             >
               <RotateCcw />
               重置此项

@@ -195,6 +195,37 @@ func (h *SubmissionHandler) UpdateFile(c *gin.Context) {
 	pkg.OKWithMsg(c, nil, "文件已更新")
 }
 
+// SaveContent PUT /api/v1/submissions/:id/content
+// 投稿者在编辑器中修改歌词后直接保存，无需先上传文件
+func (h *SubmissionHandler) SaveContent(c *gin.Context) {
+	user := currentUser(c)
+	if user == nil {
+		pkg.Unauthorized(c)
+		return
+	}
+
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		pkg.BadRequest(c, "无效的 id")
+		return
+	}
+
+	var req service.SaveSubmitterContentInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.BadRequest(c, "参数错误")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	if err := h.svc.SaveSubmitterContent(ctx, user, id, &req); err != nil {
+		writeSubmissionErr(c, err)
+		return
+	}
+	pkg.OKWithMsg(c, nil, "歌词已提交修改")
+}
+
 // Close POST /api/v1/submissions/:id/close
 func (h *SubmissionHandler) Close(c *gin.Context) {
 	user := currentUser(c)
@@ -286,6 +317,8 @@ func writeSubmissionErr(c *gin.Context, err error) {
 		pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "无权操作该投稿")
 	case errors.Is(err, service.ErrMissingUnrearrangedReason):
 		pkg.BadRequest(c, "勾选未重排歌词时必须填写原因")
+	case errors.Is(err, service.ErrInvalidInput):
+		pkg.BadRequest(c, "请求参数非法")
 	case errors.Is(err, service.ErrUpstreamUnavailable):
 		writeUpstreamErr(c, err, "上游服务暂不可用")
 	default:
