@@ -102,6 +102,11 @@ dependencies {
 
     implementation(libs.androidx.navigation.compose)
 
+    // 播放（Media3）与内嵌歌词页
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
+    implementation(libs.androidx.webkit)
+
     // DI
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.navigation.compose)

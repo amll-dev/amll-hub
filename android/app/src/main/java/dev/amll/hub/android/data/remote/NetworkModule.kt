@@ -42,11 +42,22 @@ class NetworkModule @Inject constructor(
     }
 
     val authApi: AuthApi by lazy {
+        retrofit.create(AuthApi::class.java)
+    }
+
+    val contentApi: ContentApi by lazy {
+        retrofit.create(ContentApi::class.java)
+    }
+
+    val rawApi: RawApi by lazy {
+        retrofit.create(RawApi::class.java)
+    }
+
+    private val retrofit: Retrofit by lazy {
         Retrofit.Builder()
             .baseUrl(BuildConfig.API_BASE_URL.trimEnd('/') + "/")
             .client(client)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
-            .create(AuthApi::class.java)
     }
 }

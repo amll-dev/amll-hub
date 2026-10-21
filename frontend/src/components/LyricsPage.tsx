@@ -1,5 +1,6 @@
 import {
   AudioQualityType,
+  hideLyricViewAtom,
   isLyricPageOpenedAtom,
   musicArtistsAtom,
   musicCoverAtom,
@@ -27,8 +28,17 @@ import {
 import '@applemusic-like-lyrics/core/style.css';
 import '@applemusic-like-lyrics/react-full/style.css';
 import type { LyricLineMouseEvent } from '@applemusic-like-lyrics/core';
-import { useAtomValue, useStore } from 'jotai';
-import { type FC, useEffect, useRef } from 'react';
+import { useAtom, useAtomValue, useStore } from 'jotai';
+import { type FC, useCallback, useEffect, useRef, useState } from 'react';
+import { lyricErrorAtom } from '@/atoms/player';
+import { playerActions } from '@/boot/PlayerBoot';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import { NCM_QUALITY_LABEL, usePlayer, type NcmQuality } from '@/hooks/usePlayer';
 
 /** 将回调包装为 AMLL 期望的 { onEmit } 结构 */
@@ -258,45 +268,137 @@ const PlayerStateSync: FC = () => {
   return null;
 };
 
+/** 右键菜单行：左侧文案，右侧灰字快捷键提示 */
+const MenuRow: FC<{ label: string; shortcut?: string; onSelect: () => void }> = ({
+  label,
+  shortcut,
+  onSelect,
+}) => (
+  <ContextMenuItem
+    onSelect={onSelect}
+    className="flex cursor-default items-center justify-between gap-8 rounded-md px-3 py-2.5 text-[14px] text-[#1c1c1e] outline-none focus:bg-[#ededf0] focus:text-[#1c1c1e]"
+  >
+    <span className="whitespace-nowrap">{label}</span>
+    {shortcut && (
+      <span className="shrink-0 text-[12px] tracking-wide text-[#8e8e93]">{shortcut}</span>
+    )}
+  </ContextMenuItem>
+);
+
 /** 歌词页面 */
 export function LyricsPage() {
   const isLyricPageOpened = useAtomValue(isLyricPageOpenedAtom);
+  const [hideLyricView, setHideLyricView] = useAtom(hideLyricViewAtom);
+  const lyricError = useAtomValue(lyricErrorAtom);
   const store = useStore();
-  const { lyricError } = usePlayer();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Esc 关闭歌词页
+  // 全屏状态跟随浏览器（F11 / Esc 退出全屏都能同步）
+  useEffect(() => {
+    const sync = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    sync();
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    const action = document.fullscreenElement
+      ? document.exitFullscreen()
+      : document.documentElement.requestFullscreen();
+    void action.catch(() => {
+      // 浏览器拒绝（非用户手势等）时保持原状
+    });
+  }, []);
+
+  // 关闭歌词页（全屏态一并退出，避免留在全屏的黑屏上）
+  const closeLyricPage = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    }
+    store.set(isLyricPageOpenedAtom, false);
+  }, [store]);
+
+  // Esc 关闭歌词页；Ctrl Alt ←/P/→ 上一首/暂停/下一首
+  // F11 交给浏览器原生全屏，Web 端无法拦截也不该拦截，只在菜单里作为提示
   useEffect(() => {
     if (!isLyricPageOpened) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // 菜单打开时 Esc 只关菜单
+        if (menuOpen) return;
         e.preventDefault();
-        store.set(isLyricPageOpenedAtom, false);
+        closeLyricPage();
+        return;
+      }
+      if (!e.ctrlKey || !e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 'arrowleft') {
+        e.preventDefault();
+        playerActions.playPrev();
+      } else if (key === 'arrowright') {
+        e.preventDefault();
+        playerActions.playNext();
+      } else if (key === 'p') {
+        e.preventDefault();
+        playerActions.toggle();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLyricPageOpened, store]);
+  }, [isLyricPageOpened, menuOpen, closeLyricPage]);
 
   return (
     <>
       <PlayerStateSync />
-      <div
-        className={`fixed inset-0 z-[180] overflow-hidden bg-black text-white transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] ${
-          isLyricPageOpened
-            ? 'pointer-events-auto translate-y-0'
-            : 'pointer-events-none translate-y-full'
-        }`}
-      >
-        {/* 错误提示 */}
-        {lyricError && (
-          <div className="fixed left-1/2 top-6 z-[200] -translate-x-1/2 rounded-full bg-red-500/20 px-4 py-2 text-sm text-red-200 backdrop-blur-md">
-            {lyricError}
-          </div>
-        )}
+      <ContextMenu onOpenChange={setMenuOpen}>
+        <ContextMenuTrigger asChild>
+          <div
+            className={`fixed inset-0 z-[180] overflow-hidden bg-black text-white transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] ${
+              isLyricPageOpened
+                ? 'pointer-events-auto translate-y-0'
+                : 'pointer-events-none translate-y-full'
+            }`}
+          >
+            {/* 错误提示 */}
+            {lyricError && (
+              <div className="fixed left-1/2 top-6 z-[200] -translate-x-1/2 rounded-full bg-red-500/20 px-4 py-2 text-sm text-red-200 backdrop-blur-md">
+                {lyricError}
+              </div>
+            )}
 
-        {/* AMLL 播放器 */}
-        <PrebuiltLyricPlayer id="amll-lyric-player" style={{ width: '100%', height: '100%' }} />
-      </div>
+            {/* AMLL 播放器 */}
+            <PrebuiltLyricPlayer id="amll-lyric-player" style={{ width: '100%', height: '100%' }} />
+          </div>
+        </ContextMenuTrigger>
+
+        {/* 歌词页右键菜单 */}
+        <ContextMenuContent className="z-[300] min-w-[208px] rounded-xl border-0 bg-white p-1.5 text-[#1c1c1e] shadow-[0_14px_40px_-12px_rgba(0,0,0,0.6)]">
+          <MenuRow label="上一首" shortcut="Ctrl Alt ←" onSelect={() => playerActions.playPrev()} />
+          <MenuRow
+            label="暂停 / 继续"
+            shortcut="Ctrl Alt P"
+            onSelect={() => playerActions.toggle()}
+          />
+          <MenuRow label="下一首" shortcut="Ctrl Alt →" onSelect={() => playerActions.playNext()} />
+
+          <ContextMenuSeparator className="mx-2 my-1 h-px bg-black/10" />
+
+          <MenuRow
+            label={hideLyricView ? '显示歌词' : '隐藏歌词'}
+            onSelect={() => setHideLyricView(!hideLyricView)}
+          />
+          <MenuRow
+            label={isFullscreen ? '退出全屏' : '进入全屏'}
+            shortcut="F11"
+            onSelect={toggleFullscreen}
+          />
+
+          <ContextMenuSeparator className="mx-2 my-1 h-px bg-black/10" />
+
+          <MenuRow label="退出歌词页面" onSelect={closeLyricPage} />
+        </ContextMenuContent>
+      </ContextMenu>
     </>
   );
 }

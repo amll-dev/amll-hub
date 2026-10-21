@@ -1,6 +1,6 @@
 import type { Transition, Variants } from 'framer-motion';
 
-// 与设计稿一致的缓动 cubic-bezier(.2,.8,.2,1)
+// 缓动 cubic-bezier(.2,.8,.2,1)
 const easeOut: Transition = { duration: 0.5, ease: [0.2, 0.8, 0.2, 1] };
 
 // 淡入 + 上移

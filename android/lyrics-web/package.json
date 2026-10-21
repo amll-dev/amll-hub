@@ -1,0 +1,10 @@
+{
+  "name": "amll-lyrics-webview",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "沉浸播放页内嵌的 AMLL 歌词页，复用网页端 @applemusic-like-lyrics/react-full，构建产物输出到 android/app/src/main/assets/lyrics",
+  "scripts": {
+    "build": "vite build"
+  }
+}

@@ -6,6 +6,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -53,9 +54,9 @@ private val DarkColors = darkColorScheme(
     onSecondary = Color(0xFF08243A),
     background = Color(0xFF101014),
     onBackground = Color(0xFFF5F5F7),
-    surface = Color(0xFF1A1A1F),
+    surface = Color(0xFF17171D),
     onSurface = Color(0xFFF5F5F7),
-    surfaceVariant = Color(0xFF26262C),
+    surfaceVariant = Color(0xFF1E1E26),
     onSurfaceVariant = Color(0xFF9A9AA2),
     outline = Color(0xFF3A3A42),
     outlineVariant = Color(0xFF2A2A31),
@@ -83,6 +84,10 @@ fun AmllHubTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = AmllTypography,
-        content = content,
-    )
+    ) {
+        CompositionLocalProvider(
+            LocalAmllPalette provides if (darkTheme) DarkPalette else LightPalette,
+            content = content,
+        )
+    }
 }
