@@ -61,6 +61,7 @@ import dev.amll.hub.android.ui.component.CoverImage
 import dev.amll.hub.android.ui.component.EmptyState
 import dev.amll.hub.android.ui.component.PageHeader
 import dev.amll.hub.android.ui.component.SearchSheet
+import dev.amll.hub.android.ui.component.NavRow
 import dev.amll.hub.android.ui.component.PillTabBar
 import dev.amll.hub.android.ui.component.SectionHeader
 import dev.amll.hub.android.ui.component.SkeletonList
@@ -94,7 +95,7 @@ fun TabScaffold(
 ) {
     Column(Modifier.fillMaxSize().background(Amll.colors.canvas)) {
         Column(Modifier.weight(1f).fillMaxWidth(), content = content)
-        PillTabBar(AppTabs, selected) { nav.switchTab(it) }
+        PillTabBar(AppTabs, selected, onSelect = { nav.switchTab(it) })
     }
 }
 

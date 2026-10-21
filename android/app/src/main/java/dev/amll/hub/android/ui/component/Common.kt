@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ChevronLeft
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -59,7 +62,7 @@ fun AmllTopBar(
     ) {
         if (onBack != null) {
             Icon(
-                imageVector = androidx.compose.material.icons.Icons.Rounded.ChevronLeft,
+                imageVector = Icons.Rounded.ChevronLeft,
                 contentDescription = "返回",
                 tint = Amll.colors.ink,
                 modifier = Modifier
@@ -442,7 +445,7 @@ fun NavRow(
             Spacer(Modifier.width(6.dp))
         }
         Icon(
-            androidx.compose.material.icons.Icons.Rounded.ChevronRight,
+            Icons.Rounded.ChevronRight,
             null,
             tint = Amll.colors.ink3,
             modifier = Modifier.size(16.dp),

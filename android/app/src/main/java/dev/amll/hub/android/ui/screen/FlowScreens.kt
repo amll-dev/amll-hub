@@ -77,6 +77,7 @@ import dev.amll.hub.android.ui.component.CoverImage
 import dev.amll.hub.android.ui.component.EmptyState
 import dev.amll.hub.android.ui.component.FieldRow
 import dev.amll.hub.android.ui.component.GhostButton
+import dev.amll.hub.android.ui.component.PageHeader
 import dev.amll.hub.android.ui.component.PrimaryButton
 import dev.amll.hub.android.ui.component.SkeletonList
 import dev.amll.hub.android.ui.component.StatusChip
@@ -530,9 +531,9 @@ fun CreatorCenterScreen(vm: AppViewModel, nav: AppNav) {
                 )
                 else -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     ui.items.take(4).forEach { item ->
-                        SubmissionRow(item) {
+                        SubmissionRow(item) { id ->
                             vm.openSubmission(item)
-                            nav.openSubmission(item.id)
+                            nav.openSubmission(id)
                         }
                     }
                 }
@@ -763,7 +764,7 @@ fun SubmissionDetailScreen(vm: AppViewModel, nav: AppNav) {
             }
         }
 
-        val songTitle = detail?.displayName?.ifBlank { null } ?: "未命名稿件"
+        val songTitle = detail?.displayName?.takeIf { it.isNotBlank() } ?: "未命名稿件"
         AmllCard(padding = 16.dp) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 CoverImage(null, songTitle, 48.dp)
