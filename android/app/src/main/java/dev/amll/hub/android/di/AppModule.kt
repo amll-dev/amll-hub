@@ -8,7 +8,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import dev.amll.hub.android.data.local.AuthStore
 import dev.amll.hub.android.data.remote.AuthApi
+import dev.amll.hub.android.data.remote.ContentApi
 import dev.amll.hub.android.data.remote.NetworkModule
+import dev.amll.hub.android.data.remote.RawApi
 import javax.inject.Singleton
 
 @Module
@@ -26,4 +28,12 @@ object AppModule {
     @Provides
     @Singleton
     fun provideAuthApi(network: NetworkModule): AuthApi = network.authApi
+
+    @Provides
+    @Singleton
+    fun provideContentApi(network: NetworkModule): ContentApi = network.contentApi
+
+    @Provides
+    @Singleton
+    fun provideRawApi(network: NetworkModule): RawApi = network.rawApi
 }
