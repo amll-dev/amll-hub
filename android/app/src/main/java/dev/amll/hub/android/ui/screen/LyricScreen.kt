@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Pause
@@ -43,7 +44,6 @@ import dev.amll.hub.android.ui.component.EmptyState
 import dev.amll.hub.android.ui.component.SkeletonList
 import dev.amll.hub.android.ui.theme.Amll
 import dev.amll.hub.android.ui.theme.Font
-import androidx.compose.material.icons.outlined.Inbox
 
 /**
  * 歌词页：直接挂内置 AMLL 歌词页（WebView），原生只负责外壳与播放控制。

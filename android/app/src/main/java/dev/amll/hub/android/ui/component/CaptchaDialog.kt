@@ -162,12 +162,15 @@ fun CaptchaDialog(
 private val siteOrigin: String
     get() {
         val base = BuildConfig.API_BASE_URL.trimEnd('/')
-        val stripped = base.removePrefix("https://api.").removePrefix("http://api.")
-        return when {
-            stripped.startsWith("http://") || stripped.startsWith("https://") -> "$stripped/"
-            stripped.startsWith("//") -> "https:$stripped/"
-            else -> "https://$stripped/"
+        // 先保住原始 scheme，避免把 http 调试地址误升成 https
+        val scheme = when {
+            base.startsWith("https://") -> "https://"
+            base.startsWith("http://") -> "http://"
+            else -> "https://"
         }
+        val host = base.removePrefix("https://").removePrefix("http://")
+        // api. 前缀是 Api 域名，验证码要求配置的是站点域名
+        return scheme + host.removePrefix("api.") + "/"
     }
 
 /** JS 单引号字符串转义 */

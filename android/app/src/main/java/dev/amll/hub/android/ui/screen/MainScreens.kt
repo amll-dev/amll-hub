@@ -71,8 +71,8 @@ import dev.amll.hub.android.ui.component.ChipTone
 import dev.amll.hub.android.ui.component.CoverImage
 import dev.amll.hub.android.ui.component.EmptyState
 import dev.amll.hub.android.ui.component.MiniPlayer
-import dev.amll.hub.android.ui.component.PageHeader
 import dev.amll.hub.android.ui.component.NavRow
+import dev.amll.hub.android.ui.component.PageHeader
 import dev.amll.hub.android.ui.component.PillTabBar
 import dev.amll.hub.android.ui.component.SectionHeader
 import dev.amll.hub.android.ui.component.SkeletonList
