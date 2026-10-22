@@ -7,8 +7,12 @@ data class AppNav(
     val back: () -> Unit = {},
     val openRanking: () -> Unit = {},
     val openDaily: () -> Unit = {},
+    val openSearch: () -> Unit = {},
+    val openLatest: () -> Unit = {},
+    val openScan: () -> Unit = {},
     val openLyric: (songId: String, title: String, artist: String, cover: String?) -> Unit = { _, _, _, _ -> },
-    val openImmersive: () -> Unit = {},
+    /** 直接打开当前播放曲目的歌词页（迷你播放器用） */
+    val openPlayer: () -> Unit = {},
     val openSubmit: () -> Unit = {},
     val openSubmission: (id: Long) -> Unit = {},
     val openProfileEdit: () -> Unit = {},

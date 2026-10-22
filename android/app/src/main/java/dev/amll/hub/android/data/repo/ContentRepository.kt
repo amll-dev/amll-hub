@@ -12,6 +12,7 @@ import dev.amll.hub.android.data.remote.RawApi
 import dev.amll.hub.android.data.remote.SearchHitDto
 import dev.amll.hub.android.data.remote.StatsDto
 import dev.amll.hub.android.data.remote.SubmissionDto
+import dev.amll.hub.android.data.remote.UserActivityDto
 import dev.amll.hub.android.data.remote.UserProfile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -71,8 +72,9 @@ class ContentRepository @Inject constructor(
         runCatching { api.updateProfile(ProfileUpdateRequest(displayName = name)).data }.getOrNull()
     }
 
-    suspend fun search(keyword: String): List<SearchHitDto> = io {
-        runCatching { api.search(keyword).data?.hits.orEmpty() }.getOrDefault(emptyList())
+    suspend fun search(keyword: String, field: String = "all"): List<SearchHitDto> = io {
+        runCatching { api.search(keyword, field = field).data?.hits.orEmpty() }
+            .getOrDefault(emptyList())
     }
 
     suspend fun ncmSearch(keyword: String): List<NcmSongDto> = io {
@@ -81,6 +83,10 @@ class ContentRepository @Inject constructor(
 
     suspend fun submission(id: Long): SubmissionDto? =
         io { runCatching { api.submission(id).data }.getOrNull() }
+
+    /** 年度活动统计；未登录或接口异常返回 null，UI 走空态 */
+    suspend fun activity(year: Int? = null): UserActivityDto? =
+        io { runCatching { api.activity(year).data }.getOrNull() }
 
     suspend fun markAllRead() {
         io { runCatching { api.markAllNotificationsRead() } }

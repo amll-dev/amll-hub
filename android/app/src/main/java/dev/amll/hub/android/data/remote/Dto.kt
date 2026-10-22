@@ -36,6 +36,29 @@ data class LoginRequest(val username: String, val password: String)
 @Serializable
 data class LoginByCodeRequest(val dest: String, val code: String)
 
+/** 账号存在性预检 POST /api/v1/auth/check-user */
+@Serializable
+data class CheckUserRequest(
+    val checkType: String,
+    val dest: String,
+    val method: String = "login",
+)
+
+/**
+ * Casdoor 人机验证配置 GET /api/v1/auth/captcha
+ * clientId2 = 阿里云 SceneId，clientSecret2 = 阿里云 prefix
+ */
+@Serializable
+data class CaptchaConfig(
+    val type: String = "",
+    @SerialName("clientId2") val sceneId: String = "",
+    @SerialName("clientSecret2") val prefix: String = "",
+) {
+    /** 与网页端一致：none / default / 空串都视为无需人机验证 */
+    val required: Boolean
+        get() = type.isNotBlank() && type != "none" && type != "default"
+}
+
 @Serializable
 data class SendCodeRequest(
     val checkType: String,

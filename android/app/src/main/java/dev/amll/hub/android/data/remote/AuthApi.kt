@@ -17,6 +17,14 @@ interface AuthApi {
     @POST("api/v1/auth/send-code")
     suspend fun sendCode(@Body body: SendCodeRequest): ApiResponse<Unit>
 
+    /** 发码前先确认账号存在，能给出「未注册」这类明确提示 */
+    @POST("api/v1/auth/check-user")
+    suspend fun checkUser(@Body body: CheckUserRequest): ApiResponse<Unit>
+
+    /** 人机验证配置（网页端同样在切到验证码 tab 时拉取） */
+    @GET("api/v1/auth/captcha")
+    suspend fun captcha(): ApiResponse<CaptchaConfig>
+
     @GET("api/v1/auth/profile")
     suspend fun profile(): ApiResponse<UserProfile>
 

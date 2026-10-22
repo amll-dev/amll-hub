@@ -1,10 +1,16 @@
 package dev.amll.hub.android.ui.component
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -15,23 +21,33 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -105,7 +121,7 @@ fun PageHeader(
 
 data class TabItem(val label: String, val icon: ImageVector)
 
-/** 底部胶囊导航：95dp 容器（12/21/21）+ 62dp 胶囊 + 26dp 选中块 */
+/** 底部胶囊导航：62dp 胶囊 + 会「滑过去」的选中块 */
 @Composable
 fun PillTabBar(
     items: List<TabItem>,
@@ -113,13 +129,21 @@ fun PillTabBar(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val target = selectedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
+    // 选中块按索引做位移动画，切 Tab 时是滑过去而不是直接跳
+    val progress by animateFloatAsState(
+        targetValue = target.toFloat(),
+        animationSpec = spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow),
+        label = "tabIndicator",
+    )
+
     Box(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(start = 21.dp, end = 21.dp, top = 12.dp, bottom = 21.dp),
+            .padding(start = 21.dp, end = 21.dp, top = 8.dp, bottom = 18.dp),
     ) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(Size.tabPill)
@@ -128,32 +152,135 @@ fun PillTabBar(
                 .border(1.dp, Amll.colors.border, PillOuterShape)
                 .padding(4.dp),
         ) {
-            items.forEachIndexed { index, item ->
-                val active = index == selectedIndex
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val itemWidth = maxWidth / items.size.toFloat()
+                Box(
+                    Modifier
+                        .offset(x = itemWidth * progress)
+                        .width(itemWidth)
                         .fillMaxHeight()
                         .clip(PillShape)
-                        .background(if (active) Amll.colors.primary else Color.Transparent)
-                        .clickable { onSelect(index) },
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Icon(
-                        imageVector = item.icon,
-                        contentDescription = item.label,
-                        tint = if (active) Amll.colors.onPrimary else Amll.colors.ink3,
-                        modifier = Modifier.size(18.dp),
+                        .background(Amll.colors.primary),
+                )
+            }
+            Row(Modifier.fillMaxSize()) {
+                items.forEachIndexed { index, item ->
+                    val active = index == target
+                    val tint by animateColorAsState(
+                        targetValue = if (active) Amll.colors.onPrimary else Amll.colors.ink3,
+                        animationSpec = tween(180),
+                        label = "tabTint$index",
                     )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        item.label,
-                        style = Font.tabLabel,
-                        color = if (active) Amll.colors.onPrimary else Amll.colors.ink3,
-                    )
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(PillShape)
+                            .clickable { onSelect(index) },
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            imageVector = item.icon,
+                            contentDescription = item.label,
+                            tint = tint,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(item.label, style = Font.tabLabel, color = tint)
+                    }
                 }
             }
+        }
+    }
+}
+
+/** 分段切换：登录方式、验证码载体这类二选一 */
+@Composable
+fun SegmentedTabs(
+    labels: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(38.dp)
+            .clip(RoundedCornerShape(Radius.chip))
+            .background(Amll.colors.surface2)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        labels.forEachIndexed { index, label ->
+            val active = index == selectedIndex
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(Radius.field))
+                    .background(if (active) Amll.colors.surface else Color.Transparent)
+                    .then(
+                        if (active) Modifier.border(1.dp, Amll.colors.border, RoundedCornerShape(Radius.field))
+                        else Modifier,
+                    )
+                    .clickable { onSelect(index) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    style = Font.caption.copy(fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal),
+                    color = if (active) Amll.colors.ink else Amll.colors.ink3,
+                )
+            }
+        }
+    }
+}
+
+/** 圆角输入框：登录页与表单统一用这套，不再混用 Material3 OutlinedTextField */
+@Composable
+fun AmllTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    imeAction: ImeAction = ImeAction.Next,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    onImeAction: (() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (label != null) {
+            Text(label, style = Font.micro, color = Amll.colors.ink3)
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .clip(RoundedCornerShape(Radius.chip))
+                .background(Amll.colors.surface2)
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.weight(1f)) {
+                if (value.isEmpty()) {
+                    Text(placeholder, style = Font.bodySmall, color = Amll.colors.ink3)
+                }
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    singleLine = true,
+                    textStyle = TextStyle(fontSize = 13.5.sp, color = Amll.colors.ink),
+                    cursorBrush = SolidColor(Amll.colors.primary),
+                    visualTransformation = visualTransformation,
+                    keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+                    keyboardActions = KeyboardActions(onAny = { onImeAction?.invoke() }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            trailing?.invoke()
         }
     }
 }

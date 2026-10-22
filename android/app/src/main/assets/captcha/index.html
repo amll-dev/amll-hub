@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: transparent;
+        font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      }
+      #wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        gap: 10px;
+        padding: 0 4px;
+        box-sizing: border-box;
+      }
+      #captcha {
+        width: 100%;
+        max-width: 340px;
+        min-height: 44px;
+      }
+      .tip {
+        font-size: 12px;
+        color: #8e8e93;
+        text-align: center;
+      }
+      .err {
+        color: #e0303f;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="wrap">
+      <div id="captcha"></div>
+      <div class="tip" id="tip">等待初始化…</div>
+    </div>
+    <script>
+      (function () {
+        var tip = document.getElementById('tip');
+        var resolveFn = null;
+        var started = false;
+
+        function setTip(text, isError) {
+          tip.textContent = text;
+          tip.className = isError ? 'tip err' : 'tip';
+        }
+
+        // 原生侧在发码结束后回调：true 关闭弹层，false 让 SDK 重置重试
+        window.setCaptchaResult = function (ok) {
+          if (resolveFn) {
+            resolveFn({ captchaResult: !!ok, bizResult: !!ok });
+            resolveFn = null;
+          }
+          setTip(ok ? '验证成功' : '验证失败，请重试', !ok);
+        };
+
+        function initSdk(sceneId, prefix) {
+          window.AliyunCaptchaConfig = { region: 'cn', prefix: prefix };
+          var script = document.createElement('script');
+          script.src = 'https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js';
+          script.onerror = function () {
+            setTip('验证组件加载失败，请检查网络', true);
+          };
+          script.onload = function () {
+            if (!window.initAliyunCaptcha) {
+              setTip('验证组件不可用，请稍后重试', true);
+              return;
+            }
+            setTip('拖动滑块完成验证', false);
+            try {
+              window.initAliyunCaptcha({
+                SceneId: sceneId,
+                mode: 'embed',
+                element: '#captcha',
+                language: 'cn',
+                immediate: true,
+                slideStyle: { width: 320, height: 40 },
+                captchaVerifyCallback: function (data) {
+                  return new Promise(function (resolve) {
+                    resolveFn = resolve;
+                    var token =
+                      typeof data === 'string'
+                        ? data
+                        : (data && data.captchaVerifyParam) || '';
+                    setTip('正在校验并发送验证码…', false);
+                    if (window.AmllCaptcha && window.AmllCaptcha.onVerify) {
+                      window.AmllCaptcha.onVerify(String(token));
+                    } else {
+                      resolve({ captchaResult: false, bizResult: false });
+                      resolveFn = null;
+                    }
+                  });
+                },
+              });
+            } catch (e) {
+              setTip('验证组件初始化失败，请重试', true);
+            }
+          };
+          document.head.appendChild(script);
+        }
+
+        // 原生在 onPageFinished 里显式调用，避免依赖 baseUrl 的 query 是否保留
+        window.startCaptcha = function (sceneId, prefix) {
+          if (started) return;
+          started = true;
+          if (!sceneId) {
+            setTip('未获取到人机验证配置，请稍后重试', true);
+            return;
+          }
+          initSdk(sceneId, prefix || '');
+        };
+      })();
+    </script>
+  </body>
+</html>

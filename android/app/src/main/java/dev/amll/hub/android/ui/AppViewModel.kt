@@ -7,13 +7,13 @@ import dev.amll.hub.android.data.lyric.LyricLine
 import dev.amll.hub.android.data.lyric.TtmlParser
 import dev.amll.hub.android.data.remote.DailyRecDto
 import dev.amll.hub.android.data.remote.LatestSongDto
-import dev.amll.hub.android.data.remote.NcmSongDto
 import dev.amll.hub.android.data.remote.SearchHitDto
 import dev.amll.hub.android.data.remote.UserProfile
 import dev.amll.hub.android.data.remote.MessageDto
 import dev.amll.hub.android.data.remote.RankingItemDto
 import dev.amll.hub.android.data.remote.StatsDto
 import dev.amll.hub.android.data.remote.SubmissionDto
+import dev.amll.hub.android.data.remote.UserActivityDto
 import dev.amll.hub.android.data.repo.ContentRepository
 import dev.amll.hub.android.playback.PlayerController
 import kotlinx.coroutines.Dispatchers
@@ -83,7 +83,8 @@ class AppViewModel @Inject constructor(
                     loading = false,
                     stats = stats,
                     today = today,
-                    latest = latest.take(3),
+                    // 首页只展示前几条，完整列表在「最新收录」页
+                    latest = latest,
                     ranking = ranking.take(2),
                     error = if (stats == null && latest.isEmpty()) "加载失败，请检查网络" else null,
                 )
@@ -197,10 +198,9 @@ class AppViewModel @Inject constructor(
     data class SearchUi(
         val query: String = "",
         val loading: Boolean = false,
-        /** 0 = 词库，1 = 网易云 */
-        val mode: Int = 0,
+        /** all / song / artist / album / lyric / id，与网页端一致 */
+        val field: String = "all",
         val hits: List<SearchHitDto> = emptyList(),
-        val ncm: List<NcmSongDto> = emptyList(),
         val error: String? = null,
     )
 
@@ -209,9 +209,25 @@ class AppViewModel @Inject constructor(
     val search = MutableStateFlow(SearchUi())
     val likedDaily = MutableStateFlow<Set<Long>>(emptySet())
 
+    /** 活动记录（真实数据，来自 /users/me/activity） */
+    val activity = MutableStateFlow<UserActivityDto?>(null)
+    val activityLoading = MutableStateFlow(false)
+
     fun loadProfile() {
         if (profile.value != null) return
         viewModelScope.launch { profile.value = repo.profile() }
+    }
+
+    fun loadActivity(year: Int? = null) {
+        if (activityLoading.value) return
+        // 已有当年数据就不再重复请求；显式传 year 时才刷新
+        if (year == null && activity.value != null) return
+        viewModelScope.launch {
+            activityLoading.value = true
+            val data = repo.activity(year)
+            activity.value = data
+            activityLoading.value = false
+        }
     }
 
     fun saveDisplayName(name: String, onDone: (Boolean) -> Unit = {}) {
@@ -231,21 +247,27 @@ class AppViewModel @Inject constructor(
         }
     }
 
-    fun runSearch(keyword: String, mode: Int = search.value.mode) {
-        search.update { it.copy(query = keyword, mode = mode, loading = keyword.isNotBlank(), error = null) }
-        if (keyword.isBlank()) return
+    fun runSearch(keyword: String, field: String = search.value.field) {
+        val trimmed = keyword.trim()
+        search.update {
+            it.copy(query = trimmed, field = field, loading = trimmed.isNotBlank(), error = null)
+        }
+        if (trimmed.isBlank()) {
+            search.update { it.copy(hits = emptyList(), loading = false) }
+            return
+        }
         viewModelScope.launch {
-            if (mode == 1) {
-                val songs = repo.ncmSearch(keyword)
-                search.update {
-                    it.copy(loading = false, ncm = songs, hits = emptyList(),
-                        error = if (songs.isEmpty()) "没有找到歌曲" else null)
-                }
-            } else {
-                val hits = repo.search(keyword)
-                search.update {
-                    it.copy(loading = false, hits = hits, ncm = emptyList(),
-                        error = if (hits.isEmpty()) "没有找到歌词" else null)
+            val hits = repo.search(trimmed, field)
+            // 输入变化过快时丢弃旧请求的结果
+            search.update { ui ->
+                if (ui.query != trimmed || ui.field != field) {
+                    ui
+                } else {
+                    ui.copy(
+                        loading = false,
+                        hits = hits,
+                        error = if (hits.isEmpty()) "没有找到歌词" else null,
+                    )
                 }
             }
         }

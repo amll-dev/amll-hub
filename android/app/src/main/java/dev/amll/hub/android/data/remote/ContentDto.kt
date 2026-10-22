@@ -165,6 +165,24 @@ data class ProfileUpdateRequest(
     val avatar: String? = null,
 )
 
+/** 单日活动 GET /api/v1/users/me/activity */
+@Serializable
+data class ActivityDayDto(
+    val date: String = "",
+    val count: Int = 0,
+    val byType: Map<String, Int> = emptyMap(),
+)
+
+/** 年度活动聚合 GET /api/v1/users/me/activity?year= */
+@Serializable
+data class UserActivityDto(
+    val year: Int = 0,
+    val years: List<Int> = emptyList(),
+    val days: List<ActivityDayDto> = emptyList(),
+    val total: Int = 0,
+    val byType: Map<String, Int> = emptyMap(),
+)
+
 /** ncm 解析结果（裸 JSON，非统一包装），字段名做兼容 */
 @Serializable
 data class NcmParseDto(

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.amll.hub.android.data.remote.ApiException
 import dev.amll.hub.android.data.remote.AuthRepository
+import dev.amll.hub.android.data.remote.CaptchaConfig
 import dev.amll.hub.android.data.remote.LoginResult
 import dev.amll.hub.android.data.remote.UnauthorizedException
 import kotlinx.coroutines.Job
@@ -32,16 +33,29 @@ data class LoginUiState(
     val code: String = "",
     val passwordVisible: Boolean = false,
     val submitting: Boolean = false,
+    /** check-user 与拉取人机验证配置的短暂过程 */
+    val preparingCode: Boolean = false,
     val sendingCode: Boolean = false,
     /** 验证码发送成功后的倒计时秒数，0 表示未在倒计时 */
     val countdown: Int = 0,
     val error: String? = null,
+    /** 非空表示需要人机验证，值为阿里云所需配置 */
+    val captcha: CaptchaConfig? = null,
+    /** null = 等待验证；true = 业务成功；false = 业务失败（SDK 会自动重置） */
+    val captchaVerified: Boolean? = null,
 ) {
     val canSubmit: Boolean
         get() = !submitting && when (tab) {
             LoginTab.PASSWORD -> username.isNotBlank() && password.isNotBlank()
             LoginTab.CODE -> dest.isNotBlank() && code.isNotBlank()
         }
+
+    val canSendCode: Boolean
+        get() = tab == LoginTab.CODE &&
+            dest.isNotBlank() &&
+            countdown == 0 &&
+            !sendingCode &&
+            !preparingCode
 }
 
 @HiltViewModel
@@ -53,13 +67,20 @@ class LoginViewModel @Inject constructor(
     val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()
 
     private var countdownJob: Job? = null
+    private var captchaConfig: CaptchaConfig? = null
 
-    fun switchTab(tab: LoginTab) = _uiState.update {
-        it.copy(tab = tab, error = null, countdown = 0)
+    fun switchTab(tab: LoginTab) {
+        countdownJob?.cancel()
+        _uiState.update {
+            it.copy(tab = tab, error = null, countdown = 0, captcha = null, captchaVerified = null)
+        }
     }
 
-    fun switchCodeType(type: CodeType) = _uiState.update {
-        it.copy(codeType = type, error = null, dest = "", countdown = 0)
+    fun switchCodeType(type: CodeType) {
+        countdownJob?.cancel()
+        _uiState.update {
+            it.copy(codeType = type, error = null, dest = "", countdown = 0, captcha = null, captchaVerified = null)
+        }
     }
 
     fun onUsernameChange(v: String) = _uiState.update { it.copy(username = v, error = null) }
@@ -72,23 +93,85 @@ class LoginViewModel @Inject constructor(
 
     fun dismissError() = _uiState.update { it.copy(error = null) }
 
+    fun dismissCaptcha() = _uiState.update { it.copy(captcha = null, captchaVerified = null) }
+
+    /**
+     * 与网页端一致的三步：
+     * 1. check-user 确认账号存在（能给出「未注册」而不是笼统失败）
+     * 2. 拉取人机验证配置；需要验证就先弹阿里云滑块
+     * 3. 拿到 token 后带 captchaType / captchaToken 发码
+     */
     fun sendCode() {
         val state = _uiState.value
-        if (state.dest.isBlank() || state.sendingCode || state.countdown > 0) return
+        if (!state.canSendCode) return
 
-        _uiState.update { it.copy(sendingCode = true, error = null) }
+        _uiState.update { it.copy(preparingCode = true, error = null, captchaVerified = null) }
         viewModelScope.launch {
-            runCatching { repo.sendCode(state.codeType.apiValue, state.dest) }
-                .onSuccess { startCountdown(60) }
-                .onFailure { e ->
-                    _uiState.update { it.copy(sendingCode = false, error = e.userMessage()) }
+            try {
+                repo.checkUser(state.codeType.apiValue, state.dest)
+                val config = repo.captchaConfig()
+                captchaConfig = config
+                if (config.required) {
+                    _uiState.update { it.copy(preparingCode = false, captcha = config) }
+                } else {
+                    _uiState.update { it.copy(preparingCode = false) }
+                    sendCodeNow(config, "")
                 }
+            } catch (e: Throwable) {
+                _uiState.update { it.copy(preparingCode = false, error = e.userMessage()) }
+            }
         }
+    }
+
+    /** 人机验证回调：拿到阿里云 verifyParam 后真正发码 */
+    fun onCaptchaToken(token: String) {
+        val config = captchaConfig ?: return
+        if (token.isBlank()) return
+        _uiState.update { it.copy(captchaVerified = null, error = null) }
+        viewModelScope.launch { sendCodeNow(config, token) }
+    }
+
+    private suspend fun sendCodeNow(config: CaptchaConfig, captchaToken: String) {
+        val state = _uiState.value
+        _uiState.update { it.copy(sendingCode = true, error = null) }
+        runCatching {
+            repo.sendCode(
+                checkType = state.codeType.apiValue,
+                dest = state.dest,
+                captchaType = if (captchaToken.isBlank()) "" else config.type,
+                captchaToken = captchaToken,
+            )
+        }
+            .onSuccess {
+                val inCaptcha = _uiState.value.captcha != null
+                _uiState.update {
+                    it.copy(
+                        sendingCode = false,
+                        captchaVerified = if (inCaptcha) true else it.captchaVerified,
+                    )
+                }
+                startCountdown(60)
+                if (inCaptcha) {
+                    // 留一点时间让 SDK 播完「验证成功」再关闭弹层
+                    delay(600)
+                    _uiState.update { it.copy(captcha = null, captchaVerified = null) }
+                }
+            }
+            .onFailure { e ->
+                val inCaptcha = _uiState.value.captcha != null
+                _uiState.update {
+                    it.copy(
+                        sendingCode = false,
+                        error = e.userMessage(),
+                        captchaVerified = if (inCaptcha) false else it.captchaVerified,
+                    )
+                }
+            }
     }
 
     private fun startCountdown(seconds: Int) {
         countdownJob?.cancel()
-        _uiState.update { it.copy(sendingCode = false, countdown = seconds) }
+        _uiState.update { it.copy(countdown = seconds) }
         countdownJob = viewModelScope.launch {
             for (i in seconds - 1 downTo 0) {
                 delay(1000)

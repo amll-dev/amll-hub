@@ -34,9 +34,32 @@ class AuthRepository @Inject constructor(
         return resp.also { authStore.save(it.token) }
     }
 
-    suspend fun sendCode(checkType: String, dest: String) {
-        request { api.sendCode(SendCodeRequest(checkType = checkType, dest = dest.trim())) }
+    suspend fun sendCode(
+        checkType: String,
+        dest: String,
+        captchaType: String = "",
+        captchaToken: String = "",
+    ) {
+        request {
+            api.sendCode(
+                SendCodeRequest(
+                    checkType = checkType,
+                    dest = dest.trim(),
+                    captchaType = captchaType,
+                    captchaToken = captchaToken,
+                ),
+            )
+        }
     }
+
+    /** 账号预检：不存在时后端返回 404「该手机号/邮箱未注册」 */
+    suspend fun checkUser(checkType: String, dest: String) {
+        request { api.checkUser(CheckUserRequest(checkType, dest.trim())) }
+    }
+
+    /** 人机验证配置；接口异常时按「无需验证」降级，与网页端一致 */
+    suspend fun captchaConfig(): CaptchaConfig =
+        runCatching { request { api.captcha() } }.getOrNull() ?: CaptchaConfig()
 
     suspend fun profile(): UserProfile = call { api.profile() }
 

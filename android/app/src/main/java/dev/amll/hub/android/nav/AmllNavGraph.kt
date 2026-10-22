@@ -1,10 +1,12 @@
 package dev.amll.hub.android.nav
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -34,15 +37,16 @@ import dev.amll.hub.android.ui.screen.CreatorCenterScreen
 import dev.amll.hub.android.ui.screen.DailyScreen
 import dev.amll.hub.android.ui.screen.DiscoverScreen
 import dev.amll.hub.android.ui.screen.HomeScreen
-import dev.amll.hub.android.ui.screen.ImmersiveScreen
+import dev.amll.hub.android.ui.screen.LatestSongsScreen
 import dev.amll.hub.android.ui.screen.LoginScreen
-import dev.amll.hub.android.ui.screen.LyricDetailScreen
+import dev.amll.hub.android.ui.screen.LyricScreen
 import dev.amll.hub.android.ui.screen.MessagesScreen
 import dev.amll.hub.android.ui.screen.ProfileEditScreen
 import dev.amll.hub.android.ui.screen.ProfileScreen
 import dev.amll.hub.android.ui.screen.RankingScreen
 import dev.amll.hub.android.ui.screen.ReviewQueueScreen
 import dev.amll.hub.android.ui.screen.ScanScreen
+import dev.amll.hub.android.ui.screen.SearchScreen
 import dev.amll.hub.android.ui.screen.SubmissionDetailScreen
 import dev.amll.hub.android.ui.screen.SubmitScreen
 import dev.amll.hub.android.ui.session.SessionState
@@ -60,7 +64,8 @@ object Routes {
     const val RANKING = "ranking"
     const val DAILY = "daily"
     const val LYRIC = "lyric"
-    const val IMMERSIVE = "immersive"
+    const val SEARCH = "search"
+    const val LATEST = "latest"
     const val SUBMIT = "submit"
     const val SUBMISSION = "submission"
     const val PROFILE_EDIT = "profile-edit"
@@ -73,8 +78,13 @@ object Routes {
     val tabs = listOf(HOME, DISCOVER, CREATOR, MESSAGES, PROFILE)
 }
 
+/** Tab 在底栏中的下标；非 Tab 页面返回 null，用于判断左右滑动方向 */
+private fun NavBackStackEntry.tabIndex(): Int? =
+    Routes.tabs.indexOf(destination.route.orEmpty()).takeIf { it >= 0 }
+
 /**
  * 顶层导航：登录态决定进 App 还是登录页，登录后是 5 Tab + 二级页。
+ * 转场统一为横向滑动：推进从右滑入，返回从左侧退回；Tab 之间按目标下标决定方向。
  */
 @Composable
 fun AmllNavGraph(
@@ -116,11 +126,14 @@ private fun LoggedInNav(
         back = { navController.popBackStack() },
         openRanking = { navController.navigate(Routes.RANKING) },
         openDaily = { navController.navigate(Routes.DAILY) },
+        openSearch = { navController.navigate(Routes.SEARCH) },
+        openLatest = { navController.navigate(Routes.LATEST) },
+        openScan = { navController.navigate(Routes.scan()) },
         openLyric = { songId, title, artist, cover ->
             vm.openTrack(songId, title, artist, cover)
             navController.navigate(Routes.LYRIC)
         },
-        openImmersive = { navController.navigate(Routes.IMMERSIVE) },
+        openPlayer = { navController.navigate(Routes.LYRIC) },
         openSubmit = { navController.navigate(Routes.SUBMIT) },
         openSubmission = { navController.navigate(Routes.SUBMISSION) },
         openProfileEdit = { navController.navigate(Routes.PROFILE_EDIT) },
@@ -128,14 +141,41 @@ private fun LoggedInNav(
         switchTab = { index ->
             if (index in Routes.tabs.indices) {
                 navController.navigate(Routes.tabs[index]) {
-                    popUpTo(Routes.HOME) { inclusive = false }
+                    // 每个 Tab 各自保留返回栈与状态，切回来不重建
+                    popUpTo(Routes.HOME) { saveState = true }
                     launchSingleTop = true
+                    restoreState = true
                 }
             }
         },
     )
 
-    NavHost(navController = navController, startDestination = Routes.HOME) {
+    NavHost(
+        navController = navController,
+        startDestination = Routes.HOME,
+        enterTransition = {
+            val from = initialState.tabIndex()
+            val to = targetState.tabIndex()
+            val fromRight = from == null || to == null || to >= from
+            slideInHorizontally(animationSpec = tween(280)) { width ->
+                if (fromRight) width else -width
+            }
+        },
+        exitTransition = {
+            val from = initialState.tabIndex()
+            val to = targetState.tabIndex()
+            val toLeft = from == null || to == null || to >= from
+            slideOutHorizontally(animationSpec = tween(280)) { width ->
+                if (toLeft) -width / 5 else width / 5
+            }
+        },
+        popEnterTransition = {
+            slideInHorizontally(animationSpec = tween(280)) { width -> -width / 4 }
+        },
+        popExitTransition = {
+            slideOutHorizontally(animationSpec = tween(280)) { width -> width }
+        },
+    ) {
         composable(Routes.HOME) { HomeScreen(vm, nav) }
         composable(Routes.DISCOVER) { DiscoverScreen(vm, nav) }
         composable(Routes.CREATOR) { CreatorCenterScreen(vm, nav) }
@@ -144,8 +184,9 @@ private fun LoggedInNav(
 
         composable(Routes.RANKING) { RankingScreen(vm, nav) }
         composable(Routes.DAILY) { DailyScreen(vm, nav) }
-        composable(Routes.LYRIC) { LyricDetailScreen(vm, nav) }
-        composable(Routes.IMMERSIVE) { ImmersiveScreen(vm, nav) }
+        composable(Routes.LYRIC) { LyricScreen(vm, nav) }
+        composable(Routes.SEARCH) { SearchScreen(vm, nav) }
+        composable(Routes.LATEST) { LatestSongsScreen(vm, nav) }
         composable(Routes.SUBMIT) { SubmitScreen(nav) }
         composable(Routes.SUBMISSION) { SubmissionDetailScreen(vm, nav) }
         composable(Routes.PROFILE_EDIT) { ProfileEditScreen(vm, nav) }

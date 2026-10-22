@@ -79,4 +79,8 @@ interface ContentApi {
 
     @PUT("api/v1/auth/profile")
     suspend fun updateProfile(@Body body: ProfileUpdateRequest): ApiResponse<UserProfile>
+
+    /** 个人活动统计（热力图） GET /api/v1/users/me/activity */
+    @GET("api/v1/users/me/activity")
+    suspend fun activity(@Query("year") year: Int? = null): ApiResponse<UserActivityDto>
 }
