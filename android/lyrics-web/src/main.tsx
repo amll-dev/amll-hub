@@ -137,8 +137,39 @@ requestAnimationFrame(() => {
   );
 });
 
+/** AMLL 渲染抛异常时把堆栈画出来，避免整页黑屏且无从排查 */
+class PageErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[amll] render crashed:', error, info.componentStack);
+  }
+
+  render() {
+    const { error } = this.state;
+    if (error) {
+      return (
+        <div className="page-error">
+          <div className="page-error-title">歌词页渲染失败</div>
+          <pre>{String(error.stack || error)}</pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 createRoot(document.getElementById('root')!).render(
   <Provider store={store}>
-    <App />
+    <PageErrorBoundary>
+      <App />
+    </PageErrorBoundary>
   </Provider>,
 );

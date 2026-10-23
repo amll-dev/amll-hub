@@ -29,3 +29,29 @@ body {
 #amll-lyric-player ::-webkit-scrollbar {
   display: none;
 }
+
+/* 渲染异常时的可见兜底，避免纯黑屏 */
+.page-error {
+  position: fixed;
+  inset: 0;
+  padding: 16px;
+  overflow: auto;
+  box-sizing: border-box;
+  background: #300018;
+  color: #fff;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.page-error-title {
+  color: #ffb4ab;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.page-error pre {
+  margin: 0;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
