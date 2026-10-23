@@ -1,7 +1,15 @@
 package dev.amll.hub.android.data.remote
 
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonPrimitive
 
 /** 词库统计 GET /api/v1/stats */
 @Serializable
@@ -174,13 +182,37 @@ data class NcmSongDto(
     val artists: List<NcmArtistDto> = emptyList(),
     val album: NcmAlbumDto? = null,
     val fee: Int = 0,
-    val alias: List<String> = emptyList(),
 ) {
     val displayName: String get() = name.ifBlank { songName }.ifBlank { "未知歌曲" }
     val displayArtist: String
         get() = artists.joinToString(" / ") { it.name }.ifBlank { "未知歌手" }
     val displayCover: String get() = picUrl.ifBlank { album?.picUrl.orEmpty() }
     val displayId: String get() = if (id > 0) id.toString() else ""
+}
+
+/**
+ * 网易云上游的数字字段不稳定：同一个字段有时是数字、有时是字符串
+ * （实测 parse-music 的 size 是 "7.23MB"，search 的 alias 可能是 ""）。
+ * 这个序列化器两种都接：字符串取前导数字，非数字给 0。
+ */
+object FlexibleLong : KSerializer<Long> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("FlexibleLong", PrimitiveKind.LONG)
+
+    override fun deserialize(decoder: Decoder): Long {
+        val primitive = (decoder as? JsonDecoder)?.decodeJsonElement() as? JsonPrimitive
+            ?: return decoder.decodeLong()
+        val raw = primitive.content.trim()
+        if (primitive.isString) {
+            val leading = Regex("^[0-9]+").find(raw) ?: return 0L
+            return leading.value.toLongOrNull() ?: 0L
+        }
+        return raw.toLongOrNull() ?: raw.toDoubleOrNull()?.toLong() ?: 0L
+    }
+
+    override fun serialize(encoder: Encoder, value: Long) {
+        encoder.encodeLong(value)
+    }
 }
 
 @Serializable
@@ -198,7 +230,7 @@ data class NcmTrackDto(
     val name: String = "",
     val ar: List<NcmArtistDto> = emptyList(),
     val al: NcmAlbumDto? = null,
-    val dt: Long = 0,
+    @Serializable(with = FlexibleLong::class) val dt: Long = 0,
 ) {
     val displayArtist: String get() = ar.joinToString(" / ") { it.name }.ifBlank { "未知歌手" }
     val displayCover: String get() = al?.picUrl.orEmpty()
@@ -240,10 +272,11 @@ data class NcmMusicDto(
     val coverUrl: String = "",
     val albumPic: String = "",
     val albumName: String = "",
-    val duration: Long = 0,
-    val dt: Long = 0,
+    @Serializable(with = FlexibleLong::class) val duration: Long = 0,
+    @Serializable(with = FlexibleLong::class) val dt: Long = 0,
     val level: String = "",
-    val size: Long = 0,
+    /** 上游实测返回的是 "7.23MB" 这种字符串，不能声明成 Long */
+    val size: String = "",
     val lyric: String = "",
     val tlyric: String = "",
 ) {
