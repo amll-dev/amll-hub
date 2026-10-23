@@ -19,18 +19,31 @@ import dev.amll.hub.android.data.remote.SubmissionStatsDto
 import dev.amll.hub.android.data.remote.UserActivityDto
 import dev.amll.hub.android.data.remote.UserProfile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.serialization.SerializationException
 import kotlinx.coroutines.withContext
+import retrofit2.HttpException
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * 内容仓库：接口失败一律降级为空，UI 走空态/错误态，不把异常抛到 Composable。
+ *
+ * 例外是网易云解析相关接口（[ncmSearch] / [parseMusic] / [ncmPlaylist]）：
+ * 失败会抛出带后端原因的异常，由调用方展示——「解析用不了」只显示搜不到的话，
+ * 永远查不出是上游没配 Cookie 还是响应结构对不上。
  */
 @Singleton
 class ContentRepository @Inject constructor(
     private val api: ContentApi,
     private val raw: RawApi,
 ) {
+    /** 从后端错误响应体里抠出 message 字段 */
+    private fun apiErrorMessage(e: HttpException): String? = runCatching {
+        val body = e.response()?.errorBody()?.string().orEmpty()
+        Regex("\"message\"\\s*:\\s*\"([^\"]*)\"").find(body)?.groupValues?.get(1)
+    }.getOrNull()
+
     suspend fun stats(): StatsDto? = io { runCatching { api.stats().data }.getOrNull() }
 
     suspend fun latest(): List<LatestSongDto> = io {
@@ -102,7 +115,13 @@ class ContentRepository @Inject constructor(
      * 与网页端 playNcmSong 走的是同一个接口，所以「没封面」的歌也能补齐。
      */
     suspend fun parseMusic(songId: String, level: String = "exhigh"): NcmMusicDto? = io {
-        runCatching { api.ncmParseMusic(songId, level).data }.getOrNull()
+        try {
+            api.ncmParseMusic(songId, level).data
+        } catch (e: HttpException) {
+            throw IOException(apiErrorMessage(e) ?: "解析失败（HTTP ${e.code()}）")
+        } catch (e: SerializationException) {
+            throw IOException("响应解析失败：${e.message.orEmpty().take(140)}")
+        }
     }
 
     /** 音频直链（兼容老调用） */
@@ -110,14 +129,31 @@ class ContentRepository @Inject constructor(
         parseMusic(songId)?.displayUrl?.takeIf { it.isNotBlank() }
 
     /** 网易云关键词搜索 */
+    /**
+     * 网易云搜索。
+     *
+     * 这里不吞错误：上游报错 / HTTP 异常 / 响应解析失败都会抛出带原因的异常，
+     * 由 UI 显示具体原因，否则「网易云解析用不了」时只能看到一句搜不到。
+     */
     suspend fun ncmSearch(keyword: String, limit: Int = 20): List<NcmSongDto> = io {
-        runCatching { api.ncmSearch(keyword, limit).data?.songs.orEmpty() }
-            .getOrDefault(emptyList())
+        try {
+            api.ncmSearch(keyword, limit).data?.songs.orEmpty()
+        } catch (e: HttpException) {
+            throw IOException(apiErrorMessage(e) ?: "搜索失败（HTTP ${e.code()}）")
+        } catch (e: SerializationException) {
+            throw IOException("响应解析失败：${e.message.orEmpty().take(140)}")
+        }
     }
 
     /** 网易云歌单解析 */
     suspend fun ncmPlaylist(playlistId: String): NcmPlaylistDto? = io {
-        runCatching { api.ncmParsePlaylist(playlistId).data?.playlist }.getOrNull()
+        try {
+            api.ncmParsePlaylist(playlistId).data?.playlist
+        } catch (e: HttpException) {
+            throw IOException(apiErrorMessage(e) ?: "歌单解析失败（HTTP ${e.code()}）")
+        } catch (e: SerializationException) {
+            throw IOException("响应解析失败：${e.message.orEmpty().take(140)}")
+        }
     }
 
     suspend fun profile(): UserProfile? = io { runCatching { api.profile().data }.getOrNull() }

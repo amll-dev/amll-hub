@@ -93,14 +93,14 @@ class PlayerController @Inject constructor(
     }
 
     /** 直接播放某首歌；url 为空时只更新曲目信息（歌词页可以独立浏览） */
-    fun play(track: Track, url: String? = track.streamUrl) {
+    fun play(track: Track, url: String? = track.streamUrl, errorHint: String? = null) {
         val playable = url?.takeIf { it.isNotBlank() }
         _state.update {
             it.copy(
                 track = track,
                 positionMs = 0L,
                 durationMs = 0L,
-                error = if (playable == null) "该歌曲暂无音源" else null,
+                error = if (playable == null) (errorHint ?: "该歌曲暂无音源") else null,
             )
         }
         if (playable == null) {

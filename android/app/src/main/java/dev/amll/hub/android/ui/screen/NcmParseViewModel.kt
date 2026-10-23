@@ -58,14 +58,20 @@ class NcmParseViewModel @Inject constructor(
         if (keyword.isBlank()) return
         _state.update { it.copy(searching = true, error = null) }
         viewModelScope.launch {
-            val songs = repo.ncmSearch(keyword, limit = 30)
-            _state.update {
-                it.copy(
-                    searching = false,
-                    results = songs,
-                    error = if (songs.isEmpty()) "没搜到结果，换个关键词试试" else null,
-                )
-            }
+            runCatching { repo.ncmSearch(keyword, limit = 30) }
+                .onSuccess { songs ->
+                    _state.update {
+                        it.copy(
+                            searching = false,
+                            results = songs,
+                            error = if (songs.isEmpty()) "没搜到结果，换个关键词试试" else null,
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    // 把后端/网络的真实原因显示出来，不然「用不了」查不到原因
+                    _state.update { it.copy(searching = false, error = e.message ?: "搜索失败") }
+                }
         }
     }
 
@@ -78,18 +84,23 @@ class NcmParseViewModel @Inject constructor(
         if (raw.isBlank()) return
         _state.update { it.copy(parsing = true, parsed = null, error = null) }
         viewModelScope.launch {
-            val music = repo.parseMusic(extractSongId(raw))
-            _state.update {
-                it.copy(
-                    parsing = false,
-                    parsed = music,
-                    error = when {
-                        music == null -> "解析失败，请检查 ID 或链接"
-                        music.displayUrl.isBlank() -> "解析到了曲目，但没拿到播放地址（可能无版权）"
-                        else -> null
-                    },
-                )
-            }
+            runCatching { repo.parseMusic(extractSongId(raw)) }
+                .onSuccess { music ->
+                    _state.update {
+                        it.copy(
+                            parsing = false,
+                            parsed = music,
+                            error = when {
+                                music == null -> "解析失败，请检查 ID 或链接"
+                                music.displayUrl.isBlank() -> "解析到了曲目，但没拿到播放地址（可能无版权）"
+                                else -> null
+                            },
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    _state.update { it.copy(parsing = false, error = e.message ?: "解析失败") }
+                }
         }
     }
 
@@ -98,14 +109,19 @@ class NcmParseViewModel @Inject constructor(
         if (raw.isBlank()) return
         _state.update { it.copy(playlistLoading = true, playlist = null, error = null) }
         viewModelScope.launch {
-            val detail = repo.ncmPlaylist(raw)
-            _state.update {
-                it.copy(
-                    playlistLoading = false,
-                    playlist = detail,
-                    error = if (detail == null) "歌单解析失败，请检查 ID" else null,
-                )
-            }
+            runCatching { repo.ncmPlaylist(raw) }
+                .onSuccess { detail ->
+                    _state.update {
+                        it.copy(
+                            playlistLoading = false,
+                            playlist = detail,
+                            error = if (detail == null) "歌单解析失败，请检查 ID" else null,
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    _state.update { it.copy(playlistLoading = false, error = e.message ?: "歌单解析失败") }
+                }
         }
     }
 }

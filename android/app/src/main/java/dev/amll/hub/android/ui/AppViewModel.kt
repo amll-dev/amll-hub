@@ -252,10 +252,16 @@ class AppViewModel @Inject constructor(
 
         lyric.value = LyricUi(loading = true, songId = id, title = title, artist = artist, cover = cover)
         viewModelScope.launch {
-            // exhigh 要 VIP，VIP 歌解析不到就退到 standard 再试一次
-            var music = repo.parseMusic(id)
+            // exhigh 要 VIP，VIP 歌解析不到就退到 standard 再试一次。
+            // 解析失败的原因要留着，给播放条显示「为什么没声音」
+            var parseError: String? = null
+            var music = runCatching { repo.parseMusic(id) }
+                .onFailure { parseError = it.message }
+                .getOrNull()
             if (music?.displayUrl.isNullOrBlank()) {
-                music = repo.parseMusic(id, level = "standard")
+                music = runCatching { repo.parseMusic(id, level = "standard") }
+                    .onFailure { parseError = it.message }
+                    .getOrNull()
             }
 
             // 解析必须兜住：viewModelScope 里漏出去的异常会直接崩掉进程。
@@ -293,6 +299,8 @@ class AppViewModel @Inject constructor(
                     lyricTtml = ttml,
                 ),
                 url,
+                // 把解析失败的原因带给播放条，用户才知道为什么没声音
+                errorHint = if (url == null) (parseError ?: "该歌曲暂无音源") else null,
             )
         }
     }
