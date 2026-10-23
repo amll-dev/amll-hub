@@ -114,7 +114,7 @@ fun AmllLyricView(
                     override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                         Log.d(
                             TAG,
-                            "[web ${message.level()}] ${message.message()} " +
+                            "[web ${message.messageLevel()}] ${message.message()} " +
                                 "(${message.sourceId()}:${message.lineNumber()})",
                         )
                         return true
