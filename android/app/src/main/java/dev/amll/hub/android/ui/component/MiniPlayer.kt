@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.amll.hub.android.playback.PlayerController
@@ -58,6 +59,8 @@ fun MiniPlayer(
             // 与胶囊导航左右对齐（都是 12dp）
             .padding(horizontal = 12.dp)
             .fillMaxWidth()
+            // 投影让播放条在「后面没内容」时也能和页面区分开
+            .shadow(elevation = 8.dp, shape = shape, clip = false)
             // 先裁圆角再叠毛玻璃，否则模糊会画到圆角外面
             .clip(shape)
             .then(modifier)

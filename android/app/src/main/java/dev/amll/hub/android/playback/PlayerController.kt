@@ -94,23 +94,27 @@ class PlayerController @Inject constructor(
 
     /** 直接播放某首歌；url 为空时只更新曲目信息（歌词页可以独立浏览） */
     fun play(track: Track, url: String? = track.streamUrl) {
+        val playable = url?.takeIf { it.isNotBlank() }
         _state.update {
             it.copy(
                 track = track,
                 positionMs = 0L,
                 durationMs = 0L,
-                error = null,
+                error = if (playable == null) "该歌曲暂无音源" else null,
             )
         }
-        if (url.isNullOrBlank()) {
-            // 没有音源也要把元信息写进 session，通知栏才不会留着上一首
-            player.setMediaItem(buildMediaItem(track, null))
+        if (playable == null) {
+            // 绝对不能把「没有 URI 的 MediaItem」塞给 ExoPlayer：
+            // 它的 localConfiguration 为 null，setMediaItem 会在
+            // DefaultMediaSourceFactory.createMediaSource 里 NPE 把进程带走
+            player.stop()
+            player.clearMediaItems()
             return
         }
         // 先把 MediaSessionService 拉起来，再开始播：
         // 服务起来后 Media3 才会把 session 暴露给系统，通知栏/锁屏/蓝牙才拿得到控制权
         startPlaybackService()
-        player.setMediaItem(buildMediaItem(track, url))
+        player.setMediaItem(buildMediaItem(track, Uri.parse(playable)))
         player.prepare()
         player.play()
     }
@@ -134,24 +138,22 @@ class PlayerController @Inject constructor(
     /**
      * 通知栏 / 锁屏 / 蓝牙显示的信息都来自 MediaItem 的 metadata，
      * 不设置的话系统播控只有一句「未知曲目」。
+     *
+     * uri 不接受 null：见 [play] 里的注释，无 URI 的 MediaItem 会让 ExoPlayer 崩。
      */
-    private fun buildMediaItem(track: Track, url: String?): MediaItem {
+    private fun buildMediaItem(track: Track, uri: Uri): MediaItem {
         val metadata = MediaMetadata.Builder()
             .setTitle(track.title.ifBlank { "未知歌曲" })
             .setArtist(track.artist.ifBlank { "未知歌手" })
             .setAlbumTitle(track.albumName.ifBlank { "AMLL Hub" })
             .setIsBrowsable(false)
-            .setIsPlayable(url != null)
+            .setIsPlayable(true)
             .apply {
                 track.coverUrl?.takeIf { it.isNotBlank() }?.let {
                     runCatching { setArtworkUri(Uri.parse(it)) }
                 }
             }
             .build()
-
-        // url ?: Uri.EMPTY 会让 Kotlin 把公共父类型推断成 Comparable<*>，
-        // 这里显式收成 Uri?，setUri 才选得到正确重载
-        val uri: Uri? = url?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
 
         return MediaItem.Builder()
             .setMediaId(track.songId)

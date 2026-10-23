@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -166,6 +167,9 @@ fun PillTabBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(Size.tabPill)
+                // 投影让底栏在「后面没内容」时也能和页面区分开；
+                // 否则毛玻璃糊出来的是纯色，看起来就像没有这一层
+                .shadow(elevation = 8.dp, shape = PillOuterShape, clip = false)
                 // 先裁圆角再叠毛玻璃，否则模糊会画到胶囊外面
                 .clip(PillOuterShape)
                 .then(modifier)

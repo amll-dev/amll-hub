@@ -252,7 +252,11 @@ class AppViewModel @Inject constructor(
 
         lyric.value = LyricUi(loading = true, songId = id, title = title, artist = artist, cover = cover)
         viewModelScope.launch {
-            val music = repo.parseMusic(id)
+            // exhigh 要 VIP，VIP 歌解析不到就退到 standard 再试一次
+            var music = repo.parseMusic(id)
+            if (music?.displayUrl.isNullOrBlank()) {
+                music = repo.parseMusic(id, level = "standard")
+            }
 
             // 解析必须兜住：viewModelScope 里漏出去的异常会直接崩掉进程。
             // 后端偶尔会返回非 TTML 的内容（错误页等），解析器会抛
