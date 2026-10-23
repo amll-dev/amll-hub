@@ -21,12 +21,14 @@ val apiBaseUrl: String = run {
 }
 
 android {
+    // namespace 是代码包名（R / BuildConfig 的包路径），与安装包标识无关，
+    // 这里保持不动；对外显示的包名是下面的 applicationId
     namespace = "dev.amll.hub.android"
     // 依赖（Coil 3.6 / Compose 1.12 / Navigation 2.10 等）要求 compileSdk 37
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "dev.amll.hub.android"
+        applicationId = "com.amlldev.amllhub"
         minSdk = 26
         // targetSdk 与 compileSdk 独立：这里不跟随升级，
         // 避免在验证编译阶段同时引入 Android 17 的运行时行为变更
@@ -41,7 +43,8 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
-            applicationIdSuffix = ".debug"
+            // 不加 applicationIdSuffix：debug 包也用 com.amlldev.amllhub，
+            // 免得装出来的包名和 release 不一致
             versionNameSuffix = "-debug"
         }
         release {

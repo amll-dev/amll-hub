@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -38,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -157,21 +159,22 @@ fun PillTabBar(
         ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val slot = maxWidth / items.size.toFloat()
-                // 指示块是圆的：直径取「槽位宽」与「胶囊内高」的较小值，水平居中在槽位里
-                val diameter = minOf(slot, maxHeight)
+                // 选中态是「包住图标+文字」的扁圆角块，左右各留 4dp
+                val indicatorWidth = slot - 8.dp
                 Box(
                     Modifier
-                        .offset(x = slot * progress + (slot - diameter) / 2)
-                        .size(diameter)
-                        .clip(CircleShape)
-                        .background(Amll.colors.primary),
+                        .offset(x = slot * progress + 4.dp)
+                        .width(indicatorWidth)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Amll.colors.primarySoft),
                 )
             }
             Row(Modifier.fillMaxSize()) {
                 items.forEachIndexed { index, item ->
                     val active = index == target
                     val tint by animateColorAsState(
-                        targetValue = if (active) Amll.colors.onPrimary else Amll.colors.ink3,
+                        targetValue = if (active) Amll.colors.primary else Amll.colors.ink3,
                         animationSpec = tween(180),
                         label = "tabTint$index",
                     )
@@ -179,7 +182,11 @@ fun PillTabBar(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .clickable { onSelect(index) },
+                            // 不要正方形水波纹：只响应点击，不画指示
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { onSelect(index) },
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {

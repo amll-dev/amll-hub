@@ -76,11 +76,12 @@ fun AppShell(
     }
 
     val hazeState: HazeState = rememberHazeState()
-    // 毛玻璃参数：24dp 模糊 + 主背景色打底，保证任何内容上都读得清
-    val tint = Amll.colors.canvas.copy(alpha = 0.62f)
+    // 毛玻璃参数对齐网页端顶栏（backdrop-blur-xl + bg-card/80）：
+    // 模糊给足、底色给到 0.76，才不会「太透」
+    val tint = Amll.colors.canvas.copy(alpha = 0.76f)
     val blurStyle = remember(tint) {
         HazeBlurStyle {
-            blurRadius(24.dp)
+            blurRadius(36.dp)
             backgroundColor(tint)
         }
     }

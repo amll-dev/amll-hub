@@ -253,8 +253,12 @@ class AppViewModel @Inject constructor(
         viewModelScope.launch {
             val music = repo.parseMusic(id)
 
+            // 解析必须兜住：viewModelScope 里漏出去的异常会直接崩掉进程。
+            // 后端偶尔会返回非 TTML 的内容（错误页等），解析器会抛
             val (lines, ttml) = withContext(Dispatchers.Default) {
-                loadLyric(id, rawLyricFile, music?.lyric.orEmpty(), music?.tlyric.orEmpty())
+                runCatching {
+                    loadLyric(id, rawLyricFile, music?.lyric.orEmpty(), music?.tlyric.orEmpty())
+                }.getOrElse { emptyList<LyricLine>() to "" }
             }
 
             val resolvedTitle = music?.displayName?.takeIf { it.isNotBlank() } ?: title

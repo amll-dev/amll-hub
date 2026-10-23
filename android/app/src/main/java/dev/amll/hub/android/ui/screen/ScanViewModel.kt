@@ -41,6 +41,14 @@ class ScanViewModel @Inject constructor(
     private val _state = MutableStateFlow<ScanState>(ScanState.Idle)
     val state: StateFlow<ScanState> = _state.asStateFlow()
 
+    /** 「我的名片」用当前账号信息 */
+    private val _profile = MutableStateFlow<UserProfile?>(null)
+    val profile: StateFlow<UserProfile?> = _profile.asStateFlow()
+
+    fun loadProfile() {
+        viewModelScope.launch { _profile.value = runCatching { repo.profile() }.getOrNull() }
+    }
+
     /**
      * 解析扫码结果，取出 ticket。
      * 兼容 amllhub://qrlogin?ticket=xxx 与直接传 ticket 字符串。

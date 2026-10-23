@@ -34,7 +34,8 @@ object Size {
     val pageWidth = 390.dp
     val statusBar = 62.dp
     val tabBar = 95.dp
-    val tabPill = 62.dp
+    /** 胶囊导航高度：比原来 62dp 扁一档 */
+    val tabPill = 54.dp
     val topBar = 32.dp
     val coverRow = 48.dp
     val coverRank = 40.dp

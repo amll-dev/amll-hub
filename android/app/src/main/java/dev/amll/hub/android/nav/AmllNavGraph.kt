@@ -1,6 +1,7 @@
 package dev.amll.hub.android.nav
 
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -190,15 +191,18 @@ private fun LoggedInNav(
                 val from = initialState.tabIndex()
                 val to = targetState.tabIndex()
                 val toLeft = from == null || to == null || to >= from
+                // 旧页面必须整屏滑走：只推 1/5 的话它会一直摊在那儿，
+                // 直到动画结束被 NavHost 直接移除，看起来就是「被新页面盖住」
                 slideOutHorizontally(animationSpec = tween(280)) { width ->
-                    if (toLeft) -width / 5 else width / 5
-                }
+                    if (toLeft) -width else width
+                } + fadeOut(animationSpec = tween(200))
             },
             popEnterTransition = {
-                slideInHorizontally(animationSpec = tween(280)) { width -> -width / 4 }
+                slideInHorizontally(animationSpec = tween(280)) { width -> -width }
             },
             popExitTransition = {
-                slideOutHorizontally(animationSpec = tween(280)) { width -> width }
+                slideOutHorizontally(animationSpec = tween(280)) { width -> width } +
+                    fadeOut(animationSpec = tween(200))
             },
         ) {
             composable(Routes.HOME) { HomeScreen(vm, nav) }

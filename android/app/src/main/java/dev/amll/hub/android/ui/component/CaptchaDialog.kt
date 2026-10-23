@@ -9,7 +9,6 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -88,12 +87,10 @@ fun CaptchaDialog(
     ) {
         AnimatedVisibility(
             visible = visible,
-            enter = fadeIn(tween(180)) +
-                scaleIn(
-                    initialScale = 0.9f,
-                    animationSpec = tween(240, easing = FastOutSlowInEasing),
-                ) +
-                slideInVertically(animationSpec = tween(240, easing = FastOutSlowInEasing)) { it / 14 },
+            // 只做淡入 + 轻微上移：WebView 放进带缩放的图层里，
+            // 部分机型会出现验证码渲染不出来
+            enter = fadeIn(tween(160)) +
+                slideInVertically(animationSpec = tween(220, easing = FastOutSlowInEasing)) { it / 16 },
             exit = fadeOut(tween(120)),
         ) {
             Column(

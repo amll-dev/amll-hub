@@ -2,6 +2,7 @@ package dev.amll.hub.android.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
@@ -42,21 +43,30 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        mediaSession = MediaSession.Builder(this, playerController.player)
-            .setSessionActivity(sessionActivity)
-            .setCallback(SessionCallback())
-            .build()
+        // 建 session 失败不应该把整个进程带走：没有系统播控也得能继续放歌
+        mediaSession = runCatching {
+            MediaSession.Builder(this, playerController.player)
+                .setSessionActivity(sessionActivity)
+                .setCallback(SessionCallback())
+                .build()
+        }.onFailure {
+            Log.e(TAG, "create MediaSession failed", it)
+        }.getOrNull()
 
         // 默认实现会自己建渠道，这里显式指定渠道名与通知图标，
         // 让通知显示成「正在播放」而不是 media3 的默认英文渠道名
-        setMediaNotificationProvider(
-            DefaultMediaNotificationProvider.Builder(this)
-                .setChannelId(CHANNEL_ID)
-                .setChannelName(R.string.playback_channel_name)
-                .setNotificationId(NOTIFICATION_ID)
-                .build()
-                .apply { setSmallIcon(R.drawable.ic_stat_music) },
-        )
+        runCatching {
+            setMediaNotificationProvider(
+                DefaultMediaNotificationProvider.Builder(this)
+                    .setChannelId(CHANNEL_ID)
+                    .setChannelName(R.string.playback_channel_name)
+                    .setNotificationId(NOTIFICATION_ID)
+                    .build()
+                    .apply { setSmallIcon(R.drawable.ic_stat_music) },
+            )
+        }.onFailure {
+            Log.e(TAG, "set media notification provider failed", it)
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
@@ -86,6 +96,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     private companion object {
+        const val TAG = "PlaybackService"
         const val CHANNEL_ID = "amll_playback"
         const val NOTIFICATION_ID = 1001
     }
