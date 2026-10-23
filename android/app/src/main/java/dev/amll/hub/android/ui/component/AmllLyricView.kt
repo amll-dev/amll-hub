@@ -30,12 +30,14 @@ fun AmllLyricView(
     title: String,
     artist: String,
     durationMs: Long,
+    cover: String?,
     dark: Boolean,
     modifier: Modifier = Modifier,
 ) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var loaded by remember { mutableStateOf(false) }
     val linesJson = remember(lines) { lyricLinesToJson(lines) }
+    val coverUrl = remember(cover) { cover.orEmpty() }
 
     LaunchedEffect(webView, loaded, linesJson) {
         if (loaded && linesJson.isNotEmpty()) {
@@ -70,6 +72,15 @@ fun AmllLyricView(
             )
         }
     }
+    // 封面驱动 AMLL 的背景渐变，不传的话歌词页就是一片黑
+    LaunchedEffect(webView, loaded, coverUrl) {
+        if (loaded) {
+            webView?.evaluateJavascript(
+                "window.amllNative&&window.amllNative.setCover(${jsString(coverUrl)})",
+                null,
+            )
+        }
+    }
     LaunchedEffect(webView, loaded, dark) {
         if (loaded) {
             webView?.evaluateJavascript(
@@ -100,6 +111,10 @@ fun AmllLyricView(
 
                     override fun onPageFinished(view: WebView?, url: String?) {
                         loaded = true
+                        view?.evaluateJavascript(
+                            "window.amllNative&&window.amllNative.setCover(${jsString(coverUrl)})",
+                            null,
+                        )
                         view?.evaluateJavascript(
                             "window.amllNative&&window.amllNative.setTheme($dark)",
                             null,

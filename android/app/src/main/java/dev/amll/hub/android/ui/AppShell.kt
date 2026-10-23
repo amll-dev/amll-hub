@@ -77,11 +77,11 @@ fun AppShell(
     }
 
     val hazeState: HazeState = rememberHazeState()
-    // 底色用卡片色（网页端顶栏是 bg-card/80，不是页面底色）：
-    // 之前用 canvas 和页面同色，栏和背景糊在一起，看着就像「一片通透」
-    // Android 12 以下没有 RenderEffect，haze 的模糊默认关闭，这时把底色压得更实
+    // 底色用卡片色（网页端顶栏是 bg-card/80，不是页面底色）。
+    // 底栏自己还有一层 0.97 的实心底兜底（haze 在源内容静止时会跳过绘制），
+    // 所以这里的透明度可以低一些，让模糊在滚动时更明显
     val blurSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val tint = Amll.colors.surface.copy(alpha = if (blurSupported) 0.82f else 0.96f)
+    val tint = Amll.colors.surface.copy(alpha = if (blurSupported) 0.72f else 0.98f)
     val blurStyle = remember(tint) {
         HazeBlurStyle {
             blurRadius(36.dp)

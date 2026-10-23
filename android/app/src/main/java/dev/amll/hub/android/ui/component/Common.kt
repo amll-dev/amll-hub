@@ -172,6 +172,9 @@ fun PillTabBar(
                 .shadow(elevation = 8.dp, shape = PillOuterShape, clip = false)
                 // 先裁圆角再叠毛玻璃，否则模糊会画到胶囊外面
                 .clip(PillOuterShape)
+                // haze 在源内容静止/不可用时整个跳过绘制（连底色都不画），
+                // 这层实心底就是那时的兜底，避免底栏透明
+                .background(Amll.colors.surface.copy(alpha = 0.97f))
                 .then(modifier)
                 .border(0.5.dp, Amll.colors.border.copy(alpha = 0.55f), PillOuterShape)
                 .padding(4.dp),

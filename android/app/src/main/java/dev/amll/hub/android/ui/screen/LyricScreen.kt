@@ -23,7 +23,8 @@ import dev.amll.hub.android.ui.theme.Amll
  *
  * 网页端就是 `fixed inset-0 bg-black` 里塞一个 `PrebuiltLyricPlayer`，
  * 没有标题栏、没有进度条、没有播放按钮，翻页/暂停都交给系统。
- * 这里保持同样的克制：不画任何原生控件，返回走系统返回手势。
+ * AMLL 的封面派生背景由 `setCover` 驱动，有没有歌词都照常绘制，
+ * 所以这里不做任何兜底 UI。
  */
 @Composable
 fun LyricScreen(vm: AppViewModel, nav: AppNav) {
@@ -56,7 +57,7 @@ fun LyricScreen(vm: AppViewModel, nav: AppNav) {
             title = lyric.title,
             artist = lyric.artist,
             durationMs = duration,
-            // 网页端歌词页固定黑底，不跟随 App 主题
+            cover = lyric.cover,
             dark = true,
             modifier = Modifier.fillMaxSize(),
         )

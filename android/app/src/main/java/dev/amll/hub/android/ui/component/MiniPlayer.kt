@@ -63,6 +63,8 @@ fun MiniPlayer(
             .shadow(elevation = 8.dp, shape = shape, clip = false)
             // 先裁圆角再叠毛玻璃，否则模糊会画到圆角外面
             .clip(shape)
+            // haze 跳过绘制时的实心底兜底，避免播放条透明
+            .background(Amll.colors.surface.copy(alpha = 0.97f))
             .then(modifier)
             .border(0.5.dp, Amll.colors.border.copy(alpha = 0.55f), shape)
             .clickable(onClick = onOpen),

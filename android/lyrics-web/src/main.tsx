@@ -48,8 +48,7 @@ store.set(enableLyricLineScaleEffectAtom, true);
 store.set(enableLyricLineSpringAnimationAtom, true);
 store.set(enableLyricTranslationLineAtom, true);
 store.set(enableLyricRomanLineAtom, true);
-// 关掉背景渲染，省电也避免 WebGL 在部分机型上闪
-store.set(lyricBackgroundFPSAtom, 0);
+store.set(lyricBackgroundFPSAtom, 30);
 
 function App() {
   return (
@@ -67,6 +66,7 @@ type NativeBridge = {
   setTime: (ms: number) => void;
   setPlaying: (playing: boolean) => void;
   setMeta: (name: string, artists: string, duration: number) => void;
+  setCover: (url: string) => void;
   setTheme: (dark: boolean) => void;
 };
 
@@ -95,6 +95,10 @@ window.amllNative = {
     store.set(musicNameAtom, name);
     store.set(musicArtistsAtom, [{ id: '1', name: artists }] as never);
     store.set(musicDurationAtom, duration);
+  },
+  // 封面驱动 AMLL 的背景渐变，没有它页面就是纯黑
+  setCover(url: string) {
+    store.set(musicCoverAtom, url || '');
   },
   setTheme(dark: boolean) {
     document.documentElement.classList.toggle('dark', dark);
