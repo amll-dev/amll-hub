@@ -67,6 +67,7 @@ fun AppShell(
     content: @Composable () -> Unit,
 ) {
     val player by vm.playerState.collectAsStateWithLifecycle()
+    val lyric by vm.lyric.collectAsStateWithLifecycle()
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     val hasTrack = player.track != null
@@ -105,6 +106,8 @@ fun AppShell(
                 Column(Modifier.fillMaxWidth()) {
                     MiniPlayer(
                         state = player,
+                        loading = lyric.loading,
+                        error = player.error,
                         onOpen = nav.openPlayer,
                         onToggle = vm::togglePlay,
                         modifier = Modifier.hazeBlur(

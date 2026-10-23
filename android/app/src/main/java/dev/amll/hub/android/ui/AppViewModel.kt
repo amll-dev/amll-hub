@@ -330,7 +330,17 @@ class AppViewModel @Inject constructor(
         openTrack(track.songId, track.title, track.artist, track.coverUrl)
     }
 
-    fun togglePlay() = player.toggle()
+    fun togglePlay() {
+        val state = player.state.value
+        // 有曲目但播放器里没有可播内容（上次解析失败 / 无音源）时，
+        // 点播放就重新走一遍解析，而不是毫无反应
+        if (!state.playing && player.player.mediaItemCount == 0 && state.track != null) {
+            val track = state.track
+            openTrack(track.songId, track.title, track.artist, track.coverUrl)
+            return
+        }
+        player.toggle()
+    }
 
     fun seekTo(positionMs: Long) = player.seekTo(positionMs)
 

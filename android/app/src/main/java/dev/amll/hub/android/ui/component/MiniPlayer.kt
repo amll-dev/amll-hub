@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +42,10 @@ import dev.amll.hub.android.ui.theme.Radius
 @Composable
 fun MiniPlayer(
     state: PlayerController.State,
+    /** 正在解析歌曲信息（openTrack 进行中） */
+    loading: Boolean,
+    /** 播放器层面的错误，如「该歌曲暂无音源」 */
+    error: String?,
     onOpen: () -> Unit,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
@@ -93,9 +98,13 @@ fun MiniPlayer(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    track.artist.ifBlank { "AMLL Hub" },
+                    when {
+                        loading -> "正在获取歌曲信息…"
+                        !error.isNullOrBlank() -> error
+                        else -> track.artist.ifBlank { "AMLL Hub" }
+                    },
                     style = Font.micro,
-                    color = Amll.colors.ink3,
+                    color = if (!error.isNullOrBlank()) Amll.colors.warning else Amll.colors.ink3,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -105,15 +114,23 @@ fun MiniPlayer(
                     .size(36.dp)
                     .clip(CircleShape)
                     .background(Amll.colors.surface2.copy(alpha = 0.7f))
-                    .clickable(onClick = onToggle),
+                    .clickable(enabled = !loading, onClick = onToggle),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = if (state.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    contentDescription = if (state.playing) "暂停" else "播放",
-                    tint = Amll.colors.ink,
-                    modifier = Modifier.size(20.dp),
-                )
+                if (loading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = Amll.colors.primary,
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (state.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = if (state.playing) "暂停" else "播放",
+                        tint = Amll.colors.ink,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
         Box(
