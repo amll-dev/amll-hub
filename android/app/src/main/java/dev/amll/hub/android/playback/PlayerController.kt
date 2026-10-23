@@ -1,9 +1,11 @@
 package dev.amll.hub.android.playback
 
 import android.content.Context
+import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -62,6 +64,8 @@ class PlayerController @Inject constructor(
             true,
         )
         repeatMode = Player.REPEAT_MODE_ALL
+        // 拔耳机自动暂停，交给系统播控统一处理
+        setHandleAudioBecomingNoisy(true)
     }
 
     private val _state = MutableStateFlow(State())
@@ -98,16 +102,73 @@ class PlayerController @Inject constructor(
                 error = null,
             )
         }
-        if (url.isNullOrBlank()) return
-        player.setMediaItem(MediaItem.fromUri(url))
+        if (url.isNullOrBlank()) {
+            // 没有音源也要把元信息写进 session，通知栏才不会留着上一首
+            player.setMediaItem(buildMediaItem(track, null))
+            return
+        }
+        // 先把 MediaSessionService 拉起来，再开始播：
+        // 服务起来后 Media3 才会把 session 暴露给系统，通知栏/锁屏/蓝牙才拿得到控制权
+        startPlaybackService()
+        player.setMediaItem(buildMediaItem(track, url))
         player.prepare()
         player.play()
-        // 交给 MediaSessionService 接管通知栏与后台播放
-        runCatching { context.startService(android.content.Intent(context, PlaybackService::class.java)) }
+    }
+
+    private var serviceStarted = false
+
+    /**
+     * 拉起播放服务。
+     *
+     * 用 startService 而不是 startForegroundService：前台化由 Media3 在真正开始播放时
+     * 自己做，这样 prepare 卡住也不会触发「5 秒内没 startForeground」的 ANR。
+     */
+    private fun startPlaybackService() {
+        if (serviceStarted) return
+        val intent = android.content.Intent(context, PlaybackService::class.java)
+        if (runCatching { context.startService(intent) }.isSuccess) {
+            serviceStarted = true
+        }
+    }
+
+    /**
+     * 通知栏 / 锁屏 / 蓝牙显示的信息都来自 MediaItem 的 metadata，
+     * 不设置的话系统播控只有一句「未知曲目」。
+     */
+    private fun buildMediaItem(track: Track, url: String?): MediaItem {
+        val metadata = MediaMetadata.Builder()
+            .setTitle(track.title.ifBlank { "未知歌曲" })
+            .setArtist(track.artist.ifBlank { "未知歌手" })
+            .setAlbumTitle(track.albumName.ifBlank { "AMLL Hub" })
+            .setIsBrowsable(false)
+            .setIsPlayable(url != null)
+            .apply {
+                track.coverUrl?.takeIf { it.isNotBlank() }?.let {
+                    runCatching { setArtworkUri(Uri.parse(it)) }
+                }
+            }
+            .build()
+
+        return MediaItem.Builder()
+            .setMediaId(track.songId)
+            .setUri(url ?: Uri.EMPTY)
+            .setMediaMetadata(metadata)
+            .build()
     }
 
     fun toggle() {
-        if (player.isPlaying) player.pause() else player.play()
+        if (player.isPlaying) {
+            player.pause()
+        } else {
+            // 服务可能被系统回收过，恢复播放前先确保它还在
+            if (player.mediaItemCount > 0) startPlaybackService()
+            player.play()
+        }
+    }
+
+    /** PlaybackService 销毁时回调，下次播放要重新拉起服务 */
+    fun onServiceDestroyed() {
+        serviceStarted = false
     }
 
     fun pause() {

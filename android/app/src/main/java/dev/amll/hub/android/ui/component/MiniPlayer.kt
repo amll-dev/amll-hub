@@ -31,8 +31,11 @@ import dev.amll.hub.android.ui.theme.Font
 import dev.amll.hub.android.ui.theme.Radius
 
 /**
- * 迷你播放器：贴在底部 Tab 栏上方，点一下进 AMLL 歌词页。
+ * 迷你播放器：贴在底部 Tab 栏上方，点封面或信息区进 AMLL 歌词页。
  * 没有曲目时整块不占位。
+ *
+ * 卡片本身不铺底色，毛玻璃由外层传进来的 [modifier] 提供，
+ * 这样下面滚动的内容才能透上来。
  */
 @Composable
 fun MiniPlayer(
@@ -47,14 +50,18 @@ fun MiniPlayer(
     } else {
         0f
     }
+    val shape = RoundedCornerShape(Radius.card)
 
     Column(
-        modifier
+        Modifier
             .fillMaxWidth()
-            .padding(horizontal = 21.dp)
-            .clip(RoundedCornerShape(Radius.card))
-            .background(Amll.colors.surface)
-            .border(1.dp, Amll.colors.border, RoundedCornerShape(Radius.card))
+            // 与胶囊导航左右对齐（都是 12dp）
+            .padding(horizontal = 12.dp)
+            .fillMaxWidth()
+            // 先裁圆角再叠毛玻璃，否则模糊会画到圆角外面
+            .clip(shape)
+            .then(modifier)
+            .border(0.5.dp, Amll.colors.border.copy(alpha = 0.55f), shape)
             .clickable(onClick = onOpen),
     ) {
         Row(
@@ -65,8 +72,14 @@ fun MiniPlayer(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            CoverImage(track.coverUrl, track.title, 38.dp, radius = 10.dp)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            // 封面单独可点：与网页端一致，点封面直接进歌词页
+            Box(Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onOpen)) {
+                CoverImage(track.coverUrl, track.title, 38.dp, radius = 10.dp)
+            }
+            Column(
+                Modifier.weight(1f).clickable(onClick = onOpen),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
                 Text(
                     track.title.ifBlank { "正在播放" },
                     style = Font.bodyMedium,
@@ -86,7 +99,7 @@ fun MiniPlayer(
                 Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(Amll.colors.surface2)
+                    .background(Amll.colors.surface2.copy(alpha = 0.7f))
                     .clickable(onClick = onToggle),
                 contentAlignment = Alignment.Center,
             ) {
@@ -102,7 +115,7 @@ fun MiniPlayer(
             Modifier
                 .fillMaxWidth()
                 .height(2.dp)
-                .background(Amll.colors.surface2),
+                .background(Amll.colors.ink3.copy(alpha = 0.22f)),
         ) {
             if (fraction > 0f) {
                 Box(

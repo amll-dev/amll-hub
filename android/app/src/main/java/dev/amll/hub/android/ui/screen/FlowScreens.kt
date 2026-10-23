@@ -3,9 +3,11 @@ package dev.amll.hub.android.ui.screen
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,9 +52,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.amll.hub.android.data.remote.DailyRecDto
 import dev.amll.hub.android.data.remote.SubmissionDto
+import dev.amll.hub.android.data.remote.SubmissionStatsDto
 import dev.amll.hub.android.ui.AppNav
 import dev.amll.hub.android.ui.AppViewModel
+import dev.amll.hub.android.ui.TabScaffold
+import dev.amll.hub.android.ui.bottomBarPadding
 import dev.amll.hub.android.ui.component.AmllCard
 import dev.amll.hub.android.ui.component.AmllTopBar
 import dev.amll.hub.android.ui.component.ChipTone
@@ -60,6 +68,7 @@ import dev.amll.hub.android.ui.component.FieldRow
 import dev.amll.hub.android.ui.component.GhostButton
 import dev.amll.hub.android.ui.component.PageHeader
 import dev.amll.hub.android.ui.component.PrimaryButton
+import dev.amll.hub.android.ui.component.SegmentedTabs
 import dev.amll.hub.android.ui.component.SkeletonList
 import dev.amll.hub.android.ui.component.StatusChip
 import dev.amll.hub.android.ui.theme.Amll
@@ -70,119 +79,296 @@ import dev.amll.hub.android.ui.theme.Radius
 
 /* ============================ 07 创作中心 ============================ */
 
+/** 歌词管理的状态筛选，取值与后端 repository 的 status 参数一致 */
+private val CREATOR_STATUS = listOf(
+    "all" to "全部",
+    "draft" to "草稿",
+    "processing" to "进行中",
+    "approved" to "已通过",
+    "rejected" to "未通过",
+)
+
+private val CREATOR_TABS = listOf("歌词", "每日推荐", "搜索 IP")
+
 @Composable
 fun CreatorCenterScreen(vm: AppViewModel, nav: AppNav) {
-    LaunchedEffect(Unit) { if (vm.submissions.value.items.isEmpty()) vm.loadSubmissions() }
-    val ui by vm.submissions.collectAsStateWithLifecycle()
-    var typeIndex by remember { mutableIntStateOf(0) }
-    val types = listOf("歌词投稿", "每日推荐投稿", "搜索 IP 投稿")
+    LaunchedEffect(Unit) {
+        vm.loadSubmissions()
+        vm.loadSubmissionStats()
+    }
+    val stats by vm.submissionStats.collectAsStateWithLifecycle()
+    val subUi by vm.submissions.collectAsStateWithLifecycle()
+    val dailyUi by vm.dailySubmissions.collectAsStateWithLifecycle()
+    val ipUi by vm.searchIpSubmissions.collectAsStateWithLifecycle()
+    val status by vm.submissionStatus.collectAsStateWithLifecycle()
+    var mainTab by remember { mutableIntStateOf(0) }
 
-    TabScaffold(vm, selected = 2, nav = nav) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 16.dp),
+    TabScaffold {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = 10.dp,
+                bottom = bottomBarPadding(16.dp),
+            ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            PageHeader("创作中心")
+            item { PageHeader("创作中心", "投稿进度、修订确认都在这里") }
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                types.forEachIndexed { index, label ->
-                    val active = index == typeIndex
-                    Box(
-                        Modifier
-                            .clip(ChipShape)
-                            .background(if (active) Amll.colors.primarySoft else Amll.colors.surface2)
-                            .clickable { typeIndex = index }
-                            .padding(horizontal = 12.dp, vertical = 7.dp),
-                    ) {
-                        Text(
-                            label,
-                            style = Font.micro.copy(fontWeight = FontWeight.Medium),
-                            color = if (active) Amll.colors.primary else Amll.colors.ink3,
-                        )
+            item { SubmissionStatsCard(stats) }
+
+            item { NewSubmissionCard(nav.openSubmit) }
+
+            item {
+                SegmentedTabs(
+                    labels = CREATOR_TABS,
+                    selectedIndex = mainTab,
+                    onSelect = { index ->
+                        mainTab = index
+                        when (index) {
+                            0 -> vm.loadSubmissions()
+                            1 -> vm.loadDailySubmissions()
+                            else -> vm.loadSearchIpSubmissions()
+                        }
+                    },
+                )
+            }
+
+            when (mainTab) {
+                0 -> {
+                    item {
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            CREATOR_STATUS.forEach { (value, label) ->
+                                FilterChip(
+                                    label = label,
+                                    active = value == status,
+                                ) { vm.loadSubmissions(value) }
+                            }
+                        }
+                    }
+                    when {
+                        subUi.loading -> item { SkeletonList(4) }
+                        subUi.items.isEmpty() -> item {
+                            EmptyState(
+                                icon = Icons.Outlined.Inbox,
+                                title = subUi.error ?: "暂无稿件",
+                                description = "换个筛选条件试试",
+                            )
+                        }
+                        else -> items(subUi.items, key = { it.id }) { item ->
+                            SubmissionRow(item) { id ->
+                                vm.openSubmission(item)
+                                nav.openSubmission(id)
+                            }
+                        }
                     }
                 }
-            }
 
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .height(96.dp)
-                    .clip(HeroShape)
-                    .background(Brush.linearGradient(listOf(Amll.colors.primary, Color(0xFF59162E))))
-                    .clickable(onClick = nav.openSubmit)
-                    .padding(18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Box(
-                    Modifier.size(38.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.18f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Rounded.Add, "新建投稿", tint = Color.White, modifier = Modifier.size(20.dp))
+                1 -> when {
+                    dailyUi.loading -> item { SkeletonList(4) }
+                    dailyUi.items.isEmpty() -> item {
+                        EmptyState(
+                            icon = Icons.Outlined.Inbox,
+                            title = dailyUi.error ?: "暂无每日推荐投稿",
+                            description = "去投一首今天想推荐给大家的歌",
+                        )
+                    }
+                    else -> items(dailyUi.items, key = { it.id }) { item ->
+                        DailySubmissionRow(item)
+                    }
                 }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("新建投稿", style = Font.sheetTitle, color = Color.White)
-                    Text(
-                        "歌词 / 每日推荐 / 搜索 IP 三类投稿",
-                        style = Font.micro,
-                        color = Color.White.copy(alpha = 0.85f),
-                    )
-                }
-            }
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("稿件列表", style = Font.section.copy(fontSize = 14.sp), color = Amll.colors.ink)
-                Text("全部稿件", style = Font.caption, color = Amll.colors.ink3)
-            }
-
-            when {
-                ui.loading -> SkeletonList(3)
-                ui.items.isEmpty() -> EmptyState(
-                    icon = Icons.Outlined.Inbox,
-                    title = "暂无稿件",
-                    description = "换个筛选条件试试",
-                )
-                else -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    ui.items.take(4).forEach { item ->
-                        SubmissionRow(item) { id ->
-                            vm.openSubmission(item)
-                            nav.openSubmission(id)
+                else -> when {
+                    ipUi.loading -> item { SkeletonList(4) }
+                    ipUi.items.isEmpty() -> item {
+                        EmptyState(
+                            icon = Icons.Outlined.Inbox,
+                            title = ipUi.error ?: "暂无搜索 IP 投稿",
+                            description = "搜索 IP 显示投稿会出现在这里",
+                        )
+                    }
+                    else -> items(ipUi.items, key = { it.id }) { item ->
+                        Row(
+                            Modifier.fillMaxWidth().height(56.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    item.title.ifBlank { "未命名投稿" },
+                                    style = Font.bodyMedium,
+                                    color = Amll.colors.ink,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    "#${item.id} · ${item.createdAt.take(10)}",
+                                    style = Font.micro,
+                                    color = Amll.colors.ink3,
+                                )
+                            }
+                            val (label, tone) = statusOf(item.status)
+                            StatusChip(label, tone)
                         }
                     }
                 }
             }
 
-            AmllCard(padding = 14.dp) {
-                Text(
-                    "逐字打轴请在电脑端完成，手机端可微调时间戳",
-                    style = Font.micro,
-                    color = Amll.colors.ink3,
-                )
+            item {
+                AmllCard(padding = 14.dp) {
+                    Text(
+                        "逐字打轴请在电脑端完成，手机端可以查看进度、确认修订版",
+                        style = Font.micro,
+                        color = Amll.colors.ink3,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 统计卡：数字全部来自 /submissions/stats */
+@Composable
+private fun SubmissionStatsCard(stats: SubmissionStatsDto?) {
+    val cells = listOf(
+        "进行中" to (stats?.processing ?: 0),
+        "已通过" to (stats?.approved ?: 0),
+        "待确认" to (stats?.revised ?: 0),
+        "未通过" to (stats?.rejected ?: 0),
+    )
+    AmllCard(padding = 14.dp) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            cells.forEach { (label, value) ->
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        value.toString(),
+                        style = Font.numberL.copy(fontSize = 22.sp),
+                        color = if (value > 0) Amll.colors.ink else Amll.colors.ink3,
+                    )
+                    Text(label, style = Font.micro, color = Amll.colors.ink3)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SubmissionRow(item: SubmissionDto, onOpen: (Long) -> Unit) {
+private fun FilterChip(label: String, active: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .height(30.dp)
+            .clip(ChipShape)
+            .background(if (active) Amll.colors.primary else Amll.colors.surface2)
+            .clickable(enabled = !active, onClick = onClick)
+            .padding(horizontal = 13.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = Font.micro.copy(fontWeight = FontWeight.Medium),
+            color = if (active) Amll.colors.onPrimary else Amll.colors.ink2,
+        )
+    }
+}
+
+@Composable
+private fun NewSubmissionCard(onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().height(56.dp).clickable { onOpen(item.id) },
+        Modifier
+            .fillMaxWidth()
+            .height(96.dp)
+            .clip(HeroShape)
+            .background(Brush.linearGradient(listOf(Amll.colors.primary, Color(0xFF59162E))))
+            .clickable(onClick = onClick)
+            .padding(18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
+            Modifier.size(38.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Rounded.Add, "新建投稿", tint = Color.White, modifier = Modifier.size(20.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("新建投稿", style = Font.sheetTitle, color = Color.White)
+            Text(
+                "歌词 / 每日推荐 / 搜索 IP 三类投稿",
+                style = Font.micro,
+                color = Color.White.copy(alpha = 0.85f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun DailySubmissionRow(item: DailyRecDto) {
+    Row(
+        Modifier.fillMaxWidth().height(56.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
-                item.displayName.ifBlank { "未命名稿件" },
+                item.songName.ifBlank { "未命名推荐" },
                 style = Font.bodyMedium,
                 color = Amll.colors.ink,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Text(item.createdAt.take(10), style = Font.micro, color = Amll.colors.ink3)
+            Text(
+                "${item.date} · ${item.artist.ifBlank { "未知歌手" }}",
+                style = Font.micro,
+                color = Amll.colors.ink3,
+                maxLines = 1,
+            )
         }
         val (label, tone) = statusOf(item.status)
         StatusChip(label, tone)
+    }
+}
+
+@Composable
+private fun SubmissionRow(item: SubmissionDto, onOpen: (Long) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().height(60.dp).clickable { onOpen(item.id) },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                item.displayName,
+                style = Font.bodyMedium,
+                color = Amll.colors.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                "#${item.id} · ${item.createdAt.take(10)} · ${languageText(item.language)}",
+                style = Font.micro,
+                color = Amll.colors.ink3,
+                maxLines = 1,
+            )
+        }
+        val (label, tone) = statusOf(item.status)
+        StatusChip(label, tone)
+    }
+}
+
+/** 语言代码 → 中文名，未收录的直接显示原值 */
+internal fun languageText(code: String): String {
+    if (code.isBlank()) return "未标注"
+    return when (code) {
+        "zh" -> "汉语"
+        "en" -> "英语"
+        "ja" -> "日语"
+        "ko" -> "韩语"
+        "others" -> "其他"
+        else -> code
     }
 }
 
@@ -190,9 +376,12 @@ private fun statusOf(status: String): Pair<String, ChipTone> = when (status) {
     "approved" -> "已通过" to ChipTone.SUCCESS
     "pending" -> "待审核" to ChipTone.WARNING
     "reviewing" -> "审核中" to ChipTone.INFO
-    "revised" -> "待投稿者确认" to ChipTone.WARNING
+    "need_revision" -> "需修改" to ChipTone.WARNING
+    "missing_audio" -> "缺音频" to ChipTone.WARNING
+    "revised" -> "待确认修订" to ChipTone.PRIMARY
     "rejected" -> "未通过" to ChipTone.PRIMARY
     "draft" -> "草稿" to ChipTone.NEUTRAL
+    "closed" -> "已关闭" to ChipTone.NEUTRAL
     else -> status.ifBlank { "未知" } to ChipTone.NEUTRAL
 }
 
@@ -353,7 +542,10 @@ private fun FileRow(label: String, meta: String, state: String, stateColor: Colo
 @Composable
 fun SubmissionDetailScreen(vm: AppViewModel, nav: AppNav) {
     val detail by vm.submissionDetail.collectAsStateWithLifecycle()
+    var working by remember { mutableStateOf(false) }
     val (statusLabel, statusTone) = statusOf(detail?.status.orEmpty())
+    val status = detail?.status.orEmpty()
+
     Column(
         Modifier
             .fillMaxSize()
@@ -361,79 +553,112 @@ fun SubmissionDetailScreen(vm: AppViewModel, nav: AppNav) {
             .statusBarsPadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 16.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 6.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         AmllTopBar("稿件详情", onBack = nav.back) {
-            Icon(Icons.Rounded.MoreHoriz, "更多", tint = Amll.colors.ink, modifier = Modifier.size(20.dp))
+            StatusChip(statusLabel, statusTone)
         }
 
-        AmllCard(padding = 16.dp) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                StatusChip(statusLabel, statusTone)
-                Text(
-                    detail?.createdAt?.take(10)?.takeIf { it.isNotBlank() } ?: "等待审核",
-                    style = Font.micro,
-                    color = Amll.colors.ink3,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-
-        val songTitle = detail?.displayName?.takeIf { it.isNotBlank() } ?: "未命名稿件"
         AmllCard(padding = 16.dp) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                val songTitle = detail?.displayName ?: "未命名稿件"
                 CoverImage(null, songTitle, 48.dp)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(songTitle, style = Font.bodyMedium, color = Amll.colors.ink, maxLines = 1)
+                    Text(songTitle, style = Font.bodyMedium, color = Amll.colors.ink, maxLines = 2)
                     Text(
                         listOfNotNull(
                             detail?.artist?.takeIf { it.isNotBlank() },
-                            detail?.createdAt?.take(10)?.takeIf { it.isNotBlank() },
+                            detail?.ncmId?.takeIf { it.isNotBlank() }?.let { "网易云 $it" },
                         ).joinToString(" · ").ifBlank { "—" },
                         style = Font.micro,
                         color = Amll.colors.ink3,
                     )
                 }
-                Icon(Icons.Rounded.PlayArrow, "播放", tint = Amll.colors.ink3, modifier = Modifier.size(22.dp))
             }
         }
 
         AmllCard(padding = 16.dp) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                listOf(
-                    Triple("提交投稿", (detail?.createdAt?.take(10) ?: "—") + " · TTML + 音频", Amll.colors.ink3),
-                    Triple("当前状态", statusLabel, Amll.colors.ink3),
-                ).forEach { (title, meta, dot) ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
-                        Box(Modifier.padding(top = 5.dp).size(8.dp).clip(CircleShape).background(dot))
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(title, style = Font.bodySmall.copy(fontWeight = FontWeight.Medium), color = Amll.colors.ink)
-                            Text(meta, style = Font.micro, color = Amll.colors.ink3)
-                        }
-                    }
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                FieldRow("稿件编号", detail?.id?.takeIf { it > 0 }?.let { "#$it" } ?: "—")
+                FieldRow("当前状态", statusLabel)
+                FieldRow("语言", languageText(detail?.language.orEmpty()))
+                FieldRow("提交时间", detail?.createdAt?.take(16)?.replace('T', ' ') ?: "—")
+                FieldRow("最近更新", detail?.updatedAt?.take(16)?.replace('T', ' ') ?: "—")
+                val fileName = detail?.fileName.orEmpty()
+                if (fileName.isNotBlank()) FieldRow("文件", fileName)
             }
         }
 
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(Amll.colors.surface2)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text("评论", style = Font.micro.copy(fontWeight = FontWeight.Medium), color = Amll.colors.ink3)
-            Text("打轴很准，对唱段落分得很清楚，已通过。", style = Font.bodySmall, color = Amll.colors.ink2)
+        // 审核意见：有才显示，空的不占位
+        val comment = detail?.reviewComment.orEmpty()
+        if (comment.isNotBlank()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Amll.colors.surface2)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("审核意见", style = Font.micro.copy(fontWeight = FontWeight.Medium), color = Amll.colors.ink3)
+                Text(comment, style = Font.bodySmall, color = Amll.colors.ink2)
+            }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            GhostButton("电脑端继续编辑", onClick = {}, modifier = Modifier.weight(1f))
-            PrimaryButton("上传音频", onClick = {}, modifier = Modifier.weight(1f))
+        // 修订版待确认：投稿者必须处理的一步
+        if (status == "revised") {
+            AmllCard(padding = 16.dp) {
+                Text("审核员提交了修订版", style = Font.cardTitle, color = Amll.colors.ink)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "采用后按通过处理；退回则需要继续修改。",
+                    style = Font.micro,
+                    color = Amll.colors.ink3,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GhostButton(
+                    text = "退回修改",
+                    onClick = {
+                        val id = detail?.id ?: 0L
+                        if (id > 0L && !working) {
+                            working = true
+                            vm.rejectRevision(id) { working = false }
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                PrimaryButton(
+                    text = "采用修订版",
+                    onClick = {
+                        val id = detail?.id ?: 0L
+                        if (id > 0L && !working) {
+                            working = true
+                            vm.adoptRevision(id) { working = false }
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = !working,
+                )
+            }
+        }
+
+        // 未完结的稿件可以关闭（撤回）
+        if (status in setOf("draft", "pending", "reviewing", "need_revision", "missing_audio")) {
+            GhostButton(
+                text = if (working) "处理中…" else "关闭这篇稿件",
+                onClick = {
+                    val id = detail?.id ?: 0L
+                    if (id > 0L && !working) {
+                        working = true
+                        vm.closeSubmission(id) {
+                            working = false
+                            nav.back()
+                        }
+                    }
+                },
+            )
         }
     }
 }

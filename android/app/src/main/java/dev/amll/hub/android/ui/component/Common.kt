@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -32,6 +33,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,7 +60,6 @@ import dev.amll.hub.android.ui.theme.CardShape
 import dev.amll.hub.android.ui.theme.ChipShape
 import dev.amll.hub.android.ui.theme.Font
 import dev.amll.hub.android.ui.theme.PillOuterShape
-import dev.amll.hub.android.ui.theme.PillShape
 import dev.amll.hub.android.ui.theme.Radius
 import dev.amll.hub.android.ui.theme.Size
 import dev.amll.hub.android.ui.theme.Space
@@ -138,28 +139,31 @@ fun PillTabBar(
     )
 
     Box(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(start = 21.dp, end = 21.dp, top = 8.dp, bottom = 18.dp),
+            // 左右 12dp：每个 Tab 的槽位更宽，圆形指示块才铺得开
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 18.dp),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(Size.tabPill)
+                // 先裁圆角再叠毛玻璃，否则模糊会画到胶囊外面
                 .clip(PillOuterShape)
-                .background(Amll.colors.surface)
-                .border(1.dp, Amll.colors.border, PillOuterShape)
+                .then(modifier)
+                .border(0.5.dp, Amll.colors.border.copy(alpha = 0.55f), PillOuterShape)
                 .padding(4.dp),
         ) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
-                val itemWidth = maxWidth / items.size.toFloat()
+                val slot = maxWidth / items.size.toFloat()
+                // 指示块是圆的：直径取「槽位宽」与「胶囊内高」的较小值，水平居中在槽位里
+                val diameter = minOf(slot, maxHeight)
                 Box(
                     Modifier
-                        .offset(x = itemWidth * progress)
-                        .width(itemWidth)
-                        .fillMaxHeight()
-                        .clip(PillShape)
+                        .offset(x = slot * progress + (slot - diameter) / 2)
+                        .size(diameter)
+                        .clip(CircleShape)
                         .background(Amll.colors.primary),
                 )
             }
@@ -175,7 +179,6 @@ fun PillTabBar(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight()
-                            .clip(PillShape)
                             .clickable { onSelect(index) },
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -402,7 +405,8 @@ fun SongRow(
         modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(vertical = 8.dp),
+            // 上下 4dp：封面本身 48dp 已经把行撑开，再留 8dp 会显得松散
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Space.l),
     ) {
@@ -412,7 +416,31 @@ fun SongRow(
             Text(title, style = Font.bodyMedium, color = Amll.colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(subtitle, style = Font.caption, color = Amll.colors.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        trailing?.invoke()
+        // 右侧统一收一个播放按钮，行尾不会空掉（曲目接口没有时长字段）
+        if (trailing != null) trailing.invoke() else if (onClick != null) PlayCircleButton()
+    }
+}
+
+/** 列表行尾的圆形播放按钮，纯装饰，点击由整行处理 */
+@Composable
+fun PlayCircleButton(
+    modifier: Modifier = Modifier,
+    size: Dp = 30.dp,
+) {
+    Box(
+        modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Amll.colors.primarySoft),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.PlayArrow,
+            contentDescription = null,
+            tint = Amll.colors.primary,
+            // PlayArrow 字形自带约 1/4 空白，按比例放大才和圆匹配
+            modifier = Modifier.size(size * 0.62f).offset(x = 0.5.dp),
+        )
     }
 }
 

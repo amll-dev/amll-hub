@@ -1,5 +1,7 @@
 package dev.amll.hub.android.data.remote
 
+import okhttp3.ResponseBody
+import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -53,10 +55,14 @@ interface ContentApi {
     @GET("api/v1/submissions")
     suspend fun submissions(
         @Query("page") page: Int = 1,
-        @Query("limit") limit: Int = 20,
-        @Query("status") status: String? = null,
-        @Query("type") type: String? = null,
+        @Query("limit") limit: Int = 50,
+        @Query("status") status: String = "all",
+        @Query("mode") mode: String = "creator",
     ): ApiResponse<SubmissionListDto>
+
+    /** 投稿统计（创作中心顶部卡片） */
+    @GET("api/v1/submissions/stats")
+    suspend fun submissionStats(@Query("mode") mode: String = "creator"): ApiResponse<SubmissionStatsDto>
 
     @GET("api/v1/submissions/{id}")
     suspend fun submission(@Path("id") id: Long): ApiResponse<SubmissionDto>
@@ -73,6 +79,38 @@ interface ContentApi {
         @Query("q") keyword: String,
         @Query("limit") limit: Int = 20,
     ): ApiResponse<NcmSearchDto>
+
+    /** 网易云单曲解析：拿到音频直链 + 封面 / 歌手 / 歌词 */
+    @GET("api/v1/ncm/parse-music")
+    suspend fun ncmParseMusic(
+        @Query("songId") songId: String,
+        @Query("level") level: String = "exhigh",
+    ): ApiResponse<NcmMusicDto>
+
+    /** 网易云歌单解析 */
+    @GET("api/v1/ncm/parse-playlist")
+    suspend fun ncmParsePlaylist(
+        @Query("playlistId") playlistId: String,
+    ): ApiResponse<NcmPlaylistWrapperDto>
+
+    /** 每日推荐投稿列表（创作中心） */
+    @GET("api/v1/daily-recommendations/submissions")
+    suspend fun myDailySubmissions(): ApiResponse<DailySubmissionListDto>
+
+    /** 搜索 IP 投稿列表（创作中心） */
+    @GET("api/v1/search-ip/submissions")
+    suspend fun mySearchIpSubmissions(): ApiResponse<SearchIpListDto>
+
+    /* ===== 稿件操作：只关心 HTTP 是否成功，不解析具体返回体 ===== */
+
+    @POST("api/v1/submissions/{id}/close")
+    suspend fun closeSubmission(@Path("id") id: Long): Response<ResponseBody>
+
+    @POST("api/v1/submissions/{id}/revision/adopt")
+    suspend fun adoptRevision(@Path("id") id: Long): Response<ResponseBody>
+
+    @POST("api/v1/submissions/{id}/revision/reject")
+    suspend fun rejectRevision(@Path("id") id: Long): Response<ResponseBody>
 
     @GET("api/v1/auth/profile")
     suspend fun profile(): ApiResponse<UserProfile>

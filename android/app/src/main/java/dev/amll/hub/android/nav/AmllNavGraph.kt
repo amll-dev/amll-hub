@@ -2,7 +2,9 @@ package dev.amll.hub.android.nav
 
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,9 +31,11 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import dev.amll.hub.android.ui.AppNav
+import dev.amll.hub.android.ui.AppShell
 import dev.amll.hub.android.ui.AppViewModel
 import dev.amll.hub.android.ui.screen.CreatorCenterScreen
 import dev.amll.hub.android.ui.screen.DailyScreen
@@ -41,6 +45,7 @@ import dev.amll.hub.android.ui.screen.LatestSongsScreen
 import dev.amll.hub.android.ui.screen.LoginScreen
 import dev.amll.hub.android.ui.screen.LyricScreen
 import dev.amll.hub.android.ui.screen.MessagesScreen
+import dev.amll.hub.android.ui.screen.NcmParseScreen
 import dev.amll.hub.android.ui.screen.ProfileEditScreen
 import dev.amll.hub.android.ui.screen.ProfileScreen
 import dev.amll.hub.android.ui.screen.RankingScreen
@@ -66,6 +71,7 @@ object Routes {
     const val LYRIC = "lyric"
     const val SEARCH = "search"
     const val LATEST = "latest"
+    const val NCM = "ncm"
     const val SUBMIT = "submit"
     const val SUBMISSION = "submission"
     const val PROFILE_EDIT = "profile-edit"
@@ -128,12 +134,20 @@ private fun LoggedInNav(
         openDaily = { navController.navigate(Routes.DAILY) },
         openSearch = { navController.navigate(Routes.SEARCH) },
         openLatest = { navController.navigate(Routes.LATEST) },
+        openNcm = { navController.navigate(Routes.NCM) },
         openScan = { navController.navigate(Routes.scan()) },
         openLyric = { songId, title, artist, cover ->
             vm.openTrack(songId, title, artist, cover)
             navController.navigate(Routes.LYRIC)
         },
-        openPlayer = { navController.navigate(Routes.LYRIC) },
+        openLyricFile = { songId, title, artist, cover, rawLyricFile ->
+            vm.openTrack(songId, title, artist, cover, rawLyricFile)
+            navController.navigate(Routes.LYRIC)
+        },
+        openPlayer = {
+            vm.ensurePlayerLyric()
+            navController.navigate(Routes.LYRIC)
+        },
         openSubmit = { navController.navigate(Routes.SUBMIT) },
         openSubmission = { navController.navigate(Routes.SUBMISSION) },
         openProfileEdit = { navController.navigate(Routes.PROFILE_EDIT) },
@@ -150,63 +164,87 @@ private fun LoggedInNav(
         },
     )
 
-    NavHost(
-        navController = navController,
-        startDestination = Routes.HOME,
-        enterTransition = {
-            val from = initialState.tabIndex()
-            val to = targetState.tabIndex()
-            val fromRight = from == null || to == null || to >= from
-            slideInHorizontally(animationSpec = tween(280)) { width ->
-                if (fromRight) width else -width
-            }
-        },
-        exitTransition = {
-            val from = initialState.tabIndex()
-            val to = targetState.tabIndex()
-            val toLeft = from == null || to == null || to >= from
-            slideOutHorizontally(animationSpec = tween(280)) { width ->
-                if (toLeft) -width / 5 else width / 5
-            }
-        },
-        popEnterTransition = {
-            slideInHorizontally(animationSpec = tween(280)) { width -> -width / 4 }
-        },
-        popExitTransition = {
-            slideOutHorizontally(animationSpec = tween(280)) { width -> width }
-        },
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    val selectedTab = Routes.tabs.indexOf(currentRoute.orEmpty())
+
+    // 底栏挂在外壳上：切页时只有内容滑动，栏本身不动
+    AppShell(
+        vm = vm,
+        nav = nav,
+        selectedTab = selectedTab,
+        tabsVisible = selectedTab >= 0,
     ) {
-        composable(Routes.HOME) { HomeScreen(vm, nav) }
-        composable(Routes.DISCOVER) { DiscoverScreen(vm, nav) }
-        composable(Routes.CREATOR) { CreatorCenterScreen(vm, nav) }
-        composable(Routes.MESSAGES) { MessagesScreen(vm, nav) }
-        composable(Routes.PROFILE) { ProfileScreen(vm, nav) }
+        NavHost(
+            navController = navController,
+            startDestination = Routes.HOME,
+            enterTransition = {
+                val from = initialState.tabIndex()
+                val to = targetState.tabIndex()
+                val fromRight = from == null || to == null || to >= from
+                slideInHorizontally(animationSpec = tween(280)) { width ->
+                    if (fromRight) width else -width
+                }
+            },
+            exitTransition = {
+                val from = initialState.tabIndex()
+                val to = targetState.tabIndex()
+                val toLeft = from == null || to == null || to >= from
+                slideOutHorizontally(animationSpec = tween(280)) { width ->
+                    if (toLeft) -width / 5 else width / 5
+                }
+            },
+            popEnterTransition = {
+                slideInHorizontally(animationSpec = tween(280)) { width -> -width / 4 }
+            },
+            popExitTransition = {
+                slideOutHorizontally(animationSpec = tween(280)) { width -> width }
+            },
+        ) {
+            composable(Routes.HOME) { HomeScreen(vm, nav) }
+            composable(Routes.DISCOVER) { DiscoverScreen(vm, nav) }
+            composable(Routes.CREATOR) { CreatorCenterScreen(vm, nav) }
+            composable(Routes.MESSAGES) { MessagesScreen(vm, nav) }
+            composable(Routes.PROFILE) { ProfileScreen(vm, nav) }
 
-        composable(Routes.RANKING) { RankingScreen(vm, nav) }
-        composable(Routes.DAILY) { DailyScreen(vm, nav) }
-        composable(Routes.LYRIC) { LyricScreen(vm, nav) }
-        composable(Routes.SEARCH) { SearchScreen(vm, nav) }
-        composable(Routes.LATEST) { LatestSongsScreen(vm, nav) }
-        composable(Routes.SUBMIT) { SubmitScreen(nav) }
-        composable(Routes.SUBMISSION) { SubmissionDetailScreen(vm, nav) }
-        composable(Routes.PROFILE_EDIT) { ProfileEditScreen(vm, nav) }
-        composable(Routes.REVIEW) { ReviewQueueScreen(vm, nav) }
-
-        composable(
-            route = Routes.SCAN,
-            arguments = listOf(
-                navArgument("ticket") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
+            composable(Routes.RANKING) { RankingScreen(vm, nav) }
+            composable(Routes.DAILY) { DailyScreen(vm, nav) }
+            // 歌词页从下往上滑入，退出时滑回底部（对齐网页端的 translate-y 动画）
+            composable(
+                route = Routes.LYRIC,
+                enterTransition = {
+                    slideInVertically(animationSpec = tween(340)) { height -> height }
                 },
-            ),
-        ) { entry ->
-            ScanScreen(
-                initialTicket = entry.arguments?.getString("ticket"),
-                onBack = { navController.popBackStack() },
-                onDone = { navController.popBackStack() },
-            )
+                popExitTransition = {
+                    slideOutVertically(animationSpec = tween(300)) { height -> height }
+                },
+            ) {
+                LyricScreen(vm, nav)
+            }
+            composable(Routes.SEARCH) { SearchScreen(vm, nav) }
+            composable(Routes.LATEST) { LatestSongsScreen(vm, nav) }
+            composable(Routes.NCM) { NcmParseScreen(nav) }
+            composable(Routes.SUBMIT) { SubmitScreen(nav) }
+            composable(Routes.SUBMISSION) { SubmissionDetailScreen(vm, nav) }
+            composable(Routes.PROFILE_EDIT) { ProfileEditScreen(vm, nav) }
+            composable(Routes.REVIEW) { ReviewQueueScreen(vm, nav) }
+
+            composable(
+                route = Routes.SCAN,
+                arguments = listOf(
+                    navArgument("ticket") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { entry ->
+                ScanScreen(
+                    initialTicket = entry.arguments?.getString("ticket"),
+                    onBack = { navController.popBackStack() },
+                    onDone = { navController.popBackStack() },
+                )
+            }
         }
     }
 }

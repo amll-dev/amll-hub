@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AMLL Hub</string>
+    <!-- 系统媒体播控的通知渠道名 -->
+    <string name="playback_channel_name">正在播放</string>
 </resources>

@@ -18,16 +18,18 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        justify-content: center;
+        justify-content: flex-start;
         height: 100%;
-        gap: 10px;
-        padding: 0 4px;
+        gap: 8px;
+        padding: 4px 0;
         box-sizing: border-box;
+        overflow: hidden;
       }
       #captcha {
         width: 100%;
         max-width: 340px;
         min-height: 44px;
+        box-sizing: border-box;
       }
       .tip {
         font-size: 12px;
@@ -77,6 +79,10 @@
               return;
             }
             setTip('拖动滑块完成验证', false);
+            // 滑块宽度必须跟着容器走：写死 320 在窄屏上会被裁掉右半边
+            var holder = document.getElementById('captcha');
+            var width = Math.floor(holder.clientWidth || 320);
+            width = Math.max(220, Math.min(340, width));
             try {
               window.initAliyunCaptcha({
                 SceneId: sceneId,
@@ -84,7 +90,7 @@
                 element: '#captcha',
                 language: 'cn',
                 immediate: true,
-                slideStyle: { width: 320, height: 40 },
+                slideStyle: { width: width, height: 40 },
                 captchaVerifyCallback: function (data) {
                   return new Promise(function (resolve) {
                     resolveFn = resolve;

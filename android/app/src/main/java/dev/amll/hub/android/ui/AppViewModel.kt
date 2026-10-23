@@ -3,6 +3,7 @@ package dev.amll.hub.android.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.amll.hub.android.data.lyric.LrcParser
 import dev.amll.hub.android.data.lyric.LyricLine
 import dev.amll.hub.android.data.lyric.TtmlParser
 import dev.amll.hub.android.data.remote.DailyRecDto
@@ -10,8 +11,10 @@ import dev.amll.hub.android.data.remote.LatestSongDto
 import dev.amll.hub.android.data.remote.MessageDto
 import dev.amll.hub.android.data.remote.RankingItemDto
 import dev.amll.hub.android.data.remote.SearchHitDto
+import dev.amll.hub.android.data.remote.SearchIpSubmissionDto
 import dev.amll.hub.android.data.remote.StatsDto
 import dev.amll.hub.android.data.remote.SubmissionDto
+import dev.amll.hub.android.data.remote.SubmissionStatsDto
 import dev.amll.hub.android.data.remote.UserActivityDto
 import dev.amll.hub.android.data.remote.UserProfile
 import dev.amll.hub.android.data.repo.ContentRepository
@@ -69,6 +72,12 @@ class AppViewModel @Inject constructor(
     val submissions = MutableStateFlow(ListUi<SubmissionDto>())
     val lyric = MutableStateFlow(LyricUi())
 
+    /** 创作中心：统计 + 当前筛选 + 另外两类投稿 */
+    val submissionStats = MutableStateFlow<SubmissionStatsDto?>(null)
+    val submissionStatus = MutableStateFlow("all")
+    val dailySubmissions = MutableStateFlow(ListUi<DailyRecDto>())
+    val searchIpSubmissions = MutableStateFlow(ListUi<SearchIpSubmissionDto>())
+
     val playerState: StateFlow<PlayerController.State> = player.state
 
     fun loadHome() {
@@ -123,70 +132,193 @@ class AppViewModel @Inject constructor(
         }
     }
 
-    fun loadSubmissions() {
+    /** 歌词管理：列表 + 顶部统计，状态筛选与网页端一致 */
+    fun loadSubmissions(status: String = submissionStatus.value) {
+        submissionStatus.value = status
         viewModelScope.launch {
             submissions.update { it.copy(loading = true, error = null) }
-            val items = repo.submissions()
+            val items = repo.submissions(status)
             submissions.update {
-                it.copy(loading = false, items = items, error = if (items.isEmpty()) "暂无稿件" else null)
+                it.copy(
+                    loading = false,
+                    items = items,
+                    error = if (items.isEmpty()) "暂无稿件" else null,
+                )
             }
         }
     }
 
+    fun loadSubmissionStats() {
+        viewModelScope.launch { submissionStats.value = repo.submissionStats() }
+    }
+
+    fun loadDailySubmissions() {
+        viewModelScope.launch {
+            dailySubmissions.update { it.copy(loading = true, error = null) }
+            val items = repo.dailySubmissions()
+            dailySubmissions.update {
+                it.copy(
+                    loading = false,
+                    items = items,
+                    error = if (items.isEmpty()) "暂无每日推荐投稿" else null,
+                )
+            }
+        }
+    }
+
+    fun loadSearchIpSubmissions() {
+        viewModelScope.launch {
+            searchIpSubmissions.update { it.copy(loading = true, error = null) }
+            val items = repo.searchIpSubmissions()
+            searchIpSubmissions.update {
+                it.copy(
+                    loading = false,
+                    items = items,
+                    error = if (items.isEmpty()) "暂无搜索 IP 投稿" else null,
+                )
+            }
+        }
+    }
+
+    /** 稿件操作：成功后就地刷新列表与统计 */
+    fun closeSubmission(id: Long, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val ok = repo.closeSubmission(id)
+            if (ok) refreshCreator()
+            onDone(ok)
+        }
+    }
+
+    fun adoptRevision(id: Long, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val ok = repo.adoptRevision(id)
+            if (ok) refreshCreator()
+            onDone(ok)
+        }
+    }
+
+    fun rejectRevision(id: Long, onDone: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val ok = repo.rejectRevision(id)
+            if (ok) refreshCreator()
+            onDone(ok)
+        }
+    }
+
+    private suspend fun refreshCreator() {
+        val items = repo.submissions(submissionStatus.value)
+        submissions.update { it.copy(items = items, loading = false) }
+        submissionStats.value = repo.submissionStats()
+        // 详情页标题栏的状态也要跟着变
+        submissionDetail.value = submissionDetail.value?.let { d ->
+            items.firstOrNull { it.id == d.id } ?: d
+        }
+    }
+
     /**
-     * 打开一首歌：拉 TTML + 音频直链，同时把曲目塞进播放器。
-     * 拿不到音源时仍可浏览歌词（状态栏会提示）。
+     * 打开一首歌：先解析音源（顺带把封面 / 歌手 / 标题补齐），再按优先级找歌词。
+     *
+     * 歌词来源与网页端 PlayerBoot 完全一致，逐级回退：
+     * 1. 词库 TTML（搜索命中的 rawLyricFile）
+     * 2. ncm-lyrics 目录下的 TTML
+     * 3. parse-music 返回的 LRC（+ tlyric 合并翻译）
+     * 都没有才真的没歌词 —— 但音频照常播放。
      */
-    fun openTrack(songId: String, title: String, artist: String, cover: String?) {
-        if (songId.isBlank()) {
+    fun openTrack(
+        songId: String,
+        title: String,
+        artist: String,
+        cover: String?,
+        rawLyricFile: String? = null,
+    ) {
+        val id = songId.trim()
+        if (id.isBlank()) {
             lyric.value = LyricUi(
                 loading = false,
                 title = title,
                 artist = artist,
                 cover = cover,
-                error = "该歌曲没有关联的歌词 ID",
+                error = "该歌曲没有关联的网易云 ID",
             )
             return
         }
-        if (lyric.value.songId == songId && lyric.value.lines.isNotEmpty()) return
+        // 同一首歌已经加载过就不再重复请求
+        if (lyric.value.songId == id && lyric.value.lines.isNotEmpty() &&
+            player.state.value.track?.songId == id
+        ) {
+            return
+        }
 
-        lyric.value = LyricUi(
-            loading = true,
-            songId = songId,
-            title = title,
-            artist = artist,
-            cover = cover,
-        )
+        lyric.value = LyricUi(loading = true, songId = id, title = title, artist = artist, cover = cover)
         viewModelScope.launch {
-            val ttml = repo.lyricTtml(songId).orEmpty()
-            val lines = withContext(Dispatchers.Default) {
-                if (ttml.isBlank()) emptyList() else TtmlParser.parse(ttml)
+            val music = repo.parseMusic(id)
+
+            val (lines, ttml) = withContext(Dispatchers.Default) {
+                loadLyric(id, rawLyricFile, music?.lyric.orEmpty(), music?.tlyric.orEmpty())
             }
-            val url = repo.audioUrl(songId)
+
+            val resolvedTitle = music?.displayName?.takeIf { it.isNotBlank() } ?: title
+            val resolvedArtist = music?.displayArtist?.takeIf { it.isNotBlank() } ?: artist
+            val resolvedCover = music?.displayCover?.takeIf { it.isNotBlank() } ?: cover
+
             lyric.update {
                 it.copy(
                     loading = false,
+                    songId = id,
+                    title = resolvedTitle,
+                    artist = resolvedArtist,
+                    cover = resolvedCover,
                     ttml = ttml,
                     lines = lines,
-                    error = when {
-                        ttml.isBlank() -> "暂无歌词文件"
-                        lines.isEmpty() -> "歌词解析失败"
-                        else -> null
-                    },
+                    error = null,
                 )
             }
+            val url = music?.displayUrl?.takeIf { it.isNotBlank() }
             player.play(
                 PlayerController.Track(
-                    songId = songId,
-                    title = title,
-                    artist = artist,
-                    coverUrl = cover,
+                    songId = id,
+                    title = resolvedTitle,
+                    artist = resolvedArtist,
+                    coverUrl = resolvedCover,
                     streamUrl = url,
                     lyricTtml = ttml,
                 ),
                 url,
             )
         }
+    }
+
+    /**
+     * 歌词三级回退。返回解析好的行和原始 TTML（LRC 兜底时 ttml 为空）。
+     */
+    private suspend fun loadLyric(
+        songId: String,
+        rawLyricFile: String?,
+        ncmLyric: String,
+        ncmTLyric: String,
+    ): Pair<List<LyricLine>, String> {
+        val candidates = listOfNotNull(
+            rawLyricFile?.takeIf { it.isNotBlank() }?.let { repo.rawLyricTtml(it) },
+            repo.lyricTtml(songId),
+        )
+        candidates.firstOrNull { !it.isNullOrBlank() }?.let { ttml ->
+            val parsed = TtmlParser.parse(ttml)
+            if (parsed.isNotEmpty()) return parsed to ttml
+        }
+
+        if (ncmLyric.isNotBlank()) {
+            val parsed = LrcParser.withTranslation(LrcParser.parse(ncmLyric), ncmTLyric)
+            if (parsed.isNotEmpty()) return parsed to ""
+        }
+        return emptyList<LyricLine>() to ""
+    }
+
+
+    /** 从播放条进歌词页前调用：当前曲目的歌词还没加载就补一次 */
+    fun ensurePlayerLyric() {
+        val track = player.state.value.track ?: return
+        if (lyric.value.songId == track.songId && lyric.value.lines.isNotEmpty()) return
+        openTrack(track.songId, track.title, track.artist, track.coverUrl)
     }
 
     fun togglePlay() = player.toggle()
@@ -273,8 +405,7 @@ class AppViewModel @Inject constructor(
         }
     }
 
-    fun toggleDailyLike(rec: DailyRecDto) {
-        if (rec.id == 0L) return
+    fun toggleDailyLike(rec: DailyRecDto) {        if (rec.id == 0L) return
         val liked = rec.id in likedDaily.value
         // 先本地翻转，失败再回滚
         likedDaily.update { if (liked) it - rec.id else it + rec.id }
@@ -317,8 +448,4 @@ class AppViewModel @Inject constructor(
         }
     }
 
-    override fun onCleared() {
-        player.release()
-        super.onCleared()
-    }
 }

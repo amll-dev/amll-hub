@@ -127,6 +127,10 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 
+    // 底栏 / 播放条的实时背景模糊
+    implementation(libs.haze.core)
+    implementation(libs.haze.blur)
+
     // 扫码
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.camera.camera2)

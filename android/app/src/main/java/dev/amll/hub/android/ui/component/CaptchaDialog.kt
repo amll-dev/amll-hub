@@ -4,6 +4,13 @@ import android.graphics.Color as AndroidColor
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -64,6 +71,10 @@ fun CaptchaDialog(
     }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var loaded by remember { mutableStateOf(false) }
+    // 首帧后再置 true，弹层才有「弹出来」的过程，而不是直接出现
+    var visible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { visible = true }
 
     LaunchedEffect(webView, loaded, verified) {
         if (loaded && verified != null) {
@@ -75,84 +86,103 @@ fun CaptchaDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .clip(RoundedCornerShape(Radius.sheet))
-                .background(Amll.colors.surface)
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(180)) +
+                scaleIn(
+                    initialScale = 0.9f,
+                    animationSpec = tween(240, easing = FastOutSlowInEasing),
+                ) +
+                slideInVertically(animationSpec = tween(240, easing = FastOutSlowInEasing)) { it / 14 },
+            exit = fadeOut(tween(120)),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("安全验证", style = Font.sheetTitle, color = Amll.colors.ink, modifier = Modifier.weight(1f))
-                Text(
-                    "关闭",
-                    style = Font.caption,
-                    color = Amll.colors.ink3,
-                    modifier = Modifier.clickable(onClick = onDismiss),
-                )
-            }
-            Text(
-                "完成滑块验证后会自动发送验证码",
-                style = Font.micro,
-                color = Amll.colors.ink3,
-            )
-
-            Box(
+            Column(
                 Modifier
                     .fillMaxWidth()
-                    .height(300.dp),
+                    .padding(horizontal = 12.dp)
+                    .clip(RoundedCornerShape(Radius.sheet))
+                    .background(Amll.colors.surface)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            setBackgroundColor(AndroidColor.TRANSPARENT)
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            webViewClient = object : WebViewClient() {
-                                override fun onPageFinished(view: WebView?, url: String?) {
-                                    loaded = true
-                                    // 页面脚本就绪后再下发场景配置，避免依赖 query 参数
-                                    view?.evaluateJavascript(
-                                        "window.startCaptcha&&window.startCaptcha(" +
-                                            "'${jsArg(config.sceneId)}','${jsArg(config.prefix)}')",
-                                        null,
-                                    )
-                                }
-                            }
-                            addJavascriptInterface(
-                                object {
-                                    @JavascriptInterface
-                                    fun onVerify(param: String) {
-                                        onToken(param)
-                                    }
-                                },
-                                "AmllCaptcha",
-                            )
-                            if (html.isBlank()) {
-                                loaded = true
-                            } else {
-                                loadDataWithBaseURL(siteOrigin, html, "text/html", "utf-8", null)
-                            }
-                            webView = this
-                        }
-                    },
-                )
-                if (!loaded) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center).size(24.dp),
-                        strokeWidth = 2.dp,
-                        color = Amll.colors.primary,
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "安全验证",
+                        style = Font.sheetTitle,
+                        color = Amll.colors.ink,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "关闭",
+                        style = Font.caption,
+                        color = Amll.colors.ink3,
+                        modifier = Modifier.clickable(onClick = onDismiss),
                     )
                 }
-            }
+                Text(
+                    "完成滑块验证后会自动发送验证码",
+                    style = Font.micro,
+                    color = Amll.colors.ink3,
+                )
 
-            if (sending) {
-                Text("验证已通过，正在发送验证码…", style = Font.micro, color = Amll.colors.ink3)
-            } else if (error != null) {
-                Text(error, style = Font.micro, color = Amll.colors.warning)
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        // 阿里云 embed 模式拖动时会弹出拼图面板，高度留够才不会截断
+                        .height(360.dp),
+                ) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            WebView(ctx).apply {
+                                setBackgroundColor(AndroidColor.TRANSPARENT)
+                                settings.javaScriptEnabled = true
+                                settings.domStorageEnabled = true
+                                settings.useWideViewPort = false
+                                settings.loadWithOverviewMode = false
+                                webViewClient = object : WebViewClient() {
+                                    override fun onPageFinished(view: WebView?, url: String?) {
+                                        loaded = true
+                                        // 页面脚本就绪后再下发场景配置，避免依赖 query 参数
+                                        view?.evaluateJavascript(
+                                            "window.startCaptcha&&window.startCaptcha(" +
+                                                "'${jsArg(config.sceneId)}','${jsArg(config.prefix)}')",
+                                            null,
+                                        )
+                                    }
+                                }
+                                addJavascriptInterface(
+                                    object {
+                                        @JavascriptInterface
+                                        fun onVerify(param: String) {
+                                            onToken(param)
+                                        }
+                                    },
+                                    "AmllCaptcha",
+                                )
+                                if (html.isBlank()) {
+                                    loaded = true
+                                } else {
+                                    loadDataWithBaseURL(siteOrigin, html, "text/html", "utf-8", null)
+                                }
+                                webView = this
+                            }
+                        },
+                    )
+                    if (!loaded) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.Center).size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = Amll.colors.primary,
+                        )
+                    }
+                }
+
+                if (sending) {
+                    Text("验证已通过，正在发送验证码…", style = Font.micro, color = Amll.colors.ink3)
+                } else if (error != null) {
+                    Text(error, style = Font.micro, color = Amll.colors.warning)
+                }
             }
         }
     }

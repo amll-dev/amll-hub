@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,12 +15,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -65,15 +64,15 @@ import dev.amll.hub.android.data.remote.Urls
 import dev.amll.hub.android.data.remote.UserActivityDto
 import dev.amll.hub.android.ui.AppNav
 import dev.amll.hub.android.ui.AppViewModel
+import dev.amll.hub.android.ui.TabScaffold
+import dev.amll.hub.android.ui.bottomBarPadding
 import dev.amll.hub.android.ui.component.AmllCard
 import dev.amll.hub.android.ui.component.AmllTopBar
 import dev.amll.hub.android.ui.component.ChipTone
 import dev.amll.hub.android.ui.component.CoverImage
 import dev.amll.hub.android.ui.component.EmptyState
-import dev.amll.hub.android.ui.component.MiniPlayer
 import dev.amll.hub.android.ui.component.NavRow
 import dev.amll.hub.android.ui.component.PageHeader
-import dev.amll.hub.android.ui.component.PillTabBar
 import dev.amll.hub.android.ui.component.SectionHeader
 import dev.amll.hub.android.ui.component.SkeletonList
 import dev.amll.hub.android.ui.component.SongRow
@@ -96,34 +95,6 @@ val AppTabs = listOf(
     TabItem("我的", Icons.Outlined.PersonOutline),
 )
 
-/**
- * 5 个 Tab 的公共外壳：内容区避让状态栏，底部是迷你播放器 + 胶囊导航。
- */
-@Composable
-fun TabScaffold(
-    vm: AppViewModel,
-    selected: Int,
-    nav: AppNav,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    val player by vm.playerState.collectAsStateWithLifecycle()
-    Column(Modifier.fillMaxSize().background(Amll.colors.canvas)) {
-        Column(
-            Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .statusBarsPadding(),
-            content = content,
-        )
-        MiniPlayer(
-            state = player,
-            onOpen = nav.openPlayer,
-            onToggle = vm::togglePlay,
-        )
-        PillTabBar(AppTabs, selected, onSelect = { nav.switchTab(it) })
-    }
-}
-
 @Composable
 fun SearchField(
     placeholder: String,
@@ -134,10 +105,10 @@ fun SearchField(
         modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .height(46.dp)
             .clip(RoundedCornerShape(15.dp))
             .background(Amll.colors.surface2)
-            .padding(horizontal = 14.dp),
+            // 上下留白取左右的一半，比原来 46dp 定高更紧凑
+            .padding(horizontal = 14.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -157,17 +128,21 @@ fun HomeScreen(vm: AppViewModel, nav: AppNav) {
     val ui by vm.home.collectAsStateWithLifecycle()
     val profile by vm.profile.collectAsStateWithLifecycle()
 
-    TabScaffold(vm, selected = 0, nav = nav) {
+    TabScaffold {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 18.dp),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = 10.dp,
+                bottom = bottomBarPadding(),
+            ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
                 HomeHeader(
                     avatar = profile?.avatar,
                     onScan = nav.openScan,
-                    onSearch = nav.openSearch,
                 )
             }
 
@@ -191,13 +166,20 @@ fun HomeScreen(vm: AppViewModel, nav: AppNav) {
                 ui.latest.isEmpty() -> item {
                     Text("暂无最新收录", style = Font.bodySmall, color = Amll.colors.ink3)
                 }
-                else -> items(ui.latest.take(6)) { item ->
-                    SongRow(
-                        title = item.title,
-                        subtitle = item.artist,
-                        coverUrl = item.coverUrl.ifBlank { null },
-                        onClick = { nav.openLyric(item.ncmId, item.title, item.artist, item.coverUrl) },
-                    )
+                // 歌曲之间 2dp：外层 16dp 的 section 间距会把列表拉得很散
+                else -> item {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        ui.latest.take(6).forEach { song ->
+                            SongRow(
+                                title = song.title,
+                                subtitle = song.artist,
+                                coverUrl = song.coverUrl.ifBlank { null },
+                                onClick = {
+                                    nav.openLyric(song.ncmId, song.title, song.artist, song.coverUrl)
+                                },
+                            )
+                        }
+                    }
                 }
             }
 
@@ -210,7 +192,6 @@ fun HomeScreen(vm: AppViewModel, nav: AppNav) {
 private fun HomeHeader(
     avatar: String?,
     onScan: () -> Unit,
-    onSearch: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("AMLL Hub", style = Font.pageTitle, color = Amll.colors.ink, modifier = Modifier.weight(1f))
@@ -220,14 +201,7 @@ private fun HomeHeader(
             tint = Amll.colors.ink,
             modifier = Modifier.size(21.dp).clickable(onClick = onScan),
         )
-        Spacer(Modifier.width(16.dp))
-        Icon(
-            Icons.Rounded.Search,
-            "搜索",
-            tint = Amll.colors.ink,
-            modifier = Modifier.size(22.dp).clickable(onClick = onSearch),
-        )
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(14.dp))
         Avatar(avatar, 32.dp)
     }
 }
@@ -356,7 +330,8 @@ private fun TodayHero(today: DailyRecDto?, onClick: () -> Unit) {
                         Icons.Rounded.PlayArrow,
                         "播放",
                         tint = Amll.colors.primary,
-                        modifier = Modifier.size(22.dp),
+                        // PlayArrow 字形自带约 1/4 的透明边距，28dp 才撑满 38dp 的圆
+                        modifier = Modifier.size(28.dp).offset(x = 1.dp),
                     )
                 }
             }
@@ -398,10 +373,15 @@ fun DiscoverScreen(vm: AppViewModel, nav: AppNav) {
     LaunchedEffect(Unit) { if (vm.home.value.latest.isEmpty()) vm.loadHome() }
     val ui by vm.home.collectAsStateWithLifecycle()
 
-    TabScaffold(vm, selected = 1, nav = nav) {
+    TabScaffold {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 18.dp),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = 10.dp,
+                bottom = bottomBarPadding(),
+            ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item { PageHeader("发现", "歌词、榜单与每日推荐") }
@@ -426,6 +406,16 @@ fun DiscoverScreen(vm: AppViewModel, nav: AppNav) {
                 }
             }
 
+            item {
+                DiscoverCard(
+                    title = "网易云解析",
+                    desc = "粘贴歌曲 ID / 链接，或按关键词搜到就能直接播",
+                    gradient = listOf(Color(0xFFE0303F), Color(0xFFC93A6E)),
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = nav.openNcm,
+                )
+            }
+
             item { SectionHeader("无歌词排行榜", action = "查看榜单", onAction = nav.openRanking) }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -439,14 +429,20 @@ fun DiscoverScreen(vm: AppViewModel, nav: AppNav) {
             }
 
             item { SectionHeader("最新收录", action = "查看全部", onAction = nav.openLatest) }
-            items(ui.latest.take(6)) { item ->
-                SongRow(
-                    title = item.title,
-                    subtitle = item.artist,
-                    coverUrl = item.coverUrl.ifBlank { null },
-                    coverSize = 40.dp,
-                    onClick = { nav.openLyric(item.ncmId, item.title, item.artist, item.coverUrl) },
-                )
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    ui.latest.take(6).forEach { song ->
+                        SongRow(
+                            title = song.title,
+                            subtitle = song.artist,
+                            coverUrl = song.coverUrl.ifBlank { null },
+                            coverSize = 40.dp,
+                            onClick = {
+                                nav.openLyric(song.ncmId, song.title, song.artist, song.coverUrl)
+                            },
+                        )
+                    }
+                }
             }
         }
     }
@@ -870,11 +866,11 @@ fun MessagesScreen(vm: AppViewModel, nav: AppNav) {
     var tab by remember { mutableIntStateOf(0) }
     val tabs = listOf("全部", "审核", "投稿", "评论", "系统")
 
-    TabScaffold(vm, selected = 3, nav = nav) {
+    TabScaffold {
         Column(
             Modifier
                 .fillMaxSize()
-                .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 8.dp),
+                .padding(start = 20.dp, end = 20.dp, top = 10.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             PageHeader("消息中心") {
@@ -917,7 +913,10 @@ fun MessagesScreen(vm: AppViewModel, nav: AppNav) {
             when {
                 ui.loading -> SkeletonList(5)
                 filtered.isEmpty() -> EmptyState(Icons.Outlined.Inbox, "暂无消息", "有新的审核结果会在这里通知你")
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                else -> LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    contentPadding = PaddingValues(bottom = bottomBarPadding(8.dp)),
+                ) {
                     itemsIndexed(filtered) { _, message ->
                         MessageRow(message) { vm.markRead(message.id) }
                     }
@@ -996,12 +995,17 @@ fun ProfileScreen(vm: AppViewModel, nav: AppNav) {
         else -> "普通用户"
     }
 
-    TabScaffold(vm, selected = 4, nav = nav) {
+    TabScaffold {
         Column(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 16.dp),
+                .padding(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 14.dp,
+                    bottom = bottomBarPadding(16.dp),
+                ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {

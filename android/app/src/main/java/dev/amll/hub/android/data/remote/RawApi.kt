@@ -20,4 +20,8 @@ interface RawApi {
 
     @GET("api/v1/lyrics/ncm-lyrics/{songId}")
     suspend fun ncmLyric(@Path("songId") songId: String): ResponseBody
+
+    /** 词库自己的 TTML（搜索命中的 rawLyricFile），优先级比 ncm-lyrics 高 */
+    @GET("api/v1/lyrics/raw-lyrics/{filename}")
+    suspend fun rawLyric(@Path("filename") filename: String): ResponseBody
 }

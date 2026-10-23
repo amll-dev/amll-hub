@@ -53,7 +53,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.amll.hub.android.data.remote.SearchHitDto
 import dev.amll.hub.android.ui.AppNav
 import dev.amll.hub.android.ui.AppViewModel
-import dev.amll.hub.android.ui.component.CoverImage
 import dev.amll.hub.android.ui.component.EmptyState
 import dev.amll.hub.android.ui.component.SkeletonList
 import dev.amll.hub.android.ui.theme.Amll
@@ -226,11 +225,12 @@ fun SearchScreen(vm: AppViewModel, nav: AppNav) {
                         if (ncmId.isNullOrBlank()) {
                             hint = "这条歌词没有关联网易云 ID，暂时无法播放"
                         } else {
-                            nav.openLyric(
+                            nav.openLyricFile(
                                 ncmId,
                                 hit.musicNames.firstOrNull().orEmpty(),
                                 hit.artists.joinToString("/"),
                                 null,
+                                hit.rawLyricFile.ifBlank { null },
                             )
                         }
                     }
@@ -262,7 +262,7 @@ private fun SearchHitRow(hit: SearchHitDto, onClick: () -> Unit) {
             .padding(vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        CoverImage(null, hit.musicNames.firstOrNull() ?: hit.id, 44.dp)
+        // 词库结果没有封面，就不放占位块了，直接把文字铺开
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 hit.musicNames.firstOrNull() ?: hit.id,
