@@ -2,6 +2,7 @@ package dev.amll.hub.android.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -17,7 +18,12 @@ import javax.inject.Inject
  * 系统从 `player.mediaMetadata` 取标题 / 歌手 / 封面，从 `player.playbackState`
  * 取进度与播放态。所以 PlayerController 里必须给 MediaItem 带 metadata，
  * 否则通知栏只会显示「未知曲目」。
+ *
+ * 通知渠道定制（setMediaNotificationProvider / DefaultMediaNotificationProvider /
+ * ConnectionResult.AcceptedResultBuilder）在 media3 里都还标着 @UnstableApi，
+ * 这里整体 opt-in；类本身不标 @UnstableApi，避免把引用它的地方也带下水。
  */
+@androidx.annotation.OptIn(UnstableApi::class)
 @AndroidEntryPoint
 class PlaybackService : MediaSessionService() {
 
