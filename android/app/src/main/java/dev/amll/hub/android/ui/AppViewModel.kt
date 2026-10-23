@@ -1,5 +1,6 @@
 package dev.amll.hub.android.ui
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,6 +28,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+
+private const val TAG = "AppViewModel"
 
 /**
  * 一个 Activity 级的共享 ViewModel：各页面共用同一份缓存与同一个播放器，
@@ -269,8 +272,17 @@ class AppViewModel @Inject constructor(
             val (lines, ttml) = withContext(Dispatchers.Default) {
                 runCatching {
                     loadLyric(id, rawLyricFile, music?.lyric.orEmpty(), music?.tlyric.orEmpty())
-                }.getOrElse { emptyList<LyricLine>() to "" }
+                }.getOrElse {
+                    Log.e(TAG, "openTrack id=$id lyric parse failed", it)
+                    emptyList<LyricLine>() to ""
+                }
             }
+            Log.d(
+                TAG,
+                "openTrack id=$id lines=${lines.size} ttml=${ttml.length}B " +
+                    "ncmLyric=${music?.lyric?.length ?: 0}B url=${!music?.displayUrl.isNullOrBlank()} " +
+                    "parseError=$parseError",
+            )
 
             val resolvedTitle = music?.displayName?.takeIf { it.isNotBlank() } ?: title
             val resolvedArtist = music?.displayArtist?.takeIf { it.isNotBlank() } ?: artist
