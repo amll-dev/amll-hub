@@ -131,10 +131,6 @@ class ContentRepository @Inject constructor(
             .getOrDefault(emptyList())
     }
 
-    suspend fun ncmSearch(keyword: String): List<NcmSongDto> = io {
-        runCatching { api.ncmSearch(keyword).data?.all.orEmpty() }.getOrDefault(emptyList())
-    }
-
     suspend fun submission(id: Long): SubmissionDto? =
         io { runCatching { api.submission(id).data }.getOrNull() }
 

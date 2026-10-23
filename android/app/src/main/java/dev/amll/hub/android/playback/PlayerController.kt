@@ -149,9 +149,13 @@ class PlayerController @Inject constructor(
             }
             .build()
 
+        // url ?: Uri.EMPTY 会让 Kotlin 把公共父类型推断成 Comparable<*>，
+        // 这里显式收成 Uri?，setUri 才选得到正确重载
+        val uri: Uri? = url?.takeIf { it.isNotBlank() }?.let { Uri.parse(it) }
+
         return MediaItem.Builder()
             .setMediaId(track.songId)
-            .setUri(url ?: Uri.EMPTY)
+            .setUri(uri)
             .setMediaMetadata(metadata)
             .build()
     }
