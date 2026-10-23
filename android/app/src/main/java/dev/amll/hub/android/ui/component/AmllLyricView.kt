@@ -1,8 +1,11 @@
 package dev.amll.hub.android.ui.component
 
 import android.graphics.Color as AndroidColor
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.webkit.ConsoleMessage
+import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -75,6 +78,8 @@ fun AmllLyricView(
 ) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var loaded by remember { mutableStateOf(false) }
+    var pageReport by remember { mutableStateOf("") }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val linesJson = remember(lines) { lyricLinesToJson(lines) }
     val coverUrl = remember(cover) { cover.orEmpty() }
 
@@ -148,6 +153,19 @@ fun AmllLyricView(
                 WebView(context).apply {
                     // debug 下用深紫色，页面如果完全没画出来，一眼就能看出是 WebView 表层问题
                     setBackgroundColor(if (BuildConfig.DEBUG) 0xFF3B0A45.toInt() else AndroidColor.TRANSPARENT)
+                    // 页面 DOM 状态回传（addJavascriptInterface 在子线程回调，切回主线程再更新 Compose 状态）
+                    addJavascriptInterface(
+                        object {
+                            @JavascriptInterface
+                            fun report(json: String) {
+                                mainHandler.post {
+                                    pageReport = json
+                                    trace("report $json")
+                                }
+                            }
+                        },
+                        "amllNativeReport",
+                    )
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
                     webChromeClient = object : WebChromeClient() {
@@ -248,6 +266,10 @@ fun AmllLyricView(
                     .padding(8.dp),
             ) {
                 Text("歌词页调试", color = Color(0xFFFFD54F), fontSize = 10.sp)
+                if (pageReport.isNotEmpty()) {
+                    Text("REPORT", color = Color(0xFF69F0AE), fontSize = 9.sp)
+                    Text(pageReport, color = Color(0xFF69F0AE), fontSize = 9.sp)
+                }
                 Text(traceLines.joinToString("\n"), color = Color.White, fontSize = 9.sp)
             }
         }

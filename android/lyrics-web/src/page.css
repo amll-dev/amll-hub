@@ -21,6 +21,43 @@ body {
   justify-content: center;
 }
 
+.stage > #amll-lyric-player {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * Android WebView 的合成层兼容处理：
+ * plus-lighter 混合模式、contain、content-visibility 在部分 GPU / WebView
+ * 组合下会让整个歌词层不参与绘制，表现为纯黑屏。
+ */
+#amll-lyric-player,
+#amll-lyric-player * {
+  mix-blend-mode: normal !important;
+}
+
+#amll-lyric-player {
+  contain: none !important;
+}
+
+#amll-lyric-player * {
+  content-visibility: visible !important;
+}
+
+/* 诊断横幅：只要能看到它，就说明页面在正常绘制 */
+.page-ok {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2147483647;
+  padding: 6px 10px;
+  background: #d32f2f;
+  color: #fff;
+  font: 600 14px/20px system-ui, sans-serif;
+  text-align: center;
+}
+
 /* AMLL 歌词页默认给容器留了内边距，沉浸页里收紧一点 */
 #amll-lyric-player {
   padding: 0 8px;
