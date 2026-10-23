@@ -80,7 +80,6 @@ import dev.amll.hub.android.ui.component.TabItem
 import dev.amll.hub.android.ui.component.coverBrush
 import dev.amll.hub.android.ui.theme.Amll
 import dev.amll.hub.android.ui.theme.CardShape
-import dev.amll.hub.android.ui.theme.ChipShape
 import dev.amll.hub.android.ui.theme.Font
 import dev.amll.hub.android.ui.theme.HeroShape
 import dev.amll.hub.android.ui.theme.Radius
@@ -183,8 +182,83 @@ fun HomeScreen(vm: AppViewModel, nav: AppNav) {
                 }
             }
 
-            item { RankingTeaser(ui.ranking.firstOrNull(), onClick = nav.openRanking) }
+            item {
+                SectionHeader(
+                    title = "请求数最高的待补歌词",
+                    action = "查看完整排行",
+                    onAction = nav.openRanking,
+                )
+            }
+
+            item {
+                when {
+                    ui.loading -> SkeletonList(3)
+                    ui.ranking.isEmpty() -> AmllCard(padding = 14.dp) {
+                        Text(
+                            "最近 7 天没有缺歌词请求",
+                            style = Font.caption,
+                            color = Amll.colors.ink3,
+                        )
+                    }
+                    else -> AmllCard(padding = 6.dp) {
+                        ui.ranking.take(5).forEachIndexed { index, entry ->
+                            HomeRankRow(rank = index + 1, item = entry) {
+                                nav.openLyric(
+                                    entry.platformId,
+                                    entry.songName,
+                                    entry.artists.joinToString("/"),
+                                    entry.cover,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+}
+
+/** 首页排行榜行：序号 + 封面 + 歌名/歌手 + 请求次数（对齐网页端 NotFoundRanking） */
+@Composable
+private fun HomeRankRow(rank: Int, item: RankingItemDto, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            "$rank",
+            style = Font.bodyMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold),
+            color = if (rank == 1) Amll.colors.primary else Amll.colors.ink3,
+            modifier = Modifier.width(16.dp),
+        )
+        CoverImage(item.cover.ifBlank { null }, item.songName, 40.dp, radius = Radius.field)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                item.songName.ifBlank { "未知歌曲" },
+                style = Font.bodyMedium,
+                color = Amll.colors.ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (item.artists.isNotEmpty()) {
+                Text(
+                    item.artists.joinToString(" / "),
+                    style = Font.micro,
+                    color = Amll.colors.ink3,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Text(
+            "${item.requestCount} 次请求",
+            style = Font.micro,
+            color = Amll.colors.ink2,
+        )
     }
 }
 
@@ -334,33 +408,6 @@ private fun TodayHero(today: DailyRecDto?, onClick: () -> Unit) {
                         modifier = Modifier.size(28.dp).offset(x = 1.dp),
                     )
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RankingTeaser(first: RankingItemDto?, onClick: () -> Unit) {
-    AmllCard(modifier = Modifier.clickable(onClick = onClick)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("无歌词排行榜", style = Font.cardTitle, color = Amll.colors.ink)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    first?.let { "${it.songName} 等 ${it.requestCount} 次请求" } ?: "最近 7 天，按请求次数排序",
-                    style = Font.caption,
-                    color = Amll.colors.ink3,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Box(
-                Modifier
-                    .clip(ChipShape)
-                    .background(Amll.colors.primarySoft)
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-            ) {
-                Text("查看", style = Font.micro.copy(fontWeight = FontWeight.Medium), color = Amll.colors.primary)
             }
         }
     }
@@ -1082,7 +1129,6 @@ fun ProfileScreen(vm: AppViewModel, nav: AppNav) {
             }
 
             AmllCard(padding = 16.dp) {
-                NavRow("扫一扫", value = "授权网页登录", onClick = nav.openScan)
                 NavRow("我的信息", onClick = nav.openProfileEdit)
                 NavRow("账号安全", onClick = nav.openProfileEdit)
                 NavRow("审核中心", onClick = nav.openReview)

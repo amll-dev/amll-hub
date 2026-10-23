@@ -51,6 +51,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -163,7 +165,11 @@ fun ScanScreen(
                 ),
                 label = "scanProgress",
             )
-            val lineColor = Amll.colors.primary
+            // 颜色取主题色再往白里调，避免饱和度过高
+            val base = Amll.colors.primary
+            val lineColor = lerp(base, Color.White, 0.55f)
+            val glowCore = lerp(base, Color.White, 0.42f)
+            val glowMid = lerp(base, Color.White, 0.15f)
 
             Box(
                 Modifier
@@ -176,28 +182,31 @@ fun ScanScreen(
                     .clipToBounds()
                     .drawBehind {
                         val y = size.height * progress
-                        val glow = 48.dp.toPx()
-                        // 光带：以扫描线为中心的竖向渐变，制造发光感
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    lineColor.copy(alpha = 0.28f),
-                                    lineColor.copy(alpha = 0.55f),
-                                    lineColor.copy(alpha = 0.28f),
-                                    Color.Transparent,
+                        val radius = size.width * 0.55f
+
+                        // 还原设计稿：一条横贯屏幕的椭圆光晕，
+                        // 做法是把圆形径向渐变纵向压扁（1 : 0.16）
+                        scale(scaleX = 1f, scaleY = 0.16f, pivot = Offset(size.width / 2f, y)) {
+                            drawRect(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        glowCore.copy(alpha = 0.75f),
+                                        glowMid.copy(alpha = 0.30f),
+                                        Color.Transparent,
+                                    ),
+                                    center = Offset(size.width / 2f, y),
+                                    radius = radius,
                                 ),
-                                startY = y - glow,
-                                endY = y + glow,
-                            ),
-                            topLeft = Offset(0f, y - glow),
-                            size = Size(size.width, glow * 2),
-                        )
-                        // 亮线本身
+                                topLeft = Offset(0f, y - radius),
+                                size = Size(size.width, radius * 2f),
+                            )
+                        }
+
+                        // 中心的细亮线
                         drawRect(
-                            color = lineColor,
-                            topLeft = Offset(0f, y - 1.dp.toPx()),
-                            size = Size(size.width, 2.dp.toPx()),
+                            color = lineColor.copy(alpha = 0.9f),
+                            topLeft = Offset(0f, y - 0.6.dp.toPx()),
+                            size = Size(size.width, 1.2.dp.toPx()),
                         )
                     },
             )

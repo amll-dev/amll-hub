@@ -1,5 +1,6 @@
 package dev.amll.hub.android.ui
 
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -76,9 +77,11 @@ fun AppShell(
     }
 
     val hazeState: HazeState = rememberHazeState()
-    // 毛玻璃参数对齐网页端顶栏（backdrop-blur-xl + bg-card/80）：
-    // 模糊给足、底色给到 0.76，才不会「太透」
-    val tint = Amll.colors.canvas.copy(alpha = 0.76f)
+    // 底色用卡片色（网页端顶栏是 bg-card/80，不是页面底色）：
+    // 之前用 canvas 和页面同色，栏和背景糊在一起，看着就像「一片通透」
+    // Android 12 以下没有 RenderEffect，haze 的模糊默认关闭，这时把底色压得更实
+    val blurSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val tint = Amll.colors.surface.copy(alpha = if (blurSupported) 0.82f else 0.96f)
     val blurStyle = remember(tint) {
         HazeBlurStyle {
             blurRadius(36.dp)

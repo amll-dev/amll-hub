@@ -44,7 +44,7 @@ class PlaybackService : MediaSessionService() {
         )
 
         // 建 session 失败不应该把整个进程带走：没有系统播控也得能继续放歌
-        mediaSession = runCatching {
+        val session = runCatching {
             MediaSession.Builder(this, playerController.player)
                 .setSessionActivity(sessionActivity)
                 .setCallback(SessionCallback())
@@ -52,6 +52,14 @@ class PlaybackService : MediaSessionService() {
         }.onFailure {
             Log.e(TAG, "create MediaSession failed", it)
         }.getOrNull()
+
+        if (session == null) {
+            // 没有 session 这个服务没有任何意义，直接收掉，
+            // 避免后续 bind 进来拿到 null
+            stopSelf()
+            return
+        }
+        mediaSession = session
 
         // 默认实现会自己建渠道，这里显式指定渠道名与通知图标，
         // 让通知显示成「正在播放」而不是 media3 的默认英文渠道名

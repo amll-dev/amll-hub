@@ -94,7 +94,8 @@ class AppViewModel @Inject constructor(
                     today = today,
                     // 首页只展示前几条，完整列表在「最新收录」页
                     latest = latest,
-                    ranking = ranking.take(2),
+                    // 首页排行榜展示前 5 条，与网页端 NotFoundRanking 一致
+                    ranking = ranking.take(5),
                     error = if (stats == null && latest.isEmpty()) "加载失败，请检查网络" else null,
                 )
             }
