@@ -257,5 +257,3 @@ private fun setTimeScript(positionMs: Long) =
 private fun evalJs(webView: WebView?, script: String) {
     webView?.evaluateJavascript(script, null)
 }
-
-
