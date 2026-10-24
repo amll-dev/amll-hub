@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,6 +36,7 @@ import dev.amll.hub.android.ui.theme.Amll
  * 歌词页：与网页端 LyricsPage 一致 —— 整屏只有一个 AMLL 播放器，
  * 歌曲信息、封面、底部控制条都由 AMLL 自己绘制。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LyricScreen(lyricVm: LyricViewModel, playerVm: PlaybackViewModel, nav: AppNav) {
     val lyric by lyricVm.lyric.collectAsStateWithLifecycle()
