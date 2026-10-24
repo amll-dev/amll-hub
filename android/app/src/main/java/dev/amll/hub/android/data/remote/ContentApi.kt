@@ -112,9 +112,6 @@ interface ContentApi {
     @POST("api/v1/submissions/{id}/revision/reject")
     suspend fun rejectRevision(@Path("id") id: Long): Response<ResponseBody>
 
-    @GET("api/v1/auth/profile")
-    suspend fun profile(): ApiResponse<UserProfile>
-
     @PUT("api/v1/auth/profile")
     suspend fun updateProfile(@Body body: ProfileUpdateRequest): ApiResponse<UserProfile>
 

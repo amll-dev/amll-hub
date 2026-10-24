@@ -2,4 +2,6 @@
 <resources>
     <!-- 深色模式：对应网页端 html.dark 的 background token -->
     <color name="window_background">#101014</color>
+    <!-- 品牌红：与 DarkPalette.primary 保持一致 -->
+    <color name="brand_primary">#F0424F</color>
 </resources>

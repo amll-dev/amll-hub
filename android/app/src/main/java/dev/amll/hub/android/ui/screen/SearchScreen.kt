@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,13 +53,14 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.amll.hub.android.data.remote.SearchHitDto
 import dev.amll.hub.android.ui.AppNav
-import dev.amll.hub.android.ui.AppViewModel
 import dev.amll.hub.android.ui.component.EmptyState
 import dev.amll.hub.android.ui.component.SkeletonList
 import dev.amll.hub.android.ui.theme.Amll
 import dev.amll.hub.android.ui.theme.Font
 import dev.amll.hub.android.ui.theme.Radius
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /** 搜索范围，取值与后端 /search?field= 一致 */
 private val SEARCH_FIELDS = listOf(
@@ -74,7 +76,7 @@ private val SEARCH_FIELDS = listOf(
  * 全屏搜索页：对齐网页端的「歌词库搜索」，命中后直接进歌词页。
  */
 @Composable
-fun SearchScreen(vm: AppViewModel, nav: AppNav) {
+fun SearchScreen(vm: SearchViewModel, nav: AppNav) {
     val state by vm.search.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf(state.query) }
     var hint by remember { mutableStateOf<String?>(null) }
@@ -82,10 +84,11 @@ fun SearchScreen(vm: AppViewModel, nav: AppNav) {
 
     LaunchedEffect(Unit) { focus.requestFocus() }
     // 输入停顿 320ms 后再请求，避免每个字符都打一次接口
-    LaunchedEffect(query) {
-        if (query.isBlank()) return@LaunchedEffect
-        delay(320)
-        vm.runSearch(query)
+    LaunchedEffect(Unit) {
+        snapshotFlow { query }
+            .debounce(320)
+            .distinctUntilChanged()
+            .collectLatest { q -> if (q.isNotBlank()) vm.runSearch(q) }
     }
 
     Column(

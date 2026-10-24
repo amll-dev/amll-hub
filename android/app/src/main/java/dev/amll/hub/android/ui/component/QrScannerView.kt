@@ -41,7 +41,8 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
-import java.util.concurrent.Executors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asExecutor
 
 /**
  * 相机扫码预览：CameraX 提供预览、ML Kit 识别二维码。
@@ -78,7 +79,8 @@ fun QrScannerView(
         return
     }
 
-    val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+    // KEEP_ONLY_LATEST 已保证串行分析，不需要再独占一条线程
+    val analysisExecutor = remember { Dispatchers.IO.asExecutor() }
     val latestCallback by rememberUpdatedState(onQrScanned)
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
 
@@ -123,9 +125,9 @@ fun QrScannerView(
 
     DisposableEffect(Unit) {
         onDispose {
+            // unbindAll 会清空 analyzer，扫描线程随之停止
             cameraProvider?.unbindAll()
             scanner.close()
-            analysisExecutor.shutdown()
         }
     }
 

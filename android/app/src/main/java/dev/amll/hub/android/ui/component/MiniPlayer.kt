@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -19,12 +18,14 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.amll.hub.android.playback.PlayerController
@@ -133,20 +134,14 @@ fun MiniPlayer(
                 }
             }
         }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(2.dp)
-                .background(Amll.colors.ink3.copy(alpha = 0.22f)),
-        ) {
-            if (fraction > 0f) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(fraction)
-                        .fillMaxHeight()
-                        .background(Amll.colors.primary),
-                )
-            }
-        }
+        LinearProgressIndicator(
+            progress = { fraction },
+            modifier = Modifier.fillMaxWidth().height(2.dp),
+            color = Amll.colors.primary,
+            trackColor = Amll.colors.ink3.copy(alpha = 0.22f),
+            strokeCap = StrokeCap.Butt,
+            gapSize = 0.dp,
+            drawStopIndicator = {},
+        )
     }
 }

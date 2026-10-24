@@ -1,5 +1,6 @@
 package dev.amll.hub.android.ui.screen
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,7 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -40,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.amll.hub.android.R
 import dev.amll.hub.android.data.remote.UserProfile
 import dev.amll.hub.android.ui.component.AmllTextField
 import dev.amll.hub.android.ui.component.CaptchaDialog
@@ -146,19 +148,11 @@ fun LoginScreen(
 
 @Composable
 private fun BrandMark() {
-    Box(
-        Modifier
-            .size(76.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(Amll.colors.primary),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Box(Modifier.width(40.dp).height(7.dp).clip(RoundedCornerShape(4.dp)).background(Color.White))
-            Box(Modifier.width(29.dp).height(7.dp).clip(RoundedCornerShape(4.dp)).background(Color.White))
-            Box(Modifier.width(19.dp).height(7.dp).clip(RoundedCornerShape(4.dp)).background(Color.White))
-        }
-    }
+    Image(
+        painter = painterResource(R.drawable.ic_brand),
+        contentDescription = null,
+        modifier = Modifier.size(76.dp),
+    )
 }
 
 @Composable
@@ -243,7 +237,7 @@ private fun CodeForm(
             )
             Box(
                 Modifier
-                    .height(48.dp)
+                    .height(56.dp)
                     .width(112.dp)
                     .clip(RoundedCornerShape(Radius.chip))
                     .background(if (state.canSendCode) Amll.colors.primarySoft else Amll.colors.surface2)

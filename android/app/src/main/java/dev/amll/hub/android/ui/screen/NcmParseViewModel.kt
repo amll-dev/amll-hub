@@ -58,7 +58,7 @@ class NcmParseViewModel @Inject constructor(
         if (keyword.isBlank()) return
         _state.update { it.copy(searching = true, error = null) }
         viewModelScope.launch {
-            runCatching { repo.ncmSearch(keyword, limit = 30) }
+            repo.ncmSearch(keyword, limit = 30)
                 .onSuccess { songs ->
                     _state.update {
                         it.copy(
@@ -84,16 +84,16 @@ class NcmParseViewModel @Inject constructor(
         if (raw.isBlank()) return
         _state.update { it.copy(parsing = true, parsed = null, error = null) }
         viewModelScope.launch {
-            runCatching { repo.parseMusic(extractSongId(raw)) }
+            repo.parseMusic(extractSongId(raw))
                 .onSuccess { music ->
                     _state.update {
                         it.copy(
                             parsing = false,
                             parsed = music,
-                            error = when {
-                                music == null -> "解析失败，请检查 ID 或链接"
-                                music.displayUrl.isBlank() -> "解析到了曲目，但没拿到播放地址（可能无版权）"
-                                else -> null
+                            error = if (music.displayUrl.isBlank()) {
+                                "解析到了曲目，但没拿到播放地址（可能无版权）"
+                            } else {
+                                null
                             },
                         )
                     }
@@ -109,13 +109,13 @@ class NcmParseViewModel @Inject constructor(
         if (raw.isBlank()) return
         _state.update { it.copy(playlistLoading = true, playlist = null, error = null) }
         viewModelScope.launch {
-            runCatching { repo.ncmPlaylist(raw) }
+            repo.ncmPlaylist(raw)
                 .onSuccess { detail ->
                     _state.update {
                         it.copy(
                             playlistLoading = false,
                             playlist = detail,
-                            error = if (detail == null) "歌单解析失败，请检查 ID" else null,
+                            error = null,
                         )
                     }
                 }

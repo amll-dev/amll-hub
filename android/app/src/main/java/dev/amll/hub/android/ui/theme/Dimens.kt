@@ -1,6 +1,7 @@
 package dev.amll.hub.android.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Shapes
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -129,5 +130,15 @@ val CardShape = RoundedCornerShape(Radius.card)
 val HeroShape = RoundedCornerShape(Radius.hero)
 val FieldShape = RoundedCornerShape(Radius.field)
 val ChipShape = RoundedCornerShape(Radius.chip)
+val SheetShape = RoundedCornerShape(Radius.sheet)
 val PillShape = RoundedCornerShape(Radius.pill)
 val PillOuterShape = RoundedCornerShape(Radius.pillOuter)
+
+/** M3 组件的圆角与自绘卡片共用同一套 Radius token，不再落回 M3 默认圆角 */
+val AmllShapes = Shapes(
+    extraSmall = FieldShape,
+    small = ChipShape,
+    medium = CardShape,
+    large = HeroShape,
+    extraLarge = SheetShape,
+)

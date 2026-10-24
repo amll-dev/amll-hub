@@ -1,7 +1,10 @@
 package dev.amll.hub.android.data.remote
 
 import dev.amll.hub.android.BuildConfig
-import dev.amll.hub.android.data.local.AuthStore
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -9,29 +12,32 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.TimeUnit
-import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Retrofit / OkHttp 单例装配 */
-@Singleton
-class NetworkModule @Inject constructor(
-    private val authStore: AuthStore,
-) {
-    val json: Json = Json {
+/** Retrofit / OkHttp / Api 的 Hilt 装配，生命周期完全由 Hilt 管理 */
+@Module
+@InstallIn(SingletonComponent::class)
+object NetworkModule {
+
+    @Provides
+    @Singleton
+    fun provideJson(): Json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false
         coerceInputValues = true
     }
 
-    private val client: OkHttpClient by lazy {
+    @Provides
+    @Singleton
+    fun provideOkHttpClient(authInterceptor: AuthInterceptor): OkHttpClient =
         OkHttpClient.Builder()
-            .addInterceptor(AuthInterceptor(authStore))
+            .addInterceptor(authInterceptor)
             .apply {
                 if (BuildConfig.DEBUG) {
                     addInterceptor(
                         HttpLoggingInterceptor().apply {
                             level = HttpLoggingInterceptor.Level.BASIC
-                        }
+                        },
                     )
                 }
             }
@@ -39,25 +45,25 @@ class NetworkModule @Inject constructor(
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
-    }
 
-    val authApi: AuthApi by lazy {
-        retrofit.create(AuthApi::class.java)
-    }
-
-    val contentApi: ContentApi by lazy {
-        retrofit.create(ContentApi::class.java)
-    }
-
-    val rawApi: RawApi by lazy {
-        retrofit.create(RawApi::class.java)
-    }
-
-    private val retrofit: Retrofit by lazy {
+    @Provides
+    @Singleton
+    fun provideRetrofit(client: OkHttpClient, json: Json): Retrofit =
         Retrofit.Builder()
             .baseUrl(BuildConfig.API_BASE_URL.trimEnd('/') + "/")
             .client(client)
             .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
             .build()
-    }
+
+    @Provides
+    @Singleton
+    fun provideAuthApi(retrofit: Retrofit): AuthApi = retrofit.create(AuthApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideContentApi(retrofit: Retrofit): ContentApi = retrofit.create(ContentApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideRawApi(retrofit: Retrofit): RawApi = retrofit.create(RawApi::class.java)
 }

@@ -5,6 +5,9 @@ ksp = "2.3.12"
 # Hilt 2.60.1 要求 AGP >= 9.0.0（2.59.x 只支持 AGP 8.4+）
 hilt = "2.60.1"
 coreKtx = "1.19.1"
+# XML 主题（Theme.Material3.DayNight.NoActionBar）来自 Material Components，不是 Compose Material3
+material = "1.13.0"
+coreSplashscreen = "1.0.1"
 lifecycle = "2.11.0"
 activityCompose = "1.12.4"
 composeBom = "2026.06.00"
@@ -29,6 +32,8 @@ espresso = "3.7.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplashscreen" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }

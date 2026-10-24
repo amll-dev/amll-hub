@@ -12,16 +12,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,15 +27,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import dagger.hilt.android.AndroidEntryPoint
+import dev.amll.hub.android.data.QrTicketParser
 import dev.amll.hub.android.nav.AmllNavGraph
 import dev.amll.hub.android.ui.theme.AmllHubTheme
 import java.io.File
@@ -58,8 +53,10 @@ class MainActivity : ComponentActivity() {
     ) { /* 拒绝也不影响播放，只是没有通知栏 */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
+        // 必须在 super.onCreate() 之前接管系统启动页，冷启动不再先闪白屏
+        installSplashScreen()
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         pendingTicket = extractTicket(intent)
         crashReport = readCrashReport()
         requestNotificationPermission()
@@ -106,31 +103,18 @@ class MainActivity : ComponentActivity() {
     }
 
     /** 从 amllhub://qrlogin?ticket=xxx 中取出 ticket */
-    private fun extractTicket(intent: Intent?): String? {
-        val data = intent?.data ?: return null
-        if (data.scheme != "amllhub") return null
-        return data.getQueryParameter("ticket")?.takeIf { it.isNotBlank() }
-            ?: data.lastPathSegment?.takeIf { it.isNotBlank() }
-    }
+    private fun extractTicket(intent: Intent?): String? =
+        QrTicketParser.parse(intent?.dataString.orEmpty()).takeIf { it.isNotBlank() }
 }
 
 /** 崩溃堆栈弹窗：可长按选中，也可以一键复制 */
 @Composable
 private fun CrashReportDialog(text: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    Dialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.surface)
-                .padding(16.dp),
-        ) {
-            Text("上次崩溃的堆栈", style = MaterialTheme.typography.titleMedium)
+        title = { Text("上次崩溃的堆栈") },
+        text = {
             SelectionContainer {
                 Text(
                     text,
@@ -138,21 +122,20 @@ private fun CrashReportDialog(text: String, onDismiss: () -> Unit) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 400.dp)
-                        .verticalScroll(rememberScrollState())
-                        .padding(vertical = 8.dp),
+                        .verticalScroll(rememberScrollState()),
                 )
             }
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
-                TextButton(onClick = {
-                    runCatching {
-                        context.getSystemService(Context.CLIPBOARD_SERVICE)
-                            .let { it as? ClipboardManager }
-                            ?.setPrimaryClip(ClipData.newPlainText("crash", text))
-                    }
-                    onDismiss()
-                }) { Text("复制并关闭") }
-            }
-        }
-    }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                runCatching {
+                    context.getSystemService(Context.CLIPBOARD_SERVICE)
+                        .let { it as? ClipboardManager }
+                        ?.setPrimaryClip(ClipData.newPlainText("crash", text))
+                }
+                onDismiss()
+            }) { Text("复制并关闭") }
+        },
+    )
 }
 

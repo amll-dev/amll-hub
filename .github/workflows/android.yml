@@ -61,6 +61,13 @@ jobs:
           set -o pipefail
           ./gradlew lintDebug --console=plain 2>&1 | tee ../gradle-lint.log
 
+      - name: Kotlin 格式检查（ktlint）
+        run: |
+          set -o pipefail
+          curl -sSLo /tmp/ktlint https://github.com/pinterest/ktlint/releases/download/1.5.0/ktlint
+          chmod +x /tmp/ktlint
+          /tmp/ktlint --relative "app/src/**/*.kt" 2>&1 | tee ../gradle-ktlint.log
+
       - name: 构建 Debug APK
         run: |
           set -o pipefail

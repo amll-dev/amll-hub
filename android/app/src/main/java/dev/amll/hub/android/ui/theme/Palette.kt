@@ -22,6 +22,8 @@ data class AmllPalette(
     val warningSoft: Color,
     val info: Color,
     val infoSoft: Color,
+    val error: Color,
+    val onError: Color,
     val isDark: Boolean,
 )
 
@@ -43,6 +45,8 @@ val LightPalette = AmllPalette(
     warningSoft = Color(0xFFFBF1E2),
     info = Color(0xFF3B6FA8),
     infoSoft = Color(0xFFEDF2F9),
+    error = Color(0xFFD12D2D),
+    onError = Color(0xFFFFFFFF),
     isDark = false,
 )
 
@@ -64,6 +68,8 @@ val DarkPalette = AmllPalette(
     warningSoft = Color(0xFF2A2015),
     info = Color(0xFF6C9BC9),
     infoSoft = Color(0xFF16202B),
+    error = Color(0xFFFF6B6B),
+    onError = Color(0xFF3A0A0A),
     isDark = true,
 )
 

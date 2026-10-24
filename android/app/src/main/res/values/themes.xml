@@ -1,9 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Compose 负责实际配色，这里只提供启动期窗口底色，避免白闪-->
-    <style name="Theme.AmllHub" parent="android:Theme.Material.NoActionBar">
+    <!--
+      Compose 负责界面配色；这里的主题只影响窗口底色与系统控件
+      （权限弹窗、日期选择器、系统对话框）的外观，所以对齐 M3。
+    -->
+    <style name="Theme.AmllHub" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/window_background</item>
         <item name="android:statusBarColor">@color/window_background</item>
         <item name="android:navigationBarColor">@color/window_background</item>
+    </style>
+
+    <!-- 冷启动：系统 SplashScreen，图标与 App 内启动页共用 ic_brand -->
+    <style name="Theme.AmllHub.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/window_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_brand</item>
+        <item name="postSplashScreenTheme">@style/Theme.AmllHub</item>
     </style>
 </resources>

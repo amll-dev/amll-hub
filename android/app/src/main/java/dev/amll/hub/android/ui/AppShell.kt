@@ -28,6 +28,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.amll.hub.android.ui.component.MiniPlayer
 import dev.amll.hub.android.ui.component.PillTabBar
 import dev.amll.hub.android.ui.screen.AppTabs
+import dev.amll.hub.android.ui.screen.LyricViewModel
+import dev.amll.hub.android.ui.screen.PlaybackViewModel
 import dev.amll.hub.android.ui.theme.Amll
 import dev.amll.hub.android.ui.theme.Size
 import dev.chrisbanes.haze.HazeInput
@@ -60,14 +62,15 @@ val LocalBottomBarSpace = compositionLocalOf { 0.dp }
  */
 @Composable
 fun AppShell(
-    vm: AppViewModel,
+    playerVm: PlaybackViewModel,
+    lyricVm: LyricViewModel,
     nav: AppNav,
     selectedTab: Int,
     tabsVisible: Boolean,
     content: @Composable () -> Unit,
 ) {
-    val player by vm.playerState.collectAsStateWithLifecycle()
-    val lyric by vm.lyric.collectAsStateWithLifecycle()
+    val player by playerVm.playerState.collectAsStateWithLifecycle()
+    val lyric by lyricVm.lyric.collectAsStateWithLifecycle()
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     val hasTrack = player.track != null
@@ -109,7 +112,7 @@ fun AppShell(
                         loading = lyric.loading,
                         error = player.error,
                         onOpen = nav.openPlayer,
-                        onToggle = vm::togglePlay,
+                        onToggle = playerVm::togglePlay,
                         modifier = Modifier.hazeBlur(
                             input = HazeInput.Sources(state = hazeState),
                             style = blurStyle,

@@ -1,6 +1,11 @@
 package dev.amll.hub.android.ui.component
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.webkit.ConsoleMessage
+import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -19,14 +24,39 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import dev.amll.hub.android.BuildConfig
 import dev.amll.hub.android.data.lyric.LyricLine
+import dev.amll.hub.android.data.lyric.Word
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import org.json.JSONObject
 
 private const val TAG = "AmllLyricView"
+
+/** AMLL core 的歌词结构，直接由 kotlinx.serialization 产出，避免手拼 JSON */
+@Serializable
+private data class AmllWordDto(
+    val word: String,
+    val startTime: Long,
+    val endTime: Long,
+)
+
+@Serializable
+private data class AmllLineDto(
+    val startTime: Long,
+    val endTime: Long,
+    val translatedLyric: String,
+    val romanLyric: String,
+    val isBG: Boolean,
+    val words: List<AmllWordDto>,
+)
+
+private val lyricJson = Json { }
 
 /**
  * 内置 AMLL 歌词页（assets/lyrics，AMLL core 构建产物）。
  *
- * 页面只负责渲染与滚动，时间轴全部由原生播放器驱动：
- * setLines / setTime / setPlaying / setMeta / setTheme 是页面暴露的全局方法。
+ * 页面与网页端 LyricsPage 一致，只负责渲染与交互；时间轴由原生播放器驱动，
+ * 页面上的播放/暂停、点歌词跳转、顶部拖动条退出、菜单按钮都通过 JS 接口回传。
  */
 @Composable
 fun AmllLyricView(
@@ -38,12 +68,29 @@ fun AmllLyricView(
     durationMs: Long,
     cover: String?,
     dark: Boolean,
+    onTogglePlay: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onClose: () -> Unit,
+    onOpenMenu: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var loaded by remember { mutableStateOf(false) }
     val linesJson = remember(lines) { lyricLinesToJson(lines) }
     val coverUrl = remember(cover) { cover.orEmpty() }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+
+    val dispatch: (String, Double?) -> Unit = remember(onTogglePlay, onSeek, onClose, onOpenMenu) {
+        { command, value ->
+            when (command) {
+                "playPause" -> onTogglePlay()
+                "seek" -> value?.let { onSeek(it.toLong()) }
+                "close" -> onClose()
+                "menu" -> onOpenMenu()
+                // next / prev / shuffle / repeat / volume：当前播放器是单曲播放，暂不接
+            }
+        }
+    }
 
     LaunchedEffect(webView, loaded, linesJson) {
         if (loaded && linesJson.isNotEmpty()) {
@@ -52,7 +99,6 @@ fun AmllLyricView(
     }
     LaunchedEffect(webView, loaded, positionMs) {
         if (loaded) {
-            // 进度 120ms 一次，高频调用，失败也不影响展示
             webView?.evaluateJavascript(setTimeScript(positionMs), null)
         }
     }
@@ -66,14 +112,13 @@ fun AmllLyricView(
             evalJs(
                 webView,
                 "window.amllNative&&window.amllNative.setMeta(" +
-                    "${jsString(title)},${jsString(artist)},${durationMs.coerceAtLeast(0)})",
+                    "${jsStringLiteral(title)},${jsStringLiteral(artist)},${durationMs.coerceAtLeast(0)})",
             )
         }
     }
-    // 封面作为歌词页的压暗底图，不传的话背景就是纯色
     LaunchedEffect(webView, loaded, coverUrl) {
         if (loaded) {
-            evalJs(webView, "window.amllNative&&window.amllNative.setCover(${jsString(coverUrl)})")
+            evalJs(webView, "window.amllNative&&window.amllNative.setCover(${jsStringLiteral(coverUrl)})")
         }
     }
     LaunchedEffect(webView, loaded, dark) {
@@ -98,6 +143,35 @@ fun AmllLyricView(
                     setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    // 页面上的操作回传（在 JS 线程回调，切回主线程再执行）
+                    addJavascriptInterface(
+                        object {
+                            @JavascriptInterface
+                            fun postMessage(json: String) {
+                                val obj = runCatching { JSONObject(json) }.getOrNull() ?: return
+                                val command = obj.optString("command")
+                                val value = if (obj.has("value")) obj.optDouble("value") else null
+                                mainHandler.post { dispatch(command, value) }
+                            }
+                        },
+                        "amllHost",
+                    )
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                            // JS 接口不可用时的兜底：页面会退化成 "[amll-host] 命令 参数"
+                            val text = message.message()
+                            if (text.startsWith("[amll-host]")) {
+                                val parts = text.removePrefix("[amll-host]").trim().split(WHITESPACE)
+                                mainHandler.post {
+                                    dispatch(
+                                        parts.firstOrNull().orEmpty(),
+                                        parts.getOrNull(1)?.toDoubleOrNull(),
+                                    )
+                                }
+                            }
+                            return true
+                        }
+                    }
                     webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(
                             view: WebView?,
@@ -110,7 +184,7 @@ fun AmllLyricView(
                         override fun onPageFinished(view: WebView?, url: String?) {
                             loaded = true
                             // 已加载好的歌词 / 播放态在 onPageFinished 后补一次，防止加载期间丢事件
-                            evalJs(view, "window.amllNative&&window.amllNative.setCover(${jsString(coverUrl)})")
+                            evalJs(view, "window.amllNative&&window.amllNative.setCover(${jsStringLiteral(coverUrl)})")
                             evalJs(view, "window.amllNative&&window.amllNative.setTheme($dark)")
                             if (linesJson.isNotEmpty()) {
                                 evalJs(view, setLinesScript(linesJson))
@@ -136,10 +210,12 @@ fun AmllLyricView(
     }
 }
 
+private val WHITESPACE = Regex("\\s+")
+
 private const val ASSET_URL = "https://appassets.androidplatform.net/assets/lyrics/index.html"
 
 private fun setLinesScript(linesJson: String) =
-    "window.amllNative&&window.amllNative.setLines(${jsString(linesJson)})"
+    "window.amllNative&&window.amllNative.setLines(${jsStringLiteral(linesJson)})"
 
 private fun setTimeScript(positionMs: Long) =
     "window.amllNative&&window.amllNative.setTime($positionMs)"
@@ -148,37 +224,24 @@ private fun evalJs(webView: WebView?, script: String) {
     webView?.evaluateJavascript(script, null)
 }
 
-private fun jsString(raw: String): String {
-    val escaped = raw
-        .replace("\\", "\\\\")
-        .replace("'", "\\'")
-        .replace("\n", " ")
-        .replace("\r", "")
-    return "'$escaped'"
-}
-
 /** 转成 AMLL core 需要的 LyricLine 结构 */
 fun lyricLinesToJson(lines: List<LyricLine>): String {
     if (lines.isEmpty()) return ""
-    return lines.joinToString(prefix = "[", postfix = "]") { line ->
+    val payload = lines.map { line ->
         // 没有逐字信息时补一个覆盖整行的 word，否则 AMLL 会渲染成空行
         val source = line.words.ifEmpty {
-            listOf(
-                dev.amll.hub.android.data.lyric.Word(
-                    text = line.text,
-                    startMs = line.startMs,
-                    endMs = line.endMs,
-                ),
-            )
+            listOf(Word(text = line.text, startMs = line.startMs, endMs = line.endMs))
         }
-        val words = source.joinToString(prefix = "[", postfix = "]") { word ->
-            """{"word":"${escapeJson(word.text)}","startTime":${word.startMs},"endTime":${word.endMs}}"""
-        }
-        """{"startTime":${line.startMs},"endTime":${line.endMs},"translatedLyric":"${escapeJson(line.translation)}","romanLyric":"${escapeJson(line.romanization)}","isBG":${line.isBackground},"words":$words}"""
+        AmllLineDto(
+            startTime = line.startMs,
+            endTime = line.endMs,
+            translatedLyric = line.translation,
+            romanLyric = line.romanization,
+            isBG = line.isBackground,
+            words = source.map { word ->
+                AmllWordDto(word = word.text, startTime = word.startMs, endTime = word.endMs)
+            },
+        )
     }
+    return lyricJson.encodeToString(payload)
 }
-
-private fun escapeJson(value: String): String = value
-    .replace("\\", "\\\\")
-    .replace("\"", "\\\"")
-    .replace("\n", " ")

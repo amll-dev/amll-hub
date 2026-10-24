@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.amll.hub.android.ui.AppNav
-import dev.amll.hub.android.ui.AppViewModel
 import dev.amll.hub.android.ui.component.AmllTopBar
 import dev.amll.hub.android.ui.component.EmptyState
 import dev.amll.hub.android.ui.component.SkeletonList
@@ -33,7 +32,7 @@ import dev.amll.hub.android.ui.theme.Font
  * 最新收录全量列表：首页/发现只放前几条，这里展示接口返回的全部。
  */
 @Composable
-fun LatestSongsScreen(vm: AppViewModel, nav: AppNav) {
+fun LatestSongsScreen(vm: HomeViewModel, nav: AppNav) {
     LaunchedEffect(Unit) { if (vm.home.value.latest.isEmpty()) vm.loadHome() }
     val ui by vm.home.collectAsStateWithLifecycle()
 

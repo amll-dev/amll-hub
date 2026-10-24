@@ -4,26 +4,19 @@ import android.graphics.Color as AndroidColor
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,11 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.amll.hub.android.BuildConfig
 import dev.amll.hub.android.data.remote.CaptchaConfig
@@ -70,10 +61,6 @@ fun CaptchaDialog(
     }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var loaded by remember { mutableStateOf(false) }
-    // 首帧后再置 true，弹层才有「弹出来」的过程，而不是直接出现
-    var visible by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) { visible = true }
 
     LaunchedEffect(webView, loaded, verified) {
         if (loaded && verified != null) {
@@ -81,41 +68,15 @@ fun CaptchaDialog(
         }
     }
 
-    Dialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        AnimatedVisibility(
-            visible = visible,
-            // 只做淡入 + 轻微上移：WebView 放进带缩放的图层里，
-            // 部分机型会出现验证码渲染不出来
-            enter = fadeIn(tween(160)) +
-                slideInVertically(animationSpec = tween(220, easing = FastOutSlowInEasing)) { it / 16 },
-            exit = fadeOut(tween(120)),
-        ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .clip(RoundedCornerShape(Radius.sheet))
-                    .background(Amll.colors.surface)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "安全验证",
-                        style = Font.sheetTitle,
-                        color = Amll.colors.ink,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        "关闭",
-                        style = Font.caption,
-                        color = Amll.colors.ink3,
-                        modifier = Modifier.clickable(onClick = onDismiss),
-                    )
-                }
+        shape = RoundedCornerShape(Radius.sheet),
+        containerColor = Amll.colors.surface,
+        modifier = Modifier.padding(horizontal = 12.dp),
+        title = { Text("安全验证", style = Font.sheetTitle, color = Amll.colors.ink) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     "完成滑块验证后会自动发送验证码",
                     style = Font.micro,
@@ -143,7 +104,7 @@ fun CaptchaDialog(
                                         // 页面脚本就绪后再下发场景配置，避免依赖 query 参数
                                         view?.evaluateJavascript(
                                             "window.startCaptcha&&window.startCaptcha(" +
-                                                "'${jsArg(config.sceneId)}','${jsArg(config.prefix)}')",
+                                                "${jsStringLiteral(config.sceneId)},${jsStringLiteral(config.prefix)})",
                                             null,
                                         )
                                     }
@@ -181,8 +142,13 @@ fun CaptchaDialog(
                     Text(error, style = Font.micro, color = Amll.colors.warning)
                 }
             }
-        }
-    }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭", style = Font.caption, color = Amll.colors.ink3)
+            }
+        },
+    )
 }
 
 /** 站点根域：https://api.beta.example.com → https://beta.example.com/ */
@@ -200,7 +166,3 @@ private val siteOrigin: String
         return scheme + host.removePrefix("api.") + "/"
     }
 
-/** JS 单引号字符串转义 */
-private fun jsArg(value: String): String = value
-    .replace("\\", "\\\\")
-    .replace("'", "\\'")

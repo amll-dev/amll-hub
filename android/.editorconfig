@@ -1,0 +1,6 @@
+root = true
+
+[*.{kt,kts}]
+# 与 Kotlin 官方风格一致；行宽交给 IDE 排版，不在 CI 卡 140 列
+ktlint_code_style = intellij_idea
+max_line_length = off

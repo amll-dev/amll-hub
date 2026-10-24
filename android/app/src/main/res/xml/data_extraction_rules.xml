@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <!-- 登录凭证与本地数据不允许云备份 / 换机迁移 -->
+    <cloud-backup>
+        <exclude domain="file" path="datastore/" />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="database" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="datastore/" />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="database" path="." />
+    </device-transfer>
+</data-extraction-rules>

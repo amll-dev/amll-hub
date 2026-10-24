@@ -48,6 +48,8 @@ import dev.amll.hub.android.ui.component.SkeletonList
 import dev.amll.hub.android.ui.theme.Amll
 import dev.amll.hub.android.ui.theme.Font
 import dev.amll.hub.android.ui.theme.Radius
+import java.time.Duration
+import java.util.Locale
 
 private val MODES = listOf("关键词搜索", "单曲 ID", "歌单 ID")
 
@@ -55,7 +57,7 @@ private val MODES = listOf("关键词搜索", "单曲 ID", "歌单 ID")
  * 网易云解析：对应网页端的 /ncm 页面。
  *
  * 三种入口都是「拿到网易云 ID → 交给播放器解析」，所以最终都走
- * nav.openLyric，由 AppViewModel 统一补齐封面 / 歌手 / 音频。
+ * nav.openLyric，由 LyricViewModel 统一补齐封面 / 歌手 / 音频。
  */
 @Composable
 fun NcmParseScreen(
@@ -393,8 +395,6 @@ private fun NcmTrackRow(track: NcmTrackDto, onClick: () -> Unit) {
 
 /** 毫秒 → m:ss */
 private fun formatDuration(ms: Long): String {
-    val total = (ms / 1000).coerceAtLeast(0)
-    val minutes = total / 60
-    val seconds = total % 60
-    return "%d:%02d".format(minutes, seconds)
+    val duration = Duration.ofMillis(ms.coerceAtLeast(0))
+    return String.format(Locale.US, "%d:%02d", duration.toMinutes(), duration.seconds % 60)
 }

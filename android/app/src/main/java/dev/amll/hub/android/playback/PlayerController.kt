@@ -55,6 +55,12 @@ class PlayerController @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var ticker: Job? = null
 
+    /**
+     * 进度同步间隔。歌词页会在两次 setTime 之间自行插值，
+     * 这里只负责校正漂移，不需要 120ms 那么频繁。
+     */
+    private val tickIntervalMs = 1_000L
+
     val player: ExoPlayer = ExoPlayer.Builder(context).build().apply {
         setAudioAttributes(
             AudioAttributes.Builder()
@@ -66,6 +72,9 @@ class PlayerController @Inject constructor(
         repeatMode = Player.REPEAT_MODE_ALL
         // 拔耳机自动暂停，交给系统播控统一处理
         setHandleAudioBecomingNoisy(true)
+        // 息屏后保持 CPU 和网络唤醒：只靠前台服务不足以阻止设备进入
+        // Doze，一段时间后音频流会被挂起，媒体通知也随之消失
+        setWakeMode(C.WAKE_MODE_NETWORK)
     }
 
     private val _state = MutableStateFlow(State())
@@ -84,6 +93,16 @@ class PlayerController @Inject constructor(
                     val duration = player.duration.takeIf { it != C.TIME_UNSET } ?: 0L
                     _state.update { it.copy(durationMs = duration) }
                 }
+                syncPosition()
+            }
+
+            /** seek / 跳转 / 变速都通过这里同步，避免进度只在 ticker 里更新 */
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                syncPosition()
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -183,7 +202,12 @@ class PlayerController @Inject constructor(
 
     fun seekTo(positionMs: Long) {
         player.seekTo(positionMs.coerceAtLeast(0))
-        _state.update { it.copy(positionMs = positionMs) }
+        // 立即回写，不等 onPositionDiscontinuity，拖动条松手时无延迟
+        syncPosition()
+    }
+
+    private fun syncPosition() {
+        _state.update { it.copy(positionMs = player.currentPosition.coerceAtLeast(0)) }
     }
 
     fun seekBy(deltaMs: Long) = seekTo(player.currentPosition + deltaMs)
@@ -192,8 +216,8 @@ class PlayerController @Inject constructor(
         if (ticker?.isActive == true) return
         ticker = scope.launch {
             while (isActive) {
-                _state.update { it.copy(positionMs = player.currentPosition) }
-                delay(120)
+                syncPosition()
+                delay(tickIntervalMs)
             }
         }
     }
