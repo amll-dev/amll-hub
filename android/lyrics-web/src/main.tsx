@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Provider, createStore } from 'jotai';
+import { Provider, createStore, useAtom } from 'jotai';
 import {
   PrebuiltLyricPlayer,
+  LyricSizePreset,
   cssBackgroundPropertyAtom,
+  hideLyricViewAtom,
   isLyricPageOpenedAtom,
   lyricBackgroundRendererAtom,
+  lyricSizePresetAtom,
   musicArtistsAtom,
   musicCoverAtom,
   musicDurationAtom,
@@ -26,6 +29,9 @@ import {
   onToggleShuffleAtom,
 } from '@applemusic-like-lyrics/react-full';
 import { MeshGradientRenderer } from '@applemusic-like-lyrics/core';
+// 与网页端 PlayerBoot 完全相同：歌词解析全部交给 AMLL 官方解析器，
+// 原生侧只传原始 TTML / LRC 文本，避免两边解析结果不一致（英文空格就是这样丢的）
+import { parseLrc, parseTTML } from '@applemusic-like-lyrics/lyric';
 import '@applemusic-like-lyrics/core/style.css';
 import '@applemusic-like-lyrics/react-full/style.css';
 import './page.css';
@@ -40,6 +46,8 @@ const store = createStore();
 store.set(isLyricPageOpenedAtom, true);
 store.set(musicPlayingAtom, false);
 store.set(musicVolumeAtom, 1);
+// 网页端默认档在手机上偏小，这里统一用「大」档（6vh，约比默认大 20%）
+store.set(lyricSizePresetAtom, LyricSizePreset.Large);
 
 /**
  * 背景默认先走纯色（安全），封面确认能加载后再切回和网页端一致的流体渐变。
@@ -64,6 +72,9 @@ store.set(cssBackgroundPropertyAtom, '#141019');
 /** 将回调包装为 AMLL 期望的 { onEmit } 结构 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const toEmit = <T,>(onEmit: T): any => ({ onEmit });
+
+/** ⋯ 按钮在 AMLL 内部触发，页面内菜单通过这个引用打开 */
+const menuRequest: { listener: (() => void) | null } = { listener: null };
 
 /** 页面 → 原生：优先走 JS 接口，接口不可用时退回控制台日志 */
 function host(command: string, value?: number) {
@@ -97,8 +108,13 @@ store.set(onRequestNextSongAtom, toEmit(() => host('next')));
 store.set(onRequestPrevSongAtom, toEmit(() => host('prev')));
 // 顶部拖动条 / 点击封面缩略图：网页端用来退出歌词页
 store.set(onClickControlThumbAtom, toEmit(() => host('close')));
-// 右上角「⋯」菜单
-store.set(onRequestOpenMenuAtom, toEmit(() => host('menu')));
+// 右上角「⋯」：与网页端一致，弹出页面内菜单
+store.set(
+  onRequestOpenMenuAtom,
+  toEmit(() => {
+    menuRequest.listener?.();
+  }),
+);
 
 /**
  * 原生每 120ms 才推一次进度，直接写进 atom 会让逐字高亮一跳一跳的。
@@ -135,19 +151,148 @@ function applyPosition(ms: number) {
   }
 }
 
-function App() {
+const MENU_WIDTH = 208;
+const LONG_PRESS_MS = 480;
+
+type MenuAnchor = { x: number; y: number };
+
+function clampMenu(anchor: MenuAnchor): MenuAnchor {
+  const margin = 8;
+  const maxX = Math.max(margin, window.innerWidth - MENU_WIDTH - margin);
+  // 菜单高度约 260px，避免贴着屏幕下沿
+  const maxY = Math.max(margin, window.innerHeight - 280);
+  return {
+    x: Math.min(Math.max(anchor.x, margin), maxX),
+    y: Math.min(Math.max(anchor.y, margin), maxY),
+  };
+}
+
+function MenuRow(props: { label: string; disabled?: boolean; onClick?: () => void }) {
   return (
-    <div className="stage">
-      <PrebuiltLyricPlayer
-        id="amll-lyric-player"
-        style={{ width: '100%', height: '100%' }}
-      />
+    <button
+      type="button"
+      className="menu-item"
+      disabled={props.disabled}
+      onClick={props.onClick}
+    >
+      {props.label}
+    </button>
+  );
+}
+
+function App() {
+  const [hideLyric, setHideLyric] = useAtom(hideLyricViewAtom);
+  const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const startRef = useRef<{ x: number; y: number } | null>(null);
+  // 菜单刚弹出时手指还没抬起，紧接着的 click 会落在遮罩上，先忽略一小段时间
+  const openedAtRef = useRef(0);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const openMenu = useCallback((next: MenuAnchor) => {
+    openedAtRef.current = Date.now();
+    setAnchor(clampMenu(next));
+  }, []);
+
+  // AMLL 右上角「⋯」→ 页面内菜单
+  useEffect(() => {
+    menuRequest.listener = () =>
+      openMenu({ x: window.innerWidth - MENU_WIDTH - 16, y: 64 });
+    return () => {
+      menuRequest.listener = null;
+    };
+  }, [openMenu]);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    startRef.current = { x: touch.clientX, y: touch.clientY };
+    clearTimer();
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      openMenu({ x: touch.clientX, y: touch.clientY });
+    }, LONG_PRESS_MS);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    const start = startRef.current;
+    if (!start) return;
+    const touch = e.touches[0];
+    if (Math.abs(touch.clientX - start.x) > 10 || Math.abs(touch.clientY - start.y) > 10) {
+      clearTimer();
+    }
+  };
+
+  const closeMenu = () => setAnchor(null);
+
+  return (
+    <div
+      className="stage"
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={clearTimer}
+      onTouchCancel={clearTimer}
+      onContextMenu={(e) => {
+        // 安卓 WebView 长按默认会弹系统菜单，这里统一走页面内菜单
+        e.preventDefault();
+        openMenu({ x: e.clientX, y: e.clientY });
+      }}
+    >
+      <PrebuiltLyricPlayer id="amll-lyric-player" style={{ width: '100%', height: '100%' }} />
+
+      {anchor && (
+        <div
+          className="menu-backdrop"
+          onClick={() => {
+            if (Date.now() - openedAtRef.current > 300) closeMenu();
+          }}
+        >
+          <div
+            className="menu-card"
+            style={{ left: anchor.x, top: anchor.y, width: MENU_WIDTH }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <MenuRow label="上一首" disabled />
+            <MenuRow
+              label="暂停 / 继续"
+              onClick={() => {
+                closeMenu();
+                host('playPause');
+              }}
+            />
+            <MenuRow label="下一首" disabled />
+            <div className="menu-sep" />
+            <MenuRow
+              label={hideLyric ? '显示歌词' : '隐藏歌词'}
+              onClick={() => {
+                setHideLyric(!hideLyric);
+                closeMenu();
+              }}
+            />
+            <div className="menu-sep" />
+            <MenuRow
+              label="退出歌词页面"
+              onClick={() => {
+                closeMenu();
+                host('close');
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 type NativeBridge = {
-  setLines: (json: string) => void;
+  /** 原始歌词文本：format = "ttml" | "lrc"，translation 只对 LRC 有效 */
+  setRawLyric: (raw: string, format: string, translation: string) => void;
   setTime: (ms: number) => void;
   setPlaying: (playing: boolean) => void;
   setMeta: (name: string, artists: string, duration: number) => void;
@@ -162,13 +307,35 @@ declare global {
 }
 
 window.amllNative = {
-  setLines(json: string) {
+  setRawLyric(raw: string, format: string, translation: string) {
     try {
-      const lines = JSON.parse(json);
-      console.log('[amll] setLines:', Array.isArray(lines) ? lines.length : lines);
+      if (!raw) {
+        store.set(musicLyricLinesAtom, []);
+        return;
+      }
+      // 与 PlayerBoot.tsx L1294-1331 一致：TTML 走 parseTTML，
+      // LRC 走 parseLrc 并按行开始时间合并 tlyric 翻译
+      if (format === 'ttml') {
+        const lines = parseTTML(raw).lines;
+        console.log('[amll] parseTTML lines:', lines.length);
+        store.set(musicLyricLinesAtom, lines);
+        return;
+      }
+      const lines = parseLrc(raw);
+      if (translation) {
+        const transMap = new Map<number, string>();
+        for (const t of parseLrc(translation)) {
+          transMap.set(Math.round(t.startTime), t.words[0]?.word ?? '');
+        }
+        for (const line of lines) {
+          line.translatedLyric = transMap.get(Math.round(line.startTime)) ?? '';
+        }
+      }
+      console.log('[amll] parseLrc lines:', lines.length);
       store.set(musicLyricLinesAtom, lines);
     } catch (err) {
-      console.warn('[amll] setLines failed', err);
+      console.warn('[amll] setRawLyric failed', err);
+      store.set(musicLyricLinesAtom, []);
     }
   },
   setTime(ms: number) {

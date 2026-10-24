@@ -26,34 +26,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import dev.amll.hub.android.BuildConfig
-import dev.amll.hub.android.data.lyric.LyricLine
-import dev.amll.hub.android.data.lyric.Word
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import org.json.JSONObject
 
 private const val TAG = "AmllLyricView"
-
-/** AMLL core 的歌词结构，直接由 kotlinx.serialization 产出，避免手拼 JSON */
-@Serializable
-private data class AmllWordDto(
-    val word: String,
-    val startTime: Long,
-    val endTime: Long,
-)
-
-@Serializable
-private data class AmllLineDto(
-    val startTime: Long,
-    val endTime: Long,
-    val translatedLyric: String,
-    val romanLyric: String,
-    val isBG: Boolean,
-    val words: List<AmllWordDto>,
-)
-
-private val lyricJson = Json.Default
 
 /**
  * 内置 AMLL 歌词页（assets/lyrics，AMLL core 构建产物）。
@@ -63,7 +38,12 @@ private val lyricJson = Json.Default
  */
 @Composable
 fun AmllLyricView(
-    lines: List<LyricLine>,
+    /** 原始歌词文本，由页面用 AMLL 官方解析器解析（与网页端同款库） */
+    rawLyric: String,
+    /** "ttml" / "lrc" */
+    lyricFormat: String,
+    /** LRC 的翻译文本（tlyric） */
+    lyricTranslation: String,
     positionMs: Long,
     playing: Boolean,
     title: String,
@@ -74,32 +54,29 @@ fun AmllLyricView(
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
     onClose: () -> Unit,
-    onOpenMenu: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var loaded by remember { mutableStateOf(false) }
     // 渲染进程崩溃后原 WebView 不可复用，递增一次就换一个新实例
     var rendererRestart by remember { mutableIntStateOf(0) }
-    val linesJson = remember(lines) { lyricLinesToJson(lines) }
     val coverUrl = remember(cover) { cover.orEmpty() }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
-    val dispatch: (String, Double?) -> Unit = remember(onTogglePlay, onSeek, onClose, onOpenMenu) {
+    val dispatch: (String, Double?) -> Unit = remember(onTogglePlay, onSeek, onClose) {
         { command, value ->
             when (command) {
                 "playPause" -> onTogglePlay()
                 "seek" -> value?.let { onSeek(it.toLong()) }
                 "close" -> onClose()
-                "menu" -> onOpenMenu()
                 // next / prev / shuffle / repeat / volume：当前播放器是单曲播放，暂不接
             }
         }
     }
 
-    LaunchedEffect(webView, loaded, linesJson) {
-        if (loaded && linesJson.isNotEmpty()) {
-            evalJs(webView, setLinesScript(linesJson))
+    LaunchedEffect(webView, loaded, rawLyric, lyricFormat, lyricTranslation) {
+        if (loaded) {
+            evalJs(webView, setRawLyricScript(rawLyric, lyricFormat, lyricTranslation))
         }
     }
     LaunchedEffect(webView, loaded, positionMs) {
@@ -150,6 +127,12 @@ fun AmllLyricView(
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        // 让页面按设备宽度布局。不开这个的话 WebView 会按 980px 桌面宽度排版，
+                        // AMLL 面向移动端的尺寸/媒体查询全部失效，底部播控等会显示异常。
+                        settings.useWideViewPort = true
+                        settings.loadWithOverviewMode = true
+                        settings.displayZoomControls = false
+                        settings.builtInZoomControls = false
                         // 页面只从 assets 加载：禁掉本地文件访问与弹窗，缩小 JS 桥的可达面
                         settings.allowFileAccess = false
                         settings.allowContentAccess = false
@@ -212,9 +195,10 @@ fun AmllLyricView(
                                 // 已加载好的歌词 / 播放态在 onPageFinished 后补一次，防止加载期间丢事件
                                 evalJs(view, "window.amllNative&&window.amllNative.setCover(${jsStringLiteral(coverUrl)})")
                                 evalJs(view, "window.amllNative&&window.amllNative.setTheme($dark)")
-                                if (linesJson.isNotEmpty()) {
-                                    evalJs(view, setLinesScript(linesJson))
-                                }
+                                evalJs(
+                                    view,
+                                    setRawLyricScript(rawLyric, lyricFormat, lyricTranslation),
+                                )
                                 evalJs(view, "window.amllNative&&window.amllNative.setPlaying($playing)")
                             }
 
@@ -263,8 +247,9 @@ private const val ASSET_ORIGIN = "https://appassets.androidplatform.net/assets/l
 
 private const val ASSET_URL = ASSET_ORIGIN + "index.html"
 
-private fun setLinesScript(linesJson: String) =
-    "window.amllNative&&window.amllNative.setLines(${jsStringLiteral(linesJson)})"
+private fun setRawLyricScript(raw: String, format: String, translation: String) =
+    "window.amllNative&&window.amllNative.setRawLyric(" +
+        "${jsStringLiteral(raw)},${jsStringLiteral(format)},${jsStringLiteral(translation)})"
 
 private fun setTimeScript(positionMs: Long) =
     "window.amllNative&&window.amllNative.setTime($positionMs)"
@@ -273,24 +258,4 @@ private fun evalJs(webView: WebView?, script: String) {
     webView?.evaluateJavascript(script, null)
 }
 
-/** 转成 AMLL core 需要的 LyricLine 结构 */
-fun lyricLinesToJson(lines: List<LyricLine>): String {
-    if (lines.isEmpty()) return ""
-    val payload = lines.map { line ->
-        // 没有逐字信息时补一个覆盖整行的 word，否则 AMLL 会渲染成空行
-        val source = line.words.ifEmpty {
-            listOf(Word(text = line.text, startMs = line.startMs, endMs = line.endMs))
-        }
-        AmllLineDto(
-            startTime = line.startMs,
-            endTime = line.endMs,
-            translatedLyric = line.translation,
-            romanLyric = line.romanization,
-            isBG = line.isBackground,
-            words = source.map { word ->
-                AmllWordDto(word = word.text, startTime = word.startMs, endTime = word.endMs)
-            },
-        )
-    }
-    return lyricJson.encodeToString(payload)
-}
+

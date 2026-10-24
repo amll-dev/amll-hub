@@ -41,6 +41,59 @@ body {
   display: none;
 }
 
+/* 长按弹出菜单，避免触发系统选择/长按菜单 */
+.stage {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+/* 与网页端右键菜单同款：白色圆角卡片 + 深色文字 */
+.menu-card {
+  position: fixed;
+  box-sizing: border-box;
+  padding: 6px;
+  border-radius: 12px;
+  background: #fff;
+  color: #1c1c1e;
+  box-shadow: 0 14px 40px -12px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.2;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: default;
+}
+
+.menu-item:active {
+  background: #ededf0;
+}
+
+.menu-item:disabled {
+  color: #b0b0b6;
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: rgba(0, 0, 0, 0.1);
+}
+
 /* 渲染异常时的可见兜底，避免纯黑屏 */
 .page-error {
   position: fixed;
