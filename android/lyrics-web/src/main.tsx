@@ -37,62 +37,6 @@ import './page.css';
  */
 const store = createStore();
 
-let lineCount = 0;
-let currentPosition = 0;
-
-/** 页面底部横幅：只要能看见它，就说明 WebView 确实在绘制页面 */
-function setPageOk(detail: string) {
-  const el = document.getElementById('page-ok-detail');
-  if (el) el.textContent = detail;
-}
-
-/** 把页面 DOM 的真实状态回传给原生，原生把它固定显示在调试面板顶部 */
-function report(stage: string, extra: Record<string, unknown> = {}) {
-  try {
-    const root = document.getElementById('root');
-    const player = document.getElementById('amll-lyric-player');
-    const stageEl = document.querySelector('.stage');
-    const rect = player?.getBoundingClientRect();
-    const cs = player ? getComputedStyle(player) : null;
-    const payload = {
-      stage,
-      rootChildren: root?.childElementCount ?? -1,
-      player: Boolean(player),
-      playerSize: rect ? [Math.round(rect.width), Math.round(rect.height)] : null,
-      heights: {
-        html: document.documentElement.clientHeight,
-        body: document.body.clientHeight,
-        root: root?.clientHeight ?? -1,
-        stage: stageEl?.clientHeight ?? -1,
-      },
-      text: (player?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 24),
-      color: cs?.color ?? '',
-      blend: cs?.mixBlendMode ?? '',
-      opacity: cs?.opacity ?? '',
-      lines: lineCount,
-      pos: Math.round(currentPosition),
-      webgl: Boolean(document.createElement('canvas').getContext('webgl')),
-      view: [window.innerWidth, window.innerHeight],
-      ...extra,
-    };
-    const json = JSON.stringify(payload);
-    console.log('[amll] report', json);
-  } catch (err) {
-    console.log('[amll] report failed', String(err));
-  }
-}
-
-// 真机排查用：把页面里的异常都转到原生 logcat（AmllLyricView 的 onConsoleMessage）
-console.log('[amll] page boot, ua =', navigator.userAgent);
-window.addEventListener('error', (e) => {
-  console.error('[amll] window error:', e.message, `${e.filename}:${e.lineno}:${e.colno}`);
-  report('window-error', { message: e.message });
-});
-window.addEventListener('unhandledrejection', (e) => {
-  console.error('[amll] unhandled rejection:', String(e.reason));
-  report('unhandled-rejection', { message: String(e.reason) });
-});
-
 store.set(isLyricPageOpenedAtom, true);
 store.set(showBottomControlAtom, false);
 store.set(showVolumeControlAtom, false);
@@ -117,9 +61,6 @@ function App() {
         id="amll-lyric-player"
         style={{ width: '100%', height: '100%' }}
       />
-      <div className="page-ok">
-        AMLL PAGE OK · <span id="page-ok-detail">载入中</span>
-      </div>
     </div>
   );
 }
@@ -143,18 +84,13 @@ window.amllNative = {
   setLines(json: string) {
     try {
       const lines = JSON.parse(json);
-      lineCount = Array.isArray(lines) ? lines.length : 0;
-      console.log('[amll] setLines:', lineCount);
-      setPageOk(`${lineCount} 行 / ${Math.round(currentPosition)}ms`);
+      console.log('[amll] setLines:', Array.isArray(lines) ? lines.length : lines);
       store.set(musicLyricLinesAtom, lines);
-      requestAnimationFrame(() => report('setLines'));
     } catch (err) {
       console.warn('[amll] setLines failed', err);
     }
   },
   setTime(ms: number) {
-    currentPosition = ms;
-    setPageOk(`${lineCount} 行 / ${Math.round(ms)}ms`);
     store.set(musicPlayingPositionAtom, ms);
   },
   setPlaying(playing: boolean) {
@@ -184,10 +120,6 @@ window.amllNative = {
   },
 };
 
-// 首帧渲染后探测一次：根节点有没有内容、播放器节点在不在、WebGL 是否可用
-requestAnimationFrame(() => report('boot'));
-setTimeout(() => report('boot+1s'), 1000);
-
 /** AMLL 渲染抛异常时把堆栈画出来，避免整页黑屏且无从排查 */
 class PageErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -201,7 +133,6 @@ class PageErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('[amll] render crashed:', error, info.componentStack);
-    report('render-crashed', { message: String(error.message) });
   }
 
   render() {
