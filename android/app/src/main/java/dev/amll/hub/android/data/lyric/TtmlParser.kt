@@ -33,10 +33,9 @@ data class LyricLine(
 
 object TtmlParser {
 
-    fun parse(xml: String): List<LyricLine> {
-        return runCatching { parseInternal(xml) }
+    fun parse(xml: String): List<LyricLine> =
+        runCatching { parseInternal(xml) }
             .getOrElse { fallback(xml) }
-    }
 
     private fun parseInternal(xml: String): List<LyricLine> {
         val parser = Xml.newPullParser()
@@ -178,12 +177,11 @@ object TtmlParser {
     }
 
     /** 拿不到结构化 TTML 时，按纯文本切行，至少能滚动 */
-    private fun fallback(xml: String): List<LyricLine> {
-        return xml.split("\n")
+    private fun fallback(xml: String): List<LyricLine> =
+        xml.split("\n")
             .map { it.trim() }
             .filter { it.isNotEmpty() && !it.startsWith("<") }
             .mapIndexed { index, text ->
                 LyricLine(text = text, startMs = index * 4000L, endMs = index * 4000L + 3800L)
             }
-    }
 }

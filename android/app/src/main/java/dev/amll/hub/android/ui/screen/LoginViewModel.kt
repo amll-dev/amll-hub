@@ -45,9 +45,9 @@ data class LoginUiState(
     val captchaVerified: Boolean? = null,
 ) {
     val canSubmit: Boolean
-        get() = !submitting && when (tab) {
-            LoginTab.PASSWORD -> username.isNotBlank() && password.isNotBlank()
-            LoginTab.CODE -> dest.isNotBlank() && code.isNotBlank()
+        get() = when (tab) {
+            LoginTab.PASSWORD -> !submitting && username.isNotBlank() && password.isNotBlank()
+            LoginTab.CODE -> !submitting && dest.isNotBlank() && code.isNotBlank()
         }
 
     val canSendCode: Boolean

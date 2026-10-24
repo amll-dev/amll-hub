@@ -11,7 +11,10 @@ import java.io.IOException
  */
 object ApiErrorParser {
 
-    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+    }
 
     /** 从错误响应体里取 message（转义、嵌套结构都交给 kotlinx.serialization） */
     fun message(e: HttpException): String? = runCatching {

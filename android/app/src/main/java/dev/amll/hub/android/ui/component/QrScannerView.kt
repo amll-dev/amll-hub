@@ -11,7 +11,6 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.concurrent.futures.await
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,11 +30,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.concurrent.futures.await
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -48,7 +48,6 @@ import kotlinx.coroutines.asExecutor
  * 相机扫码预览：CameraX 提供预览、ML Kit 识别二维码。
  * 只识别 QR_CODE；识别成功后停止分析，避免重复回调。
  */
-@OptIn(ExperimentalGetImage::class)
 @Composable
 fun QrScannerView(
     onQrScanned: (String) -> Unit,
@@ -60,11 +59,11 @@ fun QrScannerView(
     var hasPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                PackageManager.PERMISSION_GRANTED
+                PackageManager.PERMISSION_GRANTED,
         )
     }
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
+        ActivityResultContracts.RequestPermission(),
     ) { granted -> hasPermission = granted }
 
     LaunchedEffect(Unit) {
@@ -88,7 +87,7 @@ fun QrScannerView(
         BarcodeScanning.getClient(
             BarcodeScannerOptions.Builder()
                 .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                .build()
+                .build(),
         )
     }
 

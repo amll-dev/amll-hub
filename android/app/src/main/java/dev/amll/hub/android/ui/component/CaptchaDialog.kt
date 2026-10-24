@@ -1,6 +1,5 @@
 package dev.amll.hub.android.ui.component
 
-import android.graphics.Color as AndroidColor
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -34,6 +33,7 @@ import dev.amll.hub.android.data.remote.CaptchaConfig
 import dev.amll.hub.android.ui.theme.Amll
 import dev.amll.hub.android.ui.theme.Font
 import dev.amll.hub.android.ui.theme.Radius
+import android.graphics.Color as AndroidColor
 
 /**
  * 人机验证弹层。
@@ -165,4 +165,3 @@ private val siteOrigin: String
         // api. 前缀是 Api 域名，验证码要求配置的是站点域名
         return scheme + host.removePrefix("api.") + "/"
     }
-

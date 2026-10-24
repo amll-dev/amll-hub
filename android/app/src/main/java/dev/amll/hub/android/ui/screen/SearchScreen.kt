@@ -254,7 +254,6 @@ fun SearchScreen(vm: SearchViewModel, nav: AppNav) {
                 description = "支持歌名、歌手与歌词片段",
             )
         }
-
     }
 }
 

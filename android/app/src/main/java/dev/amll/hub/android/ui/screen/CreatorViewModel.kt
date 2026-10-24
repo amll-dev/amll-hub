@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.amll.hub.android.data.remote.DailyRecDto
-import dev.amll.hub.android.data.remote.SearchHitDto
 import dev.amll.hub.android.data.remote.SearchIpSubmissionDto
 import dev.amll.hub.android.data.remote.SubmissionDto
 import dev.amll.hub.android.data.remote.SubmissionStatsDto

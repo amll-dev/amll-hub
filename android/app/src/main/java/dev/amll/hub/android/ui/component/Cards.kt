@@ -174,7 +174,11 @@ fun SongRow(
             Text(subtitle, style = Font.caption, color = Amll.colors.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         // 右侧统一收一个播放按钮，行尾不会空掉（曲目接口没有时长字段）
-        if (trailing != null) trailing.invoke() else if (onClick != null) PlayCircleButton()
+        if (trailing != null) {
+            trailing.invoke()
+        } else if (onClick != null) {
+            PlayCircleButton()
+        }
     }
 }
 

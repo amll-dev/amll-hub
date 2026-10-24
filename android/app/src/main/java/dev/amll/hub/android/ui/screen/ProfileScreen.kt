@@ -1,6 +1,5 @@
 package dev.amll.hub.android.ui.screen
 
-import android.os.Build
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,86 +8,47 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AddCircleOutline
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Explore
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Inbox
-import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.QrCodeScanner
-import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
-import dev.amll.hub.android.data.remote.DailyRecDto
-import dev.amll.hub.android.data.remote.RankingItemDto
-import dev.amll.hub.android.data.remote.Urls
 import dev.amll.hub.android.data.remote.UserActivityDto
 import dev.amll.hub.android.ui.AppNav
 import dev.amll.hub.android.ui.TabScaffold
 import dev.amll.hub.android.ui.bottomBarPadding
 import dev.amll.hub.android.ui.component.AmllCard
-import dev.amll.hub.android.ui.component.AmllTopBar
-import dev.amll.hub.android.ui.component.ChipTone
-import dev.amll.hub.android.ui.component.CoverImage
-import dev.amll.hub.android.ui.component.EmptyState
 import dev.amll.hub.android.ui.component.NavRow
-import dev.amll.hub.android.ui.component.PageHeader
-import dev.amll.hub.android.ui.component.SectionHeader
-import dev.amll.hub.android.ui.component.SkeletonList
-import dev.amll.hub.android.ui.component.SongRow
-import dev.amll.hub.android.ui.component.TabItem
-import dev.amll.hub.android.ui.component.coverBrush
 import dev.amll.hub.android.ui.theme.Amll
-import dev.amll.hub.android.ui.theme.CardShape
 import dev.amll.hub.android.ui.theme.Font
-import dev.amll.hub.android.ui.theme.HeroShape
-import dev.amll.hub.android.ui.theme.Radius
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 
 /* ============================ 11 我的 ============================ */
 
@@ -253,15 +213,16 @@ private fun heatRamp(): List<Color> = listOf(
 )
 
 /** 有序色阶：按当天次数取档，避免把颜色写死在 when 里 */
-private fun heatColor(count: Int, ramp: List<Color>): Color = ramp[
-    when {
+private fun heatColor(count: Int, ramp: List<Color>): Color {
+    val index = when {
         count <= 0 -> 0
         count == 1 -> 1
         count <= 3 -> 2
         count <= 6 -> 3
         else -> 4
     }
-]
+    return ramp[index]
+}
 
 private fun activitySummary(activity: UserActivityDto?, loading: Boolean): String {
     if (activity == null) return if (loading) "正在加载活动记录…" else "暂无活动记录"

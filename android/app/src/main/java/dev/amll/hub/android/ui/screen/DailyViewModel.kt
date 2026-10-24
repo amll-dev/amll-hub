@@ -40,18 +40,30 @@ class DailyViewModel @Inject constructor(
         // 先本地翻转，失败再回滚
         likedDaily.update { if (liked) it - rec.id else it + rec.id }
         daily.update { ui ->
-            ui.copy(items = ui.items.map {
-                if (it.id == rec.id) it.copy(likeCount = (it.likeCount + if (liked) -1 else 1).coerceAtLeast(0)) else it
-            })
+            ui.copy(
+                items = ui.items.map {
+                    if (it.id == rec.id) {
+                        it.copy(likeCount = (it.likeCount + if (liked) -1 else 1).coerceAtLeast(0))
+                    } else {
+                        it
+                    }
+                },
+            )
         }
         viewModelScope.launch {
             val result = repo.toggleLike(rec.id).getOrNull()
             if (result == null) {
                 likedDaily.update { if (liked) it + rec.id else it - rec.id }
                 daily.update { ui ->
-                    ui.copy(items = ui.items.map {
-                        if (it.id == rec.id) it.copy(likeCount = (it.likeCount + if (liked) 1 else -1).coerceAtLeast(0)) else it
-                    })
+                    ui.copy(
+                        items = ui.items.map {
+                            if (it.id == rec.id) {
+                                it.copy(likeCount = (it.likeCount + if (liked) 1 else -1).coerceAtLeast(0))
+                            } else {
+                                it
+                            }
+                        },
+                    )
                 }
             } else {
                 likedDaily.update { if (result.liked) it + rec.id else it - rec.id }

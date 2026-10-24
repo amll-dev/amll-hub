@@ -138,4 +138,3 @@ private fun CrashReportDialog(text: String, onDismiss: () -> Unit) {
         },
     )
 }
-
