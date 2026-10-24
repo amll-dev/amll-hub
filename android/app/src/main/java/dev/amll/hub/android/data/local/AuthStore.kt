@@ -5,9 +5,13 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,6 +35,13 @@ class AuthStore @Inject constructor(
         prefs[tokenKey]?.let { stored ->
             // 历史明文数据（没有 v1: 前缀）直接透传，下次 save 时会被替换为密文
             if (stored.startsWith("v1:")) cipher.decrypt(stored) else stored
+        }
+    }
+
+    init {
+        // 预热缓存：拦截器是同步的，冷启动后由这里把 DataStore 里的 token 搬到内存
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            tokenFlow.collect { cachedToken = it }
         }
     }
 

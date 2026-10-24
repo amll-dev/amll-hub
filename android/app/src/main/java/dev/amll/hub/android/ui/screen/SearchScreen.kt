@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,18 +16,13 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.rounded.ChevronLeft
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -43,17 +37,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.amll.hub.android.data.remote.SearchHitDto
 import dev.amll.hub.android.ui.AppNav
 import dev.amll.hub.android.ui.component.EmptyState
+import dev.amll.hub.android.ui.component.SearchPillField
 import dev.amll.hub.android.ui.component.SkeletonList
 import dev.amll.hub.android.ui.theme.Amll
 import dev.amll.hub.android.ui.theme.Font
@@ -115,48 +105,22 @@ fun SearchScreen(vm: SearchViewModel, nav: AppNav) {
                 tint = Amll.colors.ink,
                 modifier = Modifier.size(22.dp).clickable(onClick = nav.back),
             )
-            Row(
-                Modifier
-                    .weight(1f)
-                    .height(42.dp)
-                    .clip(RoundedCornerShape(Radius.chip))
-                    .background(Amll.colors.surface2)
-                    .padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Rounded.Search, null, tint = Amll.colors.ink3, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(8.dp))
-                Box(Modifier.weight(1f)) {
-                    if (query.isEmpty()) {
-                        Text("搜歌名、歌手、歌词片段", style = Font.bodySmall, color = Amll.colors.ink3)
-                    }
-                    BasicTextField(
-                        value = query,
-                        onValueChange = {
-                            query = it
-                            hint = null
-                        },
-                        singleLine = true,
-                        textStyle = TextStyle(fontSize = 13.5.sp, color = Amll.colors.ink),
-                        cursorBrush = SolidColor(Amll.colors.primary),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { vm.runSearch(query) }),
-                        modifier = Modifier.fillMaxWidth().focusRequester(focus),
-                    )
-                }
-                if (query.isNotEmpty()) {
-                    Icon(
-                        Icons.Rounded.Close,
-                        "清空",
-                        tint = Amll.colors.ink3,
-                        modifier = Modifier.size(16.dp).clickable {
-                            query = ""
-                            hint = null
-                            vm.runSearch("")
-                        },
-                    )
-                }
-            }
+            SearchPillField(
+                value = query,
+                onValueChange = {
+                    query = it
+                    hint = null
+                },
+                placeholder = "搜歌名、歌手、歌词片段",
+                modifier = Modifier.weight(1f),
+                focusRequester = focus,
+                onSearch = { vm.runSearch(query) },
+                onClear = {
+                    query = ""
+                    hint = null
+                    vm.runSearch("")
+                },
+            )
             Text(
                 "取消",
                 style = Font.caption,

@@ -1,7 +1,9 @@
 package dev.amll.hub.android.playback
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -22,6 +24,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val TAG = "PlayerController"
 
 /**
  * 播放内核：Media3 ExoPlayer。
@@ -145,12 +149,18 @@ class PlayerController @Inject constructor(
      *
      * 用 startService 而不是 startForegroundService：前台化由 Media3 在真正开始播放时
      * 自己做，这样 prepare 卡住也不会触发「5 秒内没 startForeground」的 ANR。
+     *
+     * Android 12+ 禁止从后台启动服务，调用点都在界面操作里（应用处于前台），
+     * 失败时保留 serviceStarted=false，下次从界面恢复播放会再试一次。
      */
     private fun startPlaybackService() {
         if (serviceStarted) return
-        val intent = android.content.Intent(context, PlaybackService::class.java)
-        if (runCatching { context.startService(intent) }.isSuccess) {
+        val intent = Intent(context, PlaybackService::class.java)
+        try {
+            context.startService(intent)
             serviceStarted = true
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, "startService rejected, playback continues without media session", e)
         }
     }
 

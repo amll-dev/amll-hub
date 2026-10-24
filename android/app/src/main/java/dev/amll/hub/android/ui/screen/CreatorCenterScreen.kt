@@ -1,10 +1,8 @@
 package dev.amll.hub.android.ui.screen
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +15,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,7 +26,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -119,9 +118,23 @@ fun CreatorCenterScreen(vm: CreatorViewModel, nav: AppNav) {
                         ) {
                             CREATOR_STATUS.forEach { (value, label) ->
                                 FilterChip(
-                                    label = label,
-                                    active = value == status,
-                                ) { vm.loadSubmissions(value) }
+                                    selected = value == status,
+                                    onClick = { vm.loadSubmissions(value) },
+                                    label = {
+                                        Text(
+                                            label,
+                                            style = Font.micro.copy(fontWeight = FontWeight.Medium),
+                                        )
+                                    },
+                                    shape = ChipShape,
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        containerColor = Amll.colors.surface2,
+                                        labelColor = Amll.colors.ink2,
+                                        selectedContainerColor = Amll.colors.primary,
+                                        selectedLabelColor = Amll.colors.onPrimary,
+                                    ),
+                                    border = null,
+                                )
                             }
                         }
                     }
@@ -227,25 +240,6 @@ private fun SubmissionStatsCard(stats: SubmissionStatsDto?) {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun FilterChip(label: String, active: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .height(30.dp)
-            .clip(ChipShape)
-            .background(if (active) Amll.colors.primary else Amll.colors.surface2)
-            .clickable(enabled = !active, onClick = onClick)
-            .padding(horizontal = 13.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            label,
-            style = Font.micro.copy(fontWeight = FontWeight.Medium),
-            color = if (active) Amll.colors.onPrimary else Amll.colors.ink2,
-        )
     }
 }
 

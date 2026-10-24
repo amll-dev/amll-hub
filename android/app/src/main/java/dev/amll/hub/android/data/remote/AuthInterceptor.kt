@@ -1,7 +1,6 @@
 package dev.amll.hub.android.data.remote
 
 import dev.amll.hub.android.data.local.AuthStore
-import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Response
 import javax.inject.Inject
@@ -24,8 +23,8 @@ class AuthInterceptor @Inject constructor(
             return chain.proceed(request)
         }
 
-        // OkHttp 拦截器是同步的，这里用 runBlocking 读内存缓存（正常已有值，不会真正阻塞）
-        val token = authStore.cachedToken ?: runBlocking { authStore.token() }
+        // OkHttp 拦截器是同步的：只读 AuthStore 的内存缓存，不阻塞网络线程
+        val token = authStore.cachedToken
 
         val newRequest = if (token.isNullOrBlank()) {
             request

@@ -9,16 +9,26 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-// 从 local.properties 或环境变量读 API Base URL，缺失时回落到 beta 线上后端
-val apiBaseUrl: String = run {
-    val fromLocal = rootProject.file("local.properties")
-        .takeIf { it.exists() }
-        ?.let { file -> Properties().apply { file.inputStream().use(::load) }.getProperty("amll.api.baseUrl") }
-    val fromEnv = System.getenv("AMLL_API_BASE_URL")
-    fromLocal?.takeIf { it.isNotBlank() }
-        ?: fromEnv?.takeIf { it.isNotBlank() }
-        ?: "https://api.beta.amllhub.bikonoo.com"
-}
+// local.properties 不进版本库（CI 用环境变量），两项都缺时才回落到 beta 后端
+val localProperties: Properties = rootProject.file("local.properties")
+    .takeIf { it.exists() }
+    ?.let { file -> Properties().apply { file.inputStream().use(::load) } }
+    ?: Properties()
+
+fun localOrEnv(key: String, env: String): String? =
+    localProperties.getProperty(key)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(env)?.takeIf { it.isNotBlank() }
+
+val apiBaseUrl: String = localOrEnv("amll.api.baseUrl", "AMLL_API_BASE_URL")
+    ?: "https://api.beta.amllhub.bikonoo.com"
+
+// 发布签名：四项齐全才启用正式 keystore，否则 release 继续用 debug key 兜底
+val releaseStoreFile = localOrEnv("amll.release.storeFile", "AMLL_RELEASE_STORE_FILE")
+val releaseStorePassword = localOrEnv("amll.release.storePassword", "AMLL_RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = localOrEnv("amll.release.keyAlias", "AMLL_RELEASE_KEY_ALIAS")
+val releaseKeyPassword = localOrEnv("amll.release.keyPassword", "AMLL_RELEASE_KEY_PASSWORD")
+val hasReleaseSigning = listOf(releaseStoreFile, releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+    .all { !it.isNullOrBlank() }
 
 android {
     // namespace 是代码包名（R / BuildConfig 的包路径），与安装包标识无关，
@@ -40,6 +50,18 @@ android {
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                storeType = "PKCS12"
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
@@ -51,8 +73,12 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // 未配置签名时用debug key，保证 assembleRelease 也能跑通（CI 只出 debug 包）
-            signingConfig = signingConfigs.getByName("debug")
+            // 配置齐全时用正式 keystore；否则用 debug key 兜底，保证 assembleRelease 也能跑通
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 
