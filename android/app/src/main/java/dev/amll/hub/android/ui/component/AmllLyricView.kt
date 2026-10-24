@@ -40,10 +40,13 @@ private const val TAG = "AmllLyricView"
  */
 private object LyricPageState {
     val webView = mutableStateOf<WebView?>(null)
+
     /** 页面 onPageFinished 之后才允许推数据 */
     val loaded = mutableStateOf(false)
+
     /** 渲染进程崩溃后换一个新实例，AndroidView 靠它重建 */
     val restart = mutableIntStateOf(0)
+
     /** 当前 composition 的命令处理器，页面 → 原生 都走这里 */
     val onCommand = mutableStateOf<((String, Double?) -> Unit)?>(null)
 }

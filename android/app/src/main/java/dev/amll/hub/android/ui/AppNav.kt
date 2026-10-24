@@ -5,8 +5,8 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import dev.amll.hub.android.nav.DailyRoute
 import dev.amll.hub.android.nav.DailySubmitRoute
 import dev.amll.hub.android.nav.LatestRoute
-import dev.amll.hub.android.nav.LyricSubmitRoute
 import dev.amll.hub.android.nav.LyricRoute
+import dev.amll.hub.android.nav.LyricSubmitRoute
 import dev.amll.hub.android.nav.NcmRoute
 import dev.amll.hub.android.nav.ProfileEditRoute
 import dev.amll.hub.android.nav.RankingRoute
