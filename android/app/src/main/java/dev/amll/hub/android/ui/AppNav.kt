@@ -3,7 +3,9 @@ package dev.amll.hub.android.ui
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import dev.amll.hub.android.nav.DailyRoute
+import dev.amll.hub.android.nav.DailySubmitRoute
 import dev.amll.hub.android.nav.LatestRoute
+import dev.amll.hub.android.nav.LyricSubmitRoute
 import dev.amll.hub.android.nav.LyricRoute
 import dev.amll.hub.android.nav.NcmRoute
 import dev.amll.hub.android.nav.ProfileEditRoute
@@ -71,6 +73,16 @@ class AppNav(
     val openSubmission: (Long) -> Unit = { id -> navController.navigate(SubmissionRoute(id)) }
     val openProfileEdit: () -> Unit = { navController.navigate(ProfileEditRoute) }
     val openReview: () -> Unit = { navController.navigate(ReviewRoute) }
+
+    /** 创作中心投稿入口 */
+    val openSubmitLyric: () -> Unit = { navController.navigate(LyricSubmitRoute) }
+    val openSubmitDaily: () -> Unit = { navController.navigate(DailySubmitRoute) }
+
+    /** 每日推荐投稿成功：关掉投稿页并跳到每日推荐（由 DailyViewModel 指定日期） */
+    val finishSubmitToDaily: () -> Unit = {
+        navController.popBackStack()
+        navController.navigate(DailyRoute) { launchSingleTop = true }
+    }
 
     val switchTab: (Int) -> Unit = { index ->
         TabRoutes.getOrNull(index)?.let { route ->

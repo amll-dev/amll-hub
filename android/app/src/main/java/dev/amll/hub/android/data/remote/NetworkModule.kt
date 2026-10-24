@@ -42,8 +42,9 @@ object NetworkModule {
                 }
             }
             .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            // 投稿要上传 TTML / 音源 / 封面，30s 在移动网络下容易半路超时
+            .writeTimeout(120, TimeUnit.SECONDS)
             .build()
 
     @Provides

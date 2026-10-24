@@ -40,7 +40,9 @@ import dev.amll.hub.android.ui.bottomBarPadding
 import dev.amll.hub.android.ui.component.AmllCard
 import dev.amll.hub.android.ui.component.ChipTone
 import dev.amll.hub.android.ui.component.EmptyState
+import dev.amll.hub.android.ui.component.GhostButton
 import dev.amll.hub.android.ui.component.PageHeader
+import dev.amll.hub.android.ui.component.PrimaryButton
 import dev.amll.hub.android.ui.component.SectionHeader
 import dev.amll.hub.android.ui.component.SegmentedTabs
 import dev.amll.hub.android.ui.component.SkeletonList
@@ -87,6 +89,22 @@ fun CreatorCenterScreen(vm: CreatorViewModel, nav: AppNav) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item { PageHeader("创作中心", "投稿进度、修订确认都在这里") }
+
+            item {
+                // 投稿入口：与网页端「投稿」菜单一致，支持歌词与每日推荐两类
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PrimaryButton(
+                        text = "歌词投稿",
+                        onClick = nav.openSubmitLyric,
+                        modifier = Modifier.weight(1f),
+                    )
+                    GhostButton(
+                        text = "每日推荐投稿",
+                        onClick = nav.openSubmitDaily,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
 
             item { SubmissionStatsCard(stats) }
 

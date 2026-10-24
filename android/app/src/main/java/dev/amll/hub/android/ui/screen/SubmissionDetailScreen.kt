@@ -30,7 +30,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.amll.hub.android.ui.AppNav
 import dev.amll.hub.android.ui.component.AmllCard
 import dev.amll.hub.android.ui.component.AmllTopBar
-import dev.amll.hub.android.ui.component.CoverImage
 import dev.amll.hub.android.ui.component.FieldRow
 import dev.amll.hub.android.ui.component.GhostButton
 import dev.amll.hub.android.ui.component.PrimaryButton
@@ -63,20 +62,18 @@ fun SubmissionDetailScreen(id: Long, vm: CreatorViewModel, nav: AppNav) {
         }
 
         AmllCard(padding = 16.dp) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val songTitle = detail?.displayName ?: "未命名稿件"
-                CoverImage(null, songTitle, 48.dp)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(songTitle, style = Font.bodyMedium, color = Amll.colors.ink, maxLines = 2)
-                    Text(
-                        listOfNotNull(
-                            detail?.artist?.takeIf { it.isNotBlank() },
-                            detail?.ncmId?.takeIf { it.isNotBlank() }?.let { "网易云 $it" },
-                        ).joinToString(" · ").ifBlank { "—" },
-                        style = Font.micro,
-                        color = Amll.colors.ink3,
-                    )
-                }
+            // 稿件本身没有封面，这里只展示歌曲信息，不放占位图
+            val songTitle = detail?.displayName ?: "未命名稿件"
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(songTitle, style = Font.bodyMedium, color = Amll.colors.ink, maxLines = 2)
+                Text(
+                    listOfNotNull(
+                        detail?.artist?.takeIf { it.isNotBlank() },
+                        detail?.ncmId?.takeIf { it.isNotBlank() }?.let { "网易云 $it" },
+                    ).joinToString(" · ").ifBlank { "—" },
+                    style = Font.micro,
+                    color = Amll.colors.ink3,
+                )
             }
         }
 

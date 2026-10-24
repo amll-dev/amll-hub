@@ -4,7 +4,10 @@ import { Provider, createStore, useAtom } from 'jotai';
 import {
   PrebuiltLyricPlayer,
   LyricSizePreset,
+  PlayerControlsType,
   cssBackgroundPropertyAtom,
+  enableLyricRomanLineAtom,
+  enableLyricTranslationLineAtom,
   hideLyricViewAtom,
   isLyricPageOpenedAtom,
   lyricBackgroundRendererAtom,
@@ -27,6 +30,8 @@ import {
   onRequestPrevSongAtom,
   onSeekPositionAtom,
   onToggleShuffleAtom,
+  playerControlsTypeAtom,
+  showMusicNameAtom,
 } from '@applemusic-like-lyrics/react-full';
 import { MeshGradientRenderer } from '@applemusic-like-lyrics/core';
 // 与网页端 PlayerBoot 完全相同：歌词解析全部交给 AMLL 官方解析器，
@@ -46,8 +51,22 @@ const store = createStore();
 store.set(isLyricPageOpenedAtom, true);
 store.set(musicPlayingAtom, false);
 store.set(musicVolumeAtom, 1);
-// 网页端默认档在手机上偏小，这里统一用「大」档（6vh，约比默认大 20%）
-store.set(lyricSizePresetAtom, LyricSizePreset.Large);
+
+/**
+ * 这些配置 atom 都是 atomWithStorage：挂载时会用 localStorage 里的旧值覆盖默认值。
+ * 旧版本页面可能在本地存过别的值（例如播放控制被存成 fft/none，底部就没有播控按钮），
+ * 所以启动时和挂载后再各写一次，保证与网页端默认一致。
+ */
+function applyPrebuiltDefaults() {
+  // 播放控制组件：controls = 上一首 / 播放暂停 / 下一首
+  store.set(playerControlsTypeAtom, PlayerControlsType.Controls);
+  store.set(showMusicNameAtom, true);
+  store.set(enableLyricTranslationLineAtom, true);
+  store.set(enableLyricRomanLineAtom, true);
+  // 网页端默认档在手机上偏小，这里统一用「大」档（6vh，约比默认大 20%）
+  store.set(lyricSizePresetAtom, LyricSizePreset.Large);
+}
+applyPrebuiltDefaults();
 
 /**
  * 背景默认先走纯色（安全），封面确认能加载后再切回和网页端一致的流体渐变。
@@ -187,6 +206,11 @@ function App() {
   const startRef = useRef<{ x: number; y: number } | null>(null);
   // 菜单刚弹出时手指还没抬起，紧接着的 click 会落在遮罩上，先忽略一小段时间
   const openedAtRef = useRef(0);
+
+  // atomWithStorage 在挂载时会读 localStorage 覆盖默认值，这里在挂载后再纠正一次
+  useEffect(() => {
+    applyPrebuiltDefaults();
+  }, []);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {

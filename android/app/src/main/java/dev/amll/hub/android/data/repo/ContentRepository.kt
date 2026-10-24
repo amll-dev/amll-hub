@@ -3,6 +3,8 @@ package dev.amll.hub.android.data.repo
 import dev.amll.hub.android.data.remote.ApiErrorParser
 import dev.amll.hub.android.data.remote.ApiException
 import dev.amll.hub.android.data.remote.ContentApi
+import dev.amll.hub.android.data.remote.CreateDailyRecRequest
+import dev.amll.hub.android.data.remote.CreateSubmissionRequest
 import dev.amll.hub.android.data.remote.DailyRecDto
 import dev.amll.hub.android.data.remote.LatestSongDto
 import dev.amll.hub.android.data.remote.LikeStatusDto
@@ -18,11 +20,20 @@ import dev.amll.hub.android.data.remote.SearchIpSubmissionDto
 import dev.amll.hub.android.data.remote.StatsDto
 import dev.amll.hub.android.data.remote.SubmissionDto
 import dev.amll.hub.android.data.remote.SubmissionStatsDto
+import dev.amll.hub.android.data.remote.TtmlValidationDto
+import dev.amll.hub.android.data.remote.UrlRequest
 import dev.amll.hub.android.data.remote.UserActivityDto
 import dev.amll.hub.android.data.remote.UserProfile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -131,6 +142,89 @@ class ContentRepository @Inject constructor(
 
     suspend fun likeStatus(id: Long): Result<LikeStatusDto> =
         result { api.dailyLikeStatus(id).data ?: fail("服务端返回空数据") }
+
+    /* ===== 投稿：歌词投稿 + 每日推荐投稿 ===== */
+
+    /** 校验 TTML：与网页端一样把原文以 text/plain 传给后端代理 */
+    suspend fun validateTtml(content: String): Result<TtmlValidationDto> =
+        result("校验失败") {
+            api.validateTtml(content.toRequestBody("text/plain; charset=utf-8".toMediaType())).data
+                ?: fail("校验失败（响应为空）")
+        }
+
+    /** 上传 TTML 到待审核区，返回后端保存的文件名 */
+    suspend fun uploadTtml(fileName: String, bytes: ByteArray): Result<String> =
+        result("上传失败") {
+            val filePart = MultipartBody.Part.createFormData(
+                "file",
+                fileName,
+                bytes.toRequestBody("application/xml".toMediaType()),
+            )
+            val namePart = fileName.toRequestBody("text/plain; charset=utf-8".toMediaType())
+            api.uploadTtml(filePart, namePart).data?.fileName?.takeIf { it.isNotBlank() } ?: fileName
+        }
+
+    suspend fun createSubmission(request: CreateSubmissionRequest): Result<Long> =
+        result("投稿失败") {
+            api.createSubmission(request).data?.id?.takeIf { it > 0 } ?: fail("投稿失败（响应为空）")
+        }
+
+    suspend fun uploadAudio(
+        submissionId: Long,
+        fileName: String,
+        bytes: ByteArray,
+        mime: String,
+    ): Result<Unit> = result("音源上传失败") {
+        val part = MultipartBody.Part.createFormData(
+            "audio",
+            fileName,
+            bytes.toRequestBody(mime.toMediaType()),
+        )
+        val idPart = submissionId.toString().toRequestBody("text/plain; charset=utf-8".toMediaType())
+        val response = api.uploadAudio(part, idPart)
+        if (!response.isSuccessful) {
+            throw ApiException(response.code(), errorMessage(response.errorBody()?.string(), "音源上传失败"))
+        }
+    }
+
+    suspend fun uploadDailyCover(fileName: String, bytes: ByteArray, mime: String): Result<String> =
+        result("封面上传失败") {
+            val part = MultipartBody.Part.createFormData(
+                "file",
+                fileName,
+                bytes.toRequestBody(mime.toMediaType()),
+            )
+            api.uploadDailyCover(part).data?.tempKey?.takeIf { it.isNotBlank() }
+                ?: fail("封面上传失败（响应为空）")
+        }
+
+    suspend fun uploadDailyCoverFromUrl(url: String): Result<String> =
+        result("封面自动载入失败") {
+            api.uploadDailyCoverFromUrl(UrlRequest(url)).data?.tempKey?.takeIf { it.isNotBlank() }
+                ?: fail("封面自动载入失败（响应为空）")
+        }
+
+    suspend fun checkDailyDate(date: String): Result<Boolean> =
+        result("日期检查失败") { api.checkDailyDate(date).data?.available ?: true }
+
+    suspend fun createDailyRecommendation(request: CreateDailyRecRequest): Result<Long> =
+        result("投稿失败") {
+            val plain = "text/plain; charset=utf-8".toMediaType()
+            api.createDailyRecommendation(
+                songName = request.songName.toRequestBody(plain),
+                artist = request.artist.toRequestBody(plain),
+                coverTempKey = request.coverTempKey.toRequestBody(plain),
+                date = request.date.toRequestBody(plain),
+                comment = request.comment.toRequestBody(plain),
+                ncmId = request.ncmId.orEmpty().toRequestBody(plain),
+            ).data?.id?.takeIf { it > 0 } ?: fail("投稿失败（响应为空）")
+        }
+
+    /** Response<ResponseBody> 形式的接口不抛 HttpException，这里手动取后端 message */
+    private fun errorMessage(raw: String?, fallback: String): String = runCatching {
+        val parsed = Json { ignoreUnknownKeys = true }.parseToJsonElement(raw.orEmpty()) as? JsonObject
+        (parsed?.get("message")?.jsonPrimitive?.contentOrNull)?.takeIf { it.isNotBlank() }
+    }.getOrNull() ?: fallback
 
     private fun fail(message: String): Nothing = throw ApiException(200, message)
 

@@ -41,8 +41,9 @@ fun LyricScreen(lyricVm: LyricViewModel, playerVm: PlaybackViewModel, nav: AppNa
         return
     }
 
-    // 与 AMLL 页面自身的 dark 底色一致，加载中不会闪一下纯黑
-    Box(Modifier.fillMaxSize().background(Color(0xFF0B0B0F))) {
+    // 与 AMLL 页面自身的 dark 底色一致，加载中不会闪一下纯黑。
+    // 让出状态栏：否则顶部的退出拖动条会压到状态栏图标上。
+    Box(Modifier.fillMaxSize().background(Color(0xFF0B0B0F)).statusBarsPadding()) {
         AmllLyricView(
             rawLyric = lyric.source.text,
             lyricFormat = lyric.source.format,

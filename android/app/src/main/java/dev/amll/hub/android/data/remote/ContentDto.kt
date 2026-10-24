@@ -8,8 +8,11 @@ import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 /** 词库统计 GET /api/v1/stats */
 @Serializable
@@ -186,7 +189,8 @@ data class NcmSongDto(
     val displayName: String get() = name.ifBlank { songName }.ifBlank { "未知歌曲" }
     val displayArtist: String
         get() = artists.joinToString(" / ") { it.name }.ifBlank { "未知歌手" }
-    val displayCover: String get() = picUrl.ifBlank { album?.picUrl.orEmpty() }
+    val displayCover: String
+        get() = httpsCover(picUrl.ifBlank { album?.picUrl.orEmpty() })
     val displayId: String get() = if (id > 0) id.toString() else ""
 }
 
@@ -233,7 +237,7 @@ data class NcmTrackDto(
     @Serializable(with = FlexibleLong::class) val dt: Long = 0,
 ) {
     val displayArtist: String get() = ar.joinToString(" / ") { it.name }.ifBlank { "未知歌手" }
-    val displayCover: String get() = al?.picUrl.orEmpty()
+    val displayCover: String get() = httpsCover(al?.picUrl.orEmpty())
     val displayId: String get() = if (id > 0) id.toString() else ""
 }
 
@@ -284,12 +288,84 @@ data class NcmMusicDto(
     val displayName: String get() = name.ifBlank { songName }
     val displayArtist: String get() = arName.ifBlank { artistName }
     val displayCover: String
-        get() = cover.ifBlank { coverUrl }.ifBlank { pic }.ifBlank { albumPic }
+        get() = httpsCover(cover.ifBlank { coverUrl }.ifBlank { pic }.ifBlank { albumPic })
     val displayDuration: Long get() = if (dt > 0) dt else duration
 }
 
+/**
+ * 网易云图片地址统一升级到 HTTPS。
+ * 上游搜索接口常返回 http://p1.music.126.net/…，生产包禁止明文请求，
+ * 不升级会导致封面 URL 存在但图片加载失败（列表只剩灰块）。
+ */
+internal fun httpsCover(url: String): String =
+    if (url.startsWith("http://")) "https://" + url.removePrefix("http://") else url
+
 @Serializable
 data class LikeStatusDto(val liked: Boolean = false, val likeCount: Int = 0)
+
+/* ===== 投稿相关 ===== */
+
+/** POST /api/v1/submissions/validate 返回（字段名与后端 TtmlValidateResult 一致） */
+@Serializable
+data class TtmlValidationDto(
+    val valid: Boolean = false,
+    val errors: List<String> = emptyList(),
+    val parseError: String = "",
+    val regeneratedTtml: String = "",
+    val metadata: JsonObject = JsonObject(emptyMap()),
+) {
+    /** TTML 元数据里的标题列表，用于创建投稿时的 title */
+    val titles: List<String> get() = metadata.stringValues("title")
+    val language: String get() = metadata["language"]?.jsonString().orEmpty()
+}
+
+/** POST /api/v1/submissions 入参，metadata 直接沿用校验结果的 snake_case 结构 */
+@Serializable
+data class CreateSubmissionRequest(
+    val title: String,
+    val metadata: JsonObject,
+    val fileName: String,
+    val notes: String? = null,
+    val tags: List<String>? = null,
+    val language: String? = null,
+    val languages: List<String>? = null,
+    val status: String = "pending",
+)
+
+/** 通用 { id } / { tempKey } / { fileName } / { available } 返回 */
+@Serializable
+data class IdDto(val id: Long = 0)
+
+@Serializable
+data class TempKeyDto(val tempKey: String = "")
+
+@Serializable
+data class UploadedFileDto(val fileName: String = "")
+
+@Serializable
+data class DateAvailabilityDto(val available: Boolean = true)
+
+@Serializable
+data class UrlRequest(val url: String)
+
+/** POST /api/v1/daily-recommendations 入参（后端用 PostForm 读取） */
+data class CreateDailyRecRequest(
+    val songName: String,
+    val artist: String,
+    val coverTempKey: String,
+    val date: String,
+    val comment: String,
+    val ncmId: String? = null,
+)
+
+private fun JsonObject.stringValues(key: String): List<String> =
+    (this[key] as? JsonArray)
+        ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+        ?.filter { it.isNotBlank() }
+        .orEmpty()
+
+private fun kotlinx.serialization.json.JsonElement.jsonString(): String? =
+    (this as? JsonPrimitive)?.contentOrNull
 
 @Serializable
 data class UpdatedDto(val updated: Int = 0)

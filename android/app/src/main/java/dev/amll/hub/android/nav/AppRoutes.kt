@@ -64,6 +64,14 @@ data object ProfileEditRoute
 data object ReviewRoute
 
 @Serializable
+@SerialName("submit-lyric")
+data object LyricSubmitRoute
+
+@Serializable
+@SerialName("submit-daily")
+data object DailySubmitRoute
+
+@Serializable
 @SerialName("scan")
 data class ScanRoute(val ticket: String? = null)
 
@@ -84,3 +92,6 @@ val TabRouteNames: List<String> = listOf(
     "messages",
     "profile",
 )
+
+/** 歌词页的 route 名，导航转场需要单独判断它 */
+val LyricRouteName: String = LyricRoute.serializer().descriptor.serialName

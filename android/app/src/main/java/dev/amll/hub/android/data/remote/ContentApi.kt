@@ -1,11 +1,15 @@
 package dev.amll.hub.android.data.remote
 
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.PUT
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -100,6 +104,57 @@ interface ContentApi {
     /** 搜索 IP 投稿列表（创作中心） */
     @GET("api/v1/search-ip/submissions")
     suspend fun mySearchIpSubmissions(): ApiResponse<SearchIpListDto>
+
+    /* ===== 投稿流程（网页端 LyricSubmitForm / DailyRecommendForm 同款接口） ===== */
+
+    /** TTML 校验：body 是原始 TTML 文本（text/plain） */
+    @POST("api/v1/submissions/validate")
+    suspend fun validateTtml(@Body body: RequestBody): ApiResponse<TtmlValidationDto>
+
+    /** TTML 上传到待审核区：multipart file + fileName */
+    @Multipart
+    @POST("api/v1/uploads/ttml")
+    suspend fun uploadTtml(
+        @Part file: MultipartBody.Part,
+        @Part("fileName") fileName: RequestBody,
+    ): ApiResponse<UploadedFileDto>
+
+    /** 创建投稿（字幕文件 + 元数据），返回 { id } */
+    @POST("api/v1/submissions")
+    suspend fun createSubmission(@Body body: CreateSubmissionRequest): ApiResponse<IdDto>
+
+    /** 投稿音源附件：multipart audio + submissionId */
+    @Multipart
+    @POST("api/v1/uploads/audio")
+    suspend fun uploadAudio(
+        @Part audio: MultipartBody.Part,
+        @Part("submissionId") submissionId: RequestBody,
+    ): Response<ResponseBody>
+
+    /** 每日推荐封面：上传到临时区，返回 { tempKey } */
+    @Multipart
+    @POST("api/v1/daily-recommendations/upload-temp")
+    suspend fun uploadDailyCover(@Part file: MultipartBody.Part): ApiResponse<TempKeyDto>
+
+    /** 每日推荐封面：由后端代理下载网易云封面并转存 */
+    @POST("api/v1/daily-recommendations/upload-temp-from-url")
+    suspend fun uploadDailyCoverFromUrl(@Body body: UrlRequest): ApiResponse<TempKeyDto>
+
+    /** 每日推荐日期查重 */
+    @GET("api/v1/daily-recommendations/check-date")
+    suspend fun checkDailyDate(@Query("date") date: String): ApiResponse<DateAvailabilityDto>
+
+    /** 创建每日推荐投稿：multipart 表单 */
+    @Multipart
+    @POST("api/v1/daily-recommendations")
+    suspend fun createDailyRecommendation(
+        @Part("songName") songName: RequestBody,
+        @Part("artist") artist: RequestBody,
+        @Part("coverTempKey") coverTempKey: RequestBody,
+        @Part("date") date: RequestBody,
+        @Part("comment") comment: RequestBody,
+        @Part("ncmId") ncmId: RequestBody,
+    ): ApiResponse<IdDto>
 
     /* ===== 稿件操作：只关心 HTTP 是否成功，不解析具体返回体 ===== */
 

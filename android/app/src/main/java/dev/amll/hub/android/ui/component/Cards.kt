@@ -29,9 +29,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -87,7 +86,7 @@ fun SectionHeader(
     }
 }
 
-/** 封面：有 URL 走 Coil，没有则按标题生成稳定渐变，避免一排灰块 */
+/** 封面：有 URL 走 Coil；无 URL / 加载中 / 失败统一灰色底，与网页端一致 */
 @Composable
 fun CoverImage(
     url: String?,
@@ -97,32 +96,16 @@ fun CoverImage(
     radius: Dp = Radius.field,
 ) {
     val shape = RoundedCornerShape(radius)
-    Box(modifier.size(size).clip(shape).background(coverBrush(seed))) {
+    Box(modifier.size(size).clip(shape).background(Amll.colors.surface2)) {
         if (!url.isNullOrBlank()) {
             AsyncImage(
                 model = url,
                 contentDescription = seed,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
         }
     }
-}
-
-private val coverPalettes = listOf(
-    listOf(Color(0xFF4A5BD6), Color(0xFF8C3AB8)),
-    listOf(Color(0xFFF2A85C), Color(0xFFC74A3C)),
-    listOf(Color(0xFF3DB38C), Color(0xFF24618C)),
-    listOf(Color(0xFF8C50C7), Color(0xFF402868)),
-    listOf(Color(0xFF4A9BD6), Color(0xFF2E3B8C)),
-    listOf(Color(0xFFDB7080), Color(0xFF6B2947)),
-    listOf(Color(0xFF8C9AA8), Color(0xFF2E3A44)),
-    listOf(Color(0xFFEBBD6B), Color(0xFFA85C38)),
-)
-
-fun coverBrush(seed: String): Brush {
-    val index = (seed.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }) % coverPalettes.size
-    val colors = coverPalettes[index]
-    return Brush.linearGradient(colors)
 }
 
 enum class ChipTone { PRIMARY, SUCCESS, WARNING, INFO, NEUTRAL }

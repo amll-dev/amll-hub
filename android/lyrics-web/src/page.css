@@ -32,9 +32,41 @@ body {
   z-index: 1;
 }
 
-/* AMLL 歌词页默认给容器留了内边距，沉浸页里收紧一点 */
+/* AMLL 歌词页默认给容器留了内边距，沉浸页里收紧一点。
+ * 顶部少量留白，状态栏的安全区由原生侧 statusBarsPadding 让出。 */
 #amll-lyric-player {
-  padding: 0 8px;
+  padding: 8px 8px 0;
+}
+
+/* 真机竖屏下 AMLL 预设字号明显偏小（横屏正常），这里按视口高度定档，
+ * 在「大」档（6vh）基础上再放大一点。 */
+@media (orientation: portrait) {
+  #amll-lyric-player .amll-lyric-player {
+    font-size: max(6.5vh, 3vw) !important;
+  }
+}
+
+/* 横屏时歌词整体偏上，往下压一点 */
+@media (orientation: landscape) {
+  #amll-lyric-player [class*="DaA0W_lyric"] {
+    padding-top: 6vh;
+  }
+}
+
+/* 手机横屏高度很矮：AMLL 的默认网格会把首歌信息挤成 0 高（歌名被裁掉），
+ * 这里缩小封面并让信息栏不参与收缩，保证歌名/歌手始终可见。 */
+@media (orientation: landscape) and (max-height: 480px) {
+  #amll-lyric-player [class*="DaA0W_horizontalLayout"] {
+    --horizontal-layout-max-width: min(40vh, 38vw);
+  }
+
+  #amll-lyric-player [class*="DaA0W_controls"] {
+    margin-top: 0;
+  }
+
+  #amll-lyric-player [class*="XWzuDW_musicInfo"] {
+    flex-shrink: 0;
+  }
 }
 
 #amll-lyric-player ::-webkit-scrollbar {

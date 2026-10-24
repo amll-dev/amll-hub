@@ -59,7 +59,6 @@ import dev.amll.hub.android.ui.component.SectionHeader
 import dev.amll.hub.android.ui.component.SkeletonList
 import dev.amll.hub.android.ui.component.SongRow
 import dev.amll.hub.android.ui.component.TabItem
-import dev.amll.hub.android.ui.component.coverBrush
 import dev.amll.hub.android.ui.theme.Amll
 import dev.amll.hub.android.ui.theme.Font
 import dev.amll.hub.android.ui.theme.HeroShape
@@ -294,11 +293,11 @@ private fun TodayHero(today: DailyRecDto?, onClick: () -> Unit) {
             .clip(HeroShape)
             .clickable(onClick = onClick),
     ) {
-        // 背景：封面高斯模糊；拿不到封面时用标题生成的渐变兜底
+        // 背景：封面高斯模糊；拿不到封面时用灰色底兜底
         Box(
             Modifier
                 .fillMaxSize()
-                .background(coverBrush(today?.songName ?: "AMLL")),
+                .background(Amll.colors.surface2),
         )
         if (cover != null) {
             AsyncImage(

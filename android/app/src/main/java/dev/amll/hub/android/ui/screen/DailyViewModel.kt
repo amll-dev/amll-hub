@@ -18,6 +18,9 @@ class DailyViewModel @Inject constructor(
     val daily = MutableStateFlow(ListUi<DailyRecDto>())
     val likedDaily = MutableStateFlow<Set<Long>>(emptySet())
 
+    /** 每日推荐投稿成功后要定位的日期；由 DailyScreen 进入时消费 */
+    var pendingSelectDate: String? = null
+
     fun loadDaily() {
         viewModelScope.launch {
             daily.update { it.copy(loading = true, error = null) }
@@ -30,6 +33,23 @@ class DailyViewModel @Inject constructor(
                     error = result.exceptionOrNull()?.message
                         ?: if (items.isEmpty()) "暂无推荐" else null,
                 )
+            }
+        }
+    }
+
+    /** 进入某张卡片时同步服务端点赞状态（与网页端一致） */
+    fun loadLikeStatus(rec: DailyRecDto) {
+        if (rec.id == 0L) return
+        viewModelScope.launch {
+            repo.likeStatus(rec.id).onSuccess { status ->
+                likedDaily.update { if (status.liked) it + rec.id else it - rec.id }
+                daily.update { ui ->
+                    ui.copy(
+                        items = ui.items.map {
+                            if (it.id == rec.id) it.copy(likeCount = status.likeCount) else it
+                        },
+                    )
+                }
             }
         }
     }

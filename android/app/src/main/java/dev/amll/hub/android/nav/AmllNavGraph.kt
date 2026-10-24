@@ -1,6 +1,8 @@
 package dev.amll.hub.android.nav
 
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -36,6 +38,7 @@ import dev.amll.hub.android.ui.AppShell
 import dev.amll.hub.android.ui.screen.CreatorCenterScreen
 import dev.amll.hub.android.ui.screen.CreatorViewModel
 import dev.amll.hub.android.ui.screen.DailyScreen
+import dev.amll.hub.android.ui.screen.DailySubmitScreen
 import dev.amll.hub.android.ui.screen.DailyViewModel
 import dev.amll.hub.android.ui.screen.DiscoverScreen
 import dev.amll.hub.android.ui.screen.HomeScreen
@@ -43,6 +46,7 @@ import dev.amll.hub.android.ui.screen.HomeViewModel
 import dev.amll.hub.android.ui.screen.LatestSongsScreen
 import dev.amll.hub.android.ui.screen.LoginScreen
 import dev.amll.hub.android.ui.screen.LyricScreen
+import dev.amll.hub.android.ui.screen.LyricSubmitScreen
 import dev.amll.hub.android.ui.screen.LyricViewModel
 import dev.amll.hub.android.ui.screen.MessagesScreen
 import dev.amll.hub.android.ui.screen.MessagesViewModel
@@ -73,6 +77,10 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.forward(): Boolean
     val to = targetState.tabIndex()
     return from == null || to == null || to >= from
 }
+
+/** 是不是歌词页（它自己带纵向转场，周围页面不应该再横向滑动） */
+private fun NavBackStackEntry.isLyricRoute(): Boolean =
+    destination.route == LyricRouteName
 
 /**
  * 顶层导航：登录态决定进 App 还是登录页，登录后是 5 Tab + 二级页。
@@ -150,10 +158,19 @@ private fun LoggedInNav(
         NavHost(
             navController = navController,
             startDestination = HomeRoute,
-            enterTransition = { slideInHorizontal(forward = forward()) },
-            exitTransition = { slideOutHorizontal(forward = forward()) },
-            popEnterTransition = { popEnterHorizontal() },
-            popExitTransition = { popExitHorizontal() },
+            // 歌词页只有纵向转场；它进出的那一侧保持静止，否则会多出一段左移动画
+            enterTransition = {
+                if (initialState.isLyricRoute()) EnterTransition.None else slideInHorizontal(forward())
+            },
+            exitTransition = {
+                if (targetState.isLyricRoute()) ExitTransition.None else slideOutHorizontal(forward())
+            },
+            popEnterTransition = {
+                if (initialState.isLyricRoute()) EnterTransition.None else popEnterHorizontal()
+            },
+            popExitTransition = {
+                if (targetState.isLyricRoute()) ExitTransition.None else popExitHorizontal()
+            },
         ) {
             composable<HomeRoute> { HomeScreen(homeVm, profileVm, nav) }
             composable<DiscoverRoute> { DiscoverScreen(homeVm, nav) }
@@ -182,6 +199,8 @@ private fun LoggedInNav(
             }
             composable<ProfileEditRoute> { ProfileEditScreen(profileVm, nav) }
             composable<ReviewRoute> { ReviewQueueScreen(creatorVm, nav) }
+            composable<LyricSubmitRoute> { LyricSubmitScreen(nav) }
+            composable<DailySubmitRoute> { DailySubmitScreen(nav, dailyVm) }
 
             composable<ScanRoute> { entry ->
                 ScanScreen(
