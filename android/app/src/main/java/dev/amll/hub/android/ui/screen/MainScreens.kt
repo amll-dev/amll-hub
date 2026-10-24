@@ -148,12 +148,16 @@ fun HomeScreen(vm: AppViewModel, nav: AppNav) {
             item { SearchField("搜歌名、歌手，或粘贴歌词片段", onClick = nav.openSearch) }
 
             item {
-                TodayHero(ui.today) {
-                    val rec = ui.today
-                    if (rec != null) {
-                        nav.openLyric(rec.ncmId, rec.songName, rec.artist, Urls.dailyCover(rec.coverKey, 480))
-                    } else {
-                        nav.openDaily()
+                if (ui.loading) {
+                    TodayHeroSkeleton()
+                } else {
+                    TodayHero(ui.today) {
+                        val rec = ui.today
+                        if (rec != null) {
+                            nav.openLyric(rec.ncmId, rec.songName, rec.artist, Urls.dailyCover(rec.coverKey, 480))
+                        } else {
+                            nav.openDaily()
+                        }
                     }
                 }
             }
@@ -280,7 +284,7 @@ private fun HomeHeader(
     }
 }
 
-/** 头像：有地址走网络图，没有就退回渐变占位，避免出现空洞 */
+/** 头像：加载中/无地址时统一显示灰色底，与网页端一致 */
 @Composable
 fun Avatar(url: String?, size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
     val model = Urls.absolute(url)
@@ -288,7 +292,7 @@ fun Avatar(url: String?, size: androidx.compose.ui.unit.Dp, modifier: Modifier =
         modifier
             .size(size)
             .clip(CircleShape)
-            .background(Brush.linearGradient(listOf(Color(0xFF5C8CEF), Color(0xFF9E6BF0)))),
+            .background(Amll.colors.surface2),
     ) {
         if (model != null) {
             AsyncImage(
@@ -404,10 +408,59 @@ private fun TodayHero(today: DailyRecDto?, onClick: () -> Unit) {
                         Icons.Rounded.PlayArrow,
                         "播放",
                         tint = Amll.colors.primary,
-                        // PlayArrow 字形自带约 1/4 的透明边距，28dp 才撑满 38dp 的圆
-                        modifier = Modifier.size(28.dp).offset(x = 1.dp),
+                        // PlayArrow 字形在视口内本身偏右（包围盒中心 13.5 / 24），
+                        // 按比例反向偏移，让三角形落在圆心
+                        modifier = Modifier.size(28.dp).offset(x = (-1.75).dp),
                     )
                 }
+            }
+        }
+    }
+}
+
+/** 今日推荐加载态：与 TodayHero 同尺寸，避免加载时显示「今日暂无推荐」 */
+@Composable
+private fun TodayHeroSkeleton() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(168.dp)
+            .clip(HeroShape)
+            .background(Amll.colors.surface2),
+    ) {
+        Row(
+            Modifier.fillMaxSize().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Box(
+                Modifier
+                    .size(104.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Amll.colors.surface),
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    Modifier
+                        .width(56.dp)
+                        .height(18.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(Amll.colors.surface),
+                )
+                Box(
+                    Modifier
+                        .fillMaxWidth(0.7f)
+                        .height(18.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Amll.colors.surface),
+                )
+                Box(
+                    Modifier
+                        .fillMaxWidth(0.5f)
+                        .height(12.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Amll.colors.surface),
+                )
             }
         }
     }
@@ -439,14 +492,12 @@ fun DiscoverScreen(vm: AppViewModel, nav: AppNav) {
                     DiscoverCard(
                         title = "歌词搜索",
                         desc = "按歌名、歌手、歌词片段检索词库",
-                        gradient = listOf(Color(0xFF3D5CDF), Color(0xFF7040C7)),
                         modifier = Modifier.weight(1f),
                         onClick = nav.openSearch,
                     )
                     DiscoverCard(
                         title = "每日推荐",
                         desc = "看看今天大家都在听什么",
-                        gradient = listOf(Color(0xFFE0303F), Color(0xFF8C2148)),
                         modifier = Modifier.weight(1f),
                         onClick = nav.openDaily,
                     )
@@ -457,7 +508,6 @@ fun DiscoverScreen(vm: AppViewModel, nav: AppNav) {
                 DiscoverCard(
                     title = "网易云解析",
                     desc = "粘贴歌曲 ID / 链接，或按关键词搜到就能直接播",
-                    gradient = listOf(Color(0xFFE0303F), Color(0xFFC93A6E)),
                     modifier = Modifier.fillMaxWidth(),
                     onClick = nav.openNcm,
                 )
@@ -499,13 +549,12 @@ fun DiscoverScreen(vm: AppViewModel, nav: AppNav) {
 private fun DiscoverCard(
     title: String,
     desc: String,
-    gradient: List<Color>,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
 ) {
     Column(
         modifier
-            .height(126.dp)
+            .height(96.dp)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .clip(CardShape)
             .background(Amll.colors.surface)
@@ -513,12 +562,6 @@ private fun DiscoverCard(
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box(
-            Modifier
-                .size(32.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Brush.linearGradient(gradient)),
-        )
         Text(title, style = Font.cardTitle.copy(fontSize = 14.sp), color = Amll.colors.ink)
         Text(desc, style = Font.micro, color = Amll.colors.ink3, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
@@ -882,7 +925,13 @@ private fun DailyCard(
                 Modifier.size(48.dp).clip(CircleShape).background(Amll.colors.ink).clickable(onClick = onPlay),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Rounded.PlayArrow, "播放", tint = Amll.colors.canvas, modifier = Modifier.size(24.dp))
+                Icon(
+                    Icons.Rounded.PlayArrow,
+                    "播放",
+                    tint = Amll.colors.canvas,
+                    // 同上：抵消字形自身偏右，让三角形居中
+                    modifier = Modifier.size(24.dp).offset(x = (-1.5).dp),
+                )
             }
             Text(
                 (if (liked) "♥" else "♡") + " ${rec.likeCount}",

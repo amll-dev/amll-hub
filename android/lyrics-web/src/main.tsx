@@ -51,6 +51,7 @@ function report(stage: string, extra: Record<string, unknown> = {}) {
   try {
     const root = document.getElementById('root');
     const player = document.getElementById('amll-lyric-player');
+    const stageEl = document.querySelector('.stage');
     const rect = player?.getBoundingClientRect();
     const cs = player ? getComputedStyle(player) : null;
     const payload = {
@@ -58,6 +59,12 @@ function report(stage: string, extra: Record<string, unknown> = {}) {
       rootChildren: root?.childElementCount ?? -1,
       player: Boolean(player),
       playerSize: rect ? [Math.round(rect.width), Math.round(rect.height)] : null,
+      heights: {
+        html: document.documentElement.clientHeight,
+        body: document.body.clientHeight,
+        root: root?.clientHeight ?? -1,
+        stage: stageEl?.clientHeight ?? -1,
+      },
       text: (player?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 24),
       color: cs?.color ?? '',
       blend: cs?.mixBlendMode ?? '',
@@ -70,7 +77,6 @@ function report(stage: string, extra: Record<string, unknown> = {}) {
     };
     const json = JSON.stringify(payload);
     console.log('[amll] report', json);
-    (window as unknown as { amllNativeReport?: (json: string) => void }).amllNativeReport?.(json);
   } catch (err) {
     console.log('[amll] report failed', String(err));
   }

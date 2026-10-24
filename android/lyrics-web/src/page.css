@@ -13,11 +13,16 @@ body {
   font-family: 'Noto Sans SC', -apple-system, 'PingFang SC', system-ui, sans-serif;
 }
 
+/*
+ * WebView 里 html/body/#root 的百分比高度不可靠（真机上实测 #amll-lyric-player
+ * 高度为 0），这里直接按视口固定定位，让尺寸不依赖父级百分比。
+ * align-items 用 stretch，即便子元素 height:100% 失效也能撑满。
+ */
 .stage {
-  width: 100%;
-  height: 100%;
+  position: fixed;
+  inset: 0;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
 }
 
