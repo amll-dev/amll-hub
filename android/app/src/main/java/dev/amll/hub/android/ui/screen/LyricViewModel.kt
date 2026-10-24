@@ -55,9 +55,9 @@ class LyricViewModel @Inject constructor(
             return
         }
         // 同一首歌已经加载过就不再重复请求
-        if (lyric.value.songId == id
-            && lyric.value.lines.isNotEmpty()
-            && player.state.value.track?.songId == id
+        if (lyric.value.songId == id &&
+            lyric.value.lines.isNotEmpty() &&
+            player.state.value.track?.songId == id
         ) {
             return
         }
