@@ -305,6 +305,7 @@ class LyricSubmitViewModel @Inject constructor(
     private fun fileSize(uri: Uri): Long = runCatching {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)
             ?.use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else 0L }
+            ?: 0L
     }.getOrDefault(0L)
 
     companion object {

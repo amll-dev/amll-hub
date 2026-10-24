@@ -348,10 +348,11 @@ private fun CalendarDayCell(
 
 @Composable
 private fun DotSeparator(modifier: Modifier = Modifier) {
+    // 颜色在组合阶段取好，Canvas 的绘制 lambda 不是 @Composable 上下文
+    val color = Amll.colors.ink3.copy(alpha = 0.5f)
     Canvas(modifier.fillMaxWidth().height(3.dp)) {
         val radius = 1.5.dp.toPx()
         val step = 13.dp.toPx()
-        val color = Amll.colors.ink3.copy(alpha = 0.5f)
         var x = 0f
         while (x <= size.width) {
             drawCircle(color = color, radius = radius, center = Offset(x, size.height / 2))
