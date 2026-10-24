@@ -50,7 +50,7 @@ private data class AmllLineDto(
     val words: List<AmllWordDto>,
 )
 
-private val lyricJson = Json { }
+private val lyricJson = Json.Default
 
 /**
  * 内置 AMLL 歌词页（assets/lyrics，AMLL core 构建产物）。

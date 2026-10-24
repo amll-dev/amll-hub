@@ -58,6 +58,7 @@ import dev.amll.hub.android.ui.component.SkeletonList
 import dev.amll.hub.android.ui.theme.Amll
 import dev.amll.hub.android.ui.theme.Font
 import dev.amll.hub.android.ui.theme.Radius
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -75,6 +76,7 @@ private val SEARCH_FIELDS = listOf(
 /**
  * 全屏搜索页：对齐网页端的「歌词库搜索」，命中后直接进歌词页。
  */
+@OptIn(FlowPreview::class)
 @Composable
 fun SearchScreen(vm: SearchViewModel, nav: AppNav) {
     val state by vm.search.collectAsStateWithLifecycle()

@@ -48,7 +48,8 @@ class LrcParserTest {
             """.trimIndent(),
         )
 
-        assertEquals(500L, lines[0].startMs)
+        // [00:01.5] = 1 秒 + 500 毫秒
+        assertEquals(1_500L, lines[0].startMs)
         assertEquals(2_500L, lines[1].startMs)
         assertEquals(3_250L, lines[2].startMs)
     }
