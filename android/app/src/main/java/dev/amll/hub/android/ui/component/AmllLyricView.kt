@@ -15,7 +15,11 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -24,6 +28,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewAssetLoader
 import dev.amll.hub.android.BuildConfig
@@ -82,6 +87,14 @@ fun AmllLyricView(
     val coverUrl = remember(cover) { cover.orEmpty() }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
+    // edge-to-edge：页面背景要铺到状态栏/导航栏后面，内容再按这两个高度内缩。
+    // WebView 里 CSS px 约等于 dp（initial-scale=1、width=device-width），直接传像素值。
+    val density = LocalDensity.current
+    val insetTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val insetBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val insetTopPx = with(density) { insetTop.roundToPx() }
+    val insetBottomPx = with(density) { insetBottom.roundToPx() }
+
     val dispatch: (String, Double?) -> Unit = remember(onTogglePlay, onSeek, onClose) {
         { command, value ->
             when (command) {
@@ -133,6 +146,14 @@ fun AmllLyricView(
     LaunchedEffect(webView, loaded, dark) {
         if (loaded) {
             evalJs(webView, "window.amllNative&&window.amllNative.setTheme($dark)")
+        }
+    }
+    LaunchedEffect(webView, loaded, insetTopPx, insetBottomPx) {
+        if (loaded) {
+            evalJs(
+                webView,
+                "window.amllNative&&window.amllNative.setInsets($insetTopPx,$insetBottomPx)",
+            )
         }
     }
 

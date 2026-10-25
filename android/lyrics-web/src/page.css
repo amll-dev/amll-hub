@@ -32,39 +32,44 @@ body {
   z-index: 1;
 }
 
-/* AMLL 歌词页默认给容器留了内边距，沉浸页里收紧一点。
- * 顶部少量留白，状态栏的安全区由原生侧 statusBarsPadding 让出。 */
+/* 容器本身不加内边距：流体渐变背景画在容器内部，一旦给容器 padding，
+ * 状态栏/导航栏那一条就会露出页面底色，看起来像两条黑带。
+ * 内边距放到 AMLL 布局根节点上（见下方规则），背景仍然铺满整屏。 */
 #amll-lyric-player {
-  padding: 8px 8px 0;
+  box-sizing: border-box;
+  padding: 0;
 }
 
-/* 真机竖屏下 AMLL 预设字号明显偏小（横屏正常），这里按视口高度定档，
- * 在「大」档（6vh）基础上再放大一点。 */
+/* 安全区：状态栏/导航栏高度由原生通过 setInsets 写进 --amll-inset-*。
+ * 只内缩布局内容，不影响背景槽（背景槽是布局根节点的兄弟节点）。
+ * 8px 是原本就有的页面留白。 */
+#amll-lyric-player [class*="DaA0W_horizontalLayout"],
+#amll-lyric-player [class*="SqBoeq_verticalLayout"] {
+  box-sizing: border-box;
+  padding: calc(var(--amll-inset-top, 0px) + 8px) 8px var(--amll-inset-bottom, 0px);
+}
+
+/* 竖屏歌词字号。
+ * AMLL 的预设是全局的（横屏按 6vh 算出的字号在竖屏会达到 50px，长句折成三行；
+ * 换小一档又会让横屏偏小）。这里只在竖屏按宽度定档，横屏继续用 AMLL 预设。 */
 @media (orientation: portrait) {
   #amll-lyric-player .amll-lyric-player {
-    font-size: max(6.5vh, 3vw) !important;
+    font-size: max(9.5vw, 30px) !important;
   }
 }
 
-/* 横屏时歌词整体偏上，往下压一点 */
-@media (orientation: landscape) {
-  #amll-lyric-player [class*="DaA0W_lyric"] {
-    padding-top: 6vh;
-  }
-}
-
-/* 手机横屏高度很矮：AMLL 的默认网格会把首歌信息挤成 0 高（歌名被裁掉），
- * 这里缩小封面并让信息栏不参与收缩，保证歌名/歌手始终可见。 */
+/* 手机横屏高度很矮时，AMLL 默认 45vh 的封面会把左侧信息栏挤成 0 高
+ * （歌名/歌手、进度、播控、音量全被压没，只剩歌词）。
+ * 缩小封面，并让信息/播控不参与收缩，把左侧一列完整保留。 */
 @media (orientation: landscape) and (max-height: 480px) {
   #amll-lyric-player [class*="DaA0W_horizontalLayout"] {
-    --horizontal-layout-max-width: min(40vh, 38vw);
+    --horizontal-layout-max-width: min(26vh, 28vw);
   }
 
-  #amll-lyric-player [class*="DaA0W_controls"] {
-    margin-top: 0;
-  }
-
-  #amll-lyric-player [class*="XWzuDW_musicInfo"] {
+  #amll-lyric-player [class*="XWzuDW_musicInfo"],
+  #amll-lyric-player [class*="UjzbJG_horizontalControls"],
+  #amll-lyric-player [class*="UjzbJG_controls"],
+  #amll-lyric-player [class*="LJEMWq_volumeControl"] {
     flex-shrink: 0;
   }
 }

@@ -84,31 +84,36 @@ fun DiscoverScreen(vm: HomeViewModel, nav: AppNav) {
                 )
             }
 
-            item { SectionHeader("无歌词排行榜", action = "查看榜单", onAction = nav.openRanking) }
+            // 标题与内容同属一个区块，内部 8dp 小于区块间的 16dp
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ui.ranking.take(2).forEachIndexed { index, item ->
-                        RankingCompactRow(rank = index + 1, item = item, onClick = nav.openRanking)
-                    }
-                    if (ui.ranking.isEmpty()) {
-                        Text("暂无榜单数据", style = Font.caption, color = Amll.colors.ink3)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionHeader("无歌词排行榜", action = "查看榜单", onAction = nav.openRanking)
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        ui.ranking.take(2).forEachIndexed { index, item ->
+                            RankingCompactRow(rank = index + 1, item = item, onClick = nav.openRanking)
+                        }
+                        if (ui.ranking.isEmpty()) {
+                            Text("暂无榜单数据", style = Font.caption, color = Amll.colors.ink3)
+                        }
                     }
                 }
             }
 
-            item { SectionHeader("最新收录", action = "查看全部", onAction = nav.openLatest) }
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    ui.latest.take(6).forEach { song ->
-                        SongRow(
-                            title = song.title,
-                            subtitle = song.artist,
-                            coverUrl = song.coverUrl.ifBlank { null },
-                            coverSize = 40.dp,
-                            onClick = {
-                                nav.openLyric(song.ncmId, song.title, song.artist, song.coverUrl)
-                            },
-                        )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionHeader("最新收录", action = "查看全部", onAction = nav.openLatest)
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        ui.latest.take(6).forEach { song ->
+                            SongRow(
+                                title = song.title,
+                                subtitle = song.artist,
+                                coverUrl = song.coverUrl.ifBlank { null },
+                                coverSize = 40.dp,
+                                onClick = {
+                                    nav.openLyric(song.ncmId, song.title, song.artist, song.coverUrl)
+                                },
+                            )
+                        }
                     }
                 }
             }

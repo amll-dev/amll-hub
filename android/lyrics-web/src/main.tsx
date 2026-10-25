@@ -322,6 +322,8 @@ type NativeBridge = {
   setMeta: (name: string, artists: string, duration: number) => void;
   setCover: (url: string) => void;
   setTheme: (dark: boolean) => void;
+  /** 状态栏 / 导航栏高度（CSS px），用于给内容留出安全区，背景仍然铺满 */
+  setInsets: (top: number, bottom: number) => void;
 };
 
 declare global {
@@ -405,6 +407,13 @@ window.amllNative = {
   setTheme(dark: boolean) {
     document.documentElement.classList.toggle('dark', dark);
     document.body.style.background = dark ? '#0B0B0F' : '#FBFBFD';
+  },
+  // edge-to-edge 下 WebView 会铺到状态栏/导航栏后面，原生把两个高度传进来，
+  // 页面只把内容往内缩（背景渐变仍然满屏，状态栏不会出现一条黑带）
+  setInsets(top: number, bottom: number) {
+    const root = document.documentElement;
+    root.style.setProperty('--amll-inset-top', `${Math.max(0, top)}px`);
+    root.style.setProperty('--amll-inset-bottom', `${Math.max(0, bottom)}px`);
   },
 };
 
