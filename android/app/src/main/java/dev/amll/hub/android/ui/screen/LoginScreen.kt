@@ -1,6 +1,10 @@
 package dev.amll.hub.android.ui.screen
 
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,42 +12,50 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.amll.hub.android.R
 import dev.amll.hub.android.data.remote.UserProfile
+import dev.amll.hub.android.ui.component.AmllTextField
+import dev.amll.hub.android.ui.component.CaptchaDialog
 import dev.amll.hub.android.ui.component.ErrorBanner
+import dev.amll.hub.android.ui.component.PrimaryButton
+import dev.amll.hub.android.ui.component.SegmentedTabs
+import dev.amll.hub.android.ui.theme.Amll
+import dev.amll.hub.android.ui.theme.Font
+import dev.amll.hub.android.ui.theme.Radius
 
+/**
+ * 登录页：与 App 其余页面共用同一套颜色/字号/圆角 token，
+ * 发码流程与网页端一致（check-user → 人机验证 → send-code）。
+ */
 @Composable
 fun LoginScreen(
     onLoggedIn: (UserProfile) -> Unit,
@@ -51,189 +63,204 @@ fun LoginScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    Surface(color = MaterialTheme.colorScheme.background) {
+    Box(Modifier.fillMaxSize().background(Amll.colors.canvas)) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .imePadding()
-                .padding(horizontal = 28.dp, vertical = 40.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(24.dp))
+            BrandMark()
+            Spacer(Modifier.height(26.dp))
             Text(
-                text = "AMLL Hub",
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary,
+                "登录 AMLL Hub",
+                style = Font.pageTitle.copy(fontSize = 22.sp),
+                color = Amll.colors.ink,
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "登录后即可投稿歌词、管理个人资料",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                "登录后即可投稿歌词、参与审核",
+                style = Font.caption,
+                color = Amll.colors.ink3,
                 textAlign = TextAlign.Center,
             )
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(26.dp))
 
-            // 密码 / 验证码切换
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = state.tab == LoginTab.PASSWORD,
-                    onClick = { viewModel.switchTab(LoginTab.PASSWORD) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                ) { Text("密码登录") }
-                SegmentedButton(
-                    selected = state.tab == LoginTab.CODE,
-                    onClick = { viewModel.switchTab(LoginTab.CODE) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                ) { Text("验证码登录") }
-            }
+            SegmentedTabs(
+                labels = listOf("密码登录", "验证码登录"),
+                selectedIndex = if (state.tab == LoginTab.PASSWORD) 0 else 1,
+                onSelect = { index ->
+                    viewModel.switchTab(if (index == 0) LoginTab.PASSWORD else LoginTab.CODE)
+                },
+            )
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(18.dp))
 
             state.error?.let { message ->
                 ErrorBanner(message = message)
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
             }
 
             when (state.tab) {
-                LoginTab.PASSWORD -> PasswordForm(state, viewModel)
-                LoginTab.CODE -> CodeForm(state, viewModel)
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            Button(
-                onClick = { viewModel.submit { onLoggedIn(it.user) } },
-                enabled = state.canSubmit,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-            ) {
-                if (state.submitting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                } else {
-                    Text("登录")
+                LoginTab.PASSWORD -> PasswordForm(state, viewModel) {
+                    viewModel.submit { onLoggedIn(it.user) }
+                }
+                LoginTab.CODE -> CodeForm(state, viewModel) {
+                    viewModel.submit { onLoggedIn(it.user) }
                 }
             }
+
+            Spacer(Modifier.height(22.dp))
+
+            PrimaryButton(
+                text = if (state.submitting) "登录中…" else "登录",
+                enabled = state.canSubmit && !state.submitting,
+                onClick = { viewModel.submit { onLoggedIn(it.user) } },
+            )
+
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "登录即表示同意《用户协议》与《隐私政策》",
+                style = Font.micro,
+                color = Amll.colors.ink3,
+                textAlign = TextAlign.Center,
+            )
+        }
+
+        val captcha = state.captcha
+        if (captcha != null) {
+            CaptchaDialog(
+                config = captcha,
+                verified = state.captchaVerified,
+                sending = state.sendingCode,
+                error = state.error,
+                onToken = viewModel::onCaptchaToken,
+                onDismiss = viewModel::dismissCaptcha,
+            )
         }
     }
 }
 
 @Composable
-private fun PasswordForm(state: LoginUiState, viewModel: LoginViewModel) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        OutlinedTextField(
+private fun BrandMark() {
+    Image(
+        painter = painterResource(R.drawable.ic_launcher_logo),
+        contentDescription = null,
+        modifier = Modifier.size(68.dp).clip(RoundedCornerShape(16.dp)),
+    )
+}
+
+@Composable
+private fun PasswordForm(
+    state: LoginUiState,
+    viewModel: LoginViewModel,
+    onSubmit: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        AmllTextField(
             value = state.username,
             onValueChange = viewModel::onUsernameChange,
-            label = { Text("用户名") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            modifier = Modifier.fillMaxWidth(),
+            label = "用户名",
+            placeholder = "请输入用户名",
+            imeAction = ImeAction.Next,
         )
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(
+        AmllTextField(
             value = state.password,
             onValueChange = viewModel::onPasswordChange,
-            label = { Text("密码") },
-            singleLine = true,
+            label = "密码",
+            placeholder = "请输入密码",
+            keyboardType = KeyboardType.Password,
+            imeAction = ImeAction.Done,
             visualTransformation = if (state.passwordVisible) {
                 VisualTransformation.None
             } else {
                 PasswordVisualTransformation()
             },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Password,
-                imeAction = ImeAction.Done,
-            ),
-            trailingIcon = {
-                IconButton(onClick = viewModel::togglePasswordVisible) {
-                    Icon(
-                        imageVector = if (state.passwordVisible) {
-                            Icons.Filled.VisibilityOff
-                        } else {
-                            Icons.Filled.Visibility
-                        },
-                        contentDescription = if (state.passwordVisible) "隐藏密码" else "显示密码",
-                    )
-                }
+            onImeAction = onSubmit,
+            trailing = {
+                Icon(
+                    imageVector = if (state.passwordVisible) {
+                        Icons.Filled.VisibilityOff
+                    } else {
+                        Icons.Filled.Visibility
+                    },
+                    contentDescription = if (state.passwordVisible) "隐藏密码" else "显示密码",
+                    tint = Amll.colors.ink3,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clickable(onClick = viewModel::togglePasswordVisible),
+                )
             },
-            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
 
 @Composable
-private fun CodeForm(state: LoginUiState, viewModel: LoginViewModel) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            SegmentedButton(
-                selected = state.codeType == CodeType.PHONE,
-                onClick = { viewModel.switchCodeType(CodeType.PHONE) },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-            ) { Text("手机号") }
-            SegmentedButton(
-                selected = state.codeType == CodeType.EMAIL,
-                onClick = { viewModel.switchCodeType(CodeType.EMAIL) },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-            ) { Text("邮箱") }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        OutlinedTextField(
-            value = state.dest,
-            onValueChange = viewModel::onDestChange,
-            label = { Text(if (state.codeType == CodeType.PHONE) "手机号" else "邮箱") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = if (state.codeType == CodeType.PHONE) {
-                    KeyboardType.Phone
-                } else {
-                    KeyboardType.Email
-                },
-                imeAction = ImeAction.Next,
-            ),
-            modifier = Modifier.fillMaxWidth(),
+private fun CodeForm(
+    state: LoginUiState,
+    viewModel: LoginViewModel,
+    onSubmit: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SegmentedTabs(
+            labels = listOf("手机号", "邮箱"),
+            selectedIndex = if (state.codeType == CodeType.PHONE) 0 else 1,
+            onSelect = { index ->
+                viewModel.switchCodeType(if (index == 0) CodeType.PHONE else CodeType.EMAIL)
+            },
         )
 
-        Spacer(Modifier.height(12.dp))
+        AmllTextField(
+            value = state.dest,
+            onValueChange = viewModel::onDestChange,
+            label = if (state.codeType == CodeType.PHONE) "手机号" else "邮箱",
+            placeholder = if (state.codeType == CodeType.PHONE) "请输入手机号" else "请输入邮箱",
+            keyboardType = if (state.codeType == CodeType.PHONE) KeyboardType.Phone else KeyboardType.Email,
+            imeAction = ImeAction.Next,
+        )
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedTextField(
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AmllTextField(
                 value = state.code,
                 onValueChange = viewModel::onCodeChange,
-                label = { Text("验证码") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
-                    imeAction = ImeAction.Done,
-                ),
+                label = "验证码",
+                placeholder = "6 位验证码",
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Done,
                 modifier = Modifier.weight(1f),
+                onImeAction = onSubmit,
             )
-            Spacer(Modifier.width(4.dp))
-            TextButton(
-                onClick = viewModel::sendCode,
-                enabled = state.dest.isNotBlank() &&
-                    state.countdown == 0 &&
-                    !state.sendingCode,
+            Box(
+                Modifier
+                    .height(56.dp)
+                    .width(112.dp)
+                    .clip(RoundedCornerShape(Radius.chip))
+                    .background(if (state.canSendCode) Amll.colors.primarySoft else Amll.colors.surface2)
+                    .clickable(enabled = state.canSendCode, onClick = viewModel::sendCode),
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    when {
+                    text = when {
+                        state.preparingCode -> "检查中…"
                         state.sendingCode -> "发送中…"
-                        state.countdown > 0 -> "${state.countdown}s"
+                        state.countdown > 0 -> "${state.countdown}s 后重发"
                         else -> "获取验证码"
-                    }
+                    },
+                    style = Font.caption.copy(fontWeight = FontWeight.Medium),
+                    color = if (state.canSendCode) Amll.colors.primary else Amll.colors.ink3,
                 )
             }
         }
+
+        Text(
+            "验证码由认证服务发送；未注册的账号会直接提示，不会发码",
+            style = Font.micro,
+            color = Amll.colors.ink3,
+        )
     }
 }

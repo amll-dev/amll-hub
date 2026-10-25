@@ -1,4 +1,4 @@
-package dev.amll.hub.android.ui.screen
+package dev.amll.hub.android.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -9,37 +9,24 @@ import org.junit.Test
  */
 class ScanTicketParseTest {
 
-    private fun extract(raw: String): String {
-        val trimmed = raw.trim()
-        val marker = "ticket="
-        val index = trimmed.indexOf(marker)
-        return if (index >= 0) {
-            trimmed.substring(index + marker.length).substringBefore('&').trim()
-        } else {
-            trimmed
-        }
-    }
-
     @Test
     fun `解析标准 deep link`() {
-        val ticket = extract("amllhub://qrlogin?ticket=abc123XYZ")
-        assertEquals("abc123XYZ", ticket)
+        assertEquals("abc123XYZ", QrTicketParser.parse("amllhub://qrlogin?ticket=abc123XYZ"))
     }
 
     @Test
     fun `解析带额外查询参数与空格的 deep link`() {
-        val ticket = extract("  amllhub://qrlogin?ticket=abc123&from=web  ")
-        assertEquals("abc123", ticket)
+        assertEquals("abc123", QrTicketParser.parse("  amllhub://qrlogin?ticket=abc123&from=web  "))
     }
 
     @Test
     fun `裸 ticket 也能解析`() {
-        assertEquals("abc123", extract("abc123"))
+        assertEquals("abc123", QrTicketParser.parse("abc123"))
     }
 
     @Test
     fun `空内容解析为空串`() {
-        assertEquals("", extract(""))
-        assertEquals("", extract("   "))
+        assertEquals("", QrTicketParser.parse(""))
+        assertEquals("", QrTicketParser.parse("   "))
     }
 }

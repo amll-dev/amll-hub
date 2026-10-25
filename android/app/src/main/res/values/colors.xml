@@ -2,4 +2,6 @@
 <resources>
     <!-- 默认（浅色）：对应网页端 amll 主题的 background token -->
     <color name="window_background">#FBFBFD</color>
+    <!-- 品牌红：与 LightPalette.primary 保持一致 -->
+    <color name="brand_primary">#E0303F</color>
 </resources>

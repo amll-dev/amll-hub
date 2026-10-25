@@ -3,14 +3,10 @@ package dev.amll.hub.android.data.remote
 import dev.amll.hub.android.data.local.AuthStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import retrofit2.HttpException
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
-
-/** 解析错误响应体用的轻量 Json */
-private val errorJson = Json { ignoreUnknownKeys = true }
 
 /**
  * 认证仓库：统一处理后端 {code, message, data} 包装与错误映射。
@@ -34,9 +30,32 @@ class AuthRepository @Inject constructor(
         return resp.also { authStore.save(it.token) }
     }
 
-    suspend fun sendCode(checkType: String, dest: String) {
-        request { api.sendCode(SendCodeRequest(checkType = checkType, dest = dest.trim())) }
+    suspend fun sendCode(
+        checkType: String,
+        dest: String,
+        captchaType: String = "",
+        captchaToken: String = "",
+    ) {
+        request {
+            api.sendCode(
+                SendCodeRequest(
+                    checkType = checkType,
+                    dest = dest.trim(),
+                    captchaType = captchaType,
+                    captchaToken = captchaToken,
+                ),
+            )
+        }
     }
+
+    /** 账号预检：不存在时后端返回 404「该手机号/邮箱未注册」 */
+    suspend fun checkUser(checkType: String, dest: String) {
+        request { api.checkUser(CheckUserRequest(checkType, dest.trim())) }
+    }
+
+    /** 人机验证配置；接口异常时按「无需验证」降级，与网页端一致 */
+    suspend fun captchaConfig(): CaptchaConfig =
+        runCatching { request { api.captcha() } }.getOrNull() ?: CaptchaConfig()
 
     suspend fun profile(): UserProfile = call { api.profile() }
 
@@ -81,7 +100,7 @@ class AuthRepository @Inject constructor(
             val resp = try {
                 block()
             } catch (e: HttpException) {
-                val backendMsg = errorMessage(e)
+                val backendMsg = ApiErrorParser.message(e)
                 if (e.code() == 401) {
                     // 401 既可能是 token 失效，也可能是「用户名或密码错误」，
                     // 用后端文案覆盖默认提示；类型仍是 UnauthorizedException。
@@ -98,11 +117,4 @@ class AuthRepository @Inject constructor(
             }
             resp.data
         }
-
-    /** 后端错误响应体形如 {"code":400,"message":"验证码错误"}，取出 message 供 UI 展示 */
-    private fun errorMessage(e: HttpException): String? = runCatching {
-        e.response()?.errorBody()?.string()
-            ?.let { errorJson.decodeFromString<ApiResponse<Unit>>(it).message }
-            ?.takeIf { it.isNotBlank() }
-    }.getOrNull()
 }

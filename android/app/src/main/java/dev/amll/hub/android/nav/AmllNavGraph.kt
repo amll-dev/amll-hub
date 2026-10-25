@@ -1,64 +1,107 @@
 package dev.amll.hub.android.nav
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.NavType
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
-import dev.amll.hub.android.data.remote.UserProfile
+import androidx.navigation.toRoute
+import dev.amll.hub.android.R
+import dev.amll.hub.android.ui.AppNav
+import dev.amll.hub.android.ui.AppShell
+import dev.amll.hub.android.ui.screen.CreatorCenterScreen
+import dev.amll.hub.android.ui.screen.CreatorViewModel
+import dev.amll.hub.android.ui.screen.DailyScreen
+import dev.amll.hub.android.ui.screen.DailySubmitScreen
+import dev.amll.hub.android.ui.screen.DailyViewModel
+import dev.amll.hub.android.ui.screen.DiscoverScreen
 import dev.amll.hub.android.ui.screen.HomeScreen
+import dev.amll.hub.android.ui.screen.HomeViewModel
+import dev.amll.hub.android.ui.screen.LatestSongsScreen
 import dev.amll.hub.android.ui.screen.LoginScreen
+import dev.amll.hub.android.ui.screen.LyricScreen
+import dev.amll.hub.android.ui.screen.LyricSubmitScreen
+import dev.amll.hub.android.ui.screen.LyricViewModel
+import dev.amll.hub.android.ui.screen.MessagesScreen
+import dev.amll.hub.android.ui.screen.MessagesViewModel
+import dev.amll.hub.android.ui.screen.NcmParseScreen
+import dev.amll.hub.android.ui.screen.PlaybackViewModel
+import dev.amll.hub.android.ui.screen.ProfileEditScreen
+import dev.amll.hub.android.ui.screen.ProfileScreen
+import dev.amll.hub.android.ui.screen.ProfileViewModel
+import dev.amll.hub.android.ui.screen.RankingScreen
+import dev.amll.hub.android.ui.screen.RankingViewModel
+import dev.amll.hub.android.ui.screen.ReviewQueueScreen
 import dev.amll.hub.android.ui.screen.ScanScreen
+import dev.amll.hub.android.ui.screen.SearchScreen
+import dev.amll.hub.android.ui.screen.SearchViewModel
+import dev.amll.hub.android.ui.screen.SubmissionDetailScreen
 import dev.amll.hub.android.ui.session.SessionState
 import dev.amll.hub.android.ui.session.SessionViewModel
+import dev.amll.hub.android.ui.theme.Amll
+import dev.amll.hub.android.ui.theme.Font
 
-object Routes {
-    const val HOME = "home"
+/** Tab 在底栏中的下标；非 Tab 页面返回 null，用于判断左右滑动方向 */
+private fun NavBackStackEntry.tabIndex(): Int? =
+    TabRouteNames.indexOf(destination.route.orEmpty()).takeIf { it >= 0 }
 
-    /** 扫码页，ticket 可为空（手动进入扫码器）或由 deep link 带入 */
-    const val SCAN = "scan?ticket={ticket}"
-    fun scan(ticket: String? = null): String =
-        if (ticket.isNullOrBlank()) "scan" else "scan?ticket=$ticket"
+/** 目标页在右（或无法判断）时向前；否则向后 */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.forward(): Boolean {
+    val from = initialState.tabIndex()
+    val to = targetState.tabIndex()
+    return from == null || to == null || to >= from
 }
 
+/** 是不是歌词页（它自己带纵向转场，周围页面不应该再横向滑动） */
+private fun NavBackStackEntry.isLyricRoute(): Boolean =
+    destination.route == LyricRouteName
+
 /**
- * 顶层导航，完全由 [SessionViewModel] 的持久化登录态驱动：
- * - Loading：读本地 token 期间的启动占位，避免登录页一闪而过
- * - LoggedIn：首页 + 扫码授权页
- * - LoggedOut：仅登录页，未登录不提供「扫码登录网页端」入口
- *
- * 登录 / 登出只更新登录态，分区切换由状态完成，无需手动推栈。
+ * 顶层导航：登录态决定进 App 还是登录页，登录后是 5 Tab + 二级页。
+ * 转场统一为横向滑动：推进从右滑入，返回从左侧退回；Tab 之间按目标下标决定方向。
  */
 @Composable
 fun AmllNavGraph(
-    /** deep link 带进来的 ticket，非空时登录后直接弹扫码确认页 */
     pendingTicket: String? = null,
     onTicketConsumed: () -> Unit = {},
     sessionViewModel: SessionViewModel = hiltViewModel(),
 ) {
     val session by sessionViewModel.state.collectAsStateWithLifecycle()
 
-    when (val state = session) {
-        SessionState.Loading -> SplashPane()
+    when (session) {
+        SessionState.Loading -> SplashScreen()
 
         is SessionState.LoggedIn -> LoggedInNav(
-            profile = state.profile,
             pendingTicket = pendingTicket,
             onTicketConsumed = onTicketConsumed,
-            onLoggedOut = { sessionViewModel.logout() },
-            onRefreshProfile = { sessionViewModel.refreshProfile() },
         )
 
         SessionState.LoggedOut -> LoginScreen(
@@ -67,66 +110,135 @@ fun AmllNavGraph(
     }
 }
 
-/** 登录后的导航分区：首页 + 扫码授权页 */
 @Composable
 private fun LoggedInNav(
-    profile: UserProfile?,
     pendingTicket: String?,
     onTicketConsumed: () -> Unit,
-    onLoggedOut: () -> Unit,
-    onRefreshProfile: () -> Unit,
 ) {
     val navController = rememberNavController()
 
-    // 已登录时 deep link 直接进扫码确认页；未登录时 ticket 会被保留，登录后再处理
+    // 各 feature ViewModel 挂在 Activity 作用域：切 Tab 不重复请求，
+    // 首页/我的共用同一份 profile，创作中心三个页面共用同一份稿件列表
+    val homeVm: HomeViewModel = hiltViewModel()
+    val rankingVm: RankingViewModel = hiltViewModel()
+    val dailyVm: DailyViewModel = hiltViewModel()
+    val messagesVm: MessagesViewModel = hiltViewModel()
+    val creatorVm: CreatorViewModel = hiltViewModel()
+    val searchVm: SearchViewModel = hiltViewModel()
+    val profileVm: ProfileViewModel = hiltViewModel()
+    val lyricVm: LyricViewModel = hiltViewModel()
+    val playbackVm: PlaybackViewModel = hiltViewModel()
+
+    val nav = remember(navController, lyricVm) {
+        AppNav(
+            navController = navController,
+            onOpenTrack = { songId, title, artist, cover, rawLyricFile ->
+                lyricVm.openTrack(songId, title, artist, cover, rawLyricFile)
+            },
+            onPlayerLyric = { lyricVm.ensurePlayerLyric() },
+        )
+    }
+
     LaunchedEffect(pendingTicket) {
         val ticket = pendingTicket?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
         onTicketConsumed()
-        navController.navigate(Routes.scan(ticket))
+        navController.navigate(ScanRoute(ticket))
     }
 
-    NavHost(navController = navController, startDestination = Routes.HOME) {
-        composable(Routes.HOME) {
-            HomeScreen(
-                profile = profile,
-                onScanQr = { navController.navigate(Routes.scan()) },
-                onLoggedOut = onLoggedOut,
-                onRefreshProfile = onRefreshProfile,
-            )
-        }
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    val selectedTab = TabRouteNames.indexOf(currentRoute.orEmpty())
 
-        composable(
-            route = Routes.SCAN,
-            arguments = listOf(
-                navArgument("ticket") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
+    // 底栏挂在外壳上：切页时只有内容滑动，栏本身不动
+    AppShell(
+        playerVm = playbackVm,
+        lyricVm = lyricVm,
+        nav = nav,
+        selectedTab = selectedTab,
+        tabsVisible = selectedTab >= 0,
+    ) {
+        NavHost(
+            navController = navController,
+            startDestination = HomeRoute,
+            // 歌词页只有纵向转场；它进出的那一侧保持静止，否则会多出一段左移动画
+            enterTransition = {
+                if (initialState.isLyricRoute()) EnterTransition.None else slideInHorizontal(forward())
+            },
+            exitTransition = {
+                if (targetState.isLyricRoute()) ExitTransition.None else slideOutHorizontal(forward())
+            },
+            popEnterTransition = {
+                if (initialState.isLyricRoute()) EnterTransition.None else popEnterHorizontal()
+            },
+            popExitTransition = {
+                if (targetState.isLyricRoute()) ExitTransition.None else popExitHorizontal()
+            },
+        ) {
+            composable<HomeRoute> { HomeScreen(homeVm, profileVm, nav) }
+            composable<DiscoverRoute> { DiscoverScreen(homeVm, nav) }
+            composable<CreatorRoute> { CreatorCenterScreen(creatorVm, nav) }
+            composable<MessagesRoute> { MessagesScreen(messagesVm, nav) }
+            composable<ProfileRoute> { ProfileScreen(profileVm, nav) }
+
+            composable<RankingRoute> { RankingScreen(rankingVm, nav) }
+            composable<DailyRoute> { DailyScreen(dailyVm, nav) }
+            // 歌词页从下往上滑入，退出时滑回底部（对齐网页端的 translate-y 动画）
+            composable<LyricRoute>(
+                enterTransition = {
+                    slideInVertically(animationSpec = tween(340)) { height -> height }
                 },
-            ),
-        ) { entry ->
-            ScanScreen(
-                initialTicket = entry.arguments?.getString("ticket"),
-                onBack = { navController.popBackStack() },
-                onDone = {
-                    navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.HOME) { inclusive = true }
-                    }
+                popExitTransition = {
+                    slideOutVertically(animationSpec = tween(300)) { height -> height }
                 },
-            )
+            ) {
+                LyricScreen(lyricVm, playbackVm, nav)
+            }
+            composable<SearchRoute> { SearchScreen(searchVm, nav) }
+            composable<LatestRoute> { LatestSongsScreen(homeVm, nav) }
+            composable<NcmRoute> { NcmParseScreen(nav, playbackVm = playbackVm) }
+            composable<SubmissionRoute> { entry ->
+                SubmissionDetailScreen(entry.toRoute<SubmissionRoute>().id, creatorVm, nav)
+            }
+            composable<ProfileEditRoute> { ProfileEditScreen(profileVm, nav) }
+            composable<ReviewRoute> { ReviewQueueScreen(creatorVm, nav) }
+            composable<LyricSubmitRoute> { LyricSubmitScreen(nav) }
+            composable<DailySubmitRoute> { DailySubmitScreen(nav, dailyVm) }
+
+            composable<ScanRoute> { entry ->
+                ScanScreen(
+                    initialTicket = entry.toRoute<ScanRoute>().ticket,
+                    onBack = { navController.popBackStack() },
+                    onDone = { navController.popBackStack() },
+                )
+            }
         }
     }
 }
 
-/** 读取本地登录态期间的启动占位，避免登录页一闪而过 */
+/** 17 启动页：图标 + 字标 + 标语 */
 @Composable
-private fun SplashPane() {
-    Surface(color = MaterialTheme.colorScheme.background) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxSize(),
+private fun SplashScreen() {
+    Box(
+        Modifier.fillMaxSize().background(Amll.colors.canvas),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            CircularProgressIndicator()
+            Image(
+                painter = painterResource(R.drawable.ic_launcher_logo),
+                contentDescription = null,
+                modifier = Modifier.size(84.dp).clip(RoundedCornerShape(20.dp)),
+            )
+            Text("AMLL Hub", style = Font.pageTitle.copy(fontSize = 26.sp), color = Amll.colors.ink)
+            Text("让每一句歌词，都跟着唱出来", style = Font.caption, color = Amll.colors.ink3)
         }
+        Text(
+            "逐字歌词 · 社区共建",
+            style = Font.micro,
+            color = Amll.colors.ink3.copy(alpha = 0.7f),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 34.dp),
+        )
     }
 }

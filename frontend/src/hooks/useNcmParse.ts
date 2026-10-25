@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useAtom, useAtomValue } from 'jotai';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { extractNcmSongId } from '@/lib/ncm';
 import { queryKeys } from '@/lib/query';
 import type { NcmPlaylistDetail, NcmSong } from '@/lib/types';
 import { qualityAtom, type NcmQuality } from '@/atoms/player';
@@ -115,17 +116,19 @@ export function useNcmParse(): NcmParseContextValue {
       songId: string,
       meta: { name?: string; artists?: string; cover?: string; duration?: number }
     ) => {
+      // 分享链接先归一成纯 ID
+      const id = extractNcmSongId(songId);
       setParseLoading(true);
       setParseError(null);
       setHideSearchList(true);
-      setSongIdInput(songId);
+      setSongIdInput(id);
       // 真正解析时才把页面选择同步到全局，播放器与歌词页的音质随之对齐
       setGlobalQuality(quality);
       try {
-        const info = await api.parseNcmMusic(songId, quality);
+        const info = await api.parseNcmMusic(id, quality);
         // 先填充播放信息，歌词异步获取（避免阻塞播放按钮）
         setParsedSong({
-          songId,
+          songId: id,
           info,
           metaDuration: meta.duration,
           lyricLines: null,
@@ -136,7 +139,7 @@ export function useNcmParse(): NcmParseContextValue {
         try {
           const { parseLrc, parseTTML } = await import('@applemusic-like-lyrics/lyric');
           // ① ncm-lyrics/{songId} TTML
-          const ttml = await api.getNcmLyricTtml(songId);
+          const ttml = await api.getNcmLyricTtml(id);
           if (ttml) {
             setParsedSong((prev) => (prev ? { ...prev, lyricLines: parseTTML(ttml).lines } : prev));
             return;

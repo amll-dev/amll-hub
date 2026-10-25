@@ -1,10 +1,10 @@
 package dev.amll.hub.android
 
-import kotlinx.serialization.json.Json
 import dev.amll.hub.android.data.remote.ApiResponse
 import dev.amll.hub.android.data.remote.LoginResult
 import dev.amll.hub.android.data.remote.QrTicketStatus
 import dev.amll.hub.android.data.remote.SendCodeRequest
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -38,7 +38,7 @@ class AuthDtoTest {
         assertNull(pending.token)
 
         val confirmed = json.decodeFromString<QrTicketStatus>(
-            """{"status":"confirmed","token":"jwt-456","user":{"name":"bob"}}"""
+            """{"status":"confirmed","token":"jwt-456","user":{"name":"bob"}}""",
         )
         assertTrue(confirmed.isConfirmed)
         assertEquals("jwt-456", confirmed.token)
@@ -57,7 +57,7 @@ class AuthDtoTest {
         // 后端 OKWithMsg(c, nil, ...)（发码 / 扫码确认取消）因 `data,omitempty`
         // 会直接省略 data 字段，客户端不能把 data 缺失当成错误
         val resp = json.decodeFromString<ApiResponse<Unit>>(
-            """{"code":200,"message":"验证码已发送"}"""
+            """{"code":200,"message":"验证码已发送"}""",
         )
         assertEquals(200, resp.code)
         assertEquals("验证码已发送", resp.message)

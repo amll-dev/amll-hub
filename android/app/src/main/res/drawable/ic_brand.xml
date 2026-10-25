@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 品牌标：圆角方块 + 三条渐短横杠，登录页与启动页共用一张图 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+
+    <path
+        android:fillColor="@color/brand_primary"
+        android:pathData="M22,0 H74 C86.15,0 96,9.85 96,22 V74 C96,86.15 86.15,96 74,96 H22 C9.85,96 0,86.15 0,74 V22 C0,9.85 9.85,0 22,0 Z" />
+
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M26,30 H70 C72.21,30 74,31.79 74,34 C74,36.21 72.21,38 70,38 H26 C23.79,38 22,36.21 22,34 C22,31.79 23.79,30 26,30 Z M26,44 H56 C58.21,44 60,45.79 60,48 C60,50.21 58.21,52 56,52 H26 C23.79,52 22,50.21 22,48 C22,45.79 23.79,44 26,44 Z M26,58 H44 C46.21,58 48,59.79 48,62 C48,64.21 46.21,66 44,66 H26 C23.79,66 22,64.21 22,62 C22,59.79 23.79,58 26,58 Z" />
+</vector>

@@ -47,3 +47,7 @@ pnpm-debug.log*
 *.pem
 *.key
 *private-key*
+*.p12
+*.jks
+*.keystore
+/android/keystore

@@ -1,0 +1,9 @@
+root = true
+
+[*.{kt,kts}]
+# 与 Kotlin 官方风格一致；行宽交给 IDE 排版，不在 CI 卡 140 列
+ktlint_code_style = intellij_idea
+max_line_length = off
+# Compose 组件按约定使用 PascalCase；单表达式函数强制写回一行也与现有风格冲突
+ktlint_standard_function-naming = disabled
+ktlint_standard_function-signature = disabled

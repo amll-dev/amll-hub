@@ -78,20 +78,60 @@ PR 与 push 到 `main` / `master` 时触发，仅在 `android/**` 有变更时�
 
 ```
 app/src/main/java/dev/amll/hub/android/
-├── MainActivity.kt          # 入口，处理 amllhub:// deep link
+├── MainActivity.kt              # 入口，处理 amllhub:// deep link
 ├── data/
-│   ├── local/AuthStore.kt   # DataStore 存 token
-│   └── remote/              # Retrofit API、DTO、错误映射
-├── di/AppModule.kt          # Hilt 模块
-├── nav/AmllNavGraph.kt      # 登录 / 首页 / 扫码
+│   ├── local/AuthStore.kt       # DataStore 存 token
+│   ├── lyric/TtmlParser.kt      # TTML → 逐字行（翻译 / 音译 / 背景行）
+│   ├── remote/                  # Retrofit API、DTO、错误映射
+│   └── repo/ContentRepository.kt# 内容仓库，接口失败降级为空
+├── playback/
+│   ├── PlayerController.kt      # Media3 ExoPlayer + 播放状态 StateFlow
+│   └── PlaybackService.kt       # MediaSessionService，后台播放与通知栏
+├── di/AppModule.kt              # Hilt 模块
+├── nav/AmllNavGraph.kt          # 登录态 → 5 Tab + 二级页 + 启动页
 └── ui/
-    ├── component/           # QrScannerView、ErrorBanner
-    ├── screen/              # Login / Home / Scan + ViewModel
-    └── theme/               # 颜色与字体，对齐网页端 token
+    ├── AppNav.kt                # 页面跳转集合
+    ├── AppViewModel.kt          # Activity 级共享状态（首页/榜单/歌词/播放）
+    ├── component/Common.kt      # TopBar / PillTabBar / SongRow / EmptyState…
+    ├── screen/
+    │   ├── MainScreens.kt       # 首页 / 发现 / 排行榜 / 每日推荐 / 消息 / 我的
+    │   └── FlowScreens.kt       # 歌词详情 / 沉浸播放 / 创作 / 投稿 / 稿件 / 审核
+    └── theme/                   # Palette（6 组语义色）+ Dimens（1:1 token）
 ```
+
+## 沉浸播放的歌词页（react-full）
+
+全屏沉浸播放用 WebView 承载网页端同款歌词渲染（`@applemusic-like-lyrics/react-full` 的
+`PrebuiltLyricPlayer` + jotai atoms），源码在 `android/lyrics-web/`，构建产物直接落到
+`app/src/main/assets/lyrics/`，APK 内离线可用。
+
+```bash
+cd android/lyrics-web
+
+# 复用 frontend 已装好的依赖（避免重复下载）
+# Windows: New-Item -ItemType Junction -Path node_modules -Target ../../frontend/node_modules
+# macOS/Linux: ln -s ../../frontend/node_modules node_modules
+
+node ../../frontend/node_modules/vite/bin/vite.js build
+```
+
+原生侧通过 `WebViewAssetLoader` 以 `https://appassets.androidplatform.net/assets/lyrics/index.html`
+加载，避免 `file://` 下 ES Module 的跨域限制；进度与播放态由 `PlayerController` 通过
+`window.amllNative` 写入。
 
 ## 待办
 
-- 个人中心（资料编辑、头像上传、密码修改）
-- 投稿与歌词浏览
+- 游客态浏览：当前沿用登录门禁，未登录只显示登录页
+- 投稿提交：表单已还原，但 TTML 解析与文件上传未接，提交按钮暂未落库
+- 头像上传、审核操作（通过 / 驳回）、每日推荐「下载图片」
+- 稿件详情的「原文件 / 文件效果」对比视图
 - 正式签名配置（当前 release 走 debug key）
+
+## 已接通的交互
+
+- 首页 / 发现的搜索框 → 半屏搜索弹层（词库 `/api/v1/search` + 网易云 `/api/v1/ncm/search`）
+- 榜单 / 最新收录 / 推荐卡 → 歌词详情；封面点按 → WebView 沉浸播放
+- 每日推荐点赞（乐观更新 + 失败回滚）、消息全部已读 / 单条已读
+- 我的页读 `/api/v1/auth/profile`；编辑资料保存昵称走 `PUT /api/v1/auth/profile`
+- 创作中心稿件列表 → 稿件详情（`GET /api/v1/submissions/{id}`）
+

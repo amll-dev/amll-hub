@@ -3,6 +3,7 @@ package dev.amll.hub.android.ui.screen
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.amll.hub.android.data.QrTicketParser
 import dev.amll.hub.android.data.remote.AuthRepository
 import dev.amll.hub.android.data.remote.UserProfile
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,12 +42,20 @@ class ScanViewModel @Inject constructor(
     private val _state = MutableStateFlow<ScanState>(ScanState.Idle)
     val state: StateFlow<ScanState> = _state.asStateFlow()
 
+    /** 「我的名片」用当前账号信息 */
+    private val _profile = MutableStateFlow<UserProfile?>(null)
+    val profile: StateFlow<UserProfile?> = _profile.asStateFlow()
+
+    fun loadProfile() {
+        viewModelScope.launch { _profile.value = runCatching { repo.profile() }.getOrNull() }
+    }
+
     /**
      * 解析扫码结果，取出 ticket。
      * 兼容 amllhub://qrlogin?ticket=xxx 与直接传 ticket 字符串。
      */
     fun onScanned(raw: String) {
-        val ticket = extractTicket(raw)
+        val ticket = QrTicketParser.parse(raw)
         if (ticket.isBlank()) {
             _state.value = ScanState.Error("这不是 AMLL Hub 的登录二维码")
             return
@@ -85,16 +94,5 @@ class ScanViewModel @Inject constructor(
 
     fun reset() {
         _state.value = ScanState.Idle
-    }
-
-    private fun extractTicket(raw: String): String {
-        val trimmed = raw.trim()
-        val marker = "ticket="
-        val index = trimmed.indexOf(marker)
-        return if (index >= 0) {
-            trimmed.substring(index + marker.length).substringBefore('&').trim()
-        } else {
-            trimmed
-        }
     }
 }
