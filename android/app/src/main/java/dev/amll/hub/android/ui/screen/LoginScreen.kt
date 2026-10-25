@@ -149,9 +149,9 @@ fun LoginScreen(
 @Composable
 private fun BrandMark() {
     Image(
-        painter = painterResource(R.drawable.ic_brand),
+        painter = painterResource(R.drawable.ic_launcher_logo),
         contentDescription = null,
-        modifier = Modifier.size(76.dp),
+        modifier = Modifier.size(68.dp).clip(RoundedCornerShape(16.dp)),
     )
 }
 

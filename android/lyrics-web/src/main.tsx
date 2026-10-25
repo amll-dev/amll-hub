@@ -48,6 +48,15 @@ import './page.css';
  */
 const store = createStore();
 
+// AMLL 的配置 atom 都是 atomWithStorage，会优先读 localStorage 里的旧值。
+// 旧版本页面可能存过 playerControlsType = "none"（大播控里就没有上一首/播放/下一首）、
+// lyricSizePreset = "tiny" 之类的值，升级 APK 后依然生效，看起来像「改了没反应」。
+// 页面启动时先清掉 AMLL 的配置项，保证始终使用下面的默认配置。
+for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+  const key = localStorage.key(i);
+  if (key?.startsWith('amll-react-full.')) localStorage.removeItem(key);
+}
+
 store.set(isLyricPageOpenedAtom, true);
 store.set(musicPlayingAtom, false);
 store.set(musicVolumeAtom, 1);

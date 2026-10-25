@@ -185,6 +185,8 @@ data class NcmSongDto(
     val artists: List<NcmArtistDto> = emptyList(),
     val album: NcmAlbumDto? = null,
     val fee: Int = 0,
+    @Serializable(with = FlexibleDuration::class) val duration: Long = 0,
+    @Serializable(with = FlexibleDuration::class) val dt: Long = 0,
 ) {
     val displayName: String get() = name.ifBlank { songName }.ifBlank { "未知歌曲" }
     val displayArtist: String
@@ -192,6 +194,8 @@ data class NcmSongDto(
     val displayCover: String
         get() = httpsCover(picUrl.ifBlank { album?.picUrl.orEmpty() })
     val displayId: String get() = if (id > 0) id.toString() else ""
+    val displayDuration: Long get() = if (dt > 0) dt else duration
+    val displayAlbum: String get() = album?.name.orEmpty()
 }
 
 /**
@@ -210,6 +214,39 @@ object FlexibleLong : KSerializer<Long> {
         if (primitive.isString) {
             val leading = Regex("^[0-9]+").find(raw) ?: return 0L
             return leading.value.toLongOrNull() ?: 0L
+        }
+        return raw.toLongOrNull() ?: raw.toDoubleOrNull()?.toLong() ?: 0L
+    }
+
+    override fun serialize(encoder: Encoder, value: Long) {
+        encoder.encodeLong(value)
+    }
+}
+
+/**
+ * 时长字段有两种形态：搜索接口返回 "04:12" 这种字符串，
+ * 其它接口返回毫秒数字。统一归一成毫秒，避免 FlexibleLong
+ * 把 "04:12" 取成 4 毫秒。
+ */
+object FlexibleDuration : KSerializer<Long> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("FlexibleDuration", PrimitiveKind.LONG)
+
+    private val COLON = Regex("^(\\d{1,3}):(\\d{1,2})(?::(\\d{1,2}))?$")
+
+    override fun deserialize(decoder: Decoder): Long {
+        val primitive = (decoder as? JsonDecoder)?.decodeJsonElement() as? JsonPrimitive
+            ?: return decoder.decodeLong()
+        val raw = primitive.content.trim()
+        COLON.matchEntire(raw)?.let { match ->
+            val first = match.groupValues[1].toLongOrNull() ?: return 0L
+            val second = match.groupValues[2].toLongOrNull() ?: return 0L
+            val third = match.groupValues[3].takeIf { it.isNotEmpty() }?.toLongOrNull()
+            return if (third == null) {
+                first * 60_000 + second * 1_000
+            } else {
+                first * 3_600_000 + second * 60_000 + third * 1_000
+            }
         }
         return raw.toLongOrNull() ?: raw.toDoubleOrNull()?.toLong() ?: 0L
     }

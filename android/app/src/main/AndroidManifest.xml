@@ -11,6 +11,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- 后台播放时保持 CPU / 网络唤醒，避免息屏后被系统挂起 -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 歌曲下载：前台 dataSync 服务；API 28 及以下写公共下载目录 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
@@ -55,5 +60,11 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- 网易云单曲 / 歌单批量下载 -->
+        <service
+            android:name=".download.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

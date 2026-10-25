@@ -19,14 +19,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.amll.hub.android.playback.currentLyricLine
+import dev.amll.hub.android.playback.parseTimedLyric
 import dev.amll.hub.android.ui.component.MiniPlayer
 import dev.amll.hub.android.ui.component.PillTabBar
+import dev.amll.hub.android.ui.component.PlaylistSheet
 import dev.amll.hub.android.ui.screen.AppTabs
 import dev.amll.hub.android.ui.screen.LyricViewModel
 import dev.amll.hub.android.ui.screen.PlaybackViewModel
@@ -73,6 +79,15 @@ fun AppShell(
     val lyric by lyricVm.lyric.collectAsStateWithLifecycle()
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
+    // 只显示与当前播放曲目匹配的歌词：从解析页直接播放时 LyricViewModel
+    // 还停留在上一首，不能把旧歌词显示到迷你播放器上。
+    val lyricMatches = lyric.songId.isNotBlank() && lyric.songId == player.track?.songId
+    val lyricLines = remember(lyric.source.text, lyric.source.format, lyricMatches) {
+        if (lyricMatches) parseTimedLyric(lyric.source.text, lyric.source.format) else emptyList()
+    }
+    val lyricLine = currentLyricLine(lyricLines, player.positionMs, player.playing)
+    var showPlaylist by rememberSaveable { mutableStateOf(false) }
+
     val hasTrack = player.track != null
     val bottomSpace = if (tabsVisible) {
         TabBarHeight + navBarBottom + if (hasTrack) MiniPlayerHeight else 0.dp
@@ -109,10 +124,12 @@ fun AppShell(
                 Column(Modifier.fillMaxWidth()) {
                     MiniPlayer(
                         state = player,
-                        loading = lyric.loading,
+                        loading = lyric.loading || player.resolving,
                         error = player.error,
+                        lyricLine = lyricLine,
                         onOpen = nav.openPlayer,
                         onToggle = playerVm::togglePlay,
+                        onTogglePlaylist = { showPlaylist = true },
                         modifier = Modifier.hazeBlur(
                             input = HazeInput.Sources(state = hazeState),
                             style = blurStyle,
@@ -128,6 +145,19 @@ fun AppShell(
                         ),
                     )
                 }
+            }
+
+            if (showPlaylist && player.track != null) {
+                PlaylistSheet(
+                    state = player,
+                    onDismiss = { showPlaylist = false },
+                    onPlayAt = {
+                        playerVm.playAt(it)
+                        showPlaylist = false
+                    },
+                    onRemove = playerVm::removeAt,
+                    onClear = playerVm::clearQueue,
+                )
             }
         }
     }

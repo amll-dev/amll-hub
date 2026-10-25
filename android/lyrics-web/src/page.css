@@ -43,8 +43,8 @@ body {
 /* 安全区：状态栏/导航栏高度由原生通过 setInsets 写进 --amll-inset-*。
  * 只内缩布局内容，不影响背景槽（背景槽是布局根节点的兄弟节点）。
  * 8px 是原本就有的页面留白。 */
-#amll-lyric-player [class*="DaA0W_horizontalLayout"],
-#amll-lyric-player [class*="SqBoeq_verticalLayout"] {
+#amll-lyric-player [class*="horizontalLayout"],
+#amll-lyric-player [class*="verticalLayout"] {
   box-sizing: border-box;
   padding: calc(var(--amll-inset-top, 0px) + 8px) 8px var(--amll-inset-bottom, 0px);
 }
@@ -61,15 +61,17 @@ body {
 /* 手机横屏高度很矮时，AMLL 默认 45vh 的封面会把左侧信息栏挤成 0 高
  * （歌名/歌手、进度、播控、音量全被压没，只剩歌词）。
  * 缩小封面，并让信息/播控不参与收缩，把左侧一列完整保留。 */
-@media (orientation: landscape) and (max-height: 480px) {
-  #amll-lyric-player [class*="DaA0W_horizontalLayout"] {
-    --horizontal-layout-max-width: min(26vh, 28vw);
+@media (orientation: landscape) and (max-height: 640px) {
+  #amll-lyric-player [class*="horizontalLayout"] {
+    /* 封面同时受高度和宽度约束，并给下方「歌名/进度/播控/音量」留出空间，
+     * 否则在 16:9 左右的手机横屏上封面会直接把信息栏挤出屏幕。 */
+    --horizontal-layout-max-width: min(36vh, 34vw, calc(100vh - 240px));
   }
 
-  #amll-lyric-player [class*="XWzuDW_musicInfo"],
-  #amll-lyric-player [class*="UjzbJG_horizontalControls"],
-  #amll-lyric-player [class*="UjzbJG_controls"],
-  #amll-lyric-player [class*="LJEMWq_volumeControl"] {
+  #amll-lyric-player [class*="musicInfo"],
+  #amll-lyric-player [class*="horizontalControls"],
+  #amll-lyric-player [class*="controls"],
+  #amll-lyric-player [class*="volumeControl"] {
     flex-shrink: 0;
   }
 }

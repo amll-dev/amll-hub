@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -193,7 +195,7 @@ private fun LoggedInNav(
             }
             composable<SearchRoute> { SearchScreen(searchVm, nav) }
             composable<LatestRoute> { LatestSongsScreen(homeVm, nav) }
-            composable<NcmRoute> { NcmParseScreen(nav) }
+            composable<NcmRoute> { NcmParseScreen(nav, playbackVm = playbackVm) }
             composable<SubmissionRoute> { entry ->
                 SubmissionDetailScreen(entry.toRoute<SubmissionRoute>().id, creatorVm, nav)
             }
@@ -225,9 +227,9 @@ private fun SplashScreen() {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Image(
-                painter = painterResource(R.drawable.ic_brand),
+                painter = painterResource(R.drawable.ic_launcher_logo),
                 contentDescription = null,
-                modifier = Modifier.size(96.dp),
+                modifier = Modifier.size(84.dp).clip(RoundedCornerShape(20.dp)),
             )
             Text("AMLL Hub", style = Font.pageTitle.copy(fontSize = 26.sp), color = Amll.colors.ink)
             Text("让每一句歌词，都跟着唱出来", style = Font.caption, color = Amll.colors.ink3)

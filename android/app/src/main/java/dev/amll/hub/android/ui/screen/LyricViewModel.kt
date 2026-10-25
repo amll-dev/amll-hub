@@ -42,6 +42,8 @@ class LyricViewModel @Inject constructor(
         artist: String,
         cover: String?,
         rawLyricFile: String? = null,
+        /** 从播放条进歌词页时为 false：只补歌词，不打断当前播放 */
+        startPlayback: Boolean = true,
     ) {
         val id = songId.trim()
         if (id.isBlank()) {
@@ -64,7 +66,8 @@ class LyricViewModel @Inject constructor(
 
         lyric.value = LyricUi(loading = true, songId = id, title = title, artist = artist, cover = cover)
         viewModelScope.launch {
-            val resolved = playbackRepo.resolve(id)
+            val quality = player.state.value.quality
+            val resolved = playbackRepo.resolve(id, quality.key)
             val music = resolved.music
             val parseError = resolved.error
 
@@ -99,19 +102,28 @@ class LyricViewModel @Inject constructor(
                 )
             }
             val url = music?.displayUrl?.takeIf { it.isNotBlank() }
-            player.play(
-                PlayerController.Track(
-                    songId = id,
-                    title = resolvedTitle,
-                    artist = resolvedArtist,
-                    coverUrl = resolvedCover,
-                    streamUrl = url,
-                    lyricTtml = source.ttml,
-                ),
-                url,
-                // 把解析失败的原因带给播放条，用户才知道为什么没声音
-                errorHint = if (url == null) (parseError ?: "该歌曲暂无音源") else null,
-            )
+            if (url == null) {
+                // 播放条只显示默认的「暂无音源」，具体失败原因留给日志排查
+                Log.w(TAG, "openTrack id=$id no playable url: $parseError")
+            }
+            // 从播放条进入歌词页时当前曲目已经在播，不能重新解析后从头播放，
+            // 否则队列位置和播放进度都会被重置
+            if (startPlayback) {
+                player.playResolved(
+                    PlayerController.Track(
+                        songId = id,
+                        title = resolvedTitle,
+                        artist = resolvedArtist,
+                        coverUrl = resolvedCover,
+                        streamUrl = url,
+                        albumName = music?.albumName.orEmpty(),
+                        lyricLrc = if (source.format == "lrc") source.text else "",
+                        lyricTranslation = source.translation,
+                        quality = quality,
+                        actualQuality = resolved.actual,
+                    ),
+                )
+            }
         }
     }
 
@@ -119,6 +131,6 @@ class LyricViewModel @Inject constructor(
     fun ensurePlayerLyric() {
         val track = player.state.value.track ?: return
         if (lyric.value.songId == track.songId && lyric.value.source.text.isNotEmpty()) return
-        openTrack(track.songId, track.title, track.artist, track.coverUrl)
+        openTrack(track.songId, track.title, track.artist, track.coverUrl, startPlayback = false)
     }
 }

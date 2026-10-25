@@ -10,10 +10,10 @@
         <item name="android:navigationBarColor">@color/window_background</item>
     </style>
 
-    <!-- 冷启动：系统 SplashScreen，图标与 App 内启动页共用 ic_brand -->
+    <!-- 冷启动：系统 SplashScreen，图标与 App 内启动页共用 logo 原图 -->
     <style name="Theme.AmllHub.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/window_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_brand</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_logo_inset</item>
         <item name="postSplashScreenTheme">@style/Theme.AmllHub</item>
     </style>
 </resources>

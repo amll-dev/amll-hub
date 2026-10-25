@@ -16,6 +16,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.QueueMusic
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -47,8 +50,11 @@ fun MiniPlayer(
     loading: Boolean,
     /** 播放器层面的错误，如「该歌曲暂无音源」 */
     error: String?,
+    /** 当前正在播放的歌词行，没有时第二行回落到歌手 */
+    lyricLine: String?,
     onOpen: () -> Unit,
     onToggle: () -> Unit,
+    onTogglePlaylist: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val track = state.track ?: return
@@ -102,6 +108,7 @@ fun MiniPlayer(
                     when {
                         loading -> "正在获取歌曲信息…"
                         !error.isNullOrBlank() -> error
+                        !lyricLine.isNullOrBlank() -> lyricLine
                         else -> track.artist.ifBlank { "AMLL Hub" }
                     },
                     style = Font.micro,
@@ -110,27 +117,61 @@ fun MiniPlayer(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Box(
-                Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(Amll.colors.surface2.copy(alpha = 0.7f))
-                    .clickable(enabled = !loading, onClick = onToggle),
-                contentAlignment = Alignment.Center,
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (loading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = Amll.colors.primary,
-                    )
-                } else {
-                    Icon(
-                        imageVector = if (state.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (state.playing) "暂停" else "播放",
-                        tint = Amll.colors.ink,
-                        modifier = Modifier.size(20.dp),
-                    )
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Amll.colors.surface2.copy(alpha = 0.7f))
+                        .clickable(enabled = !loading, onClick = onToggle),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = Amll.colors.primary,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (state.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (state.playing) "暂停" else "播放",
+                            tint = Amll.colors.ink,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Amll.colors.surface2.copy(alpha = 0.7f))
+                        // 内层 clickable 会消费事件，不会落到外层卡片进歌词页
+                        .clickable(onClick = onTogglePlaylist),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    BadgedBox(
+                        badge = {
+                            if (state.queue.isNotEmpty()) {
+                                Badge(
+                                    containerColor = Amll.colors.primary,
+                                    contentColor = Amll.colors.onPrimary,
+                                ) {
+                                    Text(state.queue.size.toString())
+                                }
+                            }
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.QueueMusic,
+                            contentDescription = "播放列表",
+                            tint = Amll.colors.ink,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
         }

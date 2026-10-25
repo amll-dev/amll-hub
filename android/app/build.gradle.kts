@@ -140,6 +140,11 @@ dependencies {
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.webkit)
 
+    // 下载标签：MP3（mp3agic）/ FLAC（jaudiotagger）
+    implementation(libs.mp3agic)
+    implementation(libs.jaudiotagger)
+    implementation(libs.slf4j.nop)
+
     // DI
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.navigation.compose)

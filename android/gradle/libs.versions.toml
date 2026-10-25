@@ -26,6 +26,10 @@ camerax = "1.5.3"
 concurrentFutures = "1.3.0"
 datastore = "1.1.7"
 coroutines = "1.10.2"
+# 下载标签：MP3（mp3agic）/ FLAC（jaudiotagger）
+mp3agic = "0.9.1"
+jaudiotagger = "3.0.1"
+slf4jNop = "2.0.13"
 junit = "4.13.2"
 androidxJunit = "1.3.0"
 espresso = "3.7.0"
@@ -49,6 +53,10 @@ androidx-material-icons-extended = { group = "androidx.compose.material", name =
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
 androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 androidx-media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
+# 下载标签：MP3 / FLAC（slf4j-nop 作为日志门面的空实现，避免第三方库找不到 binder）
+mp3agic = { group = "com.mpatric", name = "mp3agic", version.ref = "mp3agic" }
+jaudiotagger = { group = "net.jthink", name = "jaudiotagger", version.ref = "jaudiotagger" }
+slf4j-nop = { group = "org.slf4j", name = "slf4j-nop", version.ref = "slf4jNop" }
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }

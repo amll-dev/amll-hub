@@ -61,6 +61,13 @@ class PlaybackService : MediaSessionService() {
         }
         mediaSession = session
 
+        // 双播放器交叉淡化后会交换 active/standby，session 必须跟着换绑，
+        // 否则通知栏/锁屏拿到的还是已经停掉的旧 Player
+        playerController.onActivePlayerChanged = { newPlayer ->
+            runCatching { mediaSession?.setPlayer(newPlayer) }
+                .onFailure { Log.e(TAG, "switch media session player failed", it) }
+        }
+
         // 默认实现会自己建渠道，这里显式指定渠道名与通知图标，
         // 让通知显示成「正在播放」而不是 media3 的默认英文渠道名
         runCatching {
@@ -88,6 +95,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        // 先断开换绑回调，避免 session 释放后仍被切歌调用
+        playerController.onActivePlayerChanged = null
         // ExoPlayer 由 PlayerController 单例持有，session 只解绑不释放播放器
         mediaSession?.release()
         mediaSession = null

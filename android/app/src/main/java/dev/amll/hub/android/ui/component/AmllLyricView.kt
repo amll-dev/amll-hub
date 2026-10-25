@@ -12,6 +12,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Box
@@ -80,6 +81,10 @@ fun AmllLyricView(
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
     onClose: () -> Unit,
+    onNext: () -> Unit = {},
+    onPrev: () -> Unit = {},
+    onToggleShuffle: () -> Unit = {},
+    onCycleRepeat: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val webView = LyricPageState.webView.value
@@ -95,13 +100,24 @@ fun AmllLyricView(
     val insetTopPx = with(density) { insetTop.roundToPx() }
     val insetBottomPx = with(density) { insetBottom.roundToPx() }
 
-    val dispatch: (String, Double?) -> Unit = remember(onTogglePlay, onSeek, onClose) {
+    val dispatch: (String, Double?) -> Unit = remember(
+        onTogglePlay,
+        onSeek,
+        onClose,
+        onNext,
+        onPrev,
+        onToggleShuffle,
+        onCycleRepeat,
+    ) {
         { command, value ->
             when (command) {
                 "playPause" -> onTogglePlay()
                 "seek" -> value?.let { onSeek(it.toLong()) }
                 "close" -> onClose()
-                // next / prev / shuffle / repeat / volume：当前播放器是单曲播放，暂不接
+                "next" -> onNext()
+                "prev" -> onPrev()
+                "shuffle" -> onToggleShuffle()
+                "repeat" -> onCycleRepeat()
             }
         }
     }
@@ -197,6 +213,9 @@ private fun createPage(context: Context, mainHandler: Handler): WebView {
         settings.loadWithOverviewMode = true
         settings.displayZoomControls = false
         settings.builtInZoomControls = false
+        // 页面资源随 APK 更新，不走 WebView 缓存：
+        // 否则升级后可能还在用旧版 index.html 引用的旧 bundle，看起来像改动没生效
+        settings.cacheMode = WebSettings.LOAD_NO_CACHE
         // 页面只从 assets 加载：禁掉本地文件访问与弹窗，缩小 JS 桥的可达面
         settings.allowFileAccess = false
         settings.allowContentAccess = false

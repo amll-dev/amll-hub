@@ -79,6 +79,10 @@ fun LyricScreen(lyricVm: LyricViewModel, playerVm: PlaybackViewModel, nav: AppNa
             onTogglePlay = playerVm::togglePlay,
             onSeek = playerVm::seekTo,
             onClose = nav.back,
+            onNext = playerVm::next,
+            onPrev = playerVm::prev,
+            onToggleShuffle = playerVm::toggleShuffle,
+            onCycleRepeat = playerVm::cycleRepeat,
             modifier = Modifier.fillMaxSize(),
         )
     }
