@@ -113,3 +113,84 @@ export async function compressAvatar(
     return cropped;
   }
 }
+
+/** 主页背景图目标尺寸（3:1）与体积上限 */
+const BANNER_WIDTH = 1600;
+const BANNER_HEIGHT = 533;
+const BANNER_MAX_SIZE_MB = 0.6;
+
+export interface CompressBannerOptions {
+  /** 输出宽高（像素），默认 1600×533（3:1） */
+  width?: number;
+  height?: number;
+  /** 体积上限（MB），默认 0.6 */
+  maxSizeMB?: number;
+}
+
+/**
+ * 把任意图片按 3:1 居中裁切并压缩为 WebP，用于主页背景图。
+ *
+ * - SVG 直接抛错：同源 SVG 可执行脚本，前后端都不接受
+ * - 无法解码时原样返回，交由后端按魔数判定并拒绝
+ */
+export async function compressBanner(
+  file: File,
+  options: CompressBannerOptions = {}
+): Promise<File> {
+  const { width = BANNER_WIDTH, height = BANNER_HEIGHT, maxSizeMB = BANNER_MAX_SIZE_MB } = options;
+  if (file.type === 'image/svg+xml') throw new Error('不支持 SVG 格式');
+  if (!file.type.startsWith('image/')) return file;
+
+  let bitmap: ImageBitmap | HTMLImageElement;
+  try {
+    bitmap = await loadBitmap(file);
+  } catch {
+    return file;
+  }
+
+  const sw = 'naturalWidth' in bitmap ? bitmap.naturalWidth : bitmap.width;
+  const sh = 'naturalHeight' in bitmap ? bitmap.naturalHeight : bitmap.height;
+  if (!sw || !sh) return file;
+
+  // 按目标宽高比居中裁切：先按宽度铺满，超高则改按高度铺满
+  const targetRatio = width / height;
+  let cw = sw;
+  let ch = sw / targetRatio;
+  if (ch > sh) {
+    ch = sh;
+    cw = sh * targetRatio;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return file;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, width, height);
+  if ('close' in bitmap) bitmap.close();
+
+  const blob = await canvasToBlob(canvas, 'image/png');
+  if (!blob) return file;
+  const cropped = new File([blob], replaceExt(file.name, '.png'), { type: 'image/png' });
+
+  try {
+    const compressed = await imageCompression(cropped, {
+      maxSizeMB,
+      maxWidthOrHeight: width,
+      useWebWorker: true,
+      fileType: 'image/webp',
+      initialQuality: 0.86,
+      preserveExif: false,
+    });
+    const ext = compressed.type === 'image/webp' ? '.webp' : '.jpg';
+    if (!/\.webp$/i.test(compressed.name)) {
+      return new File([compressed], replaceExt(file.name, ext), { type: compressed.type });
+    }
+    return compressed;
+  } catch (err) {
+    // 压缩失败不阻断上传：裁切后的 png 本身已在尺寸上限内
+    console.warn('[banner] 压缩失败，改用裁切后的原图上传', err);
+    return cropped;
+  }
+}

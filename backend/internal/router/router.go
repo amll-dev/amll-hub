@@ -40,6 +40,8 @@ type RouterDeps struct {
 	Admin        *handler.AdminHandler
 	Notification *handler.NotificationHandler
 	UserActivity *handler.UserActivityHandler
+	UserProfile  *handler.UserProfileHandler
+	UserSearch   *handler.UserSearchHandler
 
 	ReviewerCache *middleware.ReviewerCache
 	AdminCache    *middleware.AdminCache
@@ -73,6 +75,8 @@ func New(deps RouterDeps) *gin.Engine {
 	adminH := deps.Admin
 	notifH := deps.Notification
 	userActivityH := deps.UserActivity
+	userProfileH := deps.UserProfile
+	userSearchH := deps.UserSearch
 	reviewerCache := deps.ReviewerCache
 	adminCache := deps.AdminCache
 	jwtSecret := deps.JWTSecret
@@ -131,6 +135,8 @@ func New(deps RouterDeps) *gin.Engine {
 	{
 		// 搜索
 		api.GET("/search", searchH.Search)
+		// 搜索页 Tab 的命中数（歌曲各字段 + 用户）
+		api.GET("/search/counts", searchH.Counts)
 
 		// 同步触发/状态
 		api.POST("/sync", syncH.Trigger)
@@ -273,6 +279,12 @@ func New(deps RouterDeps) *gin.Engine {
 			// 个人中心活动统计
 			sub.GET("/users/me/activity", userActivityH.Get)
 
+			// 主页扩展资料
+			// 必须注册在公开组 /users/:name 之前：gin 的路由树里
+			// 参数段晚于静态段插入，否则启动时 panic。
+			sub.PUT("/users/me/profile", userProfileH.UpdateMe)
+			sub.POST("/users/me/banner", userProfileH.UploadBanner)
+
 			// GitHub 绑定解绑
 			sub.DELETE("/user/github/binding", authGithubH.Unbind)
 
@@ -349,6 +361,18 @@ func New(deps RouterDeps) *gin.Engine {
 		api.GET("/lyrics/view/:filename", lyricsH.ViewLyric)
 		// 歌词解析
 		api.POST("/lyrics/parse", lyricsH.ParseLyric)
+
+		// 公开用户主页（匿名可访问；带合法 token 时按本人视角返回更多数据）
+		// 这组路由必须在上面 /users/me/* 之后注册，理由见那里的注释
+		users := api.Group("/users")
+		users.Use(middleware.OptionalAuth(jwtSecret))
+		{
+			// 静态段必须先于 :name，否则 gin 构建路由树时 panic
+			users.GET("/search", userSearchH.Search)
+			users.GET("/:name", userProfileH.Get)
+			users.GET("/:name/submissions", userProfileH.ListSubmissions)
+			users.GET("/:name/activity", userActivityH.GetPublic)
+		}
 	}
 
 	return r

@@ -23,6 +23,8 @@ import { downloadBlobFile } from '@/lib/download';
 import { listItem, staggerContainer } from '@/lib/motion';
 import { formatDate, formatNumber } from '@/lib/format';
 import { sanitizeHighlightHtml } from '@/lib/markup';
+import { SearchTabs } from '@/components/search/SearchTabs';
+import { RelatedUsers, UserSearchList } from '@/components/search/UserSearchList';
 import type { SearchHit, SearchIpMatchResult } from '@/lib/types';
 
 // 结果区顶部的锚点 id，分页切换时滚到此位置
@@ -202,7 +204,9 @@ function ResultActions({ hit }: { hit: SearchHit }) {
 }
 
 export function SearchResults() {
-  const { hits, loading, error, query, totalHits } = useSearchContext();
+  const { hits, loading, error, query, totalHits, tab, setTab, counts, userMore } =
+    useSearchContext();
+  const isUserTab = tab === 'user';
   const [ipMatch, setIpMatch] = useState<SearchIpMatchResult | null>(null);
 
   // 当 hits 变化时，收集所有 artists 去重并请求 IP 匹配
@@ -246,15 +250,21 @@ export function SearchResults() {
     >
       {/* 分页切换的滚动锚点：scroll-mt 预留顶栏高度，避免贴顶 */}
       <div id={RESULTS_ANCHOR_ID} className="scroll-mt-20" />
-      <div className="mb-6 flex items-center gap-2">
+
+      {/* 搜索范围 Tab */}
+      <SearchTabs value={tab} onChange={setTab} counts={counts} userMore={userMore} />
+
+      <div className="mb-6 mt-6 flex flex-wrap items-center gap-2">
         <h2 className="text-2xl font-bold tracking-tight">搜索结果</h2>
-        {loading && <Loader2 className="h-4 w-4 animate-spin text-ink-3" />}
+        {loading && !isUserTab && <Loader2 className="h-4 w-4 animate-spin text-ink-3" />}
         <p className="mt-1 text-sm text-ink-2">
-          “{query}” {loading ? '搜索中…' : `共 ${totalHits} 条`}
+          “{query}” {isUserTab ? '的用户匹配' : loading ? '搜索中…' : `共 ${totalHits} 条`}
         </p>
       </div>
 
-      {error ? (
+      {isUserTab ? (
+        <UserSearchList q={query} />
+      ) : error ? (
         <p className="py-12 text-center text-sm text-error">{error}</p>
       ) : showSkeleton ? (
         <div className="space-y-2">
@@ -440,7 +450,8 @@ export function SearchResults() {
         </ul>
       )}
 
-      <Pagination />
+      {!isUserTab && <Pagination />}
+      {tab === 'all' && <RelatedUsers q={query} />}
     </motion.section>
   );
 }

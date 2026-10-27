@@ -3,7 +3,7 @@ import { useAtom, useAtomValue } from 'jotai';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   searchQueryAtom,
-  searchFieldAtom,
+  searchTabAtom,
   searchHasQueryAtom,
   searchPageAtom,
   searchCommittedAtom,
@@ -28,7 +28,7 @@ export function registerSearchInput(el: HTMLInputElement | null) {
  */
 export function SearchBoot() {
   const query = useAtomValue(searchQueryAtom);
-  const field = useAtomValue(searchFieldAtom);
+  const tab = useAtomValue(searchTabAtom);
   const hasQuery = useAtomValue(searchHasQueryAtom);
   const [, setHasQuery] = useAtom(searchHasQueryAtom);
   const [, setPage] = useAtom(searchPageAtom);
@@ -38,7 +38,7 @@ export function SearchBoot() {
 
   const hasQueryRef = useRef(false);
 
-  // query/field 变化重置到第 1 页；debounce 后提交搜索
+  // query/tab 变化重置到第 1 页；debounce 后提交搜索
   useEffect(() => {
     const trimmed = query.trim();
     if (!trimmed) {
@@ -62,10 +62,10 @@ export function SearchBoot() {
       window.scrollTo(0, 0);
       hasQueryRef.current = true;
       setHasQuery(true);
-      setCommitted({ q: trimmed, field, page: 1 });
+      setCommitted({ q: trimmed, tab, page: 1 });
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [query, field, setHasQuery, setPage, setCommitted]);
+  }, [query, tab, setHasQuery, setPage, setCommitted]);
 
   // 监听 query 变化：在非首页输入搜索词时，导航回首页展示结果
   const prevQuery = useRef('');

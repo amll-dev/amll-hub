@@ -22,6 +22,10 @@ export const editMsgAtom = atom<FormMsg>(null);
 export const profileMsgAtom = atom<FormMsg>(null);
 /** 密码修改反馈消息 */
 export const pwdMsgAtom = atom<FormMsg>(null);
+/** 主页资料（签名/地区/生日/性别）保存反馈消息 */
+export const localProfileMsgAtom = atom<FormMsg>(null);
+/** 主页背景图上传反馈消息 */
+export const bannerMsgAtom = atom<FormMsg>(null);
 
 /** 复位个人中心表单状态（页面卸载时调用，保持与原 useState 卸载即重置一致的语义） */
 export function resetProfileForm() {
@@ -33,4 +37,6 @@ export function resetProfileForm() {
   store.set(editMsgAtom, null);
   store.set(profileMsgAtom, null);
   store.set(pwdMsgAtom, null);
+  store.set(localProfileMsgAtom, null);
+  store.set(bannerMsgAtom, null);
 }

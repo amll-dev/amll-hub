@@ -211,8 +211,10 @@ type ListQuery struct {
 	Status   string // all / pending / processing / rejected / approved / need_revision / missing_audio
 	Language string // others / ja / zh / en / ko
 	Search   string
-	Page     int
-	Limit    int
+	// Sort 排序：newest（默认）/ oldest / updated
+	Sort  string
+	Page  int
+	Limit int
 	// Submitter 仅 creator 模式有效，限定投稿人
 	Submitter string
 }
@@ -291,8 +293,16 @@ func (r *SubmissionRepo) List(ctx context.Context, q ListQuery) (*ListResult, er
 	}
 
 	var items []model.Submission
+	// Sort 只做白名单映射，绝不把外部传入的字符串拼进 Order
+	order := "created_at DESC"
+	switch q.Sort {
+	case "oldest":
+		order = "created_at ASC"
+	case "updated":
+		order = "updated_at DESC"
+	}
 	if err := db.
-		Order("created_at DESC").
+		Order(order).
 		Offset((q.Page - 1) * q.Limit).
 		Limit(q.Limit).
 		Find(&items).Error; err != nil {
@@ -300,6 +310,31 @@ func (r *SubmissionRepo) List(ctx context.Context, q ListQuery) (*ListResult, er
 	}
 
 	return &ListResult{Total: total, Items: items}, nil
+}
+
+// CountApprovedBySubmitters 批量统计一批用户的已通过投稿数，返回 submitter → count
+func (r *SubmissionRepo) CountApprovedBySubmitters(ctx context.Context, submitters []string) (map[string]int64, error) {
+	out := make(map[string]int64, len(submitters))
+	if len(submitters) == 0 {
+		return out, nil
+	}
+	type row struct {
+		Submitter string
+		Cnt       int64
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).Model(&model.Submission{}).
+		Select("submitter, COUNT(*) AS cnt").
+		Where("submitter IN ?", submitters).
+		Where("status = ?", model.StatusApproved).
+		Group("submitter").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, item := range rows {
+		out[item.Submitter] = item.Cnt
+	}
+	return out, nil
 }
 
 // Stats 各状态计数

@@ -3,43 +3,11 @@ import DOMPurify from 'dompurify';
 import { Check, Eye, FileCheck, FileText, Music, Pencil, Upload, X } from 'lucide-react';
 import { escapeHtml } from '@/lib/markup';
 import type { SubmissionDetail } from '@/lib/types';
+import { statusMeta } from './status';
 
-// 状态
-export const statusMeta: Record<string, { label: string; className: string }> = {
-  draft: { label: '草稿', className: 'bg-surface-2 text-ink-2' },
-  pending: { label: '待审核', className: 'bg-amber-100 text-amber-700' },
-  reviewing: { label: '审核中', className: 'bg-blue-100 text-blue-700' },
-  need_revision: { label: '需修改', className: 'bg-orange-100 text-orange-700' },
-  missing_audio: { label: '缺音频', className: 'bg-orange-100 text-orange-700' },
-  revised: { label: '待投稿者确认', className: 'bg-purple-100 text-purple-700' },
-  approved: { label: '已通过', className: 'bg-green-100 text-green-700' },
-  rejected: { label: '未通过', className: 'bg-red-100 text-red-700' },
-  closed: { label: '已关闭', className: 'bg-surface-2 text-ink-3' },
-};
-
-// 语言代码
-const langLabel: Record<string, string> = {
-  zh: '汉语',
-  en: '英语',
-  ja: '日语',
-  ko: '韩语',
-  others: '其他',
-};
-
-export function langText(code?: string): string {
-  if (!code) return '—';
-  return langLabel[code] ?? code;
-}
-
-/**
- * 多选语言展示：优先用 languages 数组，老数据回落到单值 language。
- * 数组为空时同样回落，保证历史投稿显示不变。
- */
-export function langListText(languages?: string[], language?: string): string {
-  const list = languages?.filter(Boolean) ?? [];
-  if (list.length === 0) return langText(language);
-  return list.map((l) => langLabel[l] ?? l).join('、');
-}
+// 状态与语言的展示元数据在纯模块 status.ts 里（不带 marked/dompurify 依赖），
+// 这里 re-export 保持详情页等既有 import 不变。
+export { statusMeta, langText, langListText } from './status';
 
 /** 从投稿 metadata.platform_ids 提取各平台的全部 ID */
 export function extractPlatformIds(metadata?: Record<string, unknown>): {

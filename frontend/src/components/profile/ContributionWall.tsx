@@ -102,18 +102,28 @@ function formatDate(d: Date): string {
 const TODAY_KEY = formatDate(new Date());
 
 export interface ContributionWallProps {
-  /** 当前登录用户名（用于 queryKey 隔离不同账号的缓存） */
+  /** 目标用户名（同时用于 queryKey 隔离不同账号的缓存） */
   username: string;
+  /**
+   * me：本人视角，走 /users/me/activity（含审核行为）
+   * user：访客视角，走 /users/:name/activity（只统计已通过投稿）
+   */
+  scope?: 'me' | 'user';
 }
 
 /** 个人中心活动绿墙 */
-export function ContributionWall({ username }: ContributionWallProps) {
+export function ContributionWall({ username, scope = 'me' }: ContributionWallProps) {
   const thisYear = new Date().getFullYear();
   const [year, setYear] = useState(thisYear);
+  const isPublic = scope === 'user';
 
   const { data, isPending } = useQuery({
-    queryKey: [...queryKeys.userActivity(year), username],
-    queryFn: () => api.getUserActivity(year),
+    queryKey: isPublic
+      ? queryKeys.userActivityOf(username, year)
+      : [...queryKeys.userActivity(year), username],
+    queryFn: isPublic
+      ? () => api.getUserActivityOf(username, year)
+      : () => api.getUserActivity(year),
     staleTime: 60_000,
   });
 

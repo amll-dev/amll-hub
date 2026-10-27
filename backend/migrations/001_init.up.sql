@@ -246,6 +246,8 @@ CREATE INDEX idx_submissions_language        ON submissions(language);
 CREATE INDEX idx_submissions_languages       ON submissions USING GIN (languages);
 CREATE INDEX idx_submissions_created         ON submissions(created_at DESC);
 CREATE INDEX idx_submissions_status_created  ON submissions(status, created_at DESC);
+--  公开主页投稿列表：按用户 + 状态 + 时间倒序
+CREATE INDEX idx_submissions_submitter_status_created ON submissions(submitter, status, created_at DESC);
 CREATE INDEX idx_submissions_search ON submissions
     USING gin (to_tsvector('simple',
         coalesce(title,'') || ' ' ||
@@ -446,6 +448,35 @@ CREATE INDEX idx_notifications_created ON notifications (created_at DESC);
 ALTER TABLE notifications
     ADD CONSTRAINT ck_notifications_type
     CHECK (type IN ('system', 'review', 'submission', 'comment'));
+
+--  用户公开主页扩展资料表
+--  项目没有 users 表，username 对应 Casdoor name / JWT claims.name，不建外键；
+--  只存 Casdoor 里没有的展示字段（签名 / 背景图 / 生日 / 性别）。
+CREATE TABLE user_profiles (
+    username   VARCHAR(100) PRIMARY KEY,
+    bio        VARCHAR(200) NOT NULL DEFAULT '',
+    banner_key VARCHAR(500) NOT NULL DEFAULT '',
+    birthday   DATE,
+    gender     VARCHAR(16)  NOT NULL DEFAULT 'unknown',
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE  user_profiles            IS '用户公开主页扩展资料（Casdoor 之外的本地字段）';
+COMMENT ON COLUMN user_profiles.username   IS 'Casdoor username / JWT claims.name';
+COMMENT ON COLUMN user_profiles.banner_key IS 'MinIO 对象 key，前缀 profile-banner/；空串表示未设置';
+COMMENT ON COLUMN user_profiles.birthday   IS '生日，DATE 无时区；NULL 表示未填写';
+COMMENT ON COLUMN user_profiles.gender     IS 'male / female / other / unknown';
+
+-- gender 用 varchar + CHECK，不用 PG enum：后续加值只需改约束，回滚也更简单
+ALTER TABLE user_profiles
+    ADD CONSTRAINT ck_user_profiles_gender
+    CHECK (gender IN ('male', 'female', 'other', 'unknown'));
+
+CREATE TRIGGER trg_user_profiles_updated_at
+    BEFORE UPDATE ON user_profiles
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
 
 --  GitHub 绑定表：一个站点用户（JWT claims.name）最多绑定一个 GitHub 账号
 CREATE TABLE user_github_bindings (

@@ -28,6 +28,7 @@ import type {
   SearchIpListResult,
   SearchIpSubmissionDetail,
   SearchResult,
+  SearchCounts,
   SearchIpData,
   SearchIpMatchResult,
   Stats,
@@ -35,7 +36,13 @@ import type {
   SubmissionDetail,
   SubmissionListResult,
   UserActivity,
+  UserSearchResult,
   TtmlValidationResult,
+  MyProfileFields,
+  PublicSubmissionList,
+  PublicUserProfile,
+  UpdateMyProfilePayload,
+  UserSubmissionSort,
 } from './types';
 import type {
   CaptchaConfig,
@@ -177,6 +184,18 @@ export const api = {
       all: params.all ? 'true' : undefined,
     });
     return request<SearchResult>(`/api/v1/search${qs}`);
+  },
+
+  /** 搜索结果页各 Tab 的命中数 GET /api/v1/search/counts */
+  searchCounts(q: string): Promise<SearchCounts> {
+    return request<SearchCounts>(`/api/v1/search/counts${buildQuery({ q })}`);
+  },
+
+  /** 按用户名/昵称搜索用户 GET /api/v1/users/search */
+  searchUsers(q: string, params: { limit?: number } = {}): Promise<UserSearchResult> {
+    return request<UserSearchResult>(
+      `/api/v1/users/search${buildQuery({ q, limit: params.limit })}`
+    );
   },
 
   /** 下载歌词 */
@@ -549,6 +568,72 @@ export const api = {
   /** 个人中心活动统计 GET /api/v1/users/me/activity?year= */
   getUserActivity(year: number): Promise<UserActivity> {
     return request<UserActivity>(`/api/v1/users/me/activity?year=${year}`);
+  },
+
+  // ---------- 公开用户主页 ----------
+
+  /** 公开主页聚合资料 GET /api/v1/users/:name */
+  getUserProfile(name: string): Promise<PublicUserProfile> {
+    return request<PublicUserProfile>(`/api/v1/users/${encodeURIComponent(name)}`);
+  },
+
+  /** 公开投稿列表 GET /api/v1/users/:name/submissions（访客强制 approved） */
+  getUserSubmissions(
+    name: string,
+    params: {
+      status?: string;
+      language?: string;
+      sort?: UserSubmissionSort;
+      page?: number;
+      limit?: number;
+    } = {}
+  ): Promise<PublicSubmissionList> {
+    const qs = buildQuery({
+      status: params.status,
+      language: params.language,
+      sort: params.sort,
+      page: params.page,
+      limit: params.limit,
+    });
+    return request<PublicSubmissionList>(
+      `/api/v1/users/${encodeURIComponent(name)}/submissions${qs}`
+    );
+  },
+
+  /** 公开贡献墙 GET /api/v1/users/:name/activity?year=（仅 approved） */
+  getUserActivityOf(name: string, year: number): Promise<UserActivity> {
+    return request<UserActivity>(`/api/v1/users/${encodeURIComponent(name)}/activity?year=${year}`);
+  },
+
+  /** 更新本地主页资料 PUT /api/v1/users/me/profile */
+  updateMyProfile(payload: UpdateMyProfilePayload): Promise<MyProfileFields> {
+    return request<MyProfileFields>('/api/v1/users/me/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /** 上传主页背景图 POST /api/v1/users/me/banner（multipart） */
+  async uploadBanner(file: File): Promise<string> {
+    const token = getToken();
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${API_BASE}/api/v1/users/me/banner`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: form,
+    });
+    const json = (await res.json()) as ApiResponse<{ bannerKey: string }>;
+    if (json.code !== 200 || !json.data) {
+      throw new Error(json.message || `上传失败：HTTP ${res.status}`);
+    }
+    return json.data.bannerKey;
+  },
+
+  /** MinIO 对象 key → 匿名可读的文件 URL */
+  uploadFileUrl(key: string): string {
+    if (!key) return '';
+    return `${API_BASE}/api/v1/uploads/file/${key}`;
   },
   /**
    * TTML 校验 POST /api/v1/submissions/validate

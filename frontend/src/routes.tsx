@@ -29,6 +29,8 @@ const loadGithubCallback = () =>
   import('@/pages/GithubCallback').then((m) => ({ default: m.GithubCallback }));
 const loadMessagesPage = () =>
   import('@/pages/MessagesPage').then((m) => ({ default: m.MessagesPage }));
+const loadUserProfilePage = () =>
+  import('@/pages/user/UserProfilePage').then((m) => ({ default: m.UserProfilePage }));
 const loadCreatorCenter = () =>
   import('@/pages/CreatorCenter').then((m) => ({ default: m.CreatorCenter }));
 const loadReviewCenter = () =>
@@ -63,6 +65,7 @@ export const ProfileMigration = lazy(loadProfileMigration);
 export const BindAccount = lazy(loadBindAccount);
 export const GithubCallback = lazy(loadGithubCallback);
 export const MessagesPage = lazy(loadMessagesPage);
+export const UserProfilePage = lazy(loadUserProfilePage);
 export const CreatorCenter = lazy(loadCreatorCenter);
 export const ReviewCenter = lazy(loadReviewCenter);
 export const SubmissionDetailPage = lazy(loadSubmissionDetailPage);
@@ -92,6 +95,7 @@ export const pagePreloads: Record<string, () => Promise<unknown>> = {
   '/profile/migration': loadProfileMigration,
   '/bind-account': loadBindAccount,
   '/messages': loadMessagesPage,
+  '/user/:name': loadUserProfilePage,
   '/creator': loadCreatorCenter,
   '/creator/lyrics/detail': loadSubmissionDetailPage,
   '/review': loadReviewCenter,
@@ -106,5 +110,8 @@ export const pagePreloads: Record<string, () => Promise<unknown>> = {
 
 /** 预取路由 chunk（幂等，可安全重复调用） */
 export function preloadRoute(path: string): void {
-  pagePreloads[path]?.().catch(() => {});
+  // 动态路由（如 /user/alice）按模板回落到 '/user/:name'
+  const loader =
+    pagePreloads[path] ?? (path.startsWith('/user/') ? pagePreloads['/user/:name'] : undefined);
+  loader?.().catch(() => {});
 }

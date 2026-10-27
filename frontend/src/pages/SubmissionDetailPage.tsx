@@ -489,17 +489,23 @@ function SubmissionDetailContent({
         </div>
         {/* meta 信息行 */}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-ink-3">
-          <UserAvatar
-            avatar={detail.submitterInfo?.avatar}
-            name={detail.submitterInfo?.displayName || detail.submitter}
-            size={20}
-          />
-          <strong className="text-ink-2">
-            <UserDisplayName
-              displayName={detail.submitterInfo?.displayName}
-              username={detail.submitter}
+          {/* 只把头像 + 名字包进链接；submitterInfo 是投稿时的快照，链接一律用 submitter */}
+          <Link
+            to={`/user/${encodeURIComponent(detail.submitter)}`}
+            className="inline-flex min-w-0 items-center gap-2 rounded-md transition-colors hover:text-primary"
+          >
+            <UserAvatar
+              avatar={detail.submitterInfo?.avatar}
+              name={detail.submitterInfo?.displayName || detail.submitter}
+              size={20}
             />
-          </strong>
+            <strong className="text-ink-2">
+              <UserDisplayName
+                displayName={detail.submitterInfo?.displayName}
+                username={detail.submitter}
+              />
+            </strong>
+          </Link>
           <span>于 {formatDateTime(detail.createdAt)} 提交</span>
           {detail.fileUpdatedAt && <span>· 文件更新于 {formatDateTime(detail.fileUpdatedAt)}</span>}
         </div>

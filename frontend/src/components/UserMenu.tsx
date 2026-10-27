@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   Sun,
   User,
+  SquareUser,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { themeAtom, type ThemePreference } from '@/atoms/theme';
@@ -92,6 +93,18 @@ export function UserMenu() {
 
         {/* 菜单项 */}
         <div className="py-1">
+          <DropdownMenuItem asChild>
+            <Link
+              to={`/user/${encodeURIComponent(user.name)}`}
+              onClick={nav}
+              onMouseEnter={() => preloadRoute(`/user/${user.name}`)}
+              className="cursor-pointer"
+            >
+              <SquareUser className="h-4 w-4" />
+              我的主页
+            </Link>
+          </DropdownMenuItem>
+
           <DropdownMenuItem asChild>
             <Link
               to="/profile"

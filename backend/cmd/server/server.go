@@ -179,6 +179,13 @@ func Run() {
 	// 歌词校验
 	validateSvc := service.NewValidateService(cfg.Worker.BaseURL)
 
+	// 公开用户主页（本地扩展资料表）
+	userProfileRepo := repository.NewUserProfileRepo(db)
+	userProfileSvc := service.NewUserProfileService(
+		userProfileRepo, subRepo, fileSvc, casdoorClient, cfg.Casdoor.Organization,
+	)
+	userSearchSvc := service.NewUserSearchService(casdoorClient, userProfileRepo, subRepo)
+
 	// 4.1 启动无歌词服务
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
@@ -241,7 +248,7 @@ func Run() {
 	// 5. 初始化 handler
 	syncH := handler.NewSyncHandler(syncSvc)
 	lyricsH := handler.NewLyricsHandler(lyricsSvc, notFoundSvc)
-	searchH := handler.NewSearchHandler(searchSvc)
+	searchH := handler.NewSearchHandler(searchSvc, userSearchSvc)
 	batchH := handler.NewBatchHandler(batchSvc)
 	statsH := handler.NewStatsHandler(statsSvc)
 	indexH := handler.NewIndexHandler(indexSvc)
@@ -265,6 +272,8 @@ func Run() {
 	adminH := handler.NewAdminHandler(reviewerRepo, reviewerCache, notifSvc)
 	notifH := handler.NewNotificationHandler(notifSvc)
 	userActivityH := handler.NewUserActivityHandler(userActivitySvc)
+	userProfileH := handler.NewUserProfileHandler(userProfileSvc)
+	userSearchH := handler.NewUserSearchHandler(userSearchSvc)
 	wsH := handler.NewWSHandler(hub, viewerSvc, reviewerCache, cfg.Casdoor.JWTSecret)
 
 	// 6. 启动 HTTP
@@ -294,6 +303,8 @@ func Run() {
 		Admin:        adminH,
 		Notification: notifH,
 		UserActivity: userActivityH,
+		UserProfile:  userProfileH,
+		UserSearch:   userSearchH,
 
 		ReviewerCache: reviewerCache,
 		AdminCache:    adminCache,

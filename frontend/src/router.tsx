@@ -28,6 +28,7 @@ import {
   SubmissionDetailPage,
   Terms,
   Privacy,
+  UserProfilePage,
   ViewLyricPage,
 } from '@/routes';
 
@@ -80,6 +81,7 @@ export const router = createBrowserRouter([
           { path: 'migration', element: <ProfileMigration /> },
         ],
       },
+      { path: '/user/:name', element: <UserProfilePage /> },
       { path: '/bind-account', element: <BindAccount /> },
       { path: '/messages', element: <MessagesPage /> },
       { path: '/creator', element: <CreatorCenter /> },

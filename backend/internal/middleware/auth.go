@@ -36,6 +36,18 @@ func Auth(jwtSecret string) gin.HandlerFunc {
 	}
 }
 
+// OptionalAuth 公开接口的可选认证
+func OptionalAuth(jwtSecret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if token := bearerToken(c.GetHeader("Authorization")); token != "" {
+			if claims, err := pkg.ParseJWT(token, jwtSecret); err == nil {
+				applyClaims(c, claims)
+			}
+		}
+		c.Next()
+	}
+}
+
 // bearerToken 从 Authorization 头解析出 Bearer token（格式非法返回空串）
 func bearerToken(authHeader string) string {
 	if authHeader == "" {
@@ -48,6 +60,14 @@ func bearerToken(authHeader string) string {
 	return parts[1]
 }
 
+// applyClaims 把解析好的 claims 写入 context，Auth / OptionalAuth 共用
+func applyClaims(c *gin.Context, claims *pkg.Claims) {
+	c.Set(UserIDKey, claims.Sub)
+	c.Set(UserNameKey, claims.Name)
+	c.Set(UserDisplayNameKey, claims.DisplayName)
+	c.Set(UserAvatarKey, claims.Avatar)
+}
+
 // setClaims 解析 JWT 并写入 context；失败时写响应并返回 false
 func setClaims(c *gin.Context, token, jwtSecret string) bool {
 	claims, err := pkg.ParseJWT(token, jwtSecret)
@@ -55,10 +75,7 @@ func setClaims(c *gin.Context, token, jwtSecret string) bool {
 		pkg.Fail(c, http.StatusUnauthorized, http.StatusUnauthorized, "invalid or expired token")
 		return false
 	}
-	c.Set(UserIDKey, claims.Sub)
-	c.Set(UserNameKey, claims.Name)
-	c.Set(UserDisplayNameKey, claims.DisplayName)
-	c.Set(UserAvatarKey, claims.Avatar)
+	applyClaims(c, claims)
 	return true
 }
 

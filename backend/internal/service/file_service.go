@@ -21,7 +21,12 @@ const (
 	MusicPrefix          = "music/"
 	CoverPrefix          = "tg-image/"
 	RevisionLyricsPrefix = "tg-lyrics-review/"
+	// ProfileBannerPrefix 用户主页背景图，需在 handler 的匿名可读白名单里
+	ProfileBannerPrefix = "profile-banner/"
 )
+
+// MaxProfileBannerSize 主页背景图大小上限（前端压缩后远小于此值）
+const MaxProfileBannerSize = 5 << 20
 
 // FileService 投稿模块文件服务
 type FileService struct {
@@ -125,6 +130,47 @@ func (s *FileService) CoverURL(coverKey string) string {
 		return ""
 	}
 	return coverKey
+}
+
+// UploadProfileBanner 上传用户主页背景图，返回对象 key
+func (s *FileService) UploadProfileBanner(ctx context.Context, username string, content []byte, ext string) (string, error) {
+	if len(content) == 0 {
+		return "", ErrInvalidInput
+	}
+	if len(content) > MaxProfileBannerSize {
+		return "", fmt.Errorf("背景图大小超过 %d 字节", MaxProfileBannerSize)
+	}
+	ext = strings.ToLower(ext)
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".webp":
+	default:
+		return "", fmt.Errorf("不支持的背景图格式: %s", ext)
+	}
+	key := fmt.Sprintf("%s%s-%d%s", ProfileBannerPrefix, sanitizeObjectNameSegment(username), time.Now().UnixMilli(), ext)
+	if _, err := s.minio.PutObject(ctx, s.bucket, key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
+		ContentType: imageContentType(ext),
+	}); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+// sanitizeObjectNameSegment 把用户名收敛成安全的 key 片段，
+// 避免分隔符 / 路径穿越字符进入对象名。
+func sanitizeObjectNameSegment(name string) string {
+	out := make([]rune, 0, len(name))
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			out = append(out, r)
+		default:
+			out = append(out, '_')
+		}
+	}
+	if len(out) == 0 {
+		return "user"
+	}
+	return string(out)
 }
 
 // Exists 检查对象是否存在

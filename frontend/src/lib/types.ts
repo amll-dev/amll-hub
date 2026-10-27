@@ -57,6 +57,34 @@ export interface Stats {
 // 搜索字段 — 对应 backend SearchRequest.Field
 export type SearchField = 'all' | 'song' | 'artist' | 'album' | 'lyric' | 'id' | 'author';
 
+/** 搜索结果页的 Tab：歌曲各字段 + 用户 */
+export type SearchTab = SearchField | 'user';
+
+/** GET /api/v1/search/counts 返回：各 Tab 的命中数 */
+export interface SearchCounts {
+  totals: Partial<Record<SearchTab, number>>;
+  /** 用户匹配数是否已达统计上限（前端渲染 “N+”） */
+  userMore: boolean;
+}
+
+/** GET /api/v1/users/search 结果项 */
+export interface UserSearchItem {
+  name: string;
+  displayName: string;
+  avatar: string;
+  bio: string;
+  approvedCount: number;
+  createdTime?: string;
+}
+
+export interface UserSearchResult {
+  items: UserSearchItem[];
+  /** 本次返回的条数（Casdoor 不提供命中总数） */
+  total: number;
+  limit: number;
+  hasMore: boolean;
+}
+
 // GET /api/v1/search 命中 — 对应 backend SearchHitResult
 export interface SearchHit {
   id: string;
@@ -712,4 +740,63 @@ export interface GithubMigratedPr {
 export interface GithubMigratedList {
   total: number;
   items: GithubMigratedPr[];
+}
+
+// ---------- 公开用户主页 ----------
+
+/** 性别（与后端 user_profiles.gender CHECK 约束一致） */
+export type Gender = 'male' | 'female' | 'other' | 'unknown';
+
+/** GET /api/v1/users/:name 返回的聚合资料 */
+export interface PublicUserProfile {
+  name: string;
+  displayName: string;
+  avatar: string;
+  /** Casdoor 注册时间（原样字符串，可能为空） */
+  createdTime?: string;
+  bio: string;
+  /** MinIO 对象 key；空串表示未设置 */
+  bannerKey: string;
+  /** YYYY-MM-DD；未填写为 null */
+  birthday: string | null;
+  gender: Gender;
+  /** 当前查看者是否为本人 */
+  isSelf: boolean;
+  /** 访客只有 approved；本人含全部状态 */
+  stats: Partial<Record<SubmissionStatus, number>>;
+}
+
+/** 公开主页的投稿列表项（后端裁剪过，不含评审信息） */
+export interface PublicSubmissionItem {
+  id: number;
+  title: string;
+  artist: string;
+  album: string;
+  language: string;
+  languages?: string[];
+  status: SubmissionStatus;
+  createdAt: string;
+  updatedAt: string;
+  fileUpdatedAt?: string;
+}
+
+export interface PublicSubmissionList {
+  total: number;
+  items: PublicSubmissionItem[];
+}
+
+export type UserSubmissionSort = 'newest' | 'oldest' | 'updated';
+
+/** PUT /api/v1/users/me/profile 的入参与回执 */
+export interface MyProfileFields {
+  bio: string;
+  bannerKey: string;
+  birthday: string | null;
+  gender: Gender;
+}
+
+export interface UpdateMyProfilePayload {
+  bio: string;
+  birthday: string | null;
+  gender: Gender;
 }
