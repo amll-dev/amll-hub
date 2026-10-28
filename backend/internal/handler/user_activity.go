@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
@@ -27,13 +28,9 @@ func (h *UserActivityHandler) Get(c *gin.Context) {
 		return
 	}
 
-	year := 0
-	if y := c.Query("year"); y != "" {
-		var err error
-		if year, err = strconv.Atoi(y); err != nil || year < 2000 || year > 9999 {
-			pkg.BadRequest(c, "无效的 year")
-			return
-		}
+	year, ok := parseActivityYear(c)
+	if !ok {
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
@@ -45,4 +42,43 @@ func (h *UserActivityHandler) Get(c *gin.Context) {
 		return
 	}
 	pkg.OK(c, data)
+}
+
+// GetPublic GET /api/v1/users/:name/activity?year=2026
+// 访客视角：只统计已通过投稿，不含审核行为。
+func (h *UserActivityHandler) GetPublic(c *gin.Context) {
+	name := strings.TrimSpace(c.Param("name"))
+	if !validProfileName(name) {
+		pkg.BadRequest(c, "无效的用户名")
+		return
+	}
+
+	year, ok := parseActivityYear(c)
+	if !ok {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
+	defer cancel()
+
+	data, err := h.svc.GetPublicActivity(ctx, name, year)
+	if err != nil {
+		pkg.InternalError(c, "查询活动统计失败")
+		return
+	}
+	pkg.OK(c, data)
+}
+
+// parseActivityYear 解析 year 查询参数；非法时已写响应并返回 false
+func parseActivityYear(c *gin.Context) (int, bool) {
+	raw := c.Query("year")
+	if raw == "" {
+		return 0, true
+	}
+	year, err := strconv.Atoi(raw)
+	if err != nil || year < 2000 || year > 9999 {
+		pkg.BadRequest(c, "无效的 year")
+		return 0, false
+	}
+	return year, true
 }

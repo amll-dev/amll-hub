@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useAtomValue } from 'jotai';
 import { motion } from 'framer-motion';
@@ -391,7 +392,18 @@ export function RecommendCard({
                 dangerouslySetInnerHTML={{ __html: commentHtml }}
               />
               <div className="mt-2.5 text-right text-[13px] font-light text-ink-2">
-                --来自 @{username} 的评论
+                --来自{' '}
+                {recommendation.submitter ? (
+                  <Link
+                    to={`/user/${encodeURIComponent(recommendation.submitter)}`}
+                    className="text-inherit underline-offset-2 hover:text-primary hover:underline"
+                  >
+                    @{username}
+                  </Link>
+                ) : (
+                  <>@{username}</>
+                )}{' '}
+                的评论
               </div>
             </div>
           </div>

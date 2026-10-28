@@ -13,6 +13,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -25,7 +26,15 @@ import (
 type CasdoorClient struct {
 	cfg  config.CasdoorConfig
 	http *http.Client
+
+	// 用户搜索回退路径的全量列表缓存，避免「查无结果」时每次都重拉一页用户
+	userListMu    sync.Mutex
+	userListCache []CasdoorUser
+	userListAt    time.Time
 }
+
+// userListCacheTTL 回退用户列表的缓存时长
+const userListCacheTTL = 5 * time.Minute
 
 // NewCasdoorClient 创建 Casdoor 客户端
 func NewCasdoorClient(cfg config.CasdoorConfig) *CasdoorClient {
@@ -230,11 +239,35 @@ func (c *CasdoorClient) doRequest(req *http.Request) (*casdoorResponse, error) {
 		return nil, fmt.Errorf("read casdoor response: %w", err)
 	}
 
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrCasdoorUserNotFound
+	}
+
 	var cr casdoorResponse
 	if err := json.Unmarshal(raw, &cr); err != nil {
 		return nil, fmt.Errorf("decode casdoor response: %w, body: %s", err, string(raw))
 	}
 	return &cr, nil
+}
+
+// ErrCasdoorUserNotFound Casdoor 侧明确表示用户不存在
+var ErrCasdoorUserNotFound = errors.New("casdoor user not found")
+
+// isCasdoorNotFound 判断 Casdoor 的错误消息是否在表达「用户不存在」
+func isCasdoorNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrCasdoorUserNotFound) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, kw := range []string{"does not exist", "not found", "not exist", "不存在"} {
+		if strings.Contains(msg, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // checkStatus 检查 Casdoor 响应状态，失败返回错误
@@ -499,8 +532,128 @@ func phoneMatches(stored, target string) bool {
 
 // queryUsersByField 按字段查询用户列表
 func (c *CasdoorClient) queryUsersByField(ctx context.Context, field, value string) ([]CasdoorUser, error) {
-	path := fmt.Sprintf("/api/get-users?owner=%s&field=%s&value=%s&pageSize=100&p=1",
-		url.QueryEscape(c.cfg.Organization), url.QueryEscape(field), url.QueryEscape(value))
+	return c.queryUsersByFieldLimit(ctx, field, value, 100)
+}
+
+// queryUsersByFieldLimit 按字段查询用户列表，可指定返回条数
+func (c *CasdoorClient) queryUsersByFieldLimit(ctx context.Context, field, value string, limit int) ([]CasdoorUser, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	path := fmt.Sprintf("/api/get-users?owner=%s&field=%s&value=%s&pageSize=%d&p=1",
+		url.QueryEscape(c.cfg.Organization), url.QueryEscape(field), url.QueryEscape(value), limit)
+	cr, err := c.doWithBasicAuth(ctx, "GET", path, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	if err := checkStatus(cr); err != nil {
+		return nil, err
+	}
+	var users []CasdoorUser
+	if err := json.Unmarshal(cr.Data, &users); err != nil {
+		return nil, fmt.Errorf("decode users: %w", err)
+	}
+	return users, nil
+}
+
+// localUserScanLimit 回退方案单次扫描的用户上限，避免拉全量账号
+const localUserScanLimit = 1000
+
+// SearchUsers 按用户名 / 昵称搜索用户，结果按 Name 去重
+func (c *CasdoorClient) SearchUsers(ctx context.Context, keyword string, limit int) ([]CasdoorUser, error) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	seen := make(map[string]struct{}, limit)
+	out := make([]CasdoorUser, 0, limit)
+	for _, field := range []string{"name", "displayName"} {
+		users, err := c.queryUsersByFieldLimit(ctx, field, keyword, limit)
+		if err != nil {
+			// 某个字段不被接受时继续尝试下一个，两个字段都失败才上报
+			if isCasdoorNotFound(err) {
+				continue
+			}
+			return nil, err
+		}
+		for i := range users {
+			u := users[i]
+			if u.Name == "" {
+				continue
+			}
+			if _, ok := seen[u.Name]; ok {
+				continue
+			}
+			seen[u.Name] = struct{}{}
+			out = append(out, u)
+			if len(out) >= limit {
+				return out, nil
+			}
+		}
+	}
+	if len(out) > 0 {
+		return out, nil
+	}
+	return c.searchUsersLocally(ctx, keyword, limit)
+}
+
+// searchUsersLocally 拉一页用户后本地做包含匹配
+func (c *CasdoorClient) searchUsersLocally(ctx context.Context, keyword string, limit int) ([]CasdoorUser, error) {
+	users, err := c.cachedUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	kw := strings.ToLower(keyword)
+	out := make([]CasdoorUser, 0, limit)
+	for i := range users {
+		u := users[i]
+		if u.Name == "" {
+			continue
+		}
+		if strings.Contains(strings.ToLower(u.Name), kw) ||
+			strings.Contains(strings.ToLower(u.DisplayName), kw) {
+			out = append(out, u)
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+// cachedUsers 带 TTL 的用户列表缓存，回退路径专用
+func (c *CasdoorClient) cachedUsers(ctx context.Context) ([]CasdoorUser, error) {
+	c.userListMu.Lock()
+	if c.userListCache != nil && time.Since(c.userListAt) < userListCacheTTL {
+		cached := c.userListCache
+		c.userListMu.Unlock()
+		return cached, nil
+	}
+	c.userListMu.Unlock()
+
+	users, err := c.listUsers(ctx, localUserScanLimit)
+	if err != nil {
+		return nil, err
+	}
+
+	c.userListMu.Lock()
+	c.userListCache = users
+	c.userListAt = time.Now()
+	c.userListMu.Unlock()
+	return users, nil
+}
+
+// listUsers 拉取组织下的一页用户
+func (c *CasdoorClient) listUsers(ctx context.Context, pageSize int) ([]CasdoorUser, error) {
+	if pageSize <= 0 {
+		pageSize = 100
+	}
+	path := fmt.Sprintf("/api/get-users?owner=%s&pageSize=%d&p=1",
+		url.QueryEscape(c.cfg.Organization), pageSize)
 	cr, err := c.doWithBasicAuth(ctx, "GET", path, nil, "")
 	if err != nil {
 		return nil, err
@@ -640,14 +793,23 @@ func (c *CasdoorClient) SendVerificationCode(ctx context.Context, checkType, che
 func (c *CasdoorClient) GetUser(ctx context.Context, owner, name string) (*CasdoorUser, error) {
 	cr, err := c.doWithBasicAuth(ctx, "GET", fmt.Sprintf("/api/get-user?id=%s/%s", url.PathEscape(owner), url.PathEscape(name)), nil, "")
 	if err != nil {
+		if isCasdoorNotFound(err) {
+			return nil, ErrCasdoorUserNotFound
+		}
 		return nil, err
 	}
 	if err := checkStatus(cr); err != nil {
+		if isCasdoorNotFound(err) {
+			return nil, ErrCasdoorUserNotFound
+		}
 		return nil, err
 	}
 	var user CasdoorUser
 	if err := json.Unmarshal(cr.Data, &user); err != nil {
 		return nil, fmt.Errorf("decode user: %w", err)
+	}
+	if user.Name == "" {
+		return nil, ErrCasdoorUserNotFound
 	}
 	return &user, nil
 }

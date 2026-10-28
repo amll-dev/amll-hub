@@ -60,6 +60,10 @@ export const queryKeys = {
     ['not-found-ranking', params] as const,
   latestSongs: ['latest-songs'] as const,
   search: (q: string, field: string, page: number) => ['search', { q, field, page }] as const,
+  /** 搜索页各 Tab 的命中数（与分页/字段无关，按关键词缓存） */
+  searchCounts: (q: string) => ['search-counts', q] as const,
+  /** 用户搜索结果 */
+  searchUsers: (q: string, limit: number) => ['user-search', { q, limit }] as const,
 
   // 在线歌词搜索
   onlineSearch: (q: string, platform: string) => ['online-search', { q, platform }] as const,
@@ -96,6 +100,14 @@ export const queryKeys = {
   /** 审核员修订版 TTML 原文 */
   revisionTtml: (id: number) => ['submission', id, 'revision-ttml'] as const,
   userActivity: (year: number) => ['user-activity', year] as const,
+
+  // 公开用户主页（与本人的 ['user-activity', year] 区分开）
+  userProfile: (name: string) => ['user-profile', name] as const,
+  userSubmissions: (
+    name: string,
+    params: { status?: string; language?: string; sort?: string; limit?: number }
+  ) => ['user-submissions', name, params] as const,
+  userActivityOf: (name: string, year: number) => ['user-activity', name, year] as const,
 
   // 搜索IP投稿
   searchIpSubmissions: (scope: 'mine' | 'all', status?: string) =>

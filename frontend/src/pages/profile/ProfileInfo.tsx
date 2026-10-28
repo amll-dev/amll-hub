@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/form';
 import { SectionCard } from '@/components/profile/SectionCard';
 import { AvatarUploadDialog } from '@/components/profile/AvatarUploadDialog';
+import { HomepageProfileSection } from '@/components/profile/HomepageProfileSection';
 import { fieldClass, useResetProfileForm } from './shared';
 
 const profileSchema = z.object({
@@ -191,6 +192,9 @@ export function ProfileInfo() {
           </form>
         </Form>
       </SectionCard>
+
+      {/* 主页资料 + 主页背景图：展示在 /user/用户名，与 Casdoor 账号资料分离 */}
+      <HomepageProfileSection />
     </div>
   );
 }

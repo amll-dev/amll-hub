@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -9,6 +9,7 @@ import {
   CloudUpload,
   FileText,
   Loader2,
+  Sparkles,
   Upload,
   X,
 } from 'lucide-react';
@@ -16,6 +17,8 @@ import { api } from '@/lib/api';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
 import { useFormDraft } from '@/hooks/useFormDraft';
 import { useUnrearrangedMode } from '@/hooks/useUnrearrangedMode';
+import { detectLanguages, type LangCode } from '@/lib/lang-detect';
+import { detectAutoTags } from '@/lib/auto-tags';
 import type { TtmlValidationResult } from '@/lib/types';
 import { AudioSourcePicker } from '@/components/creator/AudioSourcePicker';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -24,7 +27,7 @@ import { UnrearrangedToggle } from '@/components/submission/UnrearrangedToggle';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 // 从 TTML 元数据自动推断语言代码（模块级常量，保持引用稳定）
-const LANG_MAP: Record<string, string> = {
+const LANG_MAP: Record<string, LangCode> = {
   zh: 'zh',
   cn: 'zh',
   chs: 'zh',
@@ -44,6 +47,23 @@ const LANG_MAP: Record<string, string> = {
   'ko-KR': 'ko',
 };
 
+// 语言选项：value 为后端枚举代码，label 为中文
+const LANG_OPTIONS: { value: LangCode; label: string }[] = [
+  { value: 'zh', label: '汉语' },
+  { value: 'en', label: '英语' },
+  { value: 'ja', label: '日语' },
+  { value: 'ko', label: '韩语' },
+  { value: 'others', label: '其他' },
+];
+
+const LANG_LABELS = Object.fromEntries(LANG_OPTIONS.map((l) => [l.value, l.label])) as Record<
+  string,
+  string
+>;
+
+// 语言总上限与后端 model.MaxLanguages 保持一致
+const MAX_LANGUAGES = 10;
+
 /** 歌词投稿表单 */
 export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   const navigate = useNavigate();
@@ -60,6 +80,10 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     languages: string[];
     otherLangs: string[];
     tags: string[];
+    /** 语言是自动识别填进去的，下次选文件仍可重新识别 */
+    langAuto?: boolean;
+    /** 草稿里的自动标签，换文件时用来顶掉上一份文件的自动标签 */
+    autoTags?: string[];
   }>('lyric-submit');
   const [notes, setNotes] = useState(draft?.notes ?? '');
   const [languages, setLanguages] = useState<string[]>(draft?.languages ?? []);
@@ -82,11 +106,55 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 选择文件后立即校验
+  // 已自动识别的语言（仅用于提示文案）；用户手动调整后清空
+  const [autoLangs, setAutoLangs] = useState<string[]>([]);
+  // 已自动添加的标签：和手输标签同在一个列表里，这里只记来源，便于换文件时替换
+  const [autoTags, setAutoTags] = useState<string[]>(() => draft?.autoTags ?? []);
+  const autoTagsRef = useRef<string[]>(autoTags);
+  // 用户手动选过语言：草稿里带非自动填充的语言时也视作手选
+  const langTouchedRef = useRef(
+    (draft?.languages?.length ?? 0) > 0
+      ? draft?.langAuto !== true
+      : (draft?.otherLangs?.length ?? 0) > 0
+  );
+  // 识别来源优先级：2=文件元数据声明，1=正文推断；不覆盖更高优先级的已有结果
+  const autoPriorityRef = useRef(0);
+  // 连选文件时的异步竞态保护
+  const loadSeqRef = useRef(0);
+
+  const applyAutoLanguages = useCallback((codes: readonly LangCode[], priority: number) => {
+    if (langTouchedRef.current || priority < autoPriorityRef.current) return;
+    const next = codes.filter((code) => code in LANG_LABELS);
+    if (next.length === 0) return;
+    autoPriorityRef.current = priority;
+    setLanguages(next);
+    // 自动识别给不出自定义语言名，「其他」的输入留空由用户补
+    setOtherLangs([]);
+    setOtherLangInput('');
+    setAutoLangs(next);
+  }, []);
+
+  // 应用自动标签：追加到标签列表并去重，手输标签原样保留
+  const applyAutoTags = useCallback((next: string[]) => {
+    autoTagsRef.current = next;
+    setAutoTags(next);
+    setTags((current) => [...current, ...next.filter((tag) => !current.includes(tag))]);
+  }, []);
+
+  // 选择文件后立即校验；seq 用于丢弃连选文件时旧文件的迟到结果
   const validateMutation = useMutation({
-    mutationFn: async (f: File) => api.validateTtml(await f.text()),
-    onSuccess: (result) => setValidation(result),
-    onError: (err) => setValidateError(err instanceof Error ? err.message : '校验请求失败'),
+    mutationFn: async (params: { content: string; seq: number }) => ({
+      seq: params.seq,
+      result: await api.validateTtml(params.content),
+    }),
+    onSuccess: ({ seq, result }) => {
+      if (seq !== loadSeqRef.current) return;
+      setValidation(result);
+    },
+    onError: (err, vars) => {
+      if (vars.seq !== loadSeqRef.current) return;
+      setValidateError(err instanceof Error ? err.message : '校验请求失败');
+    },
   });
   const validating = validateMutation.isPending;
 
@@ -165,6 +233,8 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   const submitting = submitMutation.isPending;
 
   const reset = () => {
+    // 让在途的本地解析 / 校验结果作废
+    loadSeqRef.current++;
     setFile(null);
     setValidation(null);
     setValidateError('');
@@ -173,9 +243,14 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     setLanguages([]);
     setOtherLangs([]);
     setOtherLangInput('');
+    setAutoLangs([]);
+    langTouchedRef.current = false;
+    autoPriorityRef.current = 0;
     unrearranged.reset();
     setTags([]);
     setTagInput('');
+    setAutoTags([]);
+    autoTagsRef.current = [];
     setShowTtml(false);
     setAgreed(false);
     setAudioFiles([]);
@@ -188,8 +263,8 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   useEffect(() => {
     const empty = !notes && languages.length === 0 && otherLangs.length === 0 && tags.length === 0;
     if (empty) return;
-    setDraft({ notes, languages, otherLangs, tags });
-  }, [notes, languages, otherLangs, tags, setDraft, clearDraft]);
+    setDraft({ notes, languages, otherLangs, tags, langAuto: autoLangs.length > 0, autoTags });
+  }, [notes, languages, otherLangs, tags, autoLangs, autoTags, setDraft]);
 
   const addTag = () => {
     const t = tagInput.trim();
@@ -203,16 +278,56 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     setTags(tags.filter((x) => x !== t));
   };
 
+  // 读文件 → 后端校验 + 本地解析推断语言/标签（两路互不阻塞）
+  const loadFile = async (f: File) => {
+    const seq = ++loadSeqRef.current;
+    // 换文件后重新走一遍识别优先级（旧文件的元数据语言不再压制新文件）
+    autoPriorityRef.current = 0;
+    // 上一份文件的自动识别结果不保留，避免识别失败时留下别的歌的语言
+    if (!langTouchedRef.current) {
+      setLanguages([]);
+      setOtherLangs([]);
+      setAutoLangs([]);
+    }
+    // 上一份文件带来的自动标签先摘掉，避免换了歌还留着上一首的标签
+    const previousAutoTags = autoTagsRef.current;
+    if (previousAutoTags.length > 0) {
+      setTags((current) => current.filter((tag) => !previousAutoTags.includes(tag)));
+    }
+    autoTagsRef.current = [];
+    setAutoTags([]);
+    let text: string;
+    try {
+      text = await f.text();
+    } catch {
+      setValidateError('文件读取失败，请重新选择');
+      return;
+    }
+    if (seq !== loadSeqRef.current) return;
+    // 读完后一次性置态，避免文件卡片先出现、校验态后到的闪烁
+    setFile(f);
+    setValidation(null);
+    setValidateError('');
+    setSubmitMsg(null);
+    validateMutation.mutate({ content: text, seq });
+
+    // 语言 / 标签识别复用编辑器同款 wasm 解析；解析失败就只跳过自动填充
+    const { parseTTML } = await import('@/lib/ttml-processor');
+    const parsed = await parseTTML(text);
+    if (seq !== loadSeqRef.current || !parsed.success) return;
+    applyAutoLanguages(
+      detectLanguages(parsed.data.lines).map((hit) => hit.code),
+      1
+    );
+    applyAutoTags(detectAutoTags({ metadata: parsed.data.metadata, lines: parsed.data.lines }));
+  };
+
   const handleFile = (f: File) => {
     if (!f.name.toLowerCase().endsWith('.ttml')) {
       setValidateError('请选择 .ttml 格式的文件');
       return;
     }
-    setFile(f);
-    setValidation(null);
-    setValidateError('');
-    setSubmitMsg(null);
-    validateMutation.mutate(f);
+    void loadFile(f);
   };
 
   const onDrop = (e: React.DragEvent) => {
@@ -222,28 +337,24 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     if (f) handleFile(f);
   };
 
-  // 语言选项：value 为后端枚举代码，label 为中文
-  const LANG_OPTIONS: { value: string; label: string }[] = [
-    { value: 'zh', label: '汉语' },
-    { value: 'en', label: '英语' },
-    { value: 'ja', label: '日语' },
-    { value: 'ko', label: '韩语' },
-    { value: 'others', label: '其他' },
-  ];
+  // 文件元数据里显式声明了语言时以它为准，优先级高于正文推断
   useEffect(() => {
-    if (!validation?.valid) return;
-    const raw = validation.metadata?.language?.trim();
+    const raw = validation?.metadata?.language?.trim();
     if (!raw) return;
-    const matched = LANG_MAP[raw] || LANG_MAP[raw.toLowerCase()];
-    // 只在用户还没手动选过时自动填，不覆盖已有勾选
-    if (matched) setLanguages((prev) => (prev.length > 0 ? prev : [matched]));
-  }, [validation]);
+    const matched = LANG_MAP[raw] ?? LANG_MAP[raw.toLowerCase()];
+    if (matched) applyAutoLanguages([matched], 2);
+  }, [validation, applyAutoLanguages]);
 
-  // 语言总上限与后端 model.MaxLanguages 保持一致
-  const MAX_LANGUAGES = 10;
   const langCount = languages.length + otherLangs.length;
 
+  // 用户一动语言就锁定为手选，不再被自动识别覆盖
+  const markLangManual = () => {
+    langTouchedRef.current = true;
+    setAutoLangs([]);
+  };
+
   const toggleLang = (v: string) => {
+    markLangManual();
     setLanguages((prev) => {
       if (prev.includes(v)) {
         // 「其他」取消勾选时连带清掉已输入的自定义语言
@@ -258,6 +369,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   const addOtherLang = () => {
     const t = otherLangInput.trim();
     if (!t) return;
+    markLangManual();
     if (otherLangs.includes(t)) {
       setOtherLangInput('');
       return;
@@ -267,7 +379,10 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     setOtherLangInput('');
   };
 
-  const removeOtherLang = (t: string) => setOtherLangs(otherLangs.filter((x) => x !== t));
+  const removeOtherLang = (t: string) => {
+    markLangManual();
+    setOtherLangs(otherLangs.filter((x) => x !== t));
+  };
 
   // 表单主体是否展开：校验模式等 valid；未重排模式等元数据解析返回（不论 valid）
   const doSubmit = (status: 'pending' | 'draft') => {
@@ -592,6 +707,17 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
               )}
             </div>
           )}
+
+          {/* 自动识别提示：用户一手动调整就消失 */}
+          {autoLangs.length > 0 && (
+            <p className="mt-2 flex items-start gap-1.5 text-xs text-ink-3">
+              <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              <span>
+                已根据歌词内容自动选择：{autoLangs.map((code) => LANG_LABELS[code]).join('、')}
+                {autoLangs.includes('others') && '，请在「其他」中补充具体语言名'}
+              </span>
+            </p>
+          )}
         </motion.div>
       )}
 
@@ -628,22 +754,33 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
           />
           {tags.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-2">
-              {tags.map((t) => (
-                <span
-                  key={t}
-                  className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-3 py-1 text-xs text-primary"
-                >
-                  {t}
-                  <button
-                    type="button"
-                    onClick={() => removeTag(t)}
-                    className="text-primary/60 hover:text-primary"
+              {tags.map((t) => {
+                const auto = autoTags.includes(t);
+                return (
+                  <span
+                    key={t}
+                    title={auto ? '根据歌词文件自动识别，可删除' : undefined}
+                    className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-3 py-1 text-xs text-primary"
                   >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
+                    {auto && <Sparkles className="h-3 w-3" aria-hidden />}
+                    {t}
+                    <button
+                      type="button"
+                      onClick={() => removeTag(t)}
+                      className="text-primary/60 hover:text-primary"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                );
+              })}
             </div>
+          )}
+          {autoTags.length > 0 && (
+            <p className="mt-2 flex items-start gap-1.5 text-xs text-ink-3">
+              <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+              带星标的标签由文件元数据与歌词特性自动识别，可手动删除
+            </p>
           )}
         </motion.div>
       )}

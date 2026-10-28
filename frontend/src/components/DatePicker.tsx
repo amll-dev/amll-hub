@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { buttonTap } from '@/lib/motion';
+import { cn } from '@/lib/utils';
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 const MONTHS = [
@@ -44,10 +45,22 @@ export function DatePicker({
   value,
   onChange,
   placeholder = '选择日期',
+  max,
+  id,
+  className,
+  'aria-invalid': ariaInvalid,
+  'aria-describedby': ariaDescribedBy,
 }: {
   value: string;
   onChange: (dateKey: string) => void;
   placeholder?: string;
+  /** 可选上限（含当天），YYYY-MM-DD；超出范围的日子不可点 */
+  max?: string;
+  id?: string;
+  /** 触发器附加样式 */
+  className?: string;
+  'aria-invalid'?: boolean;
+  'aria-describedby'?: string;
 }) {
   const today = useMemo(() => new Date(), []);
   const todayKey = formatDateKey(today);
@@ -155,12 +168,18 @@ export function DatePicker({
       {/* 触发按钮 */}
       <button
         type="button"
+        id={id}
+        aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
         onClick={() => setOpen((v) => !v)}
-        className={`flex h-11 w-full items-center justify-between rounded-md border bg-background px-4 text-sm outline-none transition-all duration-200 ${
+        className={cn(
+          'flex h-11 w-full items-center justify-between rounded-md border bg-background px-4 text-sm outline-none transition-all duration-200',
           open
             ? 'border-primary ring-2 ring-primary/20'
-            : 'border-input hover:border-primary/50 focus:border-primary'
-        }`}
+            : 'border-input hover:border-primary/50 focus:border-primary',
+          ariaInvalid && 'border-error',
+          className
+        )}
       >
         <span className={selectedDate ? 'text-foreground' : 'text-ink-3'}>{displayText}</span>
         <CalendarDays
@@ -250,6 +269,7 @@ export function DatePicker({
                 className="grid grid-cols-7 gap-1"
               >
                 {cells.map((cell, i) => {
+                  const disabled = !!max && cell.dateKey > max;
                   let cls =
                     'aspect-square flex items-center justify-center rounded-md text-xs cursor-pointer transition-colors';
                   if (cell.isOtherMonth) cls += ' text-ink-3 opacity-40';
@@ -257,15 +277,16 @@ export function DatePicker({
                   if (cell.isToday) cls += ' !bg-primary !text-primary-foreground font-semibold';
                   if (cell.isSelected && !cell.isToday)
                     cls += ' !bg-[#fef3c7] !text-[#92400e] font-semibold ring-1 ring-[#f59e0b]';
+                  if (disabled) cls += ' pointer-events-none opacity-25';
 
                   return (
                     <motion.div
                       key={i}
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
+                      whileHover={disabled ? undefined : { scale: 1.1 }}
+                      whileTap={disabled ? undefined : { scale: 0.9 }}
                       transition={{ duration: 0.12 }}
                       className={cls}
-                      onClick={() => handleSelect(cell)}
+                      onClick={disabled ? undefined : () => handleSelect(cell)}
                     >
                       {cell.date.getDate()}
                     </motion.div>

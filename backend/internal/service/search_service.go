@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"sync"
 
 	"github.com/amll-dev/amll-hub/backend/internal/config"
 	"github.com/meilisearch/meilisearch-go"
@@ -344,4 +345,50 @@ func reorderHitsByGroup(hits []SearchHitResult) []SearchHitResult {
 		result = append(result, groups[key].items...)
 	}
 	return result
+}
+
+// countFields 需要统计命中数的字段（与前端搜索结果页的 Tab 一一对应）
+var countFields = []string{"all", "song", "artist", "album", "lyric", "id", "author"}
+
+// CountByFields 并发统计各字段的命中数，供搜索页 Tab 的数字徽章使用。
+//
+// 每路查询只要 1 条命中：MeiliSearch 的 estimatedTotalHits 与 limit 无关，
+// 限到 1 可以避免多余文档传输。
+func (s *SearchService) CountByFields(ctx context.Context, query string) (map[string]int64, error) {
+	totals := make(map[string]int64, len(countFields))
+	if query == "" {
+		for _, f := range countFields {
+			totals[f] = 0
+		}
+		return totals, nil
+	}
+
+	var (
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+		firstErr error
+	)
+	for _, field := range countFields {
+		field := field
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := s.Search(ctx, SearchRequest{Query: query, Field: field, Limit: 1})
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				return
+			}
+			totals[field] = res.TotalHits
+		}()
+	}
+	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return totals, nil
 }

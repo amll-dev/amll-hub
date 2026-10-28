@@ -16,15 +16,7 @@ function StatBadge({ value, label }: { value: string; label: string }) {
 
 export function Hero() {
   const { data: stats, loading, error } = useStats();
-  const {
-    query,
-    field,
-    loading: searching,
-    setQuery,
-    setField,
-    submit,
-    hasQuery,
-  } = useSearchContext();
+  const { query, loading: searching, setQuery, submit, hasQuery } = useSearchContext();
 
   // 搜索模式下 Hero 不渲染，避免 pt-[120px] pb-16 占据空间
   // 导致搜索结果和顶栏之间有大段距离
@@ -83,10 +75,8 @@ export function Hero() {
               >
                 <SearchBar
                   query={query}
-                  field={field}
                   loading={searching}
                   onQueryChange={setQuery}
-                  onFieldChange={setField}
                   onSubmit={submit}
                 />
               </motion.div>

@@ -185,7 +185,11 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 
 // publicServePrefixes 是允许匿名访问的 MinIO 前缀白名单，
 // 防止通过该接口读取 bucket 内其他对象
-var publicServePrefixes = []string{service.MusicPrefix, service.CoverPrefix}
+var publicServePrefixes = []string{
+	service.MusicPrefix,
+	service.CoverPrefix,
+	service.ProfileBannerPrefix,
+}
 
 // isPublicServeKey 校验 key 是否落在公开前缀内且不含路径穿越
 func isPublicServeKey(key string) bool {

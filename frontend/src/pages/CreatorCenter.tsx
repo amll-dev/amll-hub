@@ -38,6 +38,7 @@ import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
 import { NavItem } from '@/components/NavItem';
 import { PageContainer } from '@/components/PageContainer';
 import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
+import { langText, statusMeta } from '@/components/submission/status';
 import { buttonVariants } from '@/components/ui/button';
 import { CardDetailSkeleton, ListSkeleton } from '@/components/ui/Skeleton';
 import { LyricSubmitForm } from '@/components/creator/LyricSubmitForm';
@@ -82,31 +83,7 @@ const lyricsStatusTabs: { key: LyricsStatusTab; label: string }[] = [
   { key: 'rejected', label: '未通过' },
 ];
 
-// 状态
-const statusMeta: Record<string, { label: string; className: string }> = {
-  draft: { label: '草稿', className: 'bg-surface-2 text-ink-2' },
-  pending: { label: '待审核', className: 'bg-amber-100 text-amber-700' },
-  reviewing: { label: '审核中', className: 'bg-blue-100 text-blue-700' },
-  need_revision: { label: '需修改', className: 'bg-orange-100 text-orange-700' },
-  missing_audio: { label: '缺音频', className: 'bg-orange-100 text-orange-700' },
-  revised: { label: '待投稿者确认', className: 'bg-purple-100 text-purple-700' },
-  approved: { label: '已通过', className: 'bg-green-100 text-green-700' },
-  rejected: { label: '未通过', className: 'bg-red-100 text-red-700' },
-  closed: { label: '已关闭', className: 'bg-surface-2 text-ink-3' },
-};
-
-// 语言代码
-const langLabel: Record<string, string> = {
-  zh: '汉语',
-  en: '英语',
-  ja: '日语',
-  ko: '韩语',
-  others: '其他',
-};
-function langText(code?: string): string {
-  if (!code) return '—';
-  return langLabel[code] ?? code;
-}
+// 状态与语言的展示元数据统一在 status.ts（纯模块，不带 marked 依赖）
 
 /** 内容管理页面 */
 function ContentManagement({ initialTab = 'lyrics' }: { initialTab?: ContentMainTab }) {

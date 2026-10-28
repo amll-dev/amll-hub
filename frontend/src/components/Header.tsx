@@ -22,7 +22,7 @@ export function Header() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { scrollY } = useScroll();
-  const { query, field, loading, setQuery, setField, submit, hasQuery } = useSearchContext();
+  const { query, loading, setQuery, submit, hasQuery } = useSearchContext();
   const { user, openLogin } = useAuth();
   const navItems = user?.isReviewer
     ? [...baseNavItems, { to: '/review', label: '审核中心', requireLogin: true }]
@@ -97,10 +97,8 @@ export function Header() {
               >
                 <SearchBar
                   query={query}
-                  field={field}
                   loading={loading}
                   onQueryChange={setQuery}
-                  onFieldChange={setField}
                   onSubmit={submit}
                   compact
                 />

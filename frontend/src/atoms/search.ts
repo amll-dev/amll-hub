@@ -1,10 +1,10 @@
 import { atom } from 'jotai';
-import type { SearchField } from '@/lib/types';
+import type { SearchTab } from '@/lib/types';
 
-/** 已提交的搜索请求（debounce 后 / 立即提交 / 翻页才更新），驱动 useQuery */
+/** 已提交的搜索请求（debounce 后 / 立即提交 / 翻页 / 切 Tab 才更新），驱动 useQuery */
 export interface CommittedSearch {
   q: string;
-  field: SearchField;
+  tab: SearchTab;
   page: number;
 }
 
@@ -12,8 +12,8 @@ export interface CommittedSearch {
 
 /** 输入框当前值（未提交） */
 export const searchQueryAtom = atom('');
-/** 搜索字段 */
-export const searchFieldAtom = atom<SearchField>('all');
+/** 当前搜索 Tab（歌曲各字段 + 用户） */
+export const searchTabAtom = atom<SearchTab>('all');
 /** 是否已进入搜索模式（控制页面切换；基于"是否已发起过搜索"而非 query 非空） */
 export const searchHasQueryAtom = atom(false);
 /** 当前页码（1-based） */
