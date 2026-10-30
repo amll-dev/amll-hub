@@ -104,6 +104,27 @@ func (r *SubmissionRepo) UpdateStatusWhere(ctx context.Context, tx *gorm.DB, s *
 	return res.RowsAffected == 1, nil
 }
 
+// MarkFirstSubmissionIfEligible 首次投稿标识
+func (r *SubmissionRepo) MarkFirstSubmissionIfEligible(ctx context.Context, tx *gorm.DB, s *model.Submission) (bool, error) {
+	if tx == nil {
+		tx = r.db.WithContext(ctx)
+	}
+	res := tx.WithContext(ctx).Model(&model.Submission{}).
+		Where("id = ?", s.ID).
+		Where(`NOT EXISTS (
+			SELECT 1 FROM submissions s2
+			WHERE s2.submitter = ? AND s2.id <> ? AND s2.status = ?
+		)`, s.Submitter, s.ID, model.StatusApproved).
+		Update("is_first_submission", true)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	if res.RowsAffected == 1 {
+		s.IsFirstSubmission = true
+	}
+	return res.RowsAffected == 1, nil
+}
+
 // RefreshReviewLease 刷新审核占用心跳时间，仅当该投稿仍由 reviewer 持有时生效
 func (r *SubmissionRepo) RefreshReviewLease(ctx context.Context, id int64, reviewer string, at time.Time) (bool, error) {
 	res := r.db.WithContext(ctx).Model(&model.Submission{}).

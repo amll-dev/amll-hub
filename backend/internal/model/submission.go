@@ -128,6 +128,7 @@ type Submission struct {
 	// UnrearrangedReason 投稿者填写的「为什么用未重排版」说明，详情页展示
 	UnrearrangedReason  string     `gorm:"column:unrearranged_reason;type:varchar(500);not null;default:''" json:"unrearrangedReason"`
 	Status              string     `gorm:"type:varchar(20);not null;default:'pending'" json:"status"`
+	IsFirstSubmission   bool       `gorm:"column:is_first_submission;not null;default:false" json:"isFirstSubmission"` // 首通过前提交的投稿
 	Submitter           string     `gorm:"type:varchar(100);not null" json:"submitter"`
 	SubmitterInfo       UserInfo   `gorm:"type:jsonb;not null;default:'{}'" json:"submitterInfo"`
 	Provider            string     `gorm:"type:varchar(20);not null;default:'casdoor'" json:"provider"`

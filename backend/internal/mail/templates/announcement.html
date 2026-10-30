@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>{{.Subject}}</title>
+<style>
+  html, body { margin:0; padding:0; width:100% !important; }
+  body { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+  table { border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt; }
+  img { border:0; outline:none; text-decoration:none; -ms-interpolation-mode:bicubic; }
+  a { text-decoration:none; }
+  a[x-apple-data-detectors] { color:inherit !important; text-decoration:none !important; font-size:inherit !important; }
+
+  @media screen and (max-width:620px) {
+    .em-wrap { width:100% !important; max-width:100% !important; }
+    .em-pad  { padding-left:22px !important; padding-right:22px !important; }
+    .em-h1   { font-size:20px !important; line-height:28px !important; }
+    .em-body { font-size:15px !important; line-height:26px !important; }
+    .em-btn a { display:block !important; text-align:center !important; }
+  }
+
+  /* 公告正文：Markdown 渲染出的原生标签没有 class，只能靠后代选择器给样式 */
+  .em-md p { margin:0 0 12px 0; font-family:Inter,'PingFang SC','Noto Sans SC','HarmonyOS Sans SC','Microsoft YaHei',system-ui,sans-serif; font-size:15px; line-height:26px; color:#535359; mso-line-height-rule:exactly; }
+  .em-md h1, .em-md h2, .em-md h3, .em-md h4 { margin:18px 0 10px 0; font-family:Inter,'PingFang SC','Noto Sans SC','HarmonyOS Sans SC','Microsoft YaHei',system-ui,sans-serif; font-weight:600; color:#1d1d1f; }
+  .em-md h1 { font-size:20px; line-height:29px; }
+  .em-md h2 { font-size:18px; line-height:27px; }
+  .em-md h3 { font-size:16px; line-height:25px; }
+  .em-md h4 { font-size:15px; line-height:24px; }
+  .em-md ul, .em-md ol { margin:0 0 12px 0; padding-left:22px; }
+  .em-md li { margin:0 0 6px 0; font-family:Inter,'PingFang SC','Noto Sans SC','Microsoft YaHei',system-ui,sans-serif; font-size:15px; line-height:26px; color:#535359; }
+  .em-md a { color:#e0303f; text-decoration:underline; }
+  .em-md strong { color:#1d1d1f; font-weight:600; }
+  .em-md code { background:#f5f5f7; border-radius:4px; padding:2px 5px; font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace; font-size:13px; color:#1d1d1f; }
+  .em-md pre { margin:0 0 12px 0; padding:12px 14px; background:#f5f5f7; border-radius:8px; overflow:auto; }
+  .em-md pre code { background:transparent; padding:0; font-size:13px; line-height:20px; }
+  .em-md blockquote { margin:0 0 12px 0; padding:2px 0 2px 14px; border-left:3px solid #e0303f; color:#535359; }
+  .em-md blockquote p { margin:0; }
+  .em-md hr { margin:18px 0; border:0; border-top:1px solid #ededf1; }
+  .em-md img { max-width:100%; height:auto; border-radius:8px; }
+
+  @media (prefers-color-scheme: dark) {
+    .em-page  { background:#101014 !important; }
+    .em-card  { background:#1a1a1f !important; border-color:#2c2c33 !important; }
+    .em-ink   { color:#f5f5f7 !important; }
+    .em-ink2  { color:#a8a8b0 !important; }
+    .em-ink3  { color:#71717a !important; }
+    .em-line  { background:#2c2c33 !important; }
+    .em-bd    { border-color:#2c2c33 !important; }
+    .em-soft  { background:#232329 !important; }
+    .em-md p, .em-md li, .em-md blockquote { color:#a8a8b0 !important; }
+    .em-md h1, .em-md h2, .em-md h3, .em-md h4, .em-md strong { color:#f5f5f7 !important; }
+    .em-md code, .em-md pre { background:#232329 !important; color:#f5f5f7 !important; }
+    .em-md hr { border-top-color:#2c2c33 !important; }
+  }
+</style>
+<!--[if mso]>
+<xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+<![endif]-->
+</head>
+
+<body style="margin:0;padding:0;background:#fbfbfd;">
+
+<!-- 预览文本 preheader -->
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;visibility:hidden;">
+  {{.Preheader}}
+  &#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
+</div>
+
+<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" class="em-page" style="background:#fbfbfd;">
+<tr>
+<td align="center" style="padding:28px 12px 36px 12px;">
+
+  <!--[if mso]><table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600"><tr><td><![endif]-->
+  <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" class="em-wrap" style="width:600px;max-width:600px;">
+
+    <!-- 页眉：Logo + 品牌名 -->
+    <tr>
+      <td style="padding:0 4px 18px 4px;">
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td align="left">
+              <a href="{{.SiteURL}}" style="text-decoration:none;">
+                <img src="{{.LogoURL}}" width="32" height="32" alt="AMLL Hub" style="display:inline-block;border:0;border-radius:8px;vertical-align:middle;">
+                <span class="em-ink" style="display:inline-block;vertical-align:middle;margin-left:8px;font-family:Inter,'PingFang SC','Noto Sans SC','HarmonyOS Sans SC','Microsoft YaHei',system-ui,sans-serif;font-size:16px;font-weight:700;letter-spacing:.3px;color:#1d1d1f;">AMLL Hub</span>
+              </a>
+            </td>
+            <td align="right" class="em-ink3" style="font-family:Inter,'PingFang SC','Noto Sans SC','Microsoft YaHei',system-ui,sans-serif;font-size:12px;letter-spacing:1px;color:#8a8a90;">
+              系统公告
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <tr>
+      <td style="padding:0 4px 16px 4px;">
+        <div class="em-line" style="height:1px;line-height:1px;font-size:0;background:#ededf1;">&nbsp;</div>
+      </td>
+    </tr>
+
+    <!-- 正文卡片 -->
+    <tr>
+      <td class="em-card" style="background:#ffffff;border:1px solid #ededf1;border-radius:16px;">
+
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+        <td class="em-pad" style="padding:34px 40px 0 40px;">
+
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="background:#fbe7e9;border-radius:999px;padding:7px 15px;font-family:Inter,'PingFang SC','Noto Sans SC','HarmonyOS Sans SC','Microsoft YaHei',system-ui,sans-serif;font-size:13px;font-weight:600;color:#e0303f;line-height:20px;">
+                系统公告
+              </td>
+            </tr>
+          </table>
+
+          <h1 class="em-h1 em-ink" style="margin:16px 0 4px 0;font-family:Inter,'PingFang SC','Noto Sans SC','HarmonyOS Sans SC','Microsoft YaHei',system-ui,sans-serif;font-size:22px;line-height:31px;font-weight:600;color:#1d1d1f;mso-line-height-rule:exactly;">
+            {{.Title}}
+          </h1>
+
+          <p class="em-ink3" style="margin:0;font-family:Inter,'PingFang SC','Noto Sans SC','Microsoft YaHei',system-ui,sans-serif;font-size:12px;line-height:20px;color:#8a8a90;">
+            {{.Sender}}　·　{{.PublishedAt}}
+          </p>
+
+        </td>
+        </tr>
+        </table>
+
+        <!-- 公告正文（Markdown 已由服务端渲染并清洗） -->
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+        <td class="em-pad em-md" style="padding:20px 40px 0 40px;font-family:Inter,'PingFang SC','Noto Sans SC','HarmonyOS Sans SC','Microsoft YaHei',system-ui,sans-serif;font-size:15px;line-height:26px;color:#535359;">
+          {{.BodyHTML}}
+        </td>
+        </tr>
+        </table>
+
+        {{if .ActionURL}}
+        <!-- 主行动按钮 -->
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+        <td class="em-pad" style="padding:12px 40px 0 40px;">
+          <table role="presentation" border="0" cellpadding="0" cellspacing="0" class="em-btn">
+            <tr>
+              <td align="center" bgcolor="#e0303f" style="background-color:#e0303f;border-radius:8px;">
+                <!--[if mso]>
+                <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{.ActionURL}}" style="height:44px;v-text-anchor:middle;width:210px;" arcsize="18%" strokecolor="#e0303f" fillcolor="#e0303f">
+                  <w:anchorlock/>
+                  <center style="color:#ffffff;font-family:'Microsoft YaHei',sans-serif;font-size:15px;font-weight:bold;">{{.ActionLabel}}</center>
+                </v:roundrect>
+                <![endif]-->
+                <!--[if !mso]><!-- -->
+                <a href="{{.ActionURL}}" style="display:inline-block;padding:13px 30px;font-family:Inter,'PingFang SC','Noto Sans SC','HarmonyOS Sans SC','Microsoft YaHei',system-ui,sans-serif;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;background-color:#e0303f;border:1px solid #e0303f;">{{.ActionLabel}}</a>
+                <!--<![endif]-->
+              </td>
+            </tr>
+          </table>
+        </td>
+        </tr>
+        </table>
+
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+        <td class="em-pad" style="padding:14px 40px 0 40px;">
+          <p class="em-ink3" style="margin:0;font-family:Inter,'PingFang SC','Noto Sans SC','Microsoft YaHei',system-ui,sans-serif;font-size:12px;line-height:20px;color:#8a8a90;">
+            按钮打不开？复制此链接到浏览器：<br>
+            <a href="{{.ActionURL}}" style="color:#e0303f;word-break:break-all;">{{.ActionURL}}</a>
+          </p>
+        </td>
+        </tr>
+        </table>
+        {{end}}
+
+        <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+        <td class="em-pad" style="padding:24px 40px 32px 40px;">
+          <div class="em-line" style="height:1px;line-height:1px;font-size:0;background:#ededf1;margin-bottom:14px;">&nbsp;</div>
+          <p class="em-ink3" style="margin:0;font-family:Inter,'PingFang SC','Noto Sans SC','Microsoft YaHei',system-ui,sans-serif;font-size:12px;line-height:20px;color:#8a8a90;">
+            你收到这封邮件是因为你在 AMLL Hub 有投稿记录或审核员身份。你可以随时在站内消息中心查看历史公告。
+          </p>
+        </td>
+        </tr>
+        </table>
+
+      </td>
+    </tr>
+
+    <!-- 页脚 -->
+    <tr>
+      <td align="center" style="padding:24px 20px 0 20px;">
+        <p class="em-ink3" style="margin:0 0 6px 0;font-family:Inter,'PingFang SC','Noto Sans SC','Microsoft YaHei',system-ui,sans-serif;font-size:12px;line-height:20px;color:#8a8a90;">
+          本邮件由 AMLL Hub 系统自动发送，请勿直接回复。
+        </p>
+        <p class="em-ink3" style="margin:0;font-family:Inter,'PingFang SC','Noto Sans SC','Microsoft YaHei',system-ui,sans-serif;font-size:12px;line-height:20px;color:#8a8a90;">
+          <a href="{{.SiteURL}}" style="color:#e0303f;text-decoration:none;">{{.SiteURL}}</a>
+          　·　© {{.Year}} AMLL Hub
+        </p>
+      </td>
+    </tr>
+
+  </table>
+  <!--[if mso]></td></tr></table><![endif]-->
+
+</td>
+</tr>
+</table>
+
+</body>
+</html>

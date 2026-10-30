@@ -24,9 +24,17 @@ export function Header() {
   const { scrollY } = useScroll();
   const { query, loading, setQuery, submit, hasQuery } = useSearchContext();
   const { user, openLogin } = useAuth();
-  const navItems = user?.isReviewer
-    ? [...baseNavItems, { to: '/review', label: '审核中心', requireLogin: true }]
-    : baseNavItems;
+  const navItems =
+    user?.isReviewer || user?.isAdmin
+      ? [
+          ...baseNavItems,
+          {
+            to: '/review',
+            label: user.isReviewer ? '审核中心' : '管理中心',
+            requireLogin: true,
+          },
+        ]
+      : baseNavItems;
 
   useMotionValueEvent(scrollY, 'change', (latest) => {
     setScrolled(latest > 8);

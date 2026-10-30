@@ -240,6 +240,8 @@ export interface SubmissionListItem {
   /** 投稿者填写的未重排原因说明 */
   unrearrangedReason?: string;
   status: SubmissionStatus;
+  /** 是否为「首篇通过审核之前」提交的投稿 */
+  isFirstSubmission?: boolean;
   submitter: string;
   submitterInfo?: UserInfo;
   provider?: string;
@@ -683,6 +685,62 @@ export interface NotificationListResult {
   items: Message[];
   total: number;
   unread: number;
+}
+
+// 系统公告
+
+/** 公告邮件发送状态 */
+export type AnnouncementMailStatus = 'none' | 'sending' | 'done';
+
+/** 公告发布记录 */
+export interface Announcement {
+  id: number;
+  title: string;
+  content: string;
+  /** 站内信跳转路径，空串表示不跳转 */
+  actionPath: string;
+  actionLabel: string;
+  /** 发布人用户名 */
+  sender: string;
+  /** 本次发布是否勾选了发送邮件 */
+  mailEnabled: boolean;
+  /** 站内信收件人总数 */
+  audienceCount: number;
+  mailSent: number;
+  mailFailed: number;
+  /** Casdoor 查不到邮箱而跳过的用户数 */
+  mailSkipped: number;
+  mailStatus: AnnouncementMailStatus;
+  createdAt: string;
+  mailFinishedAt?: string;
+}
+
+/** 公告历史列表 */
+export interface AnnouncementListResult {
+  items: Announcement[];
+  total: number;
+}
+
+/** 发布前预览 */
+export interface AnnouncementAudience {
+  count: number;
+  /** 全局 EMAIL_ENABLED + SMTP 配置齐全时为 true */
+  mailAvailable: boolean;
+}
+
+// 审核员管理
+
+/** 审核员展示信息 */
+export interface ReviewerItem {
+  name: string;
+  displayName: string;
+  avatar: string;
+}
+
+/** 审核员名单 */
+export interface ReviewerListResult {
+  items: ReviewerItem[];
+  total: number;
 }
 
 // ===== GitHub 投稿数据迁移 =====

@@ -40,6 +40,7 @@ import {
 } from '@/components/submission/shared';
 import { formatDateTime } from '@/lib/format';
 import { MetaItem } from '@/components/submission/MetaItem';
+import { FirstSubmissionBadge } from '@/components/submission/FirstSubmissionBadge';
 import { UserDisplayName } from '@/components/submission/UserDisplayName';
 import { UserAvatar } from '@/components/submission/UserAvatar';
 import { CommentSection } from '@/components/submission/CommentSection';
@@ -457,9 +458,10 @@ function SubmissionDetailContent({
       {/* 标题区卡片 */}
       <motion.div variants={fadeUp} className="rounded-lg border border-line bg-card p-4">
         <div className="flex items-center gap-2">
-          <h1 className="flex-1 text-2xl font-bold text-foreground">
-            {detail.title || '未命名'}
-            <span className="ml-2 text-base font-normal text-ink-3">#{detail.id}</span>
+          <h1 className="flex flex-1 flex-wrap items-center gap-2 text-2xl font-bold text-foreground">
+            <span className="min-w-0">{detail.title || '未命名'}</span>
+            {detail.isFirstSubmission && <FirstSubmissionBadge size="md" />}
+            <span className="text-base font-normal text-ink-3">#{detail.id}</span>
           </h1>
           <div className="flex items-center gap-2">
             {detail.status === 'reviewing' && detail.reviewer && (
@@ -538,115 +540,114 @@ function SubmissionDetailContent({
         </AnimatePresence>
       </motion.div>
 
+      <motion.div variants={fadeUp} className="flex flex-wrap items-center justify-between gap-2">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as DetailTab)}>
+          <TabsList className="w-auto gap-1 border-none">
+            {(['info', 'song', 'file'] as DetailTab[]).map((t) => (
+              <TabsTrigger
+                key={t}
+                value={t}
+                className="rounded-md bg-surface-2 px-3 py-1.5 after:hidden data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              >
+                {t === 'info' ? '信息' : t === 'song' ? '歌曲' : '文件'}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <div className="flex flex-wrap gap-2">
+          {canReview && (
+            <button
+              type="button"
+              onClick={() => navigate(`/review/editor/${id}`)}
+              disabled={!hasAudioSource}
+              className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-ink-3 disabled:hover:bg-ink-3"
+              title={
+                hasAudioSource
+                  ? '打开歌词编辑器，可打轴、改词、改元数据，并生成审核报告'
+                  : '缺参考音频：打轴需要音频作为时间基准。请先上传音频，或把该投稿标记为「缺音频」'
+              }
+            >
+              <PencilLine className="h-3.5 w-3.5" />
+              编辑歌词
+              {!hasAudioSource && <span className="opacity-80">（缺音频）</span>}
+            </button>
+          )}
+          {!canReview && canEditAsSubmitter && (
+            <button
+              type="button"
+              onClick={() => navigate(`/creator/lyrics/editor/${id}`)}
+              disabled={submitterEditing}
+              className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-ink-3 disabled:hover:bg-ink-3"
+              title={
+                submitterEditing
+                  ? '审核员正在审核该投稿，请等待审核结果后再修改'
+                  : '打开歌词编辑器，修改歌词、时间轴与元数据后重新提交'
+              }
+            >
+              <PencilLine className="h-3.5 w-3.5" />
+              编辑歌词
+              {submitterEditing && <span className="opacity-80">（审核中）</span>}
+            </button>
+          )}
+          {canUpdateLyric && (
+            <button
+              type="button"
+              onClick={() => setShowUpdateLyric(true)}
+              className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary-hover"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              更新歌词
+            </button>
+          )}
+          {canUploadAudio && (
+            <button
+              type="button"
+              onClick={() => setShowUploadAudio(true)}
+              className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-3 py-1.5 text-xs text-white hover:bg-purple-700"
+            >
+              <Music className="h-3.5 w-3.5" />
+              上传音频
+            </button>
+          )}
+          {canClose && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <button
+                  type="button"
+                  disabled={closing}
+                  className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-3 py-1.5 text-xs text-ink-2 hover:text-foreground disabled:opacity-50"
+                >
+                  {closing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <X className="h-3.5 w-3.5" />
+                  )}
+                  关闭投稿
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>确认关闭该投稿？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    关闭后投稿将结束审核流程，且不可再更新歌词与音频。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>取消</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => closeMutation.mutate()}>
+                    确认关闭
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
+      </motion.div>
+
       {/* 主体 + 侧边栏 */}
       <div className="flex gap-5">
         {/* 主体 */}
         <motion.div variants={fadeUp} className="min-w-0 flex-1 space-y-5">
-          {/* 标签栏 + 操作按钮 */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <Tabs value={tab} onValueChange={(v) => setTab(v as DetailTab)}>
-              <TabsList className="w-auto gap-1 border-none">
-                {(['info', 'song', 'file'] as DetailTab[]).map((t) => (
-                  <TabsTrigger
-                    key={t}
-                    value={t}
-                    className="rounded-md bg-surface-2 px-3 py-1.5 after:hidden data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-                  >
-                    {t === 'info' ? '信息' : t === 'song' ? '歌曲' : '文件'}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-            <div className="flex flex-wrap gap-2">
-              {canReview && (
-                <button
-                  type="button"
-                  onClick={() => navigate(`/review/editor/${id}`)}
-                  disabled={!hasAudioSource}
-                  className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-ink-3 disabled:hover:bg-ink-3"
-                  title={
-                    hasAudioSource
-                      ? '打开歌词编辑器，可打轴、改词、改元数据，并生成审核报告'
-                      : '缺参考音频：打轴需要音频作为时间基准。请先上传音频，或把该投稿标记为「缺音频」'
-                  }
-                >
-                  <PencilLine className="h-3.5 w-3.5" />
-                  编辑歌词
-                  {!hasAudioSource && <span className="opacity-80">（缺音频）</span>}
-                </button>
-              )}
-              {!canReview && canEditAsSubmitter && (
-                <button
-                  type="button"
-                  onClick={() => navigate(`/creator/lyrics/editor/${id}`)}
-                  disabled={submitterEditing}
-                  className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-ink-3 disabled:hover:bg-ink-3"
-                  title={
-                    submitterEditing
-                      ? '审核员正在审核该投稿，请等待审核结果后再修改'
-                      : '打开歌词编辑器，修改歌词、时间轴与元数据后重新提交'
-                  }
-                >
-                  <PencilLine className="h-3.5 w-3.5" />
-                  编辑歌词
-                  {submitterEditing && <span className="opacity-80">（审核中）</span>}
-                </button>
-              )}
-              {canUpdateLyric && (
-                <button
-                  type="button"
-                  onClick={() => setShowUpdateLyric(true)}
-                  className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary-hover"
-                >
-                  <Upload className="h-3.5 w-3.5" />
-                  更新歌词
-                </button>
-              )}
-              {canUploadAudio && (
-                <button
-                  type="button"
-                  onClick={() => setShowUploadAudio(true)}
-                  className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-3 py-1.5 text-xs text-white hover:bg-purple-700"
-                >
-                  <Music className="h-3.5 w-3.5" />
-                  上传音频
-                </button>
-              )}
-              {canClose && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <button
-                      type="button"
-                      disabled={closing}
-                      className="inline-flex items-center gap-1 rounded-md bg-surface-2 px-3 py-1.5 text-xs text-ink-2 hover:text-foreground disabled:opacity-50"
-                    >
-                      {closing ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <X className="h-3.5 w-3.5" />
-                      )}
-                      关闭投稿
-                    </button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>确认关闭该投稿？</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        关闭后投稿将结束审核流程，且不可再更新歌词与音频。
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>取消</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => closeMutation.mutate()}>
-                        确认关闭
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
-            </div>
-          </div>
-
           {/* 更新歌词区 */}
           {showUpdateLyric && (
             <UpdateLyricArea

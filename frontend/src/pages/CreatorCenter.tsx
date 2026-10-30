@@ -39,6 +39,7 @@ import { NavItem } from '@/components/NavItem';
 import { PageContainer } from '@/components/PageContainer';
 import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
 import { langText, statusMeta } from '@/components/submission/status';
+import { FirstSubmissionBadge } from '@/components/submission/FirstSubmissionBadge';
 import { buttonVariants } from '@/components/ui/button';
 import { CardDetailSkeleton, ListSkeleton } from '@/components/ui/Skeleton';
 import { LyricSubmitForm } from '@/components/creator/LyricSubmitForm';
@@ -258,9 +259,10 @@ function LyricsList({
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="truncate font-medium text-foreground">
+                        <span className="min-w-0 truncate font-medium text-foreground">
                           {item.title || '未命名'}
                         </span>
+                        {item.isFirstSubmission && <FirstSubmissionBadge />}
                         <span className="shrink-0 text-xs text-ink-3">#{item.id}</span>
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
@@ -561,9 +563,10 @@ export function CreatorCenter() {
   const initial = (user.displayName || user.name || '?').charAt(0).toUpperCase();
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    // 锁定视口高度：顶栏与侧边栏固定，只有右侧内容区独立滚动
+    <div className="flex h-dvh flex-col overflow-hidden bg-background">
       {/* 顶栏 */}
-      <header className="sticky top-0 z-50 border-b border-line bg-card/80 backdrop-blur-xl">
+      <header className="z-50 shrink-0 border-b border-line bg-card/80 backdrop-blur-xl">
         <div className="flex h-16 items-center justify-between px-6">
           {/* 左：logo + 标题 + 返回主站 */}
           <div className="flex items-center gap-4">
@@ -616,7 +619,7 @@ export function CreatorCenter() {
       </header>
 
       {/* 主体：侧边栏 + 主内容区（底部留出固定 footer 的空间） */}
-      <div className="flex w-full flex-1 gap-6 px-6 py-6 pb-[76px]">
+      <div className="flex min-h-0 w-full flex-1 gap-6 px-6 py-6 pb-[76px]">
         {/* 左侧边栏 */}
         <aside className="hidden w-56 shrink-0 md:block">
           {/* 投稿按钮区 */}
@@ -686,7 +689,7 @@ export function CreatorCenter() {
         </aside>
 
         {/* 主内容区：grid 重叠布局，新旧视图交叉淡入淡出 */}
-        <main className="grid min-w-0 flex-1 grid-rows-[1fr]">
+        <main className="no-scrollbar grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-y-auto">
           <AnimatePresence>
             {/* 首页占位 */}
             {view === 'home' && (

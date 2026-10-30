@@ -159,6 +159,24 @@ const (
 	commentMax    = 1000 // 审核意见在邮件里的最长字符数
 )
 
+// AnnouncementParams 系统公告邮件的数据
+type AnnouncementParams struct {
+	Title string
+	// BodyHTML Markdown 渲染并清洗后的正文，直接嵌入邮件
+	BodyHTML template.HTML
+	// BodyText 纯文本版正文，用于 text/plain 部分
+	BodyText    string
+	Sender      string // 发布人用户名
+	PublishedAt string // 发布时间，已格式化
+	ActionURL   string // 站内跳转地址，空串则不渲染按钮
+	ActionLabel string
+	Subject     string
+	Preheader   string
+	SiteURL     string
+	LogoURL     string
+	Year        int
+}
+
 // RenderReviewResult 渲染审核结果邮件
 func (r *Renderer) RenderReviewResult(p ReviewResultParams) (string, string, string, error) {
 	st, ok := resultStyles[p.Result]
@@ -194,6 +212,38 @@ func (r *Renderer) RenderReviewResult(p ReviewResultParams) (string, string, str
 	}
 	if err := r.textTmpl.ExecuteTemplate(&textBuf, "review_result.txt", p); err != nil {
 		return "", "", "", fmt.Errorf("render text: %w", err)
+	}
+	return p.Subject, htmlBuf.String(), textBuf.String(), nil
+}
+
+// RenderAnnouncement 渲染系统公告邮件。
+// 公告邮件对所有收件人内容一致，调用方渲染一次后复用即可。
+func (r *Renderer) RenderAnnouncement(p AnnouncementParams) (string, string, string, error) {
+	if strings.TrimSpace(string(p.BodyHTML)) == "" {
+		return "", "", "", fmt.Errorf("announcement body is empty")
+	}
+	if p.ActionLabel == "" {
+		p.ActionLabel = "查看详情"
+	}
+	if p.Year == 0 {
+		p.Year = time.Now().Year()
+	}
+	if p.LogoURL == "" && p.SiteURL != "" {
+		p.LogoURL = p.SiteURL + "/logo.png"
+	}
+	if p.Subject == "" {
+		p.Subject = subjectPrefix + p.Title
+	}
+	if p.Preheader == "" {
+		p.Preheader = truncateRunes(p.BodyText, 80)
+	}
+
+	var htmlBuf, textBuf bytes.Buffer
+	if err := r.htmlTmpl.ExecuteTemplate(&htmlBuf, "announcement.html", p); err != nil {
+		return "", "", "", fmt.Errorf("render announcement html: %w", err)
+	}
+	if err := r.textTmpl.ExecuteTemplate(&textBuf, "announcement.txt", p); err != nil {
+		return "", "", "", fmt.Errorf("render announcement text: %w", err)
 	}
 	return p.Subject, htmlBuf.String(), textBuf.String(), nil
 }

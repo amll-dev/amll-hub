@@ -39,6 +39,7 @@ type RouterDeps struct {
 	LatestSong   *handler.LatestSongHandler
 	Admin        *handler.AdminHandler
 	Notification *handler.NotificationHandler
+	Announcement *handler.AnnouncementHandler
 	UserActivity *handler.UserActivityHandler
 	UserProfile  *handler.UserProfileHandler
 	UserSearch   *handler.UserSearchHandler
@@ -74,6 +75,7 @@ func New(deps RouterDeps) *gin.Engine {
 	latestSongH := deps.LatestSong
 	adminH := deps.Admin
 	notifH := deps.Notification
+	announcementH := deps.Announcement
 	userActivityH := deps.UserActivity
 	userProfileH := deps.UserProfile
 	userSearchH := deps.UserSearch
@@ -318,8 +320,17 @@ func New(deps RouterDeps) *gin.Engine {
 				adminGrp.GET("/reviewers", adminH.ListReviewers)
 				adminGrp.POST("/reviewers", adminH.AddReviewer)
 				adminGrp.DELETE("/reviewers/:username", adminH.RemoveReviewer)
-				// 系统公告广播
-				adminGrp.POST("/notifications/broadcast", adminH.BroadcastNotification)
+			}
+
+			// 系统公告
+			// 静态段 /audience 必须注册在 /:id 之前，否则 gin 路由树会冲突
+			manageGrp := sub.Group("/manage")
+			manageGrp.Use(middleware.RequireReviewerOrAdmin(reviewerCache, adminCache))
+			{
+				manageGrp.GET("/announcements/audience", announcementH.Audience)
+				manageGrp.GET("/announcements", announcementH.List)
+				manageGrp.POST("/announcements", announcementH.Publish)
+				manageGrp.GET("/announcements/:id", announcementH.Status)
 			}
 
 			// 消息中心（静态段优先于 :id 注册）

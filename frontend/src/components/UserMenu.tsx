@@ -14,19 +14,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Bell,
-  LayoutDashboard,
-  LogOut,
-  Monitor,
-  Moon,
-  Palette,
-  Shield,
-  ShieldCheck,
-  Sun,
-  User,
-  SquareUser,
-} from 'lucide-react';
+import { Bell, LogOut, Monitor, Moon, Palette, Sun, User, SquareUser } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { themeAtom, type ThemePreference } from '@/atoms/theme';
 import { preloadRoute } from '@/routes';
@@ -150,17 +138,6 @@ export function UserMenu() {
 
           <DropdownMenuItem asChild>
             <Link
-              to="/creator"
-              onClick={nav}
-              onMouseEnter={() => preloadRoute('/creator')}
-              className="cursor-pointer"
-            >
-              <LayoutDashboard className="h-4 w-4" />
-              创作中心
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link
               to="/messages"
               onClick={nav}
               onMouseEnter={() => preloadRoute('/messages')}
@@ -170,32 +147,6 @@ export function UserMenu() {
               消息中心
             </Link>
           </DropdownMenuItem>
-          {user.isReviewer && (
-            <DropdownMenuItem asChild>
-              <Link
-                to="/review"
-                onClick={nav}
-                onMouseEnter={() => preloadRoute('/review')}
-                className="cursor-pointer"
-              >
-                <Shield className="h-4 w-4" />
-                审核中心
-              </Link>
-            </DropdownMenuItem>
-          )}
-          {user.isAdmin && (
-            <DropdownMenuItem asChild>
-              <Link
-                to="/admin/reviewers"
-                onClick={nav}
-                onMouseEnter={() => preloadRoute('/admin/reviewers')}
-                className="cursor-pointer"
-              >
-                <ShieldCheck className="h-4 w-4" />
-                审核员管理
-              </Link>
-            </DropdownMenuItem>
-          )}
         </div>
         <DropdownMenuSeparator className="mx-0" />
         <div className="py-1">

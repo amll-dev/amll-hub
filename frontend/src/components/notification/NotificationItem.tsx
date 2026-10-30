@@ -104,7 +104,10 @@ export function NotificationItem({
             {formatRelativeTime(message.createdAt)}
           </span>
         </div>
-        <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-ink-3">{message.content}</p>
+        {/* whitespace-pre-line：公告正文允许换行，单行消息不受影响 */}
+        <p className="mt-0.5 line-clamp-2 whitespace-pre-line text-xs leading-relaxed text-ink-3">
+          {message.content}
+        </p>
         {message.action && (
           <span className="mt-1 inline-block text-xs font-medium text-primary">
             {message.action.label} →

@@ -199,6 +199,10 @@ CREATE TABLE submissions (
     is_unrearranged       BOOLEAN       NOT NULL DEFAULT FALSE,
     unrearranged_reason   VARCHAR(500)  NOT NULL DEFAULT '',
     status                VARCHAR(20)   NOT NULL DEFAULT 'pending',
+    --  is_first_submission：提交时投稿人名下还没有任何 approved 投稿则置 TRUE，
+    --     即「首篇通过之前提交的每一篇都算首次」（可同时存在多篇）。
+    --     一经写入不再变动：后续通过/被拒/关闭都不回改，历史数据也不回填。
+    is_first_submission   BOOLEAN       NOT NULL DEFAULT FALSE,
     submitter             VARCHAR(100)  NOT NULL,
     submitter_info        JSONB         NOT NULL DEFAULT '{}'::jsonb,
     provider              VARCHAR(20)   NOT NULL DEFAULT 'casdoor',
@@ -238,6 +242,8 @@ COMMENT ON COLUMN submissions.review_lease_at IS
     '审核占用心跳时间；reviewing 状态下由审核员详情页定时刷新，超时未刷新由后台任务回退为 pending';
 COMMENT ON COLUMN submissions.reviewer_info IS
     '审核员信息（username/displayName/avatar），审核占用或审核结论时写入';
+COMMENT ON COLUMN submissions.is_first_submission IS
+    '是否为「首篇通过审核之前」提交的投稿；提交时判定，事后不回改，历史数据不回填';
 
 CREATE INDEX idx_submissions_submitter       ON submissions(submitter);
 CREATE INDEX idx_submissions_status          ON submissions(status);
@@ -448,6 +454,42 @@ CREATE INDEX idx_notifications_created ON notifications (created_at DESC);
 ALTER TABLE notifications
     ADD CONSTRAINT ck_notifications_type
     CHECK (type IN ('system', 'review', 'submission', 'comment'));
+
+--  系统公告：每次发布留一条记录，同时保存邮件发送结果
+--  收件人范围与站内信一致（投稿者 ∪ 审核员），不给 users 建外键：项目没有 users 表
+CREATE TABLE announcements (
+    id               BIGSERIAL    PRIMARY KEY,
+    title            VARCHAR(200) NOT NULL,
+    content          TEXT         NOT NULL,
+    action_path      VARCHAR(500) NOT NULL DEFAULT '',
+    action_label     VARCHAR(100) NOT NULL DEFAULT '',
+    sender           VARCHAR(100) NOT NULL,
+    mail_enabled     BOOLEAN      NOT NULL DEFAULT FALSE,
+    audience_count   INTEGER      NOT NULL DEFAULT 0,
+    mail_sent        INTEGER      NOT NULL DEFAULT 0,
+    mail_failed      INTEGER      NOT NULL DEFAULT 0,
+    mail_skipped     INTEGER      NOT NULL DEFAULT 0,
+    mail_status      VARCHAR(20)  NOT NULL DEFAULT 'none',
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    mail_finished_at TIMESTAMPTZ
+);
+
+COMMENT ON TABLE  announcements                 IS '系统公告发布记录（站内信 + 可选邮件）';
+COMMENT ON COLUMN announcements.sender          IS '发布人用户名，对应 JWT claims.name';
+COMMENT ON COLUMN announcements.action_path     IS '站内信跳转路径，空串表示不跳转';
+COMMENT ON COLUMN announcements.mail_enabled    IS '本次发布是否勾选了发送邮件';
+COMMENT ON COLUMN announcements.audience_count  IS '站内信入队时的收件人总数';
+COMMENT ON COLUMN announcements.mail_status     IS 'none 未发邮件 / sending 发送中 / done 已完成';
+COMMENT ON COLUMN announcements.mail_sent       IS '邮件发送成功数';
+COMMENT ON COLUMN announcements.mail_failed     IS '邮件发送失败数';
+COMMENT ON COLUMN announcements.mail_skipped    IS '跳过数：Casdoor 查不到邮箱的用户';
+
+--  历史列表按时间倒序
+CREATE INDEX idx_announcements_created ON announcements (created_at DESC);
+
+ALTER TABLE announcements
+    ADD CONSTRAINT ck_announcements_mail_status
+    CHECK (mail_status IN ('none', 'sending', 'done'));
 
 --  用户公开主页扩展资料表
 --  项目没有 users 表，username 对应 Casdoor name / JWT claims.name，不建外键；

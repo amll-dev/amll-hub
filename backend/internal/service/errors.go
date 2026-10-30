@@ -121,6 +121,11 @@ var ErrImageNotFound = errors.New("search ip image not found")
 // ErrNotificationNotFound 消息不存在或不属于当前用户
 var ErrNotificationNotFound = errors.New("notification not found")
 
+// 系统公告模块
+
+// ErrAnnouncementNotFound 公告不存在
+var ErrAnnouncementNotFound = errors.New("announcement not found")
+
 // GitHub 登录/绑定模块
 
 // ErrGithubOAuthDisabled 未配置 GitHub OAuth（client_id / client_secret 缺失）

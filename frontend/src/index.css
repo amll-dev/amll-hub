@@ -845,6 +845,15 @@ html.dark .amll-skeleton::after {
   background: transparent;
 }
 
+/* 隐藏滚动条 */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Firefox 用标准属性做同样的事 */
 * {
   scrollbar-width: thin;

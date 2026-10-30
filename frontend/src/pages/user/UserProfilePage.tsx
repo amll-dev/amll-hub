@@ -38,24 +38,29 @@ export function UserProfilePage() {
     staleTime: 60_000,
     retry: false,
   });
+  // 提前取出来：下面 data 判空的分支里再访问 profileQuery 会被收窄成 never
+  const refetchProfile = profileQuery.refetch;
 
   if (profileQuery.isPending) {
     return <UserProfileSkeleton />;
   }
 
   if (profileQuery.error) {
-    return (
-      <UserProfileError error={profileQuery.error} onRetry={() => void profileQuery.refetch()} />
-    );
+    return <UserProfileError error={profileQuery.error} onRetry={() => void refetchProfile()} />;
   }
 
   const profile = profileQuery.data;
+  // 后端契约异常（code=200 但 data 为 null）时给错误态，不要白屏崩掉
+  if (!profile) {
+    return <UserProfileError error={null} onRetry={() => void refetchProfile()} />;
+  }
+
   const showBanner = profile.bannerKey !== '' && !bannerFailed;
 
   return (
-    <div className="pb-16">
-      {/* Banner：从 sticky 顶栏下方开始（Header 在文档流里，无需额外上边距） */}
-      <div className="relative aspect-[3/1] max-h-[320px] min-h-[140px] w-full overflow-hidden bg-surface-2">
+    /* flex-col：避免 banner 的负外边距与父容器发生外边距合并，把整页内容一起顶上去 */
+    <div className="flex flex-col pb-16">
+      <div className="relative -mt-16 aspect-[3/1] max-h-[384px] min-h-[204px] w-full overflow-hidden bg-surface-2">
         {showBanner ? (
           <img
             src={api.uploadFileUrl(profile.bannerKey)}
@@ -64,7 +69,7 @@ export function UserProfilePage() {
             onError={() => setBannerFailed(true)}
           />
         ) : (
-          <div className="h-full w-full bg-gradient-to-br from-primary-tint via-surface-2 to-primary-soft dark:from-primary/15 dark:via-surface-2 dark:to-background" />
+          <div className="h-full w-full bg-gradient-to-b from-primary/30 via-primary-tint to-surface-2 dark:from-primary/25 dark:via-primary/10 dark:to-background" />
         )}
         {/* 底部渐变过渡，保证头像叠层与文字在亮/暗主题下都有对比 */}
         <div className="absolute inset-0 bg-gradient-to-t from-background/85 via-background/15 to-transparent dark:from-background dark:via-background/50" />
@@ -110,8 +115,9 @@ export function UserProfilePage() {
 /** 整页骨架：banner + 圆头像 + 两行标题 + 双栏 */
 function UserProfileSkeleton() {
   return (
-    <div className="pb-16">
-      <Skeleton className="h-[180px] w-full rounded-none sm:h-[240px]" />
+    <div className="flex flex-col pb-16">
+      {/* 与真实 banner 同款：顶到页面最上沿、伸到顶栏背后（高度已含 64px 顶栏） */}
+      <Skeleton className="-mt-16 h-[244px] w-full rounded-none sm:h-[304px]" />
       <PageContainer width="lg" className="pb-16 pt-0">
         <div className="-mt-14 flex items-end gap-4 sm:-mt-16">
           <Skeleton className="h-24 w-24 shrink-0 rounded-full ring-4 ring-background sm:h-28 sm:w-28" />

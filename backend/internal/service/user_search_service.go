@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/amll-dev/amll-hub/backend/internal/infrastructure"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
@@ -114,6 +115,46 @@ func (s *UserSearchService) Search(ctx context.Context, keyword string, limit in
 		Limit:   limit,
 		HasMore: hasMore,
 	}, nil
+}
+
+// GetInfos 按用户名批量取展示信息
+func (s *UserSearchService) GetInfos(
+	ctx context.Context, names []string,
+) map[string]UserSearchItem {
+	const maxConcurrency = 8
+
+	out := make(map[string]UserSearchItem, len(names))
+	if len(names) == 0 {
+		return out
+	}
+
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxConcurrency)
+
+	for _, name := range names {
+		name := name
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			u, err := s.casdoor.GetUserProfile(ctx, name)
+			if err != nil || u == nil {
+				return
+			}
+			mu.Lock()
+			out[name] = UserSearchItem{
+				Name:        u.Name,
+				DisplayName: u.DisplayName,
+				Avatar:      u.Avatar,
+			}
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	return out
 }
 
 // Count 返回可枚举的匹配数（达到 cap 即认为「更多」，与前端 N+ 的展示约定一致）
