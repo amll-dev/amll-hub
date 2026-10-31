@@ -39,6 +39,7 @@ import type {
   SubmissionComment,
   SubmissionDetail,
   SubmissionListResult,
+  SubmissionType,
   UserActivity,
   UserSearchResult,
   TtmlValidationResult,
@@ -731,6 +732,14 @@ export const api = {
     languages?: string[];
     isUnrearranged?: boolean;
     unrearrangedReason?: string;
+    /** 投稿提交类型 */
+    submissionType?: SubmissionType;
+    /** 修正投稿指向的曲库歌曲 id */
+    targetSongId?: number;
+    /** 修正投稿指向的原歌词文件名 */
+    targetRawLyricFile?: string;
+    /** 修正差异快照（buildDiffSnapshot 生成） */
+    diffSnapshot?: unknown;
     type?: string;
     status?: 'pending' | 'draft';
   }): Promise<{ id: number }> {

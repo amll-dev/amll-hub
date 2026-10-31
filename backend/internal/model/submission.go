@@ -22,6 +22,14 @@ const (
 	StatusRevised = "revised"
 )
 
+// 投稿提交类型枚举
+const (
+	// SubmissionTypeNew 新歌词提交
+	SubmissionTypeNew = "new"
+	// SubmissionTypeRevision 修正已有歌词（对比曲库现有歌词）
+	SubmissionTypeRevision = "revision"
+)
+
 // SubmissionLanguage 投稿语言枚举
 const (
 	LangOthers = "others"
@@ -126,7 +134,15 @@ type Submission struct {
 	// IsUnrearranged 为 true 表示上传的是未经重排的原始歌词文件
 	IsUnrearranged bool `gorm:"column:is_unrearranged;not null;default:false" json:"isUnrearranged"`
 	// UnrearrangedReason 投稿者填写的「为什么用未重排版」说明，详情页展示
-	UnrearrangedReason  string     `gorm:"column:unrearranged_reason;type:varchar(500);not null;default:''" json:"unrearrangedReason"`
+	UnrearrangedReason string `gorm:"column:unrearranged_reason;type:varchar(500);not null;default:''" json:"unrearrangedReason"`
+	// SubmissionType 投稿类型：new=新歌词提交，revision=修正已有歌词
+	SubmissionType string `gorm:"column:submission_type;type:varchar(20);not null;default:'new'" json:"submissionType"`
+	// TargetSongID 修正投稿指向的曲库歌曲 id（songs.id）
+	TargetSongID *int64 `gorm:"column:target_song_id" json:"targetSongId,omitempty"`
+	// TargetRawLyricFile 修正投稿指向的原歌词文件名（raw-lyrics 目录）
+	TargetRawLyricFile string `gorm:"column:target_raw_lyric_file;type:varchar(255);not null;default:''" json:"targetRawLyricFile,omitempty"`
+	// DiffSnapshot 修正投稿的差异快照（前端内置 diff 工具生成）
+	DiffSnapshot        JSONObject `gorm:"column:diff_snapshot;type:jsonb;not null;default:'{}'" json:"diffSnapshot,omitempty"`
 	Status              string     `gorm:"type:varchar(20);not null;default:'pending'" json:"status"`
 	IsFirstSubmission   bool       `gorm:"column:is_first_submission;not null;default:false" json:"isFirstSubmission"` // 首通过前提交的投稿
 	Submitter           string     `gorm:"type:varchar(100);not null" json:"submitter"`

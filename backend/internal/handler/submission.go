@@ -317,6 +317,8 @@ func writeSubmissionErr(c *gin.Context, err error) {
 		pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "无权操作该投稿")
 	case errors.Is(err, service.ErrMissingUnrearrangedReason):
 		pkg.BadRequest(c, "勾选未重排歌词时必须填写原因")
+	case errors.Is(err, service.ErrMissingRevisionTarget):
+		pkg.BadRequest(c, "修正已有歌词时必须选择要修正的原歌词")
 	case errors.Is(err, service.ErrInvalidInput):
 		pkg.BadRequest(c, "请求参数非法")
 	case errors.Is(err, service.ErrUpstreamUnavailable):

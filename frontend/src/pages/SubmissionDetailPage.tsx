@@ -39,8 +39,11 @@ import {
   statusMeta,
 } from '@/components/submission/shared';
 import { formatDateTime } from '@/lib/format';
+import { usernameOf } from '@/lib/username';
 import { MetaItem } from '@/components/submission/MetaItem';
 import { FirstSubmissionBadge } from '@/components/submission/FirstSubmissionBadge';
+import { RevisionBadge } from '@/components/submission/RevisionBadge';
+import { RevisionDiffPreview } from '@/components/creator/RevisionDiffPreview';
 import { UserDisplayName } from '@/components/submission/UserDisplayName';
 import { UserAvatar } from '@/components/submission/UserAvatar';
 import { CommentSection } from '@/components/submission/CommentSection';
@@ -247,6 +250,7 @@ function SubmissionDetailContent({
     staleTime: 15_000,
   });
   const detail = detailQuery.data ?? null;
+  const submitterName = usernameOf(detail?.submitter);
   const ttml = ttmlQuery.data ?? '';
   const loading = detailQuery.isPending;
   const loadError =
@@ -461,6 +465,7 @@ function SubmissionDetailContent({
           <h1 className="flex flex-1 flex-wrap items-center gap-2 text-2xl font-bold text-foreground">
             <span className="min-w-0">{detail.title || '未命名'}</span>
             {detail.isFirstSubmission && <FirstSubmissionBadge size="md" />}
+            {detail.submissionType === 'revision' && <RevisionBadge size="md" />}
             <span className="text-base font-normal text-ink-3">#{detail.id}</span>
           </h1>
           <div className="flex items-center gap-2">
@@ -493,7 +498,7 @@ function SubmissionDetailContent({
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-ink-3">
           {/* 只把头像 + 名字包进链接；submitterInfo 是投稿时的快照，链接一律用 submitter */}
           <Link
-            to={`/user/${encodeURIComponent(detail.submitter)}`}
+            to={`/user/${encodeURIComponent(submitterName)}`}
             className="inline-flex min-w-0 items-center gap-2 rounded-md transition-colors hover:text-primary"
           >
             <UserAvatar
@@ -649,51 +654,99 @@ function SubmissionDetailContent({
         {/* 主体 */}
         <motion.div variants={fadeUp} className="min-w-0 flex-1 space-y-5">
           {/* 更新歌词区 */}
-          {showUpdateLyric && (
-            <UpdateLyricArea
-              submissionId={id}
-              onClose={() => setShowUpdateLyric(false)}
-              onSuccess={loadDetail}
-            />
-          )}
+          <AnimatePresence initial={false}>
+            {showUpdateLyric && (
+              <motion.div
+                key="update-lyric"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="overflow-hidden"
+              >
+                <UpdateLyricArea
+                  submissionId={id}
+                  onClose={() => setShowUpdateLyric(false)}
+                  onSuccess={loadDetail}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* 上传音频区 */}
-          {showUploadAudio && (
-            <UploadAudioArea
-              submissionId={id}
-              onClose={() => setShowUploadAudio(false)}
-              onSuccess={loadDetail}
-            />
-          )}
+          <AnimatePresence initial={false}>
+            {showUploadAudio && (
+              <motion.div
+                key="upload-audio"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="overflow-hidden"
+              >
+                <UploadAudioArea
+                  submissionId={id}
+                  onClose={() => setShowUploadAudio(false)}
+                  onSuccess={loadDetail}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* 信息标签 */}
           {tab === 'info' && (
-            <div className="rounded-lg border border-line bg-card p-5">
-              <h3 className="mb-3 text-sm font-semibold text-foreground">稿件信息</h3>
-              <dl>
-                <MetaItem label="歌手" value={detail.artist} />
-                <MetaItem label="专辑" value={detail.album} />
-                <MetaItem label="网易云 ID" value={platformIds.ncm.join(', ') || detail.ncmId} />
-                <MetaItem label="QQ 音乐 ID" value={platformIds.qq.join(', ') || detail.qqId} />
-                <MetaItem label="Apple Music ID" value={platformIds.am.join(', ') || detail.amId} />
-                <MetaItem
-                  label="Spotify ID"
-                  value={platformIds.spotify.join(', ') || detail.spotifyId}
-                />
-                <MetaItem label="投稿人" value={detail.submitter} />
-                <MetaItem label="语言" value={langListText(detail.languages, detail.language)} />
-                <MetaItem label="创建时间" value={formatDateTime(detail.createdAt)} />
-                {detail.fileUpdatedAt && (
-                  <MetaItem label="文件更新" value={formatDateTime(detail.fileUpdatedAt)} />
+            <>
+              <div className="rounded-lg border border-line bg-card p-5">
+                <h3 className="mb-3 text-sm font-semibold text-foreground">稿件信息</h3>
+                <dl>
+                  {detail.submissionType === 'revision' && (
+                    <>
+                      <MetaItem label="提交类型" value="歌词修正" />
+                      <MetaItem
+                        label="修正自"
+                        value={
+                          [detail.diffSnapshot?.target?.title, detail.diffSnapshot?.target?.artist]
+                            .filter(Boolean)
+                            .join(' - ') || detail.targetRawLyricFile
+                        }
+                      />
+                    </>
+                  )}
+                  <MetaItem label="歌手" value={detail.artist} />
+                  <MetaItem label="专辑" value={detail.album} />
+                  <MetaItem label="网易云 ID" value={platformIds.ncm.join(', ') || detail.ncmId} />
+                  <MetaItem label="QQ 音乐 ID" value={platformIds.qq.join(', ') || detail.qqId} />
+                  <MetaItem
+                    label="Apple Music ID"
+                    value={platformIds.am.join(', ') || detail.amId}
+                  />
+                  <MetaItem
+                    label="Spotify ID"
+                    value={platformIds.spotify.join(', ') || detail.spotifyId}
+                  />
+                  <MetaItem label="投稿人" value={detail.submitter} />
+                  <MetaItem label="语言" value={langListText(detail.languages, detail.language)} />
+                  <MetaItem label="创建时间" value={formatDateTime(detail.createdAt)} />
+                  {detail.fileUpdatedAt && (
+                    <MetaItem label="文件更新" value={formatDateTime(detail.fileUpdatedAt)} />
+                  )}
+                </dl>
+                {detail.notes && (
+                  <div className="mt-3 border-t border-line pt-3">
+                    <div className="mb-1 text-xs text-ink-3">投稿备注</div>
+                    <div className="whitespace-pre-wrap text-sm text-foreground">
+                      {detail.notes}
+                    </div>
+                  </div>
                 )}
-              </dl>
-              {detail.notes && (
-                <div className="mt-3 border-t border-line pt-3">
-                  <div className="mb-1 text-xs text-ink-3">投稿备注</div>
-                  <div className="whitespace-pre-wrap text-sm text-foreground">{detail.notes}</div>
-                </div>
-              )}
-            </div>
+              </div>
+              {/* 修正投稿的差异数据：投稿者与审核员可见，单独成卡与上方信息区一致 */}
+              {detail.submissionType === 'revision' &&
+                (isSubmitter || isReviewer) &&
+                detail.diffSnapshot?.stats && (
+                  <RevisionDiffPreview snapshot={detail.diffSnapshot} collapsible />
+                )}
+            </>
           )}
 
           {/* 歌曲标签 */}

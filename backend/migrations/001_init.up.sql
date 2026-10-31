@@ -198,6 +198,15 @@ CREATE TABLE submissions (
     --     不以格式校验作为提交门槛；unrearranged_reason 强制必填。
     is_unrearranged       BOOLEAN       NOT NULL DEFAULT FALSE,
     unrearranged_reason   VARCHAR(500)  NOT NULL DEFAULT '',
+    --  submission_type：投稿类型。new=新歌词提交；revision=修正已有歌词
+    --     （以曲库现有歌词为基线，提交时生成差异快照）。
+    submission_type       VARCHAR(20)   NOT NULL DEFAULT 'new',
+    --  target_song_id / target_raw_lyric_file：修正投稿指向的曲库歌曲与原歌词文件，仅 revision 有值。
+    target_song_id        BIGINT,
+    target_raw_lyric_file VARCHAR(255)  NOT NULL DEFAULT '',
+    --  diff_snapshot：修正投稿提交时由前端内置 diff 工具生成的差异快照
+    --     （统计/行级明细/元数据变更/目标歌曲），详情页直接读取渲染。
+    diff_snapshot         JSONB         NOT NULL DEFAULT '{}'::jsonb,
     status                VARCHAR(20)   NOT NULL DEFAULT 'pending',
     --  is_first_submission：提交时投稿人名下还没有任何 approved 投稿则置 TRUE，
     --     即「首篇通过之前提交的每一篇都算首次」（可同时存在多篇）。
@@ -244,10 +253,19 @@ COMMENT ON COLUMN submissions.reviewer_info IS
     '审核员信息（username/displayName/avatar），审核占用或审核结论时写入';
 COMMENT ON COLUMN submissions.is_first_submission IS
     '是否为「首篇通过审核之前」提交的投稿；提交时判定，事后不回改，历史数据不回填';
+COMMENT ON COLUMN submissions.submission_type IS
+    '投稿类型：new=新歌词提交，revision=修正已有歌词';
+COMMENT ON COLUMN submissions.target_song_id IS
+    '修正投稿指向的曲库歌曲 id（songs.id），仅 revision 有值';
+COMMENT ON COLUMN submissions.target_raw_lyric_file IS
+    '修正投稿指向的原歌词文件名（raw-lyrics 目录），仅 revision 有值';
+COMMENT ON COLUMN submissions.diff_snapshot IS
+    '修正投稿提交时的差异快照（统计/行级明细/元数据变更/目标歌曲），由前端内置 diff 工具生成';
 
 CREATE INDEX idx_submissions_submitter       ON submissions(submitter);
 CREATE INDEX idx_submissions_status          ON submissions(status);
 CREATE INDEX idx_submissions_language        ON submissions(language);
+CREATE INDEX idx_submissions_submission_type ON submissions(submission_type);
 -- 多选语言筛选用 GIN 索引
 CREATE INDEX idx_submissions_languages       ON submissions USING GIN (languages);
 CREATE INDEX idx_submissions_created         ON submissions(created_at DESC);

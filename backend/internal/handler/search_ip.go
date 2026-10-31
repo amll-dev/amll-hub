@@ -36,8 +36,6 @@ func (h *SearchIPHandler) Create(c *gin.Context) {
 		return
 	}
 
-	userID := middleware.GetUserID(c)
-
 	// 读取 title 字段
 	title := c.PostForm("title")
 
@@ -74,7 +72,7 @@ func (h *SearchIPHandler) Create(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
 	defer cancel()
 
-	result, err := h.svc.CreateSubmission(ctx, userID, submitterInfo, &service.CreateSearchIPInput{
+	result, err := h.svc.CreateSubmission(ctx, user.Name, submitterInfo, &service.CreateSearchIPInput{
 		Title:    title,
 		Data:     data,
 		TempKeys: tempKeys,
@@ -91,7 +89,7 @@ func (h *SearchIPHandler) Create(c *gin.Context) {
 // UploadTemp POST /api/v1/search-ip/upload-temp
 // 上传单张图片到临时区，返回 { tempKey }
 func (h *SearchIPHandler) UploadTemp(c *gin.Context) {
-	if middleware.GetUserID(c) == "" {
+	if middleware.GetUserName(c) == "" {
 		pkg.Unauthorized(c)
 		return
 	}
@@ -133,8 +131,8 @@ type MatchRequest struct {
 
 // List GET /api/v1/search-ip/submissions
 func (h *SearchIPHandler) List(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	if userID == "" {
+	username := middleware.GetUserName(c)
+	if username == "" {
 		pkg.Unauthorized(c)
 		return
 	}
@@ -142,7 +140,7 @@ func (h *SearchIPHandler) List(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	result, err := h.svc.ListBySubmitter(ctx, userID)
+	result, err := h.svc.ListBySubmitter(ctx, username)
 	if err != nil {
 		logrus.WithError(err).Error("list search ip submissions failed")
 		pkg.InternalError(c, "查询列表失败")
