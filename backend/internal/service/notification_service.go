@@ -307,25 +307,6 @@ func (s *NotificationService) NotifyAutoRejected(ctx context.Context, sub *model
 	return err
 }
 
-// NotifyAnnouncement T5：系统公告群发给全体已知用户。
-// title/content 来自管理员原始输入，此处做一次 HTML 转义 + 截断
-func (s *NotificationService) NotifyAnnouncement(ctx context.Context, title, content, path, label string) error {
-	users, err := s.repo.ListAllKnownUsers(ctx)
-	if err != nil {
-		return err
-	}
-	if len(users) == 0 {
-		return nil
-	}
-	return s.NotifyMany(ctx, users, NotifyInput{
-		Type:        model.NotifyTypeSystem,
-		Title:       sanitize(title, notificationTitleMax),
-		Content:     sanitize(content, notificationMax),
-		ActionPath:  path,
-		ActionLabel: sanitize(label, 100),
-	})
-}
-
 // StartCleanupTask 启动 90 天历史消息清理任务（P8）
 func (s *NotificationService) StartCleanupTask(ctx context.Context) {
 	go func() {

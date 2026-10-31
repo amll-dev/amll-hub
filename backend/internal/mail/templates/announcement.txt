@@ -1,0 +1,10 @@
+【AMLL Hub】系统公告：{{.Title}}
+
+{{.BodyText}}
+
+—— {{.Sender}} · {{.PublishedAt}}
+{{if .ActionURL}}
+查看详情：{{.ActionURL}}
+{{end}}
+本邮件由 AMLL Hub 系统自动发送，请勿直接回复。
+{{.SiteURL}} · © {{.Year}} AMLL Hub

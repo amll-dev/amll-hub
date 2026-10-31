@@ -59,6 +59,7 @@ type Submission struct {
 	IsUnrearranged       bool           `json:"isUnrearranged"`
 	UnrearrangedReason   string         `json:"unrearrangedReason"`
 	Status               string         `json:"status"`
+	IsFirstSubmission    bool           `json:"isFirstSubmission"`
 	Submitter            string         `json:"submitter"`
 	SubmitterInfo        UserInfo       `json:"submitterInfo"`
 	Provider             string         `json:"provider"`
@@ -281,7 +282,16 @@ func (s *SubmissionService) Create(ctx context.Context, user *SubmissionUser, in
 
 	// 事务写入
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return s.subRepo.Create(ctx, tx, sub)
+		if err := s.subRepo.Create(ctx, tx, sub); err != nil {
+			return err
+		}
+		if sub.Status != model.StatusDraft {
+			if _, err := s.subRepo.MarkFirstSubmissionIfEligible(ctx, tx, sub); err != nil {
+				logrus.WithError(err).WithField("submission_id", sub.ID).
+					Warn("mark first submission failed")
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return 0, err
@@ -1132,6 +1142,7 @@ func convertSubmission(m model.Submission) Submission {
 		IsUnrearranged:      m.IsUnrearranged,
 		UnrearrangedReason:  m.UnrearrangedReason,
 		Status:              m.Status,
+		IsFirstSubmission:   m.IsFirstSubmission,
 		Submitter:           m.Submitter,
 		SubmitterInfo:       convertUserInfo(m.SubmitterInfo),
 		Provider:            m.Provider,

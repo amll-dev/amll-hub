@@ -42,8 +42,6 @@ const loadLyricEditorPage = () =>
 const loadRegister = () => import('@/pages/Register').then((m) => ({ default: m.Register }));
 const loadResetPassword = () =>
   import('@/pages/ResetPassword').then((m) => ({ default: m.ResetPassword }));
-const loadReviewerManagePage = () =>
-  import('@/pages/ReviewerManagePage').then((m) => ({ default: m.ReviewerManagePage }));
 const loadPlaceholder = () =>
   import('@/pages/Placeholder').then((m) => ({ default: m.Placeholder }));
 const loadNotFound = () => import('@/pages/NotFound').then((m) => ({ default: m.NotFound }));
@@ -72,7 +70,6 @@ export const SubmissionDetailPage = lazy(loadSubmissionDetailPage);
 export const LyricEditorPage = lazy(loadLyricEditorPage);
 export const Register = lazy(loadRegister);
 export const ResetPassword = lazy(loadResetPassword);
-export const ReviewerManagePage = lazy(loadReviewerManagePage);
 export const Placeholder = lazy(loadPlaceholder);
 export const NotFound = lazy(loadNotFound);
 export const Terms = lazy(loadTerms);
@@ -103,7 +100,6 @@ export const pagePreloads: Record<string, () => Promise<unknown>> = {
   '/review/editor': loadLyricEditorPage,
   '/register': loadRegister,
   '/reset-password': loadResetPassword,
-  '/admin/reviewers': loadReviewerManagePage,
   '/terms': loadTerms,
   '/privacy': loadPrivacy,
 };

@@ -1,5 +1,8 @@
 import type {
   ApiResponse,
+  Announcement,
+  AnnouncementAudience,
+  AnnouncementListResult,
   DailyLikeStatus,
   DailyRecommendation,
   DailyRecListResult,
@@ -22,6 +25,7 @@ import type {
   OnlineSearchResult,
   OnlineSongDetail,
   ReviewAction,
+  ReviewerListResult,
   SaveRevisionPayload,
   SaveSubmitterContentPayload,
   SearchField,
@@ -916,9 +920,9 @@ export const api = {
 
   // ===== 审核员管理 =====
 
-  /** 列出全部审核员用户名 */
-  listReviewers(): Promise<{ items: string[]; total: number }> {
-    return request<{ items: string[]; total: number }>('/api/v1/admin/reviewers');
+  /** 列出全部审核员 */
+  listReviewers(): Promise<ReviewerListResult> {
+    return request<ReviewerListResult>('/api/v1/admin/reviewers');
   },
 
   /** 添加审核员 */
@@ -1135,17 +1139,34 @@ export const api = {
     return request<{ id: number }>(`/api/v1/notifications/${id}`, { method: 'DELETE' });
   },
 
-  /** 系统公告广播 POST /api/v1/admin/notifications/broadcast（仅管理员） */
-  broadcastNotification(params: {
+  /** 发布前预览 */
+  getAnnouncementAudience(): Promise<AnnouncementAudience> {
+    return request<AnnouncementAudience>('/api/v1/manage/announcements/audience');
+  },
+
+  /** 公告历史 GET /api/v1/manage/announcements（审核员 / 超管） */
+  listAnnouncements(page = 1, limit = 20): Promise<AnnouncementListResult> {
+    const sp = new URLSearchParams({ page: String(page), limit: String(limit) });
+    return request<AnnouncementListResult>(`/api/v1/manage/announcements?${sp.toString()}`);
+  },
+
+  /** 发布公告 POST /api/v1/manage/announcements */
+  publishAnnouncement(params: {
     title: string;
     content: string;
     actionPath?: string;
     actionLabel?: string;
-  }): Promise<{ title: string }> {
-    return request<{ title: string }>('/api/v1/admin/notifications/broadcast', {
+    sendMail?: boolean;
+  }): Promise<Announcement> {
+    return request<Announcement>('/api/v1/manage/announcements', {
       method: 'POST',
       body: JSON.stringify(params),
     });
+  },
+
+  /** 单条公告状态：发布后轮询邮件发送进度 */
+  getAnnouncement(id: number): Promise<Announcement> {
+    return request<Announcement>(`/api/v1/manage/announcements/${id}`);
   },
 
   //GitHub OAuth 登录/绑定

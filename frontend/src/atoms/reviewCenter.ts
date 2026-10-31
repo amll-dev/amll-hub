@@ -18,9 +18,9 @@ export type ReviewTab =
 export type SearchIpTab = 'all' | 'pending' | 'approved' | 'rejected';
 
 /** 审核中心主视图 */
-type View = 'home' | 'content' | 'search-ip';
+type View = 'home' | 'content' | 'search-ip' | 'announcement' | 'reviewers';
 
-/** 审核中心当前视图（首页 / 歌词审核 / IP显示投稿） */
+/** 审核中心当前视图 */
 export const reviewViewAtom = atom<View>('home');
 /** 歌词审核列表的状态筛选 */
 export const reviewTabAtom = atom<ReviewTab>('pending');

@@ -94,6 +94,7 @@ func Run() {
 	reviewerRepo := repository.NewReviewerRepo(db)
 	adminRepo := repository.NewAdminRepo(db)
 	notifRepo := repository.NewNotificationRepo(db)
+	announcementRepo := repository.NewAnnouncementRepo(db)
 
 	// GitHub 登录/迁移 repository
 	githubBindingRepo := repository.NewGithubBindingRepo(db)
@@ -164,7 +165,13 @@ func Run() {
 			logrus.WithField("smtp", cfg.Email.Host).Info("review result email enabled")
 		}
 	}
-	notifSvc.SetEmail(mailSender, mail.NewResolver(casdoorClient, cfg.Email.EmailCacheTTL), cfg.Email.SiteURL)
+	mailResolver := mail.NewResolver(casdoorClient, cfg.Email.EmailCacheTTL)
+	notifSvc.SetEmail(mailSender, mailResolver, cfg.Email.SiteURL)
+
+	// 系统公告
+	announcementSvc := service.NewAnnouncementService(
+		announcementRepo, notifRepo, notifSvc, mailSender, mailResolver, cfg.Email.SiteURL,
+	)
 
 	// 搜索IP投稿
 	searchIpSvc := service.NewSearchIPService(searchIpRepo, minioClient, cfg.MinIO.Bucket)
@@ -269,8 +276,9 @@ func Run() {
 	dailyRecH := handler.NewDailyRecommendationHandler(dailyRecSvc)
 	validateH := handler.NewValidateHandler(validateSvc)
 	latestSongH := handler.NewLatestSongHandler(latestSongSvc)
-	adminH := handler.NewAdminHandler(reviewerRepo, reviewerCache, notifSvc)
+	adminH := handler.NewAdminHandler(reviewerRepo, reviewerCache, userSearchSvc)
 	notifH := handler.NewNotificationHandler(notifSvc)
+	announcementH := handler.NewAnnouncementHandler(announcementSvc)
 	userActivityH := handler.NewUserActivityHandler(userActivitySvc)
 	userProfileH := handler.NewUserProfileHandler(userProfileSvc)
 	userSearchH := handler.NewUserSearchHandler(userSearchSvc)
@@ -302,6 +310,7 @@ func Run() {
 		LatestSong:   latestSongH,
 		Admin:        adminH,
 		Notification: notifH,
+		Announcement: announcementH,
 		UserActivity: userActivityH,
 		UserProfile:  userProfileH,
 		UserSearch:   userSearchH,

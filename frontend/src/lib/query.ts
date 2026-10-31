@@ -141,4 +141,10 @@ export const queryKeys = {
   notifications: (params: { page: number; limit: number; type?: MessageType | 'all' }) =>
     ['notifications', 'list', params] as const,
   notificationUnread: ['notifications', 'unread'] as const,
+
+  // 系统公告
+  announcementAudience: ['announcements', 'audience'] as const,
+  announcements: (page: number) => ['announcements', 'list', page] as const,
+  /** 单条公告发送状态 */
+  announcement: (id: number) => ['announcements', 'detail', id] as const,
 } as const;

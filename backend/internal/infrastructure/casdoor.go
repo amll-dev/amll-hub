@@ -814,6 +814,14 @@ func (c *CasdoorClient) GetUser(ctx context.Context, owner, name string) (*Casdo
 	return &user, nil
 }
 
+// GetUserProfile 按用户名取用户资料
+func (c *CasdoorClient) GetUserProfile(ctx context.Context, username string) (*CasdoorUser, error) {
+	if username == "" {
+		return nil, ErrCasdoorUserNotFound
+	}
+	return c.GetUser(ctx, c.cfg.Organization, username)
+}
+
 // GetUserEmail 按用户名查询邮箱
 func (c *CasdoorClient) GetUserEmail(ctx context.Context, username string) (string, error) {
 	if username == "" {

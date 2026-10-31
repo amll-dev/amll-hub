@@ -50,6 +50,11 @@ func (s *Sender) RenderReviewResult(p ReviewResultParams) (subject, html, text s
 	return s.renderer.RenderReviewResult(p)
 }
 
+// RenderAnnouncement 渲染系统公告邮件
+func (s *Sender) RenderAnnouncement(p AnnouncementParams) (subject, html, text string, err error) {
+	return s.renderer.RenderAnnouncement(p)
+}
+
 // Send 发送一封邮件
 func (s *Sender) Send(ctx context.Context, to, subject, htmlBody, textBody string) error {
 	if !s.Enabled() {

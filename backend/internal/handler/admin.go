@@ -16,19 +16,30 @@ import (
 type AdminHandler struct {
 	repo          *repository.ReviewerRepo
 	reviewerCache *middleware.ReviewerCache
-	notif         *service.NotificationService
+	users         *service.UserSearchService
 }
 
 // 创建 AdminHandler
-func NewAdminHandler(repo *repository.ReviewerRepo, rc *middleware.ReviewerCache, notif *service.NotificationService) *AdminHandler {
-	return &AdminHandler{repo: repo, reviewerCache: rc, notif: notif}
+func NewAdminHandler(
+	repo *repository.ReviewerRepo,
+	rc *middleware.ReviewerCache,
+	users *service.UserSearchService,
+) *AdminHandler {
+	return &AdminHandler{repo: repo, reviewerCache: rc, users: users}
 }
 
 // 用户名格式：字母数字下划线连字符，2-100 位
 var usernamePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{2,100}$`)
 
+// reviewerItem 审核员展示信息
+type reviewerItem struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+	Avatar      string `json:"avatar"`
+}
+
 // ListReviewers GET /api/v1/admin/reviewers
-// 列出全部审核员用户名
+// 列出全部审核员
 func (h *AdminHandler) ListReviewers(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
@@ -39,7 +50,24 @@ func (h *AdminHandler) ListReviewers(c *gin.Context) {
 		pkg.InternalError(c, "查询审核员名单失败")
 		return
 	}
-	pkg.OK(c, gin.H{"items": names, "total": len(names)})
+
+	items := make([]reviewerItem, 0, len(names))
+	if h.users != nil && len(names) > 0 {
+		infos := h.users.GetInfos(ctx, names)
+		for _, name := range names {
+			item := reviewerItem{Name: name}
+			if u, ok := infos[name]; ok {
+				item.DisplayName = u.DisplayName
+				item.Avatar = u.Avatar
+			}
+			items = append(items, item)
+		}
+	} else {
+		for _, name := range names {
+			items = append(items, reviewerItem{Name: name})
+		}
+	}
+	pkg.OK(c, gin.H{"items": items, "total": len(items)})
 }
 
 // AddReviewer POST /api/v1/admin/reviewers
@@ -89,30 +117,4 @@ func (h *AdminHandler) RemoveReviewer(c *gin.Context) {
 	}
 	h.reviewerCache.Invalidate()
 	pkg.OK(c, gin.H{"username": username})
-}
-
-// BroadcastNotification POST /api/v1/admin/notifications/broadcast
-// 系统公告：{ title, content, actionPath?, actionLabel? }
-func (h *AdminHandler) BroadcastNotification(c *gin.Context) {
-	var req struct {
-		Title       string `json:"title" binding:"required"`
-		Content     string `json:"content" binding:"required"`
-		ActionPath  string `json:"actionPath"`
-		ActionLabel string `json:"actionLabel"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		pkg.BadRequest(c, "title 与 content 必填")
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
-	defer cancel()
-
-	// 群发全站已知用户可能较多，用 longTimeout
-	if err := h.notif.NotifyAnnouncement(ctx, req.Title, req.Content, req.ActionPath, req.ActionLabel); err != nil {
-		logrus.WithError(err).Error("broadcast notification failed")
-		pkg.InternalError(c, "公告发送失败")
-		return
-	}
-	pkg.OK(c, gin.H{"title": req.Title})
 }

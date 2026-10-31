@@ -19,7 +19,16 @@ import {
   type SearchIpTab,
 } from '@/atoms/reviewCenter';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, FolderOpen, Home, LayoutDashboard, Search, Shield } from 'lucide-react';
+import {
+  ArrowLeft,
+  FolderOpen,
+  Home,
+  LayoutDashboard,
+  Megaphone,
+  Search,
+  Shield,
+  ShieldCheck,
+} from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { fadeUp, staggerContainer } from '@/lib/motion';
 import { formatDateTime } from '@/lib/format';
@@ -32,12 +41,15 @@ import { NotificationBellResponsive } from '@/components/notification/Notificati
 import { ListSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SearchIpDetail } from '@/components/creator/SearchIpDetail';
+import { AnnouncementPanel } from '@/components/review/AnnouncementPanel';
+import { ReviewerManagePanel } from '@/components/review/ReviewerManagePanel';
 import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
 import { UserAvatar } from '@/components/submission/UserAvatar';
 import { UserDisplayName } from '@/components/submission/UserDisplayName';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { langText, statusMeta } from '@/components/submission/status';
+import { FirstSubmissionBadge } from '@/components/submission/FirstSubmissionBadge';
 
 // 状态与语言的展示元数据统一在 status.ts（纯模块，不带 marked 依赖）
 
@@ -202,9 +214,10 @@ function ReviewList() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="truncate font-medium text-foreground">
+                          <span className="min-w-0 truncate font-medium text-foreground">
                             {item.title || '未命名'}
                           </span>
+                          {item.isFirstSubmission && <FirstSubmissionBadge />}
                           <span className="shrink-0 text-xs text-ink-3">#{item.id}</span>
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
@@ -380,7 +393,8 @@ function SearchIpReviewList() {
 export function ReviewCenter() {
   const { user, openLogin } = useAuth();
   // 页面状态存全局 atoms（卸载时复位，语义同原 useState）
-  const [view, setView] = useAtom(reviewViewAtom);
+  const [viewState, setView] = useAtom(reviewViewAtom);
+  const view = user && !user.isReviewer && viewState === 'home' ? 'announcement' : viewState;
   // 页面卸载时复位全部审核中心状态
   useEffect(() => () => resetReviewCenterState(), []);
 
@@ -401,13 +415,13 @@ export function ReviewCenter() {
     );
   }
 
-  // 非审核员不可进入
-  if (!user.isReviewer) {
+  // 仅审核员或超级管理员可进入
+  if (!user.isReviewer && !user.isAdmin) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
           <Shield className="mx-auto h-10 w-10 text-ink-3" />
-          <p className="mt-3 text-sm text-ink-3">需要审核员权限</p>
+          <p className="mt-3 text-sm text-ink-3">需要审核员或超级管理员权限</p>
           <Link
             to="/"
             className="mt-4 inline-block text-sm text-primary transition-colors hover:underline"
@@ -422,9 +436,10 @@ export function ReviewCenter() {
   const initial = (user.displayName || user.name || '?').charAt(0).toUpperCase();
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    // 锁定视口高度
+    <div className="flex h-dvh flex-col overflow-hidden bg-background">
       {/* 顶栏 */}
-      <header className="sticky top-0 z-50 border-b border-line bg-card/80 backdrop-blur-xl">
+      <header className="z-50 shrink-0 border-b border-line bg-card/80 backdrop-blur-xl">
         <div className="flex h-16 items-center justify-between px-6">
           {/* 左：logo + 标题 + 返回主站 */}
           <div className="flex items-center gap-4">
@@ -433,7 +448,7 @@ export function ReviewCenter() {
                 <img src="/logo.png" alt="AMLL-Hub" className="h-8 w-8 rounded-md object-contain" />
               </Link>
               <span className="text-lg font-bold tracking-tight text-foreground">
-                AMLL Hub 审核中心
+                AMLL Hub {user.isReviewer ? '审核中心' : '管理中心'}
               </span>
               <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
                 测试版
@@ -476,37 +491,55 @@ export function ReviewCenter() {
       </header>
 
       {/* 主体：侧边栏 + 主内容区 */}
-      <div className="flex w-full flex-1 gap-6 px-6 py-6 pb-[76px]">
+      <div className="flex min-h-0 w-full flex-1 gap-6 px-6 py-6 pb-[76px]">
         {/* 左侧边栏 */}
         <aside className="hidden w-56 shrink-0 md:block">
           {/* 导航菜单 */}
           <nav className="space-y-1">
             <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-ink-3">
-              审核管理
+              {user.isReviewer ? '审核管理' : '管理'}
             </p>
+            {user.isReviewer && (
+              <>
+                <NavItem
+                  icon={<Home className="h-4 w-4" />}
+                  label="首页"
+                  active={view === 'home'}
+                  onClick={() => setView('home')}
+                />
+                <NavItem
+                  icon={<FolderOpen className="h-4 w-4" />}
+                  label="歌词审核"
+                  active={view === 'content'}
+                  onClick={() => setView('content')}
+                />
+                <NavItem
+                  icon={<Search className="h-4 w-4" />}
+                  label="IP显示投稿"
+                  active={view === 'search-ip'}
+                  onClick={() => setView('search-ip')}
+                />
+              </>
+            )}
             <NavItem
-              icon={<Home className="h-4 w-4" />}
-              label="首页"
-              active={view === 'home'}
-              onClick={() => setView('home')}
+              icon={<Megaphone className="h-4 w-4" />}
+              label="发布公告"
+              active={view === 'announcement'}
+              onClick={() => setView('announcement')}
             />
-            <NavItem
-              icon={<FolderOpen className="h-4 w-4" />}
-              label="歌词审核"
-              active={view === 'content'}
-              onClick={() => setView('content')}
-            />
-            <NavItem
-              icon={<Search className="h-4 w-4" />}
-              label="IP显示投稿"
-              active={view === 'search-ip'}
-              onClick={() => setView('search-ip')}
-            />
+            {user.isAdmin && (
+              <NavItem
+                icon={<ShieldCheck className="h-4 w-4" />}
+                label="审核员管理"
+                active={view === 'reviewers'}
+                onClick={() => setView('reviewers')}
+              />
+            )}
           </nav>
         </aside>
 
         {/* 主内容区 */}
-        <main className="grid min-w-0 flex-1 grid-rows-[1fr]">
+        <main className="no-scrollbar grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-y-auto">
           <AnimatePresence>
             {/* 首页占位 */}
             {view === 'home' && (
@@ -557,6 +590,34 @@ export function ReviewCenter() {
                   IP显示投稿审核
                 </h2>
                 <SearchIpReviewList />
+              </motion.div>
+            )}
+
+            {/* 发布公告 */}
+            {view === 'announcement' && (
+              <motion.div
+                key="announcement"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, pointerEvents: 'none' }}
+                transition={{ duration: 0.15 }}
+                className="col-start-1 row-start-1 self-start rounded-lg border border-line bg-card p-6"
+              >
+                <AnnouncementPanel />
+              </motion.div>
+            )}
+
+            {/* 审核员管理 */}
+            {view === 'reviewers' && (
+              <motion.div
+                key="reviewers"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, pointerEvents: 'none' }}
+                transition={{ duration: 0.15 }}
+                className="col-start-1 row-start-1 self-start rounded-lg border border-line bg-card p-6"
+              >
+                <ReviewerManagePanel />
               </motion.div>
             )}
           </AnimatePresence>
