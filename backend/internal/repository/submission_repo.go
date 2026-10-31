@@ -323,6 +323,7 @@ func (r *SubmissionRepo) List(ctx context.Context, q ListQuery) (*ListResult, er
 		order = "updated_at DESC"
 	}
 	if err := db.
+		Omit("DiffSnapshot").
 		Order(order).
 		Offset((q.Page - 1) * q.Limit).
 		Limit(q.Limit).

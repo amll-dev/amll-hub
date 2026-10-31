@@ -100,6 +100,27 @@ export interface LineProblem {
   message: string;
 }
 
+/** 落库的差异快照 */
+export interface RevisionDiffSnapshot extends RevisionDiff {
+  target?: {
+    songId?: number;
+    rawLyricFile?: string;
+    title?: string;
+    artist?: string;
+  };
+}
+
+export function buildDiffSnapshot(
+  diff: RevisionDiff,
+  target?: RevisionDiffSnapshot['target']
+): RevisionDiffSnapshot {
+  return {
+    ...diff,
+    lines: diff.lines.filter((line) => line.kind !== 'unchanged'),
+    target,
+  };
+}
+
 /** 单字偏移超过该值（ms）计入「明显偏移」 */
 const SHIFT_THRESHOLD_MS = 120;
 /** 前后行间隔小于该值（ms）视为重叠 */

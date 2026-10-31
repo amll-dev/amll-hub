@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -19,8 +19,15 @@ import { useFormDraft } from '@/hooks/useFormDraft';
 import { useUnrearrangedMode } from '@/hooks/useUnrearrangedMode';
 import { detectLanguages, type LangCode } from '@/lib/lang-detect';
 import { detectAutoTags } from '@/lib/auto-tags';
-import type { TtmlValidationResult } from '@/lib/types';
+import {
+  buildDiffSnapshot,
+  computeRevisionDiff,
+  type RevisionDiff,
+} from '@/lib/review/revision-diff';
+import type { SearchHit, SubmissionType, TtmlValidationResult } from '@/lib/types';
 import { AudioSourcePicker } from '@/components/creator/AudioSourcePicker';
+import { RevisionTargetPicker } from '@/components/creator/RevisionTargetPicker';
+import { RevisionDiffPreview } from '@/components/creator/RevisionDiffPreview';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { UnrearrangedToggle } from '@/components/submission/UnrearrangedToggle';
@@ -64,12 +71,31 @@ const LANG_LABELS = Object.fromEntries(LANG_OPTIONS.map((l) => [l.value, l.label
 // 语言总上限与后端 model.MaxLanguages 保持一致
 const MAX_LANGUAGES = 10;
 
+// 提交类型选项
+const SUBMIT_TYPES: { value: SubmissionType; label: string; description: string }[] = [
+  { value: 'new', label: '新歌词提交', description: '提交一首曲库中还没有的歌词' },
+  {
+    value: 'revision',
+    label: '修正已有歌词',
+    description: '选择曲库现有歌词作为基准，提交修正版并生成差异',
+  },
+];
+
 /** 歌词投稿表单 */
 export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
   const [validation, setValidation] = useState<TtmlValidationResult | null>(null);
   const [validateError, setValidateError] = useState('');
+  // 提交类型：new=新歌词提交，revision=修正已有歌词
+  const [submitType, setSubmitType] = useState<SubmissionType>('new');
+  const isRevision = submitType === 'revision';
+  // 修正模式：要修正的原歌词、新稿原文、差异结果
+  const [target, setTarget] = useState<SearchHit | null>(null);
+  const [ttmlText, setTtmlText] = useState('');
+  const [diff, setDiff] = useState<RevisionDiff | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState('');
   // 表单草稿：刷新/关页后自动恢复（文件本体无法持久化，重选后需重新校验）
   const {
     restored: draft,
@@ -167,6 +193,77 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   // 表单主体是否展开：校验模式等 valid；未重排模式等元数据解析返回（不论 valid）
   const formReady = unrearranged.ready;
 
+  // 修正模式自动匹配用的元数据（歌名 / 歌手 / 平台 ID）
+  const autoMeta = useMemo(() => {
+    const meta = validation?.metadata;
+    return {
+      title: meta?.title?.[0],
+      artist: meta?.artist?.[0],
+      platformIds: {
+        ncm_music_id: meta?.platform_ids?.ncm_music_id ?? [],
+        qq_music_id: meta?.platform_ids?.qq_music_id ?? [],
+        apple_music_id: meta?.platform_ids?.apple_music_id ?? [],
+        spotify_id: meta?.platform_ids?.spotify_id ?? [],
+      },
+    };
+  }, [validation]);
+  const autoQuery = useMemo(
+    () => [autoMeta.title, autoMeta.artist].filter(Boolean).join(' '),
+    [autoMeta]
+  );
+  // 展示与落库共用的差异快照
+  const diffSnapshot = useMemo(() => {
+    if (!diff) return null;
+    const songId = target && /^\d+$/.test(target.id) ? Number(target.id) : undefined;
+    return buildDiffSnapshot(diff, {
+      songId,
+      rawLyricFile: target?.rawLyricFile,
+      title: target?.musicNames[0],
+      artist: target?.artists[0],
+    });
+  }, [diff, target]);
+
+  // 拉取原歌词并与新稿对比
+  useEffect(() => {
+    if (!isRevision || !target || !ttmlText) {
+      setDiff(null);
+      setDiffError('');
+      setDiffLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setDiffLoading(true);
+    setDiffError('');
+    void (async () => {
+      try {
+        const { parseTTML } = await import('@/lib/ttml-processor');
+        const [originalText, revised] = await Promise.all([
+          api.getRawLyricTtml(target.rawLyricFile),
+          parseTTML(ttmlText),
+        ]);
+        const original = await parseTTML(originalText);
+        if (cancelled) return;
+        if (!original.success || !revised.success) {
+          setDiff(null);
+          setDiffError(
+            revised.success ? '原歌词解析失败，无法生成差异' : '新稿解析失败，无法生成差异'
+          );
+          return;
+        }
+        setDiff(computeRevisionDiff(original.data, revised.data));
+      } catch (err) {
+        if (cancelled) return;
+        setDiff(null);
+        setDiffError(err instanceof Error ? err.message : '获取原歌词失败');
+      } finally {
+        if (!cancelled) setDiffLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isRevision, target, ttmlText]);
+
   // 上传文件并创建投稿（status: pending=提交审核 / draft=存草稿）
   const submitMutation = useMutation({
     mutationFn: async (params: { file: File; status: 'pending' | 'draft' }) => {
@@ -174,6 +271,16 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
       // 元数据两种模式都从 /validate 的结果取；解析不到才退回文件名
       const title = validation?.metadata?.title?.[0] ?? params.file.name.replace(/\.[^.]+$/, '');
       const allLangs = [...languages, ...otherLangs];
+      // 带上目标歌词与差异快照
+      const revisionFields =
+        isRevision && target
+          ? {
+              submissionType: 'revision' as const,
+              targetSongId: diffSnapshot?.target?.songId,
+              targetRawLyricFile: target.rawLyricFile,
+              diffSnapshot: diffSnapshot ?? undefined,
+            }
+          : { submissionType: 'new' as const };
       const created = await api.createSubmission({
         title,
         metadata: (validation?.metadata ?? {}) as Record<string, unknown>,
@@ -183,6 +290,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
         language: allLangs[0],
         languages: allLangs.length > 0 ? allLangs : undefined,
         ...unrearranged.submissionFields,
+        ...revisionFields,
         tags: tags.length > 0 ? tags : undefined,
         status: params.status,
       });
@@ -238,6 +346,12 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     setFile(null);
     setValidation(null);
     setValidateError('');
+    setTtmlText('');
+    setSubmitType('new');
+    setTarget(null);
+    setDiff(null);
+    setDiffError('');
+    setDiffLoading(false);
     setSubmitMsg(null);
     setNotes('');
     setLanguages([]);
@@ -306,6 +420,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     if (seq !== loadSeqRef.current) return;
     // 读完后一次性置态，避免文件卡片先出现、校验态后到的闪烁
     setFile(f);
+    setTtmlText(text);
     setValidation(null);
     setValidateError('');
     setSubmitMsg(null);
@@ -385,14 +500,15 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   };
 
   // 表单主体是否展开：校验模式等 valid；未重排模式等元数据解析返回（不论 valid）
+  const revisionReady = !isRevision || (!!target && !!diff && !diffLoading && !diffError);
   const doSubmit = (status: 'pending' | 'draft') => {
-    if (!file || submitting || !formReady || reasonMissing) return;
+    if (!file || submitting || !formReady || reasonMissing || !revisionReady) return;
     // 正式提交必须勾选原创/授权声明；存草稿不受此限制
     if (status === 'pending' && !agreed) return;
     submitMutation.mutate({ file, status });
   };
 
-  const canSubmit = file !== null && formReady && !reasonMissing && !submitting;
+  const canSubmit = file !== null && formReady && !reasonMissing && !submitting && revisionReady;
   const canSubmitPending = canSubmit && agreed;
 
   // 元数据辅助
@@ -402,7 +518,44 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     joinArr(meta?.platform_ids?.[key]);
 
   return (
-    <motion.div variants={staggerContainer} initial="hidden" animate="show" className="space-y-5">
+    <motion.div
+      variants={staggerContainer}
+      initial="hidden"
+      animate="show"
+      className="min-w-0 space-y-5"
+    >
+      {/* 提交类型 */}
+      <motion.div variants={fadeUp}>
+        <label className="mb-1.5 block text-sm font-medium text-ink-2">提交类型</label>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {SUBMIT_TYPES.map((type) => {
+            const active = submitType === type.value;
+            return (
+              <button
+                key={type.value}
+                type="button"
+                disabled={submitting}
+                onClick={() => setSubmitType(type.value)}
+                className={`rounded-md border px-4 py-3 text-left transition-colors disabled:opacity-60 ${
+                  active
+                    ? 'border-primary bg-primary-soft'
+                    : 'border-line bg-surface-2 hover:border-primary/40'
+                }`}
+              >
+                <span
+                  className={`block text-sm font-medium ${
+                    active ? 'text-primary' : 'text-foreground'
+                  }`}
+                >
+                  {type.label}
+                </span>
+                <span className="mt-0.5 block text-xs text-ink-3">{type.description}</span>
+              </button>
+            );
+          })}
+        </div>
+      </motion.div>
+
       {/* 未重排开关 */}
       <motion.div variants={fadeUp}>
         <UnrearrangedToggle
@@ -621,6 +774,26 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
           </div>
         )}
       </motion.div>
+
+      {/* 修正已有歌词 */}
+      {isRevision && file && (
+        <motion.div variants={fadeUp} className="space-y-3">
+          <RevisionTargetPicker
+            value={target}
+            onChange={setTarget}
+            autoQuery={formReady ? autoQuery : ''}
+            autoMeta={autoMeta}
+            disabled={submitting}
+          />
+          {diffLoading && <p className="text-xs text-ink-3">正在生成歌词差异…</p>}
+          {diffError && (
+            <Alert variant="destructive">
+              <AlertDescription>{diffError}</AlertDescription>
+            </Alert>
+          )}
+          {diffSnapshot && <RevisionDiffPreview snapshot={diffSnapshot} />}
+        </motion.div>
+      )}
 
       {/* 音源（可选，多选） */}
       {formReady && (

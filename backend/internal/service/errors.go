@@ -93,6 +93,9 @@ var ErrForbidden = errors.New("forbidden")
 // ErrMissingUnrearrangedReason 勾选了「未重排歌词」但没填原因（原因强制必填）
 var ErrMissingUnrearrangedReason = errors.New("missing unrearranged reason")
 
+// ErrMissingRevisionTarget 修正投稿未选择要修正的原歌词
+var ErrMissingRevisionTarget = errors.New("missing revision target")
+
 // 歌词/索引模块
 
 // ErrLyricNotFound 歌词未找到

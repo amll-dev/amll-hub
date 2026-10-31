@@ -50,6 +50,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { langText, statusMeta } from '@/components/submission/status';
 import { FirstSubmissionBadge } from '@/components/submission/FirstSubmissionBadge';
+import { RevisionBadge } from '@/components/submission/RevisionBadge';
 
 // 状态与语言的展示元数据统一在 status.ts（纯模块，不带 marked 依赖）
 
@@ -218,6 +219,7 @@ function ReviewList() {
                             {item.title || '未命名'}
                           </span>
                           {item.isFirstSubmission && <FirstSubmissionBadge />}
+                          {item.submissionType === 'revision' && <RevisionBadge />}
                           <span className="shrink-0 text-xs text-ink-3">#{item.id}</span>
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">

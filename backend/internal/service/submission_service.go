@@ -38,8 +38,16 @@ type CreateSubmissionInput struct {
 	IsUnrearranged bool `json:"isUnrearranged"`
 	// UnrearrangedReason 未重排的原因说明（仅 IsUnrearranged 为 true 时有意义）
 	UnrearrangedReason string `json:"unrearrangedReason"`
-	Type               string `json:"type"`
-	Status             string `json:"status"`
+	// SubmissionType 投稿类型
+	SubmissionType string `json:"submissionType"`
+	// TargetSongID 修正目标曲库歌曲 id
+	TargetSongID *int64 `json:"targetSongId"`
+	// TargetRawLyricFile 修正目标原歌词文件名
+	TargetRawLyricFile string `json:"targetRawLyricFile"`
+	// DiffSnapshot 修正差异快照
+	DiffSnapshot map[string]any `json:"diffSnapshot"`
+	Type         string         `json:"type"`
+	Status       string         `json:"status"`
 } // Submission 投稿 DTO
 type Submission struct {
 	ID                   int64          `json:"id"`
@@ -58,6 +66,10 @@ type Submission struct {
 	Languages            []string       `json:"languages"`
 	IsUnrearranged       bool           `json:"isUnrearranged"`
 	UnrearrangedReason   string         `json:"unrearrangedReason"`
+	SubmissionType       string         `json:"submissionType"`
+	TargetSongID         *int64         `json:"targetSongId,omitempty"`
+	TargetRawLyricFile   string         `json:"targetRawLyricFile,omitempty"`
+	DiffSnapshot         map[string]any `json:"diffSnapshot,omitempty"`
 	Status               string         `json:"status"`
 	IsFirstSubmission    bool           `json:"isFirstSubmission"`
 	Submitter            string         `json:"submitter"`
@@ -254,30 +266,56 @@ func (s *SubmissionService) Create(ctx context.Context, user *SubmissionUser, in
 		return 0, ErrMissingUnrearrangedReason
 	}
 
+	// 提交类型：默认新歌词提交；修正投稿必须指明要修正的原歌词
+	submissionType := model.SubmissionTypeNew
+	targetFile := sanitize(in.TargetRawLyricFile, 255)
+	if in.SubmissionType == model.SubmissionTypeRevision {
+		submissionType = model.SubmissionTypeRevision
+		if targetFile == "" {
+			return 0, ErrMissingRevisionTarget
+		}
+		// 文件名只允许裸文件名，防止路径穿越到其他目录
+		if strings.Contains(targetFile, "..") || strings.ContainsAny(targetFile, `/\`) {
+			return 0, ErrInvalidInput
+		}
+	}
+
 	sub := &model.Submission{
-		Title:         title,
-		Artist:        strings.Join(artists, ", "),
-		Album:         strings.Join(album, ", "),
-		NcmID:         extractPlatformId(in.Metadata, "ncm_music_id"),
-		QqID:          extractPlatformId(in.Metadata, "qq_music_id"),
-		AmID:          extractPlatformId(in.Metadata, "apple_music_id"),
-		SpotifyID:     extractPlatformId(in.Metadata, "spotify_id"),
-		FileName:      in.FileName,
-		Notes:         notes,
-		Tags:          normalizeTags(in.Tags),
-		Metadata:      normalizeMetadata(in.Metadata),
-		Language:      primaryLang,
-		Languages:     languages,
-		Status:        status,
-		Submitter:     user.Name,
-		SubmitterInfo: model.UserInfo{Username: user.Name, DisplayName: user.DisplayName, Avatar: user.Avatar},
-		Provider:      "casdoor",
+		Title:          title,
+		Artist:         strings.Join(artists, ", "),
+		Album:          strings.Join(album, ", "),
+		NcmID:          extractPlatformId(in.Metadata, "ncm_music_id"),
+		QqID:           extractPlatformId(in.Metadata, "qq_music_id"),
+		AmID:           extractPlatformId(in.Metadata, "apple_music_id"),
+		SpotifyID:      extractPlatformId(in.Metadata, "spotify_id"),
+		FileName:       in.FileName,
+		Notes:          notes,
+		Tags:           normalizeTags(in.Tags),
+		Metadata:       normalizeMetadata(in.Metadata),
+		Language:       primaryLang,
+		Languages:      languages,
+		SubmissionType: submissionType,
+		Status:         status,
+		Submitter:      user.Name,
+		SubmitterInfo:  model.UserInfo{Username: user.Name, DisplayName: user.DisplayName, Avatar: user.Avatar},
+		Provider:       "casdoor",
 	}
 
 	// 未重排投稿：记录标记与原因说明
 	if in.IsUnrearranged {
 		sub.IsUnrearranged = true
 		sub.UnrearrangedReason = sanitize(in.UnrearrangedReason, 500)
+	}
+
+	// 修正投稿：记录目标歌词与差异快照，详情页直接读快照渲染
+	if submissionType == model.SubmissionTypeRevision {
+		if in.TargetSongID != nil && *in.TargetSongID > 0 {
+			sub.TargetSongID = in.TargetSongID
+		}
+		sub.TargetRawLyricFile = targetFile
+		if in.DiffSnapshot != nil {
+			sub.DiffSnapshot = model.JSONObject(in.DiffSnapshot)
+		}
 	}
 
 	// 事务写入
@@ -320,6 +358,8 @@ func (s *SubmissionService) List(ctx context.Context, user *SubmissionUser, q Su
 	items := make([]Submission, len(res.Items))
 	for i, m := range res.Items {
 		items[i] = convertSubmission(m)
+		// 列表不下发差异明细，避免单页响应过大；详情接口才返回完整快照
+		items[i].DiffSnapshot = nil
 	}
 	return &SubmissionListResult{Total: res.Total, Items: items}, nil
 }
@@ -1141,6 +1181,10 @@ func convertSubmission(m model.Submission) Submission {
 		Languages:           ensureStringSlice(m.Languages),
 		IsUnrearranged:      m.IsUnrearranged,
 		UnrearrangedReason:  m.UnrearrangedReason,
+		SubmissionType:      m.SubmissionType,
+		TargetSongID:        m.TargetSongID,
+		TargetRawLyricFile:  m.TargetRawLyricFile,
+		DiffSnapshot:        map[string]any(m.DiffSnapshot),
 		Status:              m.Status,
 		IsFirstSubmission:   m.IsFirstSubmission,
 		Submitter:           m.Submitter,

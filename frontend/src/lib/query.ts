@@ -60,6 +60,8 @@ export const queryKeys = {
     ['not-found-ranking', params] as const,
   latestSongs: ['latest-songs'] as const,
   search: (q: string, field: string, page: number) => ['search', { q, field, page }] as const,
+  /** 按歌曲搜索目标歌词 */
+  revisionTarget: (q: string) => ['revision-target', q] as const,
   /** 搜索页各 Tab 的命中数（与分页/字段无关，按关键词缓存） */
   searchCounts: (q: string) => ['search-counts', q] as const,
   /** 用户搜索结果 */

@@ -8,6 +8,7 @@ import QRCode from 'qrcode';
 import { domToPng } from 'modern-screenshot';
 import type { DailyRecommendation } from '@/lib/types';
 import { parseMarkupText } from '@/lib/markup';
+import { usernameOf } from '@/lib/username';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { resolvedThemeAtom } from '@/atoms/theme';
@@ -211,10 +212,11 @@ export function RecommendCard({
     [recommendation.comment]
   );
 
+  const submitterName = usernameOf(recommendation.submitter);
   const username =
     (recommendation.submitterInfo?.displayName as string) ||
     (recommendation.submitterInfo?.name as string) ||
-    recommendation.submitter ||
+    submitterName ||
     '匿名用户';
 
   const ncmId = recommendation.ncmId;
@@ -393,9 +395,9 @@ export function RecommendCard({
               />
               <div className="mt-2.5 text-right text-[13px] font-light text-ink-2">
                 --来自{' '}
-                {recommendation.submitter ? (
+                {submitterName ? (
                   <Link
-                    to={`/user/${encodeURIComponent(recommendation.submitter)}`}
+                    to={`/user/${encodeURIComponent(submitterName)}`}
                     className="text-inherit underline-offset-2 hover:text-primary hover:underline"
                   >
                     @{username}

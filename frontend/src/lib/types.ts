@@ -1,3 +1,5 @@
+import type { RevisionDiffSnapshot } from '@/lib/review/revision-diff';
+
 // 后端统一响应格式 { code, message, data }
 export interface ApiResponse<T> {
   code: number;
@@ -183,6 +185,8 @@ export interface NcmPlaylistResult {
 
 // ===== 投稿管理 =====
 
+/** 投稿提交类型 */
+export type SubmissionType = 'new' | 'revision';
 // 投稿状态：对应 backend/internal/model/submission.go
 export type SubmissionStatus =
   | 'draft'
@@ -239,6 +243,12 @@ export interface SubmissionListItem {
   isUnrearranged?: boolean;
   /** 投稿者填写的未重排原因说明 */
   unrearrangedReason?: string;
+  /** 投稿提交类型 */
+  submissionType?: SubmissionType;
+  /** 修正投稿指向的曲库歌曲 id */
+  targetSongId?: number;
+  /** 修正投稿指向的原歌词文件名 */
+  targetRawLyricFile?: string;
   status: SubmissionStatus;
   /** 是否为「首篇通过审核之前」提交的投稿 */
   isFirstSubmission?: boolean;
@@ -323,6 +333,8 @@ export interface SubmissionDetail extends SubmissionListItem {
   revisionAt?: string;
   revisionReviewer?: string;
   revisionReviewerInfo?: UserInfo;
+  /** 修正投稿的差异快照 */
+  diffSnapshot?: RevisionDiffSnapshot;
 }
 
 // ===== 审核员修订版 =====

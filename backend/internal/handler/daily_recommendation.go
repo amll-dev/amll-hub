@@ -32,8 +32,6 @@ func (h *DailyRecommendationHandler) Create(c *gin.Context) {
 		pkg.Unauthorized(c)
 		return
 	}
-	userID := middleware.GetUserID(c)
-
 	input := &service.CreateDailyRecInput{
 		SongName:     c.PostForm("songName"),
 		Artist:       c.PostForm("artist"),
@@ -51,7 +49,7 @@ func (h *DailyRecommendationHandler) Create(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
 	defer cancel()
 
-	result, err := h.svc.CreateRecommendation(ctx, userID, submitterInfo, input)
+	result, err := h.svc.CreateRecommendation(ctx, user.Name, submitterInfo, input)
 	if err != nil {
 		logrus.WithError(err).Warn("create daily recommendation failed")
 		pkg.BadRequest(c, err.Error())
@@ -63,7 +61,7 @@ func (h *DailyRecommendationHandler) Create(c *gin.Context) {
 
 // UploadTemp POST /api/v1/daily-recommendations/upload-temp
 func (h *DailyRecommendationHandler) UploadTemp(c *gin.Context) {
-	if middleware.GetUserID(c) == "" {
+	if middleware.GetUserName(c) == "" {
 		pkg.Unauthorized(c)
 		return
 	}
@@ -101,7 +99,7 @@ func (h *DailyRecommendationHandler) UploadTemp(c *gin.Context) {
 // UploadTempFromURL POST /api/v1/daily-recommendations/upload-temp-from-url
 // 服务端代理下载图片 URL 并转存到临时区
 func (h *DailyRecommendationHandler) UploadTempFromURL(c *gin.Context) {
-	if middleware.GetUserID(c) == "" {
+	if middleware.GetUserName(c) == "" {
 		pkg.Unauthorized(c)
 		return
 	}
@@ -131,7 +129,7 @@ func (h *DailyRecommendationHandler) UploadTempFromURL(c *gin.Context) {
 
 // CheckDate GET /api/v1/daily-recommendations/check-date?date=YYYY-MM-DD
 func (h *DailyRecommendationHandler) CheckDate(c *gin.Context) {
-	if middleware.GetUserID(c) == "" {
+	if middleware.GetUserName(c) == "" {
 		pkg.Unauthorized(c)
 		return
 	}
@@ -198,8 +196,8 @@ func (h *DailyRecommendationHandler) GetByDate(c *gin.Context) {
 
 // ListMine GET /api/v1/daily-recommendations/submissions
 func (h *DailyRecommendationHandler) ListMine(c *gin.Context) {
-	userID := middleware.GetUserID(c)
-	if userID == "" {
+	username := middleware.GetUserName(c)
+	if username == "" {
 		pkg.Unauthorized(c)
 		return
 	}
@@ -207,7 +205,7 @@ func (h *DailyRecommendationHandler) ListMine(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	result, err := h.svc.ListBySubmitter(ctx, userID)
+	result, err := h.svc.ListBySubmitter(ctx, username)
 	if err != nil {
 		pkg.InternalError(c, "查询列表失败")
 		return

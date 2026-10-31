@@ -40,6 +40,7 @@ import { PageContainer } from '@/components/PageContainer';
 import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
 import { langText, statusMeta } from '@/components/submission/status';
 import { FirstSubmissionBadge } from '@/components/submission/FirstSubmissionBadge';
+import { RevisionBadge } from '@/components/submission/RevisionBadge';
 import { buttonVariants } from '@/components/ui/button';
 import { CardDetailSkeleton, ListSkeleton } from '@/components/ui/Skeleton';
 import { LyricSubmitForm } from '@/components/creator/LyricSubmitForm';
@@ -263,6 +264,7 @@ function LyricsList({
                           {item.title || '未命名'}
                         </span>
                         {item.isFirstSubmission && <FirstSubmissionBadge />}
+                        {item.submissionType === 'revision' && <RevisionBadge />}
                         <span className="shrink-0 text-xs text-ink-3">#{item.id}</span>
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
@@ -689,7 +691,7 @@ export function CreatorCenter() {
         </aside>
 
         {/* 主内容区：grid 重叠布局，新旧视图交叉淡入淡出 */}
-        <main className="no-scrollbar grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-y-auto">
+        <main className="no-scrollbar grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-x-clip overflow-y-auto">
           <AnimatePresence>
             {/* 首页占位 */}
             {view === 'home' && (
@@ -733,7 +735,7 @@ export function CreatorCenter() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="col-start-1 row-start-1 self-start rounded-lg border border-line bg-card p-6 pb-[100px]"
+                className="col-start-1 row-start-1 min-w-0 self-start rounded-lg border border-line bg-card p-6 pb-[100px]"
               >
                 {/* Tab 栏 */}
                 <div className="flex border-b border-line">
