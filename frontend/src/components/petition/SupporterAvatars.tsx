@@ -25,11 +25,7 @@ export function SupporterAvatars({
   const remaining = supportCount - shown.length;
 
   return (
-    <div
-      className={
-        className ?? `flex items-center ${overlapping ? '-space-x-1.5' : 'gap-2'}`
-      }
-    >
+    <div className={className ?? `flex items-center ${overlapping ? '-space-x-1.5' : 'gap-2'}`}>
       {shown.map((s) => (
         <span
           key={s.name}

@@ -41,7 +41,7 @@ export interface NcmParseContextValue {
   platform: MusicPlatform;
   setPlatform: (p: MusicPlatform) => void;
 
-  // 搜索歌曲 
+  // 搜索歌曲
   searchSongs: NcmSong[] | null;
   searchLoading: boolean;
   searchError: string | null;
@@ -49,7 +49,7 @@ export interface NcmParseContextValue {
   hideSearchList: boolean;
   doSearch: (q: string) => Promise<void>;
 
-  // 解析结果 
+  // 解析结果
   parsedSong: ParsedSong | null;
   parseLoading: boolean;
   parseError: string | null;
@@ -58,7 +58,7 @@ export interface NcmParseContextValue {
     meta: { name?: string; artists?: string; cover?: string; duration?: number }
   ) => Promise<void>;
 
-  // 歌曲 ID 解析输入框 
+  // 歌曲 ID 解析输入框
   songIdInput: string;
   setSongIdInput: (v: string) => void;
 
@@ -76,7 +76,7 @@ export interface NcmParseContextValue {
   qualityValue: string;
   setQualityValue: (v: string) => void;
 
-  // 解析歌单 
+  // 解析歌单
   playlistDetail: NcmPlaylistDetail | null;
   playlistLoading: boolean;
   playlistError: string | null;

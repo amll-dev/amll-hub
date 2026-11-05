@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +30,7 @@ func newQMCookieStore(redisClient *redis.Client, key, initial string) *qmRedisSt
 	return &qmRedisStore{redis: redisClient, key: key, mem: strings.TrimSpace(initial)}
 }
 
-// Load 优先读 Redis，未命中或不可用时回落内存值
+// Load 优先读 Redis，未命中或不可用时回落内存值。
 func (s *qmRedisStore) Load() (string, error) {
 	if s.redis != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -38,6 +39,13 @@ func (s *qmRedisStore) Load() (string, error) {
 		v, err := s.redis.Get(ctx, s.key).Result()
 		switch {
 		case err == nil && strings.TrimSpace(v) != "":
+			initial := s.memValue()
+			if cookieIssuedAt(initial) > cookieIssuedAt(v) {
+				logrus.Info("qm: 环境变量 cookie 比 Redis 中的更新，改用环境变量并回写 Redis")
+				// Save 失败只告警，本次启动仍使用新 cookie
+				_ = s.Save(initial)
+				return initial, nil
+			}
 			s.setMem(v)
 			return v, nil
 		case err != nil && err != redis.Nil:
@@ -45,6 +53,20 @@ func (s *qmRedisStore) Load() (string, error) {
 		}
 	}
 	return s.memValue(), nil
+}
+
+// cookieIssuedAt 取 cookie 里 musickey 的签发时间，用于判断两份凭据谁更新。
+// 缺失或非数字时返回 0，此时仍以 Redis 为准。
+func cookieIssuedAt(cookie string) int64 {
+	for _, item := range strings.Split(cookie, ";") {
+		k, v, ok := strings.Cut(strings.TrimSpace(item), "=")
+		if !ok || strings.TrimSpace(k) != "psrf_musickey_createtime" {
+			continue
+		}
+		n, _ := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		return n
+	}
+	return 0
 }
 
 // Save 整体替换 cookie，不能只写 musickey

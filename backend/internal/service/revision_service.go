@@ -515,8 +515,10 @@ type EditorContext struct {
 	FileName string `json:"fileName"`
 	// Audios 投稿关联的上传音频
 	Audios []*model.SubmissionAudio `json:"audios"`
-	// NcmID 网易云歌曲 ID
-	NcmID string `json:"ncmId"`
+	// NcmIDs 网易云歌曲 ID
+	NcmIDs []string `json:"ncmIds"`
+	// QqIDs QQ 音乐歌曲 ID
+	QqIDs []string `json:"qqIds"`
 	// Status 当前状态
 	Status string `json:"status"`
 	// HasRevision 是否已存在待确认的修订版
@@ -579,11 +581,34 @@ func (s *RevisionService) buildEditorContext(ctx context.Context, sub *model.Sub
 		TTML:        raw,
 		FileName:    sub.FileName,
 		Audios:      audios,
-		NcmID:       firstNonEmpty(sub.NcmID, extractPlatformId(map[string]any(sub.Metadata), "ncm_music_id")),
+		NcmIDs:      mergePlatformIDs(sub.NcmID, extractPlatformIDs(map[string]any(sub.Metadata), "ncm_music_id")),
+		QqIDs:       mergePlatformIDs(sub.QqID, extractPlatformIDs(map[string]any(sub.Metadata), "qq_music_id")),
 		Status:      sub.Status,
 		HasRevision: sub.RevisionFileKey != "",
 		Review:      review,
 	}, nil
+}
+
+// mergePlatformIDs 合并投稿列里的单值 ID 与元数据里的多值 ID，去重并保留顺序。
+func mergePlatformIDs(single string, ids []string) []string {
+	out := make([]string, 0, len(ids)+1)
+	seen := make(map[string]struct{}, len(ids)+1)
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	add(single)
+	for _, id := range ids {
+		add(id)
+	}
+	return out
 }
 
 // latestReviewRequirement 取最近一轮审核要求：

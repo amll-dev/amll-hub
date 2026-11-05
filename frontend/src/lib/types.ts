@@ -472,7 +472,10 @@ export interface EditorContext {
   ttml: string;
   fileName: string;
   audios: SubmissionAudio[];
-  ncmId?: string;
+  /** 网易云歌曲 ID 列表（同一首歌可能有多个版本） */
+  ncmIds?: string[];
+  /** QQ 音乐歌曲 ID 列表 */
+  qqIds?: string[];
   status: string;
   hasRevision: boolean;
   /** 最近一轮审核要求（没有则为空） */

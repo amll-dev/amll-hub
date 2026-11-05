@@ -30,7 +30,6 @@ export function qmCoverAbsolute(url: string | undefined, size = 800): string {
   return `https://y.gtimg.cn/music/photo_new/T002R${size}x${size}M000${mid}.jpg`;
 }
 
-
 /** QQ 歌曲 → NcmSong */
 export function qmSongToNcmSong(s: QmSong): NcmSong {
   return {

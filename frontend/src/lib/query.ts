@@ -75,8 +75,9 @@ export const queryKeys = {
   ncmPlaylist: (id: string) => ['ncm-playlist', { id }] as const,
   qmSearch: (q: string) => ['qm-search', { q }] as const,
   qmPlaylist: (id: string) => ['qm-playlist', { id }] as const,
-  /** 单曲解析 */
-  ncmMusic: (id: string) => ['ncm-music', { id }] as const,
+  /** 单曲解析（同一投稿可能有多个 ID，编辑器按批量 key 缓存） */
+  ncmMusics: (ids: string[]) => ['ncm-music-batch', ids.join(',')] as const,
+  qmMusics: (ids: string[]) => ['qm-music-batch', ids.join(',')] as const,
 
   // 认证
   profile: ['auth', 'profile'] as const,

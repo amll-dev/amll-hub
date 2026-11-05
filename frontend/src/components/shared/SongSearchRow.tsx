@@ -59,9 +59,7 @@ export function SongSearchRow({
         >
           {song.name}
         </p>
-        <p
-          className={`truncate text-xs ${dense ? 'text-ink-3' : 'text-ink-2'}`}
-        >
+        <p className={`truncate text-xs ${dense ? 'text-ink-3' : 'text-ink-2'}`}>
           {song.artists.map((a) => a.name).join(' / ')}
           {song.album?.name ? ` · ${song.album.name}` : ''}
         </p>

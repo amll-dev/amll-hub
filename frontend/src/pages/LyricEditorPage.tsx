@@ -76,7 +76,8 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
 
   const ctx = ctxQuery.data;
   const audios = useMemo(() => ctx?.audios ?? [], [ctx?.audios]);
-  const ncmId = ctx?.ncmId ?? '';
+  const ncmIds = useMemo(() => ctx?.ncmIds ?? [], [ctx?.ncmIds]);
+  const qqIds = useMemo(() => ctx?.qqIds ?? [], [ctx?.qqIds]);
 
   // 左侧「审核要求」面板数据
   useEffect(() => {
@@ -96,19 +97,39 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
     openSidebarTab('requirements');
   }, [ctx?.review, isCreator, openSidebarTab]);
 
-  const needNcm = !!ncmId;
+  // 同一投稿可能带多个网易云 / QQ 音乐 ID：全部并行解析，成功的都作为参考音频候选
   const ncmQuery = useQuery({
-    queryKey: queryKeys.ncmMusic(ncmId),
-    queryFn: () => api.parseNcmMusic(ncmId),
-    enabled: needNcm,
+    queryKey: queryKeys.ncmMusics(ncmIds),
+    queryFn: async () => {
+      const settled = await Promise.allSettled(ncmIds.map((id) => api.parseNcmMusic(id)));
+      return ncmIds.map((id, i) => {
+        const result = settled[i];
+        return { id, info: result?.status === 'fulfilled' ? result.value : null };
+      });
+    },
+    enabled: ncmIds.length > 0,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+
+  const qmQuery = useQuery({
+    queryKey: queryKeys.qmMusics(qqIds),
+    queryFn: async () => {
+      const settled = await Promise.allSettled(qqIds.map((id) => api.parseQmMusic(id)));
+      return qqIds.map((id, i) => {
+        const result = settled[i];
+        return { id, info: result?.status === 'fulfilled' ? result.value : null };
+      });
+    },
+    enabled: qqIds.length > 0,
     staleTime: 5 * 60_000,
     retry: false,
   });
 
   // 音源列表
   const sources = useMemo(
-    () => buildEditorAudioSources(audios, ncmId, ncmQuery.data ?? null),
-    [audios, ncmId, ncmQuery.data]
+    () => buildEditorAudioSources(audios, ncmQuery.data ?? [], qmQuery.data ?? []),
+    [audios, ncmQuery.data, qmQuery.data]
   );
 
   const safeAudioIndex = Math.min(audioIndex, Math.max(0, sources.length - 1));
@@ -309,8 +330,12 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
     navigate(backPath);
   }, [backPath, isDirty, navigate]);
 
-  // 解析 ncm 音频期间不能判成「无音频」，否则会闪一下空状态/文本模式
-  const resolvingAudio = needNcm && ncmQuery.isLoading;
+  // 解析在线音频期间不能判成「无音频」，否则会闪一下空状态/文本模式
+  const resolvingAudio = ncmQuery.isLoading || qmQuery.isLoading;
+  // 有 ID 但没解析出可用直链（会员专享、无版权等）
+  const onlineAudioFailed =
+    (ncmQuery.data?.some((c) => !c.info?.url?.trim()) ?? false) ||
+    (qmQuery.data?.some((c) => !c.info?.url?.trim()) ?? false);
   const noAudio =
     !isCreator && !ctxQuery.isLoading && !resolvingAudio && sources.length === 0 && !ctxQuery.error;
   const textOnly = !ctxQuery.isLoading && !resolvingAudio && sources.length === 0;
@@ -321,8 +346,8 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
         <EmptyState
           title="该投稿没有可用的参考音频"
           description={
-            needNcm && ncmQuery.isError
-              ? '网易云音频解析失败，打轴需要音频作为时间基准。请在详情页上传音频，或把该投稿标记为「缺音频」。'
+            onlineAudioFailed
+              ? '在线音频解析失败（网易云 / QQ 音乐），打轴需要音频作为时间基准。请在详情页上传音频，或把该投稿标记为「缺音频」。'
               : '打轴需要音频作为时间基准。请先在详情页上传音频，或把该投稿标记为「缺音频」。'
           }
           action={

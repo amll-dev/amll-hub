@@ -109,9 +109,7 @@ export function NcmParse() {
     <PageContainer>
       <motion.div initial="hidden" animate="show" variants={fadeUp}>
         <h1 className="text-3xl font-bold tracking-tight">音乐解析</h1>
-        <p className="mt-2 text-sm text-ink-2">
-          搜索歌曲后点击解析，或通过歌单 ID 批量解析。
-        </p>
+        <p className="mt-2 text-sm text-ink-2">搜索歌曲后点击解析，或通过歌单 ID 批量解析。</p>
       </motion.div>
 
       <motion.div

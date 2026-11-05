@@ -4,11 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { UserAvatar } from '@/components/submission/UserAvatar';
 import { formatCount, formatRelativeTime } from '@/lib/format';
 import type { LyricRequest } from '@/lib/types';
-import {
-  providedPlatforms,
-  requesterIdentity,
-  requestDisplayStatus,
-} from './shared';
+import { providedPlatforms, requesterIdentity, requestDisplayStatus } from './shared';
 import { SupporterAvatars } from './SupporterAvatars';
 
 /** 请愿卡片 */
