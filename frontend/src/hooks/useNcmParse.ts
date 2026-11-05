@@ -3,10 +3,20 @@ import { useAtom, useAtomValue } from 'jotai';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { extractNcmSongId } from '@/lib/ncm';
+import { qmMusicToNcmInfo, qmPlaylistToNcm, qmToLyricLines } from '@/lib/qm';
+import { searchPlatformSongs } from '@/lib/song-search';
 import { queryKeys } from '@/lib/query';
-import type { NcmPlaylistDetail, NcmSong } from '@/lib/types';
-import { qualityAtom, type NcmQuality } from '@/atoms/player';
 import {
+  QM_QUALITY_LABEL,
+  QM_QUALITY_ORDER,
+  type MusicPlatform,
+  type NcmPlaylistDetail,
+  type NcmSong,
+  type QmQuality,
+} from '@/lib/types';
+import { NCM_QUALITY_LABEL, NCM_QUALITY_ORDER, qualityAtom, type NcmQuality } from '@/atoms/player';
+import {
+  parsePlatformAtom,
   ncmSearchQueryAtom,
   ncmHideSearchListAtom,
   ncmParsedSongAtom,
@@ -15,13 +25,23 @@ import {
   ncmSongIdInputAtom,
   ncmPlaylistIdAtom,
   ncmQualityAtom,
+  qmQualityAtom,
   type ParsedSong,
 } from '@/atoms/ncmParse';
 
 export type { ParsedSong };
 
+/** 音质下拉项 */
+export interface QualityOption {
+  value: string;
+  label: string;
+}
+
 export interface NcmParseContextValue {
-  // ===== 搜索歌曲 =====
+  platform: MusicPlatform;
+  setPlatform: (p: MusicPlatform) => void;
+
+  // 搜索歌曲 
   searchSongs: NcmSong[] | null;
   searchLoading: boolean;
   searchError: string | null;
@@ -29,7 +49,7 @@ export interface NcmParseContextValue {
   hideSearchList: boolean;
   doSearch: (q: string) => Promise<void>;
 
-  // ===== 解析结果 =====
+  // 解析结果 
   parsedSong: ParsedSong | null;
   parseLoading: boolean;
   parseError: string | null;
@@ -38,33 +58,32 @@ export interface NcmParseContextValue {
     meta: { name?: string; artists?: string; cover?: string; duration?: number }
   ) => Promise<void>;
 
-  // ===== 歌曲 ID 解析输入框 =====
+  // 歌曲 ID 解析输入框 
   songIdInput: string;
   setSongIdInput: (v: string) => void;
 
-  // ===== 音质 =====
-  /** 解析页当前生效的音质：页面手动选过就用它，否则跟随播放器全局音质 */
+  // 音质
+  /** 解析页当前生效的网易云音质：页面手动选过就用它，否则跟随播放器全局音质 */
   quality: NcmQuality;
   /** 页面级待应用音质（null = 跟随全局） */
   pageQuality: NcmQuality | null;
   setPageQuality: (q: NcmQuality | null) => void;
   /** 把页面选择同步到全局音质（真正解析 / 播放前调用） */
   applyQuality: () => NcmQuality;
+  /** 当前音源对应的音质下拉项 */
+  qualityOptions: QualityOption[];
+  /** 当前音源选中的音质值 */
+  qualityValue: string;
+  setQualityValue: (v: string) => void;
 
-  // ===== 解析歌单 =====
+  // 解析歌单 
   playlistDetail: NcmPlaylistDetail | null;
   playlistLoading: boolean;
   playlistError: string | null;
   doParsePlaylist: (id: string) => Promise<void>;
 }
 
-/**
- * 网易云解析页状态（jotai atoms，全局唯一且天然跨路由持久——
- * 原先靠 Provider 提到 Layout 层级实现，atoms 化后不再需要）。
- * 搜索/歌单解析是可缓存的 GET，交给 TanStack Query（按关键词/歌单 ID 去重缓存）；
- * parseSong 是用户点击触发的命令式流程（先渲染播放信息、歌词异步补充、
- * 结果驱动播放器而非列表渲染），保留手写实现。
- */
+/** 解析页状态 */
 export function useNcmParse(): NcmParseContextValue {
   const searchQuery = useAtomValue(ncmSearchQueryAtom);
   const hideSearchList = useAtomValue(ncmHideSearchListAtom);
@@ -74,6 +93,7 @@ export function useNcmParse(): NcmParseContextValue {
   const playlistId = useAtomValue(ncmPlaylistIdAtom);
   const globalQuality = useAtomValue(qualityAtom);
 
+  const [platform, setPlatformAtom] = useAtom(parsePlatformAtom);
   const [, setHideSearchList] = useAtom(ncmHideSearchListAtom);
   const [, setSearchQuery] = useAtom(ncmSearchQueryAtom);
   const [, setParsedSong] = useAtom(ncmParsedSongAtom);
@@ -82,14 +102,16 @@ export function useNcmParse(): NcmParseContextValue {
   const [songIdInput, setSongIdInput] = useAtom(ncmSongIdInputAtom);
   const [, setPlaylistId] = useAtom(ncmPlaylistIdAtom);
   const [pageQuality, setPageQuality] = useAtom(ncmQualityAtom);
+  const [qmQuality, setQmQuality] = useAtom(qmQualityAtom);
   const [, setGlobalQuality] = useAtom(qualityAtom);
 
+  const isQQ = platform === 'qq';
   // 页面没手动选过就跟随播放器全局音质
   const quality = pageQuality ?? globalQuality;
 
-  const searchNcmQuery = useQuery({
-    queryKey: queryKeys.ncmSearch(searchQuery),
-    queryFn: () => api.searchNcm(searchQuery),
+  const searchQueryResult = useQuery({
+    queryKey: isQQ ? queryKeys.qmSearch(searchQuery) : queryKeys.ncmSearch(searchQuery),
+    queryFn: () => searchPlatformSongs(platform, searchQuery),
     enabled: !!searchQuery.trim(),
     staleTime: 60_000,
   });
@@ -97,9 +119,28 @@ export function useNcmParse(): NcmParseContextValue {
   const playlistQuery = useQuery({
     queryKey: queryKeys.ncmPlaylist(playlistId),
     queryFn: () => api.parseNcmPlaylist(playlistId),
-    enabled: !!playlistId.trim(),
+    enabled: !isQQ && !!playlistId.trim(),
     staleTime: 60_000,
   });
+
+  const qmPlaylistQuery = useQuery({
+    queryKey: queryKeys.qmPlaylist(playlistId),
+    queryFn: () => api.parseQmPlaylist(playlistId),
+    enabled: isQQ && !!playlistId.trim(),
+    staleTime: 60_000,
+  });
+
+  /** 切换音源：清掉上一个音源的解析结果，避免新旧数据串台 */
+  const setPlatform = useCallback(
+    (p: MusicPlatform) => {
+      if (p === platform) return;
+      setPlatformAtom(p);
+      setParsedSong(null);
+      setParseError(null);
+      setPlaylistId('');
+    },
+    [platform, setPlatformAtom, setParsedSong, setParseError, setPlaylistId]
+  );
 
   const doSearch = useCallback(
     async (q: string) => {
@@ -110,25 +151,60 @@ export function useNcmParse(): NcmParseContextValue {
     [setHideSearchList, setSearchQuery]
   );
 
-  /** 解析歌曲：获取播放链接 + 歌词。歌词三级回退：① ncm-lyrics TTML → ② LRC（合并翻译）→ ③ 无歌词 */
+  /** 解析歌曲 */
   const parseSong = useCallback(
     async (
       songId: string,
       meta: { name?: string; artists?: string; cover?: string; duration?: number }
     ) => {
       // 分享链接先归一成纯 ID
-      const id = extractNcmSongId(songId);
+      const id = isQQ ? unifyQmInput(songId) : extractNcmSongId(songId);
       setParseLoading(true);
       setParseError(null);
       setHideSearchList(true);
       setSongIdInput(id);
       // 真正解析时才把页面选择同步到全局，播放器与歌词页的音质随之对齐
-      setGlobalQuality(quality);
+      if (!isQQ) setGlobalQuality(quality);
+
       try {
+        if (isQQ) {
+          const res = await api.parseQmMusic(id, qmQuality);
+          // 先填播放信息，歌词异步补充
+          setParsedSong({
+            songId: id,
+            platform: 'qq',
+            info: qmMusicToNcmInfo(res),
+            metaDuration: meta.duration,
+            lyricLines: null,
+            lyricError: null,
+          });
+
+          try {
+            const { parseTTML } = await import('@applemusic-like-lyrics/lyric');
+            const ttml = await api.getQqLyricTtml(id);
+            if (ttml) {
+              setParsedSong((prev) =>
+                prev ? { ...prev, lyricLines: parseTTML(ttml).lines } : prev
+              );
+              return;
+            }
+          } catch (e) {
+            setParsedSong((prev) =>
+              prev ? { ...prev, lyricError: e instanceof Error ? e.message : '获取歌词失败' } : prev
+            );
+          }
+
+          setParsedSong((prev) =>
+            prev ? { ...prev, lyricLines: qmToLyricLines(res.lyrics) } : prev
+          );
+          return;
+        }
+
         const info = await api.parseNcmMusic(id, quality);
         // 先填充播放信息，歌词异步获取（避免阻塞播放按钮）
         setParsedSong({
           songId: id,
+          platform: 'ncm',
           info,
           metaDuration: meta.duration,
           lyricLines: null,
@@ -175,13 +251,15 @@ export function useNcmParse(): NcmParseContextValue {
       }
     },
     [
+      isQQ,
+      qmQuality,
+      quality,
       setParseLoading,
       setParseError,
       setHideSearchList,
       setSongIdInput,
       setGlobalQuality,
       setParsedSong,
-      quality,
     ]
   );
 
@@ -194,18 +272,40 @@ export function useNcmParse(): NcmParseContextValue {
 
   /** 把页面级音质选择同步到全局，返回生效的音质 */
   const applyQuality = useCallback(() => {
-    setGlobalQuality(quality);
+    if (!isQQ) setGlobalQuality(quality);
     return quality;
-  }, [quality, setGlobalQuality]);
+  }, [isQQ, quality, setGlobalQuality]);
+
+  const qualityOptions: QualityOption[] = isQQ
+    ? QM_QUALITY_ORDER.map((q) => ({ value: q, label: QM_QUALITY_LABEL[q] }))
+    : NCM_QUALITY_ORDER.map((q) => ({ value: q, label: NCM_QUALITY_LABEL[q] }));
+
+  const setQualityValue = useCallback(
+    (v: string) => {
+      if (isQQ) setQmQuality(v as QmQuality);
+      else setPageQuality(v as NcmQuality);
+    },
+    [isQQ, setQmQuality, setPageQuality]
+  );
+
+  const searchSongs: NcmSong[] | null = searchQueryResult.data ?? null;
+
+  const searchError = searchQueryResult.error as Error | null;
+
+  const playlistDetail: NcmPlaylistDetail | null = isQQ
+    ? qmPlaylistQuery.data?.playlist
+      ? qmPlaylistToNcm(qmPlaylistQuery.data.playlist)
+      : null
+    : (playlistQuery.data?.playlist ?? null);
+
+  const playlistError = (isQQ ? qmPlaylistQuery.error : playlistQuery.error) as Error | null;
 
   return {
-    searchSongs: (searchNcmQuery.data?.data as NcmSong[] | undefined) ?? null,
-    searchLoading: searchNcmQuery.isFetching,
-    searchError: searchNcmQuery.error
-      ? searchNcmQuery.error instanceof Error
-        ? searchNcmQuery.error.message
-        : '搜索失败'
-      : null,
+    platform,
+    setPlatform,
+    searchSongs,
+    searchLoading: searchQueryResult.isFetching,
+    searchError: searchError ? searchError.message || '搜索失败' : null,
     hideSearchList,
     doSearch,
     parsedSong,
@@ -218,13 +318,22 @@ export function useNcmParse(): NcmParseContextValue {
     pageQuality,
     setPageQuality,
     applyQuality,
-    playlistDetail: playlistQuery.data?.playlist ?? null,
-    playlistLoading: playlistQuery.isFetching,
-    playlistError: playlistQuery.error
-      ? playlistQuery.error instanceof Error
-        ? playlistQuery.error.message
-        : '解析失败'
-      : null,
+    qualityOptions,
+    qualityValue: isQQ ? qmQuality : quality,
+    setQualityValue,
+    playlistDetail,
+    playlistLoading: isQQ ? qmPlaylistQuery.isFetching : playlistQuery.isFetching,
+    playlistError: playlistError ? playlistError.message || '解析失败' : null,
     doParsePlaylist,
   };
+}
+
+/** QQ 输入归一 */
+function unifyQmInput(input: string): string {
+  const text = input.trim();
+  const fromQuery = /[?&]songmid=([0-9A-Za-z]+)/.exec(text);
+  if (fromQuery?.[1]) return fromQuery[1];
+  const fromPath = /songDetail\/([0-9A-Za-z]+)/.exec(text);
+  if (fromPath?.[1]) return fromPath[1];
+  return text;
 }

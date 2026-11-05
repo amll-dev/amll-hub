@@ -1,6 +1,6 @@
 import { useAtomValue } from 'jotai';
 import type { LyricLine } from '@applemusic-like-lyrics/lyric';
-import type { SearchHit } from '@/lib/types';
+import type { MusicPlatform, QmQuality, SearchHit } from '@/lib/types';
 import {
   NCM_QUALITY_LABEL,
   NCM_QUALITY_ORDER,
@@ -26,13 +26,14 @@ import {
   type PlayerTrack,
   type PlaylistItem,
   type RepeatMode,
+  type SelectChoice,
   type SelectRequest,
 } from '@/atoms/player';
 import { playerActions } from '@/boot/PlayerBoot';
 
 // 类型与常量从 atoms/player re-export，消费方导入路径不变
 export { NCM_QUALITY_LABEL, NCM_QUALITY_ORDER };
-export type { NcmQuality, PlayerTrack, PlaylistItem, RepeatMode, SelectRequest };
+export type { NcmQuality, PlayerTrack, PlaylistItem, RepeatMode, SelectChoice, SelectRequest };
 
 export interface PlayerContextValue {
   /** 当前播放曲目（无则 null） */
@@ -51,9 +52,9 @@ export interface PlayerContextValue {
   toggle: () => void;
   /** 跳转到指定秒 */
   seek: (sec: number) => void;
-  /** 播放一首搜索命中：解析 ncm id 后播放 */
+  /** 播放一首搜索命中 */
   playHit: (hit: SearchHit) => Promise<void>;
-  /** 播放一首网易云歌曲（无本地搜索命中，用于网易云解析页） */
+  /** 播放一首网易云 / QM歌曲 */
   playNcmSong: (
     songId: string,
     meta: {
@@ -62,6 +63,10 @@ export interface PlayerContextValue {
       cover?: string;
       skipTtml?: boolean;
       customTtml?: string;
+      /** 来源平台 */
+      platform?: MusicPlatform;
+      /** QM 歌曲档位 */
+      level?: string;
     }
   ) => Promise<void>;
   /** 直接播放指定 URL 的音频（如投稿者上传的音频文件） */
@@ -76,8 +81,8 @@ export interface PlayerContextValue {
   close: () => void;
   /** 多 id 选择弹窗：有值时弹窗显示，调用 resolve 选中一个 id */
   selectRequest: SelectRequest | null;
-  /** 用户在弹窗选中某个 id（或取消） */
-  resolveSelect: (songId: string | null) => void;
+  /** 用户在弹窗选中某个平台 ID（或取消） */
+  resolveSelect: (choice: SelectChoice | null) => void;
   /** 随机播放 */
   shuffle: boolean;
   /** 切换随机播放 */
@@ -109,7 +114,7 @@ export interface PlayerContextValue {
   /** 切换到下一个音质 */
   cycleQuality: () => void;
   /** 用指定音质重新加载当前曲目（保持进度） */
-  reloadWithQuality: (q: NcmQuality) => Promise<void>;
+  reloadWithQuality: (q: NcmQuality | QmQuality) => Promise<void>;
   /** 播放列表 */
   playlist: PlaylistItem[];
   /** 当前播放索引（-1 表示无） */

@@ -183,6 +183,120 @@ export interface NcmPlaylistResult {
   error?: string;
 }
 
+// QQ 音乐
+
+/** 音乐来源平台 */
+export type MusicPlatform = 'ncm' | 'qq';
+
+/** qm 音质档位 */
+export type QmQuality = 'hi-res' | 'lossless' | 'hq' | 'sq' | 'lq';
+
+export const QM_QUALITY_LABEL: Record<QmQuality, string> = {
+  'hi-res': 'Hi-Res 无损',
+  lossless: 'SQ 无损',
+  hq: 'HQ 高品质',
+  sq: '标准 128k',
+  lq: '流畅 AAC',
+};
+
+export const QM_QUALITY_ORDER: QmQuality[] = ['lq', 'sq', 'hq', 'lossless', 'hi-res'];
+
+export interface QmArtist {
+  id: number;
+  mid: string;
+  name: string;
+}
+
+export interface QmAlbum {
+  id: number;
+  mid: string;
+  name: string;
+  cover: string;
+}
+
+export interface QmSong {
+  id: number;
+  mid: string;
+  mediaMid: string;
+  name: string;
+  artists: QmArtist[];
+  /** "A / B" */
+  artistName: string;
+  album: QmAlbum;
+  disc: number;
+  durationMs: number;
+  /** "04:12" */
+  duration: string;
+  cover: string;
+  coverLarge: string;
+  pay: { payAlbum: number; payPlay: number };
+  sizes: {
+    hiRes: number;
+    flac: number;
+    mp3_320: number;
+    mp3_128: number;
+    ape: number;
+    ogg: number;
+    hiResSampleRate: number;
+    hiResBitDepth: number;
+  };
+}
+
+/** 对应 qm.SearchResponse */
+export interface QmSearchResult {
+  code: number;
+  total: number;
+  data: QmSong[];
+  time?: string;
+}
+
+/** 对应 /qm/parse-music 返回的 data */
+export interface QmMusicInfo {
+  code: number;
+  id: number;
+  mid: string;
+  name: string;
+  artistName: string;
+  albumName: string;
+  cover: string;
+  /** 请求档位 */
+  level: string;
+  /** 实际命中档位（可能降级） */
+  actualLevel: string;
+  format: string;
+  size: number;
+  url: string;
+  trial: boolean;
+  /** LRC 主歌词 */
+  lyric: string;
+  /** QRC 逐字原文 */
+  qrc: string;
+  translation: string;
+  romaji: string;
+  time?: string;
+  /** 结构化歌词（QRC 优先） */
+  lyrics?: OnlineLyric | null;
+}
+
+/** 对应 qm.PlaylistDetail */
+export interface QmPlaylistDetail {
+  id: string;
+  name: string;
+  cover: string;
+  description: string;
+  creator: string;
+  playCount: number;
+  trackCount: number;
+  songs: QmSong[];
+}
+
+/** 对应 qm.PlaylistResponse */
+export interface QmPlaylistResult {
+  code: number;
+  playlist: QmPlaylistDetail;
+  time?: string;
+}
+
 // ===== 投稿管理 =====
 
 /** 投稿提交类型 */
@@ -560,6 +674,7 @@ export interface DailyRecommendation {
   artist: string;
   coverKey: string; // MinIO key
   ncmId: string;
+  qqId: string;
   comment: string;
   submitter: string;
   submitterInfo: Record<string, unknown>;
@@ -652,9 +767,9 @@ export interface OnlineLyricLine {
 // GET /api/v1/online/lyrics/:platform/:songId 返回（对应 backend OnlineLyric）
 export interface OnlineLyric {
   raw: string;
-  lines: OnlineLyricLine[];
-  translation: OnlineLyricLine[];
-  romanization: OnlineLyricLine[];
+  lines: OnlineLyricLine[] | null;
+  translation: OnlineLyricLine[] | null;
+  romanization: OnlineLyricLine[] | null;
 }
 
 // ===== 消息中心 =====
@@ -869,4 +984,88 @@ export interface UpdateMyProfilePayload {
   bio: string;
   birthday: string | null;
   gender: Gender;
+}
+
+// ===== 歌词请愿 =====
+
+/** 请愿状态：待处理 / 已完成 */
+export type LyricRequestStatus = 'pending' | 'completed';
+
+export interface LyricRequestSupporter {
+  name: string;
+  displayName: string;
+  avatar: string;
+}
+
+export interface LyricRequest {
+  id: number;
+  songName: string;
+  artist: string;
+  album: string;
+  ncmId: string;
+  qqId: string;
+  spotifyId: string;
+  appleMusicId: string;
+  hasAppleTtml: boolean;
+  extraInfo: string;
+  note: string;
+  status: LyricRequestStatus;
+  requesterName: string;
+  requesterInfo?: Record<string, unknown>;
+  supportCount: number;
+  requestCount: number;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** 关联投稿的审核状态（pending/reviewing/need_revision/...），无关联时为空 */
+  submissionStatus?: string;
+  /** 当前用户是否已支持 */
+  supported: boolean;
+  commentCount: number;
+  supporters: LyricRequestSupporter[];
+}
+
+export interface LyricRequestListResult {
+  items: LyricRequest[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface LyricRequestComment {
+  id: number;
+  userName: string;
+  displayName: string;
+  avatar: string;
+  content: string;
+  createdAt: string;
+}
+
+/** 发起 / 编辑请愿入参 */
+export interface LyricRequestPayload {
+  songName: string;
+  artist: string;
+  album: string;
+  ncmId: string;
+  qqId: string;
+  spotifyId: string;
+  appleMusicId: string;
+  hasAppleTtml: boolean;
+  note: string;
+}
+
+/** 发起请愿返回 */
+export interface CreateLyricRequestResult {
+  id: number;
+  merged: boolean;
+  status: LyricRequestStatus;
+}
+
+/** 投稿详情里展示的关联请愿 */
+export interface PetitionLinkItem {
+  requestId: number;
+  songName: string;
+  artist: string;
+  status: LyricRequestStatus;
+  linkedAt: string;
 }

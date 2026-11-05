@@ -35,6 +35,12 @@ var ErrUpstreamUnavailable = errors.New("upstream unavailable")
 // ErrNotFound 通用未找到（service 层未提供更具体类型时使用）
 var ErrNotFound = errors.New("not found")
 
+// ErrNoPlayableURL 上游不返回可播放直链
+var ErrNoPlayableURL = errors.New("no playable url")
+
+// ErrQMCredentialExpired QM登录凭据失效且续期失败
+var ErrQMCredentialExpired = errors.New("qm credential expired")
+
 // 身份验证模块
 
 // ErrIdentityNotVerified 未通过身份验证（或凭证已过期）

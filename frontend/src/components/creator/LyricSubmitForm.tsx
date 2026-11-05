@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertTriangle,
@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { queryKeys } from '@/lib/query';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
 import { useFormDraft } from '@/hooks/useFormDraft';
 import { useUnrearrangedMode } from '@/hooks/useUnrearrangedMode';
@@ -211,6 +212,39 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     () => [autoMeta.title, autoMeta.artist].filter(Boolean).join(' '),
     [autoMeta]
   );
+
+  // 歌词请愿联动
+  const platformIdKey = useMemo(
+    () =>
+      [
+        ...autoMeta.platformIds.ncm_music_id,
+        ...autoMeta.platformIds.qq_music_id,
+        ...autoMeta.platformIds.apple_music_id,
+        ...autoMeta.platformIds.spotify_id,
+      ].join('|'),
+    [autoMeta]
+  );
+  const petitionMatchQuery = useQuery({
+    queryKey: queryKeys.petitionMatch(platformIdKey),
+    queryFn: () =>
+      api.matchLyricRequests({
+        ncm: autoMeta.platformIds.ncm_music_id,
+        qq: autoMeta.platformIds.qq_music_id,
+        apple: autoMeta.platformIds.apple_music_id,
+        spotify: autoMeta.platformIds.spotify_id,
+      }),
+    enabled: !!platformIdKey,
+    staleTime: 60_000,
+  });
+  const matchedPetitions = platformIdKey ? (petitionMatchQuery.data?.items ?? []) : [];
+  // 默认全部勾选
+  const [deselectedPetitions, setDeselectedPetitions] = useState<number[]>([]);
+  useEffect(() => {
+    setDeselectedPetitions([]);
+  }, [platformIdKey]);
+  const selectedPetitionIds = matchedPetitions
+    .filter((p) => !deselectedPetitions.includes(p.id))
+    .map((p) => p.id);
   // 展示与落库共用的差异快照
   const diffSnapshot = useMemo(() => {
     if (!diff) return null;
@@ -293,6 +327,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
         ...revisionFields,
         tags: tags.length > 0 ? tags : undefined,
         status: params.status,
+        petitionIds: selectedPetitionIds.length > 0 ? selectedPetitionIds : undefined,
       });
       // 音源为可选附件，只能挂在已创建的投稿下：逐个上传，单个失败不影响投稿本身
       const audioFailures: string[] = [];
@@ -955,6 +990,45 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
               带星标的标签由文件元数据与歌词特性自动识别，可手动删除
             </p>
           )}
+        </motion.div>
+      )}
+
+      {/* 关联歌词请愿（仅识别到相关请愿时显示） */}
+      {formReady && matchedPetitions.length > 0 && (
+        <motion.div variants={fadeUp} className="rounded-md border border-line bg-card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-foreground">关联歌词请愿</h3>
+            <span className="text-xs text-ink-3">识别到 {matchedPetitions.length} 条相关请愿</span>
+          </div>
+          <p className="mt-1 text-xs text-ink-3">
+            审核通过后，关联的请愿会自动标记为已完成，并通知请愿发起人与支持者。
+          </p>
+          <ul className="mt-3 space-y-2">
+            {matchedPetitions.map((p) => {
+              const checked = selectedPetitionIds.includes(p.id);
+              return (
+                <li key={p.id}>
+                  <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-line bg-background px-3 py-2 transition-colors hover:bg-surface-2">
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={() =>
+                        setDeselectedPetitions((prev) =>
+                          prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id]
+                        )
+                      }
+                      className="mt-0.5"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-foreground">{p.songName}</span>
+                      <span className="block truncate text-xs text-ink-3">
+                        {p.artist} · {p.supportCount} 人支持 · #{p.id}
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
         </motion.div>
       )}
 

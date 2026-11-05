@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { Heart, Download, Play, Pause, Loader2 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { domToPng } from 'modern-screenshot';
-import type { DailyRecommendation } from '@/lib/types';
+import type { DailyRecommendation, MusicPlatform } from '@/lib/types';
 import { parseMarkupText } from '@/lib/markup';
 import { usernameOf } from '@/lib/username';
 import { api } from '@/lib/api';
@@ -219,24 +219,35 @@ export function RecommendCard({
     submitterName ||
     '匿名用户';
 
-  const ncmId = recommendation.ncmId;
-  const canPlay = ncmId && !Number.isNaN(parseInt(ncmId, 10));
+  const playable: { platform: MusicPlatform; id: string } | null = (() => {
+    if (recommendation.ncmId && !Number.isNaN(parseInt(recommendation.ncmId, 10))) {
+      return { platform: 'ncm', id: recommendation.ncmId };
+    }
+    const qid = recommendation.qqId?.trim();
+    if (qid && /^\d+$/.test(qid)) return { platform: 'qq', id: qid };
+    return null;
+  })();
+  const canPlay = !!playable;
 
   // 当前卡片曲目是否正在播放器中播放
-  const isCurrentTrack = track?.ncmSongId === ncmId;
+  const isCurrentTrack =
+    !!playable &&
+    track?.ncmSongId === playable.id &&
+    (track?.platform ?? 'ncm') === playable.platform;
   const isCurrentPlaying = isCurrentTrack && playing;
   const isCurrentLoading = isCurrentTrack && playerLoading;
 
   const handlePlay = () => {
-    if (!canPlay || !ncmId) return;
+    if (!playable) return;
     // 若当前播放的就是这首，切换暂停/播放；否则播放这首
     if (isCurrentTrack) {
       toggle();
     } else {
-      playNcmSong(ncmId, {
+      playNcmSong(playable.id, {
         name: recommendation.songName,
         artists: recommendation.artist,
         cover: coverSrc,
+        platform: playable.platform,
       });
     }
   };

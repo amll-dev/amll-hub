@@ -39,6 +39,7 @@ func (h *DailyRecommendationHandler) Create(c *gin.Context) {
 		Date:         c.PostForm("date"),
 		Comment:      c.PostForm("comment"),
 		NcmID:        c.PostForm("ncmId"),
+		QQID:         c.PostForm("qqId"),
 	}
 
 	submitterInfo := model.JSONObject{

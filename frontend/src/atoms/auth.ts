@@ -19,6 +19,8 @@ export const userAtom = atom<UserProfile | null>(getStoredUser());
 export const loginOpenAtom = atom(false);
 /** 登录成功后要跳转的路径（点击需登录功能时带入，登录完成后自动前往） */
 export const loginRedirectAtom = atom<string | null>(null);
+/** 登录弹窗顶部的引导文案 */
+export const loginNoticeAtom = atom<string | null>(null);
 
 const store = getDefaultStore();
 
@@ -41,13 +43,15 @@ export function logout() {
   queryClient.removeQueries({ queryKey: ['notifications'] });
 }
 
-export function openLogin(redirectTo?: string) {
+export function openLogin(redirectTo?: string, notice?: string) {
   if (redirectTo) store.set(loginRedirectAtom, redirectTo);
+  store.set(loginNoticeAtom, notice ?? null);
   store.set(loginOpenAtom, true);
 }
 
 export function closeLogin() {
   store.set(loginOpenAtom, false);
+  store.set(loginNoticeAtom, null);
 }
 
 export function clearLoginRedirect() {
@@ -64,7 +68,14 @@ export function handleUnauthorized() {
   clearToken();
   clearStoredUser();
   store.set(userAtom, null);
+  store.set(loginNoticeAtom, null);
   store.set(loginOpenAtom, true);
   resetMessages();
   queryClient.removeQueries({ queryKey: ['notifications'] });
+}
+
+/** 未登录访问需鉴权接口时的处理 */
+export function handleAuthRequired(notice?: string | null) {
+  store.set(loginNoticeAtom, notice ?? null);
+  store.set(loginOpenAtom, true);
 }

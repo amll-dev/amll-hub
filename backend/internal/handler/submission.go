@@ -17,11 +17,16 @@ import (
 type SubmissionHandler struct {
 	svc           *service.SubmissionService
 	reviewerCache *middleware.ReviewerCache
+	petitions     *service.PetitionLinkService
 }
 
 // NewSubmissionHandler 创建 handler
-func NewSubmissionHandler(svc *service.SubmissionService, rc *middleware.ReviewerCache) *SubmissionHandler {
-	return &SubmissionHandler{svc: svc, reviewerCache: rc}
+func NewSubmissionHandler(
+	svc *service.SubmissionService,
+	rc *middleware.ReviewerCache,
+	petitions *service.PetitionLinkService,
+) *SubmissionHandler {
+	return &SubmissionHandler{svc: svc, reviewerCache: rc, petitions: petitions}
 }
 
 // Create POST /api/v1/submissions
@@ -45,6 +50,12 @@ func (h *SubmissionHandler) Create(c *gin.Context) {
 	if err != nil {
 		writeSubmissionErr(c, err)
 		return
+	}
+	// 关联歌词请愿
+	if len(req.PetitionIDs) > 0 && req.Status != "draft" && h.petitions != nil {
+		if err := h.petitions.Bind(ctx, id, req.PetitionIDs, user.Name); err != nil {
+			logrus.WithError(err).WithField("submission_id", id).Warn("bind petitions failed")
+		}
 	}
 	pkg.OK(c, gin.H{"id": id})
 }

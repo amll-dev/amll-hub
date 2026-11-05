@@ -18,16 +18,17 @@ import (
 
 // RevisionService 审核员修订版流程
 type RevisionService struct {
-	subRepo     *repository.SubmissionRepo
-	historyRepo *repository.ReviewHistoryRepo
-	reportRepo  *repository.ReviewReportRepo
-	commentRepo *repository.CommentRepo
-	audioRepo   *repository.AudioRepo
-	files       *FileService
-	github      *GitHubService
-	viewers     *ViewerService
-	notifier    Notifier
-	db          *gorm.DB
+	subRepo      *repository.SubmissionRepo
+	historyRepo  *repository.ReviewHistoryRepo
+	reportRepo   *repository.ReviewReportRepo
+	commentRepo  *repository.CommentRepo
+	audioRepo    *repository.AudioRepo
+	files        *FileService
+	github       *GitHubService
+	viewers      *ViewerService
+	notifier     Notifier
+	db           *gorm.DB
+	petitionSync func(ctx context.Context, submissionID int64) error
 }
 
 // SetNotifier 注入通知服务（main 装配阶段调用）
@@ -354,6 +355,9 @@ func (s *RevisionService) AdoptRevision(ctx context.Context, user *SubmissionUse
 		return ErrInvalidStatus
 	}
 
+	// 请愿联动
+	s.syncPetition(ctx, sub.ID)
+
 	// 推 GitHub：使用修订版内容
 	reader, err := s.files.Get(ctx, sub.RevisionFileKey)
 	if err != nil {
@@ -441,6 +445,9 @@ func (s *RevisionService) RejectRevision(ctx context.Context, user *SubmissionUs
 	if !ok {
 		return ErrInvalidStatus
 	}
+
+	// 请愿联动
+	s.syncPetition(ctx, sub.ID)
 
 	if comment != "" {
 		if err := s.commentRepo.Insert(ctx, &model.Comment{
@@ -709,4 +716,22 @@ func readAllString(r io.Reader) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+// SetPetitionSync 注入请愿状态同步
+func (s *RevisionService) SetPetitionSync(fn func(ctx context.Context, submissionID int64) error) {
+	s.petitionSync = fn
+}
+
+// syncPetition 状态变化后同步关联请愿
+func (s *RevisionService) syncPetition(ctx context.Context, submissionID int64) {
+	if s.petitionSync == nil {
+		return
+	}
+	if err := s.petitionSync(ctx, submissionID); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"submission_id": submissionID,
+			"error":         err,
+		}).Warn("sync petition status failed")
+	}
 }

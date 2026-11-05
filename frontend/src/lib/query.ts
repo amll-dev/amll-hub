@@ -73,6 +73,8 @@ export const queryKeys = {
   // 网易云解析
   ncmSearch: (q: string) => ['ncm-search', { q }] as const,
   ncmPlaylist: (id: string) => ['ncm-playlist', { id }] as const,
+  qmSearch: (q: string) => ['qm-search', { q }] as const,
+  qmPlaylist: (id: string) => ['qm-playlist', { id }] as const,
   /** 单曲解析 */
   ncmMusic: (id: string) => ['ncm-music', { id }] as const,
 
@@ -149,4 +151,22 @@ export const queryKeys = {
   announcements: (page: number) => ['announcements', 'list', page] as const,
   /** 单条公告发送状态 */
   announcement: (id: number) => ['announcements', 'detail', id] as const,
+
+  // 歌词请愿
+  lyricRequests: (params: {
+    status?: string;
+    sort?: string;
+    q?: string;
+    page?: number;
+    pageSize?: number;
+  }) => ['lyric-requests', 'list', params] as const,
+  lyricRequestsMine: (params: { status?: string; q?: string; page?: number; pageSize?: number }) =>
+    ['lyric-requests', 'mine', params] as const,
+  lyricRequestHot: (limit: number) => ['lyric-requests', 'hot', limit] as const,
+  lyricRequest: (id: number) => ['lyric-requests', 'detail', id] as const,
+  lyricRequestComments: (id: number) => ['lyric-requests', 'comments', id] as const,
+  /** 投稿时按平台 ID 匹配请愿 */
+  petitionMatch: (key: string) => ['lyric-requests', 'match', key] as const,
+  /** 投稿详情里关联的请愿 */
+  submissionPetitions: (id: number) => ['submission-petitions', id] as const,
 } as const;

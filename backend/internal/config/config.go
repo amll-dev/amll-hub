@@ -26,11 +26,13 @@ type Config struct {
 	Migration    MigrationConfig
 	Sync         SyncConfig
 	NCM          NCMConfig
+	QM           QMConfig
 	OnlineSearch OnlineSearchConfig
 	Casdoor      CasdoorConfig
 	Submission   SubmissionConfig
 	Worker       WorkerConfig
 	Email        EmailConfig
+	ServiceToken string
 }
 
 type HTTPConfig struct {
@@ -100,6 +102,12 @@ type SyncConfig struct {
 type NCMConfig struct {
 	APIBase string
 	MusicU  string
+}
+
+// QMConfig
+type QMConfig struct {
+	Cookie    string
+	CookieKey string
 }
 
 type OnlineSearchConfig struct {
@@ -385,9 +393,14 @@ func Load() (*Config, error) {
 			APIBase: v.GetString("NCM_API_BASE"),
 			MusicU:  v.GetString("NCM_MUSIC_U"),
 		},
+		QM: QMConfig{
+			Cookie:    v.GetString("QM_COOKIE"),
+			CookieKey: v.GetString("QM_COOKIE_KEY"),
+		},
 		OnlineSearch: OnlineSearchConfig{
 			TimeoutSec: v.GetInt("ONLINE_SEARCH_TIMEOUT_SEC"),
 		},
+		ServiceToken: v.GetString("SERVICE_TOKEN"),
 		Casdoor: CasdoorConfig{
 			Endpoint:         v.GetString("CASDOOR_ENDPOINT"),
 			ClientID:         v.GetString("CASDOOR_CLIENT_ID"),

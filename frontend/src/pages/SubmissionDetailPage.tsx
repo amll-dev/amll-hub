@@ -13,7 +13,6 @@ import {
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertTriangle,
-  ArrowLeft,
   Check,
   Copy,
   Download,
@@ -30,8 +29,8 @@ import { queryKeys } from '@/lib/query';
 import { LyricViewer } from '@/components/LyricViewer';
 import { LyricDetailSkeleton } from '@/components/ui/Skeleton';
 import { PageContainer } from '@/components/PageContainer';
-import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
-import { useViewers, type Viewer } from '@/hooks/useViewers';
+import { useViewers } from '@/hooks/useViewers';
+import { DetailTopBar } from '@/components/detail/DetailTopBar';
 import {
   buildActivityEntries,
   extractPlatformIds,
@@ -51,14 +50,12 @@ import { useAuth } from '@/hooks/useAuth';
 import { UpdateLyricArea } from '@/components/submission/UpdateLyricArea';
 import { UploadAudioArea } from '@/components/submission/UploadAudioArea';
 import { NcmSongCard } from '@/components/submission/NcmSongCard';
+import { QmSongCard } from '@/components/submission/QmSongCard';
 import { AudioCard } from '@/components/submission/AudioCard';
 import { fadeUp, staggerContainer } from '@/lib/motion';
 import type { SubmissionDetail, SubmissionAudio } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -73,138 +70,6 @@ import {
 
 /** 审核占用心跳间隔：需小于后端租约时长（默认 3 分钟）才能持续续约 */
 const REVIEW_HEARTBEAT_MS = 60_000;
-
-/** 详情页顶栏：左侧 logo + 标题 + 返回，右侧在线观看者指示器 */
-function DetailTopBar({
-  pageTitle,
-  backPath,
-  backLabel,
-  count,
-  viewers,
-  showModal,
-  setShowModal,
-}: {
-  pageTitle: string;
-  backPath: string;
-  backLabel: string;
-  count: number;
-  viewers: Viewer[];
-  showModal: boolean;
-  setShowModal: (v: boolean) => void;
-}) {
-  const navigate = useNavigate();
-  // 详情页用自定义顶栏（全局 Header 被隐藏），这里补回消息入口
-  const { user } = useAuth();
-  return (
-    <header className="sticky top-0 z-50 border-b border-line bg-card/80 backdrop-blur-xl">
-      <div className="flex h-16 items-center justify-between px-6">
-        {/* 左：logo + 标题 + 返回 */}
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="relative flex shrink-0 items-center gap-3">
-            <Link to="/">
-              <img src="/logo.png" alt="AMLL-Hub" className="h-8 w-8 rounded-md object-contain" />
-            </Link>
-            <span className="text-lg font-bold tracking-tight text-foreground">
-              AMLL Hub {pageTitle}
-            </span>
-            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
-              测试版
-            </span>
-            <span className="absolute inset-x-0 top-full mt-0.5 whitespace-nowrap text-center text-[9px] leading-none text-ink-3">
-              测试版本，不代表最终品质
-            </span>
-          </div>
-          <Separator orientation="vertical" className="mx-1 hidden h-5 sm:block" />
-          <button
-            type="button"
-            onClick={() => navigate(backPath)}
-            className="inline-flex shrink-0 items-center gap-1 text-sm text-ink-2 transition-colors hover:text-primary"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            <span className="hidden sm:inline">{backLabel}</span>
-          </button>
-        </div>
-        {/* 右：消息通知 + 观看者指示器 */}
-        <div className="flex shrink-0 items-center gap-2">
-          {user && <NotificationBellResponsive />}
-          <ViewersIndicator
-            count={count}
-            viewers={viewers}
-            showModal={showModal}
-            setShowModal={setShowModal}
-          />
-        </div>
-      </div>
-    </header>
-  );
-}
-
-/** 在线观看者指示器（Popover + ScrollArea） */
-function ViewersIndicator({
-  count,
-  viewers,
-  showModal,
-  setShowModal,
-}: {
-  count: number;
-  viewers: Viewer[];
-  showModal: boolean;
-  setShowModal: (v: boolean) => void;
-}) {
-  return (
-    <Popover open={showModal} onOpenChange={setShowModal}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface-2 px-3 py-1.5 text-xs text-ink-2 transition-colors hover:border-primary/40 hover:text-primary"
-        >
-          <Users className="h-3.5 w-3.5" />
-          {count > 0 ? `${count} 人正在看` : '当前无人观看'}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-64 p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-foreground">正在查看（{count}）</h3>
-          <button
-            type="button"
-            onClick={() => setShowModal(false)}
-            className="text-ink-3 hover:text-foreground"
-            aria-label="关闭"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        {viewers.length === 0 ? (
-          <p className="py-4 text-center text-xs text-ink-3">暂无其他人在看</p>
-        ) : (
-          <ScrollArea className="max-h-72">
-            <ul className="space-y-2 pr-2">
-              {viewers.map((v) => (
-                <li key={v.username} className="flex items-center gap-2">
-                  {v.avatar ? (
-                    <img
-                      src={v.avatar}
-                      alt=""
-                      className="h-6 w-6 rounded-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-surface-2 text-xs text-ink-3">
-                      {(v.displayName || v.username).slice(0, 1).toUpperCase()}
-                    </div>
-                  )}
-                  <span className="text-sm text-foreground">{v.displayName || v.username}</span>
-                </li>
-              ))}
-            </ul>
-          </ScrollArea>
-        )}
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 /** 主详情组件 */
 function SubmissionDetailContent({
@@ -249,6 +114,23 @@ function SubmissionDetailContent({
     retry: false,
     staleTime: 15_000,
   });
+  // 关联的歌词请愿
+  const petitionsQuery = useQuery({
+    queryKey: queryKeys.submissionPetitions(id),
+    queryFn: () => api.getSubmissionPetitions(id),
+    staleTime: 15_000,
+  });
+  const unbindPetitionMutation = useMutation({
+    mutationFn: (requestId: number) => api.unbindSubmissionPetition(id, requestId),
+    onSuccess: () => {
+      toast.success('已解除关联');
+      queryClient.invalidateQueries({ queryKey: queryKeys.submissionPetitions(id) });
+      queryClient.invalidateQueries({ queryKey: ['lyric-requests'] });
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : '解除关联失败'),
+  });
+  const petitionLinks = petitionsQuery.data?.items ?? [];
+
   const detail = detailQuery.data ?? null;
   const submitterName = usernameOf(detail?.submitter);
   const ttml = ttmlQuery.data ?? '';
@@ -444,7 +326,8 @@ function SubmissionDetailContent({
   const canClose = !['closed', 'approved', 'rejected'].includes(detail.status);
   const audios: SubmissionAudio[] = detail.audios ?? (detail.audio ? [detail.audio] : []);
   const ncmSongId = platformIds.ncm[0] || detail.ncmId || '';
-  const hasAudioSource = audios.length > 0 || !!ncmSongId;
+  const qmSongId = platformIds.qq[0] || detail.qqId || '';
+  const hasAudioSource = audios.length > 0 || !!ncmSongId || !!qmSongId;
   const isSubmitter = !!user && detail.submitter === user.name;
   const canEditAsSubmitter =
     isSubmitter &&
@@ -740,6 +623,48 @@ function SubmissionDetailContent({
                   </div>
                 )}
               </div>
+              {/* 关联的歌词请愿 */}
+              {petitionLinks.length > 0 && (
+                <div className="rounded-lg border border-line bg-card p-5">
+                  <h3 className="mb-3 text-sm font-semibold text-foreground">关联歌词请愿</h3>
+                  <ul className="space-y-2">
+                    {petitionLinks.map((p) => (
+                      <li
+                        key={p.requestId}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line bg-background px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <Link
+                            to={`/creator/requests/${p.requestId}`}
+                            className="truncate text-sm text-foreground transition-colors hover:text-primary"
+                          >
+                            {p.songName}
+                          </Link>
+                          <div className="mt-0.5 truncate text-xs text-ink-3">
+                            {p.artist} · #{p.requestId}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Badge variant={p.status === 'completed' ? 'success' : 'warning'}>
+                            {p.status === 'completed' ? '已完成' : '待处理'}
+                          </Badge>
+                          {(isSubmitter || isReviewer) && (
+                            <button
+                              type="button"
+                              disabled={unbindPetitionMutation.isPending}
+                              onClick={() => unbindPetitionMutation.mutate(p.requestId)}
+                              className="text-xs text-error hover:underline disabled:opacity-50"
+                            >
+                              解除关联
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {/* 修正投稿的差异数据：投稿者与审核员可见，单独成卡与上方信息区一致 */}
               {detail.submissionType === 'revision' &&
                 (isSubmitter || isReviewer) &&
@@ -766,8 +691,10 @@ function SubmissionDetailContent({
                 ))}
                 {/* 网易云歌曲信息自动解析 */}
                 {ncmSongId && <NcmSongCard songId={ncmSongId} ttml={ttml} />}
-                {/* 无音频且无 ncm ID */}
-                {audios.length === 0 && !ncmSongId && (
+                {/* QQ 音乐歌曲信息自动解析 */}
+                {qmSongId && <QmSongCard songId={qmSongId} ttml={ttml} />}
+                {/* 无音频也无平台 ID */}
+                {audios.length === 0 && !ncmSongId && !qmSongId && (
                   <p className="text-sm text-ink-3">暂无歌曲信息</p>
                 )}
               </div>

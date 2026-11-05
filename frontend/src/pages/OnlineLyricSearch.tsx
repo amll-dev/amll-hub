@@ -18,6 +18,7 @@ import {
 import { useOnlineSearch } from '@/hooks/useOnlineSearch';
 import { usePlayer } from '@/hooks/usePlayer';
 import { api } from '@/lib/api';
+import { qmCoverProxy } from '@/lib/qm';
 import { downloadText, sanitizeFileName } from '@/lib/download';
 import { buttonTap, fadeUp, listItem, staggerContainer } from '@/lib/motion';
 import { ONLINE_LYRIC_EXT } from '@/components/LyricViewer';
@@ -67,13 +68,15 @@ export function OnlineLyricSearch() {
     }
   };
 
-  // 播放（仅网易云平台支持）
+  // 播放
   const handlePlay = (hit: OnlineSearchHit) => {
     if (playerLoading) return;
+    if (hit.platform !== 'ncm' && hit.platform !== 'qq') return;
     void playNcmSong(hit.platformId, {
       name: hit.songName,
       artists: hit.artists.join(' / '),
-      cover: hit.coverUrl || undefined,
+      cover: hit.coverUrl ? qmCoverProxy(hit.coverUrl) : undefined,
+      platform: hit.platform,
     });
   };
 
@@ -285,7 +288,8 @@ function SearchResultList({
     <motion.ul variants={staggerContainer} initial="hidden" animate="show" className="space-y-2">
       {hits.map((hit) => {
         const key = `${hit.platform}-${hit.platformId}`;
-        const isPlaying = hit.platform === 'ncm' && playingId === hit.platformId;
+        const canPlay = hit.platform === 'ncm' || hit.platform === 'qq';
+        const isPlaying = canPlay && playingId === hit.platformId;
         const isDownloading = downloadingKey === key;
         const hitDlError = dlError?.key === key ? dlError.msg : null;
         return (
@@ -327,8 +331,8 @@ function SearchResultList({
                 {formatDuration(hit.duration)}
               </div>
               <div className="flex items-center gap-1">
-                {/* 播放（仅网易云） */}
-                {hit.platform === 'ncm' && (
+                {/* 播放 */}
+                {canPlay && (
                   <button
                     type="button"
                     onClick={() => onPlay(hit)}

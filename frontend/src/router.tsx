@@ -22,6 +22,7 @@ import {
   ProfileSecurity,
   Ranking,
   Register,
+  RequestDetailPage,
   ResetPassword,
   ReviewCenter,
   SubmissionDetailPage,
@@ -84,6 +85,9 @@ export const router = createBrowserRouter([
       { path: '/bind-account', element: <BindAccount /> },
       { path: '/messages', element: <MessagesPage /> },
       { path: '/creator', element: <CreatorCenter /> },
+      { path: '/creator/requests', element: <CreatorCenter /> },
+      { path: '/creator/requests/:id/edit', element: <CreatorCenter /> },
+      { path: '/creator/requests/:id', element: <RequestDetailPage /> },
       {
         path: '/creator/lyrics/detail',
         element: (

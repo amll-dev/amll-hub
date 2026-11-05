@@ -50,6 +50,11 @@ func (s *Sender) RenderReviewResult(p ReviewResultParams) (subject, html, text s
 	return s.renderer.RenderReviewResult(p)
 }
 
+// RenderPetition 渲染歌词请愿通知邮件
+func (s *Sender) RenderPetition(p PetitionParams) (subject, html, text string, err error) {
+	return s.renderer.RenderPetition(p)
+}
+
 // RenderAnnouncement 渲染系统公告邮件
 func (s *Sender) RenderAnnouncement(p AnnouncementParams) (subject, html, text string, err error) {
 	return s.renderer.RenderAnnouncement(p)

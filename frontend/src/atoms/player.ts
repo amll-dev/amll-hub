@@ -1,6 +1,6 @@
 import { atom } from 'jotai';
 import type { LyricLine } from '@applemusic-like-lyrics/lyric';
-import type { SearchHit } from '@/lib/types';
+import type { SearchHit, MusicPlatform } from '@/lib/types';
 
 // ===== 类型与常量（原 hooks/usePlayer.ts，消费方仍从 usePlayer re-export） =====
 
@@ -14,6 +14,10 @@ export interface PlayerTrack {
   hit?: SearchHit;
   /** 当前播放使用的网易云歌曲 ID */
   ncmSongId?: string;
+  /** 曲目来源平台 */
+  platform?: MusicPlatform;
+  level?: string;
+  actualLevel?: string;
   /** 网易云解析返回的 LRC 主歌词 */
   ncmLyric?: string;
   /** 网易云解析返回的 LRC 翻译 */
@@ -21,12 +25,19 @@ export interface PlayerTrack {
   skipTtml?: boolean;
   /** 外部直接传入的 TTML 文本 */
   customTtml?: string;
+  customLyricLines?: LyricLine[];
 }
 
-/** 多 ncm id 选择弹窗的请求 */
+/** 可播放候选 */
+export interface SelectChoice {
+  platform: MusicPlatform;
+  id: string;
+}
+
+/** 多 ID 选择弹窗的请求 */
 export interface SelectRequest {
-  /** 待选择的 ncm id 列表 */
-  ids: string[];
+  /** 待选择的候选列表 */
+  choices: SelectChoice[];
   /** 关联的搜索命中 */
   hit: SearchHit;
 }
@@ -37,6 +48,10 @@ export interface PlaylistItem {
   name: string;
   artists: string;
   cover?: string;
+  /** 曲目来源平台 */
+  platform?: MusicPlatform;
+  /** QM播放档位 */
+  level?: string;
 }
 
 export type RepeatMode = 'off' | 'all' | 'one';

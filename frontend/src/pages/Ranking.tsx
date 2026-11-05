@@ -3,8 +3,9 @@ import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Clock, Hash, Loader2, Music, Play } from 'lucide-react';
 import { useNotFoundRanking } from '@/hooks/useNotFoundRanking';
 import { usePlayer } from '@/hooks/usePlayer';
+import { qmCoverProxy } from '@/lib/qm';
 import { listItem, staggerContainer } from '@/lib/motion';
-import type { NotFoundRankingItem } from '@/lib/types';
+import type { MusicPlatform, NotFoundRankingItem } from '@/lib/types';
 import {
   Pagination,
   PaginationContent,
@@ -276,7 +277,7 @@ function Cover({ cover }: { cover: string }) {
   );
 }
 
-/** 播放按钮：ncm 直接播放，其他平台提示不支持 */
+/** 播放按钮 */
 function PlayButton({
   item,
   onUnsupported,
@@ -285,18 +286,21 @@ function PlayButton({
   onUnsupported: () => void;
 }) {
   const { playNcmSong, loading: playerLoading, track } = usePlayer();
-  const isCurrent = item.platform === 'ncm' && track?.ncmSongId === item.platformId;
+  const canPlay = item.platform === 'ncm' || item.platform === 'qq';
+  const isCurrent =
+    canPlay && track?.ncmSongId === item.platformId && (track?.platform ?? 'ncm') === item.platform;
 
   const handleClick = () => {
     if (playerLoading) return;
-    if (item.platform !== 'ncm') {
+    if (!canPlay) {
       onUnsupported();
       return;
     }
     void playNcmSong(item.platformId, {
       name: item.songName,
       artists: item.artists.join(' / '),
-      cover: item.cover,
+      cover: item.cover ? qmCoverProxy(item.cover) : undefined,
+      platform: item.platform as MusicPlatform,
       skipTtml: true,
     });
   };

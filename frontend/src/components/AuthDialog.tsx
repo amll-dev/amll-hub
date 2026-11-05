@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useAtom } from 'jotai';
+import { useAtom, useAtomValue } from 'jotai';
+import { loginNoticeAtom } from '@/atoms/auth';
 import {
   loginTabAtom,
   forgotOpenAtom,
@@ -177,6 +178,7 @@ function QrLoginPanel({ onSuccess }: { onSuccess: (r: LoginResult) => void }) {
 
 export function AuthDialog() {
   const { loginOpen, closeLogin, login, loginRedirect, clearLoginRedirect } = useAuth();
+  const loginNotice = useAtomValue(loginNoticeAtom);
   const navigate = useNavigate();
 
   // 弹窗状态存全局 atoms（常驻 Layout，关闭时由 resetForm 复位）
@@ -423,6 +425,11 @@ export function AuthDialog() {
 
           {/* 右侧：表单 */}
           <div className="flex flex-1 flex-col p-6 sm:p-8">
+            {loginNotice && (
+              <div className="mb-4 rounded-md bg-primary-tint px-3 py-2 text-center text-xs font-medium text-primary">
+                {loginNotice}
+              </div>
+            )}
             {/* Tab 切换 */}
             <div className="mb-6 flex items-center justify-center gap-8">
               {tabItems.map((t) => (

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -53,13 +52,8 @@ func (s *CloudMusicService) Search(ctx context.Context, keywords string, limit i
 	}
 
 	cacheKey := fmt.Sprintf("ncm:search:%s:%d", keywords, limit)
-	if s.redis != nil {
-		if cached, err := s.redis.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
-			var r models.SearchResponse
-			if err := json.Unmarshal([]byte(cached), &r); err == nil {
-				return &r, nil
-			}
-		}
+	if cached, ok := getCachedJSON[models.SearchResponse](ctx, s.redis, cacheKey); ok {
+		return &cached, nil
 	}
 
 	resp, err := s.client.Search(ctx, keywords, limit)
@@ -74,11 +68,7 @@ func (s *CloudMusicService) Search(ctx context.Context, keywords string, limit i
 		return resp, ErrUpstreamUnavailable
 	}
 
-	if s.redis != nil {
-		if data, err := json.Marshal(resp); err == nil {
-			s.redis.Set(ctx, cacheKey, data, 10*time.Minute)
-		}
-	}
+	setCachedJSON(ctx, s.redis, cacheKey, resp, 10*time.Minute)
 	return resp, nil
 }
 
@@ -98,13 +88,8 @@ func (s *CloudMusicService) ParseMusic(ctx context.Context, songID, level string
 	}
 
 	cacheKey := fmt.Sprintf("ncm:parse-music:%s:%s", normalizedID, level)
-	if s.redis != nil {
-		if cached, err := s.redis.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
-			var m models.MusicResponse
-			if err := json.Unmarshal([]byte(cached), &m); err == nil {
-				return &m, nil
-			}
-		}
+	if cached, ok := getCachedJSON[models.MusicResponse](ctx, s.redis, cacheKey); ok {
+		return &cached, nil
 	}
 
 	resp, err := s.client.ParseMusic(ctx, songID, level)
@@ -119,11 +104,7 @@ func (s *CloudMusicService) ParseMusic(ctx context.Context, songID, level string
 		return resp, ErrUpstreamUnavailable
 	}
 
-	if s.redis != nil {
-		if data, err := json.Marshal(resp); err == nil {
-			s.redis.Set(ctx, cacheKey, data, 20*time.Minute)
-		}
-	}
+	setCachedJSON(ctx, s.redis, cacheKey, resp, 20*time.Minute)
 	return resp, nil
 }
 
@@ -140,13 +121,8 @@ func (s *CloudMusicService) ParsePlaylist(ctx context.Context, playlistID string
 	}
 
 	cacheKey := fmt.Sprintf("ncm:parse-playlist:%s", normalizedID)
-	if s.redis != nil {
-		if cached, err := s.redis.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
-			var p models.PlaylistResponse
-			if err := json.Unmarshal([]byte(cached), &p); err == nil {
-				return &p, nil
-			}
-		}
+	if cached, ok := getCachedJSON[models.PlaylistResponse](ctx, s.redis, cacheKey); ok {
+		return &cached, nil
 	}
 
 	resp, err := s.client.ParsePlaylist(ctx, playlistID)
@@ -161,11 +137,7 @@ func (s *CloudMusicService) ParsePlaylist(ctx context.Context, playlistID string
 		return resp, ErrUpstreamUnavailable
 	}
 
-	if s.redis != nil {
-		if data, err := json.Marshal(resp); err == nil {
-			s.redis.Set(ctx, cacheKey, data, 30*time.Minute)
-		}
-	}
+	setCachedJSON(ctx, s.redis, cacheKey, resp, 30*time.Minute)
 	return resp, nil
 }
 

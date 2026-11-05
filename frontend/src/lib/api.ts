@@ -13,6 +13,13 @@ import type {
   IdentityMethod,
   IdentityStatus,
   LatestSongItem,
+  LyricRequest,
+  LyricRequestComment,
+  LyricRequestListResult,
+  LyricRequestPayload,
+  LyricRequestStatus,
+  CreateLyricRequestResult,
+  PetitionLinkItem,
   LyricViewResponse,
   MessageType,
   NotificationListResult,
@@ -24,6 +31,10 @@ import type {
   OnlinePlatform,
   OnlineSearchResult,
   OnlineSongDetail,
+  QmMusicInfo,
+  QmPlaylistResult,
+  QmSearchResult,
+  QmSong,
   ReviewAction,
   ReviewerListResult,
   SaveRevisionPayload,
@@ -60,6 +71,29 @@ import type {
 import { clearAuth, getToken } from './auth';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
+
+const qmIdMidCache = new Map<string, { id: string; mid: string }>();
+
+/** 未登录时的引导文案 */
+function authNoticeFor(path: string): string {
+  if (path.includes('/parse-music') || path.includes('/parse-playlist')) {
+    return '登录后即可播放音乐';
+  }
+  if (path.includes('/search')) {
+    return '登录后即可搜索歌曲';
+  }
+  return '登录后即可使用该功能';
+}
+
+/** 拉取库内歌词 TTML；不存在返回 null */
+async function fetchLyricTtml(folder: string, name: string): Promise<string | null> {
+  const res = await fetch(`${API_BASE}/api/v1/lyrics/${folder}/${encodeURIComponent(name)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`获取歌词失败：HTTP ${res.status}`);
+  }
+  return res.text();
+}
 
 /** 请求超时（毫秒）：防止挂起的连接卡死 UI */
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -129,6 +163,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (token) {
       clearAuth();
       window.dispatchEvent(new Event('auth:unauthorized'));
+    } else if (!path.startsWith('/api/v1/auth')) {
+      window.dispatchEvent(
+        new CustomEvent('auth:required', { detail: { notice: authNoticeFor(path) } })
+      );
     }
     throw new ApiError(msg, 401);
   }
@@ -236,12 +274,7 @@ export const api = {
     const qs = buildQuery({ songId, level });
     // 后端响应：{ code, message, data: MusicResponse }
     // MusicResponse 字段：url/name/pic/ar_name/al_name/lyric/tlyric 等
-    const res = await fetch(`${API_BASE}/api/v1/ncm/parse-music${qs}`);
-    const json = (await res.json()) as ApiResponse<Record<string, unknown>>;
-    if (json.code !== 200 || !json.data) {
-      throw new Error(json.message || `解析失败：HTTP ${res.status}`);
-    }
-    const d = json.data;
+    const d = await request<Record<string, unknown>>(`/api/v1/ncm/parse-music${qs}`);
     return {
       url: asString(d.url ?? d.URL),
       name: asString(d.name ?? d.songName),
@@ -273,17 +306,67 @@ export const api = {
     return request<NcmPlaylistResult>(`/api/v1/ncm/parse-playlist${qs}`);
   },
 
+  parseQmMusic(songId: string, level = 'hq'): Promise<QmMusicInfo> {
+    const qs = buildQuery({ songId, level });
+    return request<QmMusicInfo>(`/api/v1/qm/parse-music${qs}`);
+  },
+  searchQm(q: string, limit = 10): Promise<QmSearchResult> {
+    const qs = buildQuery({ q, limit });
+    return request<QmSearchResult>(`/api/v1/qm/search${qs}`);
+  },
+  parseQmPlaylist(playlistId: string): Promise<QmPlaylistResult> {
+    const qs = buildQuery({ playlistId });
+    return request<QmPlaylistResult>(`/api/v1/qm/parse-playlist${qs}`);
+  },
+  qmSong(id: string): Promise<QmSong> {
+    const qs = buildQuery({ id });
+    return request<QmSong>(`/api/v1/qm/song${qs}`);
+  },
+  qmCoverUrl(mid: string, size = 300): string {
+    const qs = buildQuery({ mid, size });
+    return `${API_BASE}/api/v1/qm/cover${qs}`;
+  },
+
   /**
    * 获取 ncm-lyrics 文件夹下的 TTML 歌词（按歌曲 ID）。
    * 后端 GET /api/v1/lyrics/ncm-lyrics/:songId 直接返回 TTML 字节流。
    */
   async getNcmLyricTtml(songId: string): Promise<string | null> {
-    const res = await fetch(`${API_BASE}/api/v1/lyrics/ncm-lyrics/${encodeURIComponent(songId)}`);
-    if (res.status === 404) return null;
-    if (!res.ok) {
-      throw new Error(`获取歌词失败：HTTP ${res.status}`);
+    return fetchLyricTtml('ncm-lyrics', songId);
+  },
+
+  async getQqLyricTtml(songIdOrMid: string): Promise<string | null> {
+    const key = songIdOrMid.trim();
+    if (!key) return null;
+
+    const direct = await fetchLyricTtml('qq-lyrics', key);
+    if (direct !== null) return direct;
+
+    const pair = await this.qmIdMidPair(key);
+    if (!pair) return null;
+    const alt = /^\d+$/.test(key) ? pair.mid : pair.id;
+    if (!alt || alt === key) return null;
+    return fetchLyricTtml('qq-lyrics', alt);
+  },
+
+  /** QQ 歌曲 id / mid 互转 */
+  async qmIdMidPair(input: string): Promise<{ id: string; mid: string } | null> {
+    const key = input.trim();
+    if (!key) return null;
+    const cached = qmIdMidCache.get(key);
+    if (cached) return cached;
+    try {
+      const song = await this.qmSong(key);
+      const pair = { id: String(song.id), mid: song.mid };
+      if (!pair.mid) return null;
+      // 两种形态都缓存，命中任一都能直接拿到映射
+      qmIdMidCache.set(pair.id, pair);
+      qmIdMidCache.set(pair.mid, pair);
+      qmIdMidCache.set(key, pair);
+      return pair;
+    } catch {
+      return null;
     }
-    return res.text();
   },
 
   /**
@@ -742,6 +825,8 @@ export const api = {
     diffSnapshot?: unknown;
     type?: string;
     status?: 'pending' | 'draft';
+    /** 关联的歌词请愿 ID */
+    petitionIds?: number[];
   }): Promise<{ id: number }> {
     return request<{ id: number }>('/api/v1/submissions', {
       method: 'POST',
@@ -1030,6 +1115,7 @@ export const api = {
     date: string;
     comment: string;
     ncmId?: string;
+    qqId?: string;
   }): Promise<{ id: number }> {
     const token = getToken();
     const form = new FormData();
@@ -1039,6 +1125,7 @@ export const api = {
     form.append('date', params.date);
     form.append('comment', params.comment);
     if (params.ncmId) form.append('ncmId', params.ncmId);
+    if (params.qqId) form.append('qqId', params.qqId);
     const res = await fetch(`${API_BASE}/api/v1/daily-recommendations`, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -1259,6 +1346,133 @@ export const api = {
   retryMigration(id: number): Promise<GithubMigrationTask> {
     return request<GithubMigrationTask>(`/api/v1/migration/github/tasks/${id}/retry`, {
       method: 'POST',
+    });
+  },
+
+  // 歌词请愿
+
+  /** 全站请愿列表 GET /api/v1/lyric-requests */
+  listLyricRequests(
+    params: {
+      status?: LyricRequestStatus;
+      sort?: 'latest' | 'hot';
+      q?: string;
+      page?: number;
+      pageSize?: number;
+    } = {}
+  ): Promise<LyricRequestListResult> {
+    return request<LyricRequestListResult>(
+      `/api/v1/lyric-requests${buildQuery({
+        status: params.status,
+        sort: params.sort,
+        q: params.q,
+        page: params.page,
+        pageSize: params.pageSize,
+      })}`
+    );
+  },
+
+  /** 我发起的请愿 GET /api/v1/lyric-requests/mine */
+  listMyLyricRequests(
+    params: {
+      status?: LyricRequestStatus;
+      q?: string;
+      page?: number;
+      pageSize?: number;
+    } = {}
+  ): Promise<LyricRequestListResult> {
+    return request<LyricRequestListResult>(
+      `/api/v1/lyric-requests/mine${buildQuery({
+        status: params.status,
+        q: params.q,
+        page: params.page,
+        pageSize: params.pageSize,
+      })}`
+    );
+  },
+
+  /** 首页/侧栏热门请愿 GET /api/v1/lyric-requests/hot */
+  getHotLyricRequests(limit = 6): Promise<LyricRequestListResult> {
+    return request<LyricRequestListResult>(`/api/v1/lyric-requests/hot${buildQuery({ limit })}`);
+  },
+
+  /** 请愿详情 GET /api/v1/lyric-requests/:id */
+  getLyricRequest(id: number): Promise<LyricRequest> {
+    return request<LyricRequest>(`/api/v1/lyric-requests/${id}`);
+  },
+
+  /** 发起请愿 POST /api/v1/lyric-requests */
+  createLyricRequest(payload: LyricRequestPayload): Promise<CreateLyricRequestResult> {
+    return request<CreateLyricRequestResult>('/api/v1/lyric-requests', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /** 编辑请愿 PUT /api/v1/lyric-requests/:id */
+  updateLyricRequest(id: number, payload: LyricRequestPayload): Promise<void> {
+    return request<void>(`/api/v1/lyric-requests/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /** 撤回请愿 DELETE /api/v1/lyric-requests/:id */
+  withdrawLyricRequest(id: number): Promise<void> {
+    return request<void>(`/api/v1/lyric-requests/${id}`, { method: 'DELETE' });
+  },
+
+  /** 支持 / 取消支持 POST /api/v1/lyric-requests/:id/support */
+  toggleLyricRequestSupport(id: number): Promise<{ supported: boolean; supportCount: number }> {
+    return request<{ supported: boolean; supportCount: number }>(
+      `/api/v1/lyric-requests/${id}/support`,
+      { method: 'POST' }
+    );
+  },
+
+  /** 请愿评论列表 GET /api/v1/lyric-requests/:id/comments */
+  listLyricRequestComments(id: number): Promise<LyricRequestComment[]> {
+    return request<LyricRequestComment[]>(`/api/v1/lyric-requests/${id}/comments`);
+  },
+
+  /** 发表请愿评论 POST /api/v1/lyric-requests/:id/comments */
+  createLyricRequestComment(id: number, content: string): Promise<LyricRequestComment> {
+    return request<LyricRequestComment>(`/api/v1/lyric-requests/${id}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  },
+
+  /** 投稿时按平台 ID 匹配请愿 POST /api/v1/lyric-requests/match */
+  matchLyricRequests(ids: {
+    ncm?: string[];
+    qq?: string[];
+    spotify?: string[];
+    apple?: string[];
+  }): Promise<{ items: LyricRequest[] }> {
+    return request<{ items: LyricRequest[] }>('/api/v1/lyric-requests/match', {
+      method: 'POST',
+      body: JSON.stringify({ platformIds: ids }),
+    });
+  },
+
+  /** 投稿关联的请愿 GET /api/v1/submissions/:id/petitions */
+  getSubmissionPetitions(id: number): Promise<{ items: PetitionLinkItem[] }> {
+    return request<{ items: PetitionLinkItem[] }>(`/api/v1/submissions/${id}/petitions`);
+  },
+
+  /** 解除投稿与请愿的关联 DELETE /api/v1/submissions/:id/petitions/:requestId */
+  unbindSubmissionPetition(id: number, requestId: number): Promise<void> {
+    return request<void>(`/api/v1/submissions/${id}/petitions/${requestId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /** 管理员标记请愿状态 POST /api/v1/admin/lyric-requests/:id/status */
+  setLyricRequestStatus(id: number, status: LyricRequestStatus): Promise<void> {
+    return request<void>(`/api/v1/admin/lyric-requests/${id}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status }),
     });
   },
 };

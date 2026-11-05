@@ -4,13 +4,52 @@ use serde::{Deserialize, Serialize};
 /// 解析上下文（包含 API 地址配置）
 #[derive(Debug, Clone)]
 pub struct ParseContext {
+    /// 网易云 API 基址
     pub ncm_api_base: String,
+    /// amll-hub 后端基址
+    pub qm_api_base: String,
+    /// 内部服务 token
+    pub service_token: String,
 }
 
 impl ParseContext {
-    pub fn new(ncm_api_base: String) -> Self {
-        Self { ncm_api_base }
+    pub fn new(ncm_api_base: String, qm_api_base: String, service_token: String) -> Self {
+        Self {
+            ncm_api_base,
+            qm_api_base,
+            service_token,
+        }
     }
+}
+
+/// amll-hub 统一响应包装
+#[derive(Debug, Deserialize)]
+struct ApiEnvelope<T> {
+    code: i32,
+    data: Option<T>,
+}
+
+/// 后端 /api/v1/qm/song 返回的 QQ 音乐歌曲
+#[derive(Debug, Deserialize)]
+struct QmSong {
+    name: Option<String>,
+    #[serde(rename = "artistName")]
+    artist_name: Option<String>,
+    #[serde(default)]
+    artists: Vec<QmArtist>,
+    album: Option<QmAlbum>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QmArtist {
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QmAlbum {
+    name: Option<String>,
+    #[serde(default)]
+    cover: String,
 }
 
 /// 网易云歌曲详情响应
@@ -133,6 +172,67 @@ pub async fn fetch_song_detail(
     Ok(SongMeta::default())
 }
 
+/// 调后端代理获取 QQ 音乐歌曲信息
+pub async fn fetch_qm_song_detail(
+    client: &reqwest::Client,
+    api_base: &str,
+    service_token: &str,
+    platform_id: &str,
+) -> Result<SongMeta> {
+    if api_base.trim().is_empty() {
+        anyhow::bail!("qm api base not configured");
+    }
+    let url = format!(
+        "{}/api/v1/qm/song?id={}",
+        api_base.trim_end_matches('/'),
+        urlencoding::encode(platform_id)
+    );
+    let mut req = client.get(&url);
+    if !service_token.is_empty() {
+        req = req.header("X-Service-Token", service_token);
+    }
+    let resp = req.send().await.context("fetch qm song")?;
+
+    if !resp.status().is_success() {
+        anyhow::bail!("qm song API returned status: {}", resp.status());
+    }
+
+    let body: ApiEnvelope<QmSong> = resp.json().await.context("parse qm song response")?;
+    if body.code != 200 {
+        anyhow::bail!("qm song API code: {}", body.code);
+    }
+
+    let Some(song) = body.data else {
+        return Ok(SongMeta::default());
+    };
+
+    // 优先 artistName
+    let artists: Vec<String> = match song.artist_name.filter(|s| !s.trim().is_empty()) {
+        Some(name) => name
+            .split('/')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        None => song
+            .artists
+            .into_iter()
+            .filter_map(|a| a.name.filter(|n| !n.is_empty()))
+            .collect(),
+    };
+    let (album, cover) = song
+        .album
+        .map(|al| (al.name.unwrap_or_default(), al.cover))
+        .unwrap_or_default();
+
+    Ok(SongMeta {
+        song_type: None,
+        name: song.name.unwrap_or_default(),
+        artists,
+        album,
+        cover,
+    })
+}
+
 /// 获取歌曲的展示元数据
 pub async fn fetch_song_meta(
     client: &reqwest::Client,
@@ -189,7 +289,12 @@ pub async fn parse_and_categorize(
     platform: &str,
     platform_id: &str,
 ) -> Result<ParseResult> {
-    // 目前仅支持 ncm 平台
+    // QQ 音乐：只补元数据，不做纯音乐/云盘判定
+    if platform == "qq" {
+        return parse_qm(client, ctx, platform_id).await;
+    }
+
+    // 其它平台暂不支持，保持空元数据
     if platform != "ncm" {
         return Ok(ParseResult {
             category: ParseCategory::NotFound,
@@ -261,4 +366,31 @@ pub async fn parse_and_categorize(
         cover: meta.cover,
         album: meta.album,
     })
+}
+
+/// QQ 音乐的解析分支
+async fn parse_qm(
+    client: &reqwest::Client,
+    ctx: &ParseContext,
+    platform_id: &str,
+) -> Result<ParseResult> {
+    match fetch_qm_song_detail(client, &ctx.qm_api_base, &ctx.service_token, platform_id).await {
+        Ok(meta) => Ok(ParseResult {
+            category: ParseCategory::NotFound,
+            song_name: meta.name,
+            artists: meta.artists,
+            cover: meta.cover,
+            album: meta.album,
+        }),
+        Err(e) => {
+            tracing::warn!(error = %e, platform_id, "fetch qm song detail failed");
+            Ok(ParseResult {
+                category: ParseCategory::ApiFailed,
+                song_name: String::new(),
+                artists: Vec::new(),
+                cover: String::new(),
+                album: String::new(),
+            })
+        }
+    }
 }

@@ -29,13 +29,14 @@ type ReviewInput struct {
 
 // ReviewService 审核流程
 type ReviewService struct {
-	subRepo     *repository.SubmissionRepo
-	historyRepo *repository.ReviewHistoryRepo
-	files       *FileService
-	github      *GitHubService
-	viewers     *ViewerService
-	notifier    Notifier
-	db          *gorm.DB
+	subRepo      *repository.SubmissionRepo
+	historyRepo  *repository.ReviewHistoryRepo
+	files        *FileService
+	github       *GitHubService
+	viewers      *ViewerService
+	notifier     Notifier
+	db           *gorm.DB
+	petitionSync func(ctx context.Context, submissionID int64) error
 }
 
 // SetNotifier 注入通知服务（main 装配阶段调用）
@@ -117,6 +118,15 @@ func (s *ReviewService) Review(ctx context.Context, user *SubmissionUser, id int
 	if s.viewers != nil {
 		_ = s.viewers.NotifySubmissionChanged(ctx, sub.ID)
 	}
+	// 请愿联动
+	if s.petitionSync != nil {
+		if err := s.petitionSync(ctx, sub.ID); err != nil {
+			logrus.WithFields(logrus.Fields{
+				"submission_id": sub.ID,
+				"error":         err,
+			}).Warn("sync petition status failed")
+		}
+	}
 	// T1：审核结果通知投稿人（通知失败不影响审核流程）
 	if s.notifier != nil {
 		if err := s.notifier.NotifyReviewResult(ctx, sub, comment); err != nil {
@@ -127,6 +137,11 @@ func (s *ReviewService) Review(ctx context.Context, user *SubmissionUser, id int
 		}
 	}
 	return nil
+}
+
+// SetPetitionSync 注入请愿状态同步
+func (s *ReviewService) SetPetitionSync(fn func(ctx context.Context, submissionID int64) error) {
+	s.petitionSync = fn
 }
 
 // MarkReviewing 审核员进入详情页时占用该投稿（status → reviewing）。

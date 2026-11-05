@@ -177,6 +177,26 @@ type AnnouncementParams struct {
 	Year        int
 }
 
+// PetitionParams 歌词请愿通知邮件的数据
+type PetitionParams struct {
+	Kind            string // linked（已有人投稿） / completed（已完成）
+	DisplayName     string
+	Username        string
+	SongName        string
+	Artist          string
+	SubmissionTitle string
+	SubmissionID    int64
+	Subject         string
+	Headline        string
+	Lead            string
+	Tip             string
+	Preheader       string
+	DetailURL       string
+	SiteURL         string
+	LogoURL         string
+	Year            int
+}
+
 // RenderReviewResult 渲染审核结果邮件
 func (r *Renderer) RenderReviewResult(p ReviewResultParams) (string, string, string, error) {
 	st, ok := resultStyles[p.Result]
@@ -244,6 +264,42 @@ func (r *Renderer) RenderAnnouncement(p AnnouncementParams) (string, string, str
 	}
 	if err := r.textTmpl.ExecuteTemplate(&textBuf, "announcement.txt", p); err != nil {
 		return "", "", "", fmt.Errorf("render announcement text: %w", err)
+	}
+	return p.Subject, htmlBuf.String(), textBuf.String(), nil
+}
+
+// RenderPetition 渲染歌词请愿通知邮件
+func (r *Renderer) RenderPetition(p PetitionParams) (string, string, string, error) {
+	switch p.Kind {
+	case "completed":
+		p.Subject = firstNonEmpty(p.Subject, subjectPrefix+"你请愿的《"+p.SongName+"》歌词已完成")
+		p.Headline = firstNonEmpty(p.Headline, "你请愿的歌词已完成")
+		p.Lead = firstNonEmpty(p.Lead, "这首歌的歌词已通过审核，感谢你的请愿与支持。")
+		p.Tip = firstNonEmpty(p.Tip, "去曲库听听成品吧，也欢迎继续为其他歌曲发起请愿。")
+		p.Preheader = firstNonEmpty(p.Preheader, "你请愿的歌曲已经有正式歌词了。")
+	default:
+		p.Subject = firstNonEmpty(p.Subject, subjectPrefix+"你请愿的《"+p.SongName+"》有歌词投稿了")
+		p.Headline = firstNonEmpty(p.Headline, "有人投稿了你请愿的歌词")
+		p.Lead = firstNonEmpty(p.Lead, "已有歌词投稿与你的请愿关联。审核通过后会再次通知你。")
+		p.Tip = firstNonEmpty(p.Tip, "如果歌词长时间未通过，可以在请愿详情页了解进展。")
+		p.Preheader = firstNonEmpty(p.Preheader, "你的请愿有新进展。")
+	}
+	if p.DisplayName == "" {
+		p.DisplayName = p.Username
+	}
+	if p.Year == 0 {
+		p.Year = time.Now().Year()
+	}
+	if p.LogoURL == "" && p.SiteURL != "" {
+		p.LogoURL = p.SiteURL + "/logo.png"
+	}
+
+	var htmlBuf, textBuf bytes.Buffer
+	if err := r.htmlTmpl.ExecuteTemplate(&htmlBuf, "petition.html", p); err != nil {
+		return "", "", "", fmt.Errorf("render petition html: %w", err)
+	}
+	if err := r.textTmpl.ExecuteTemplate(&textBuf, "petition.txt", p); err != nil {
+		return "", "", "", fmt.Errorf("render petition text: %w", err)
 	}
 	return p.Subject, htmlBuf.String(), textBuf.String(), nil
 }

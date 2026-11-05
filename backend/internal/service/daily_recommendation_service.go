@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ type CreateDailyRecInput struct {
 	Date         string // YYYY-MM-DD
 	Comment      string
 	NcmID        string
+	QQID         string
 }
 
 // CreateDailyRecResult 创建结果
@@ -109,6 +111,7 @@ func (s *DailyRecommendationService) CreateRecommendation(ctx context.Context, s
 		Artist:        input.Artist,
 		CoverKey:      coverKey,
 		NcmID:         input.NcmID,
+		QQID:          input.QQID,
 		Comment:       input.Comment,
 		Submitter:     submitter,
 		SubmitterInfo: submitterInfo,
@@ -138,7 +141,7 @@ func (s *DailyRecommendationService) UploadTemp(ctx context.Context, fileName st
 	return key, nil
 }
 
-// ssrfSafeTransport 在建立 TCP 连接时校验目标 IP 是否为公网地址，
+// ssrfSafeTransport 在建立 TCP 连接时校验目标 IP 是否为公网地址
 var ssrfSafeTransport = &http.Transport{
 	Proxy: nil, // 禁止通过环境变量代理绕过校验
 	DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -146,17 +149,76 @@ var ssrfSafeTransport = &http.Transport{
 		if err != nil {
 			return nil, err
 		}
-		ip := net.ParseIP(host)
-		if ip == nil {
-			return nil, fmt.Errorf("invalid address: %s", host)
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("解析域名失败: %w", err)
 		}
-		if !isPublicIP(ip) {
-			return nil, fmt.Errorf("blocked non-public address: %s", host)
+		// 优先走 IPv4
+		var v4, v6 string
+		for _, item := range ips {
+			if !isPublicIP(item.IP) {
+				return nil, fmt.Errorf("blocked non-public address: %s", host)
+			}
+			if item.IP.To4() != nil && v4 == "" {
+				v4 = net.JoinHostPort(item.IP.String(), port)
+			} else if v6 == "" {
+				v6 = net.JoinHostPort(item.IP.String(), port)
+			}
+		}
+		dialAddr := v4
+		if dialAddr == "" {
+			dialAddr = v6
+		}
+		if dialAddr == "" {
+			return nil, fmt.Errorf("无法解析地址: %s", host)
 		}
 		d := &net.Dialer{Timeout: 10 * time.Second}
-		return d.DialContext(ctx, network, net.JoinHostPort(host, port))
+		return d.DialContext(ctx, network, dialAddr)
 	},
 }
+
+// normalizeImageURL 规整图片 URL
+func normalizeImageURL(imageURL string) (string, error) {
+	raw := strings.TrimSpace(imageURL)
+	raw = strings.Trim(raw, "\"'")
+	raw = strings.ReplaceAll(raw, "&amp;", "&")
+	if raw == "" {
+		return "", errors.New("图片 URL 为空")
+	}
+	switch {
+	case strings.HasPrefix(raw, "//"):
+		return "https:" + raw, nil
+	case schemeRe.MatchString(raw):
+		return raw, nil
+	case strings.HasPrefix(raw, "/"):
+		return "", fmt.Errorf("图片 URL 需要完整的 http(s) 地址，不能是站点相对路径：%s", clipURL(raw))
+	default:
+		return "https://" + raw, nil
+	}
+}
+
+// clipURL 截断 URL 用于错误提示
+func clipURL(raw string) string {
+	if len(raw) > 120 {
+		return raw[:120] + "..."
+	}
+	return raw
+}
+
+// refererForHost 按图片域名选择 Referer，避免第三方图床拒绝外链
+func refererForHost(host string) string {
+	switch {
+	case strings.Contains(host, "gtimg.cn"), strings.Contains(host, "qq.com"):
+		return "https://y.qq.com/"
+	case strings.Contains(host, "126.net"), strings.Contains(host, "127.net"):
+		return "https://music.163.com/"
+	default:
+		return ""
+	}
+}
+
+// schemeRe 匹配形如 https:// 的协议前缀
+var schemeRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*://`)
 
 // isPublicIP 判断 IP 是否为公网地址（拒绝回环/私网/链路本地/组播/未指定/CGNAT）
 func isPublicIP(ip net.IP) bool {
@@ -174,13 +236,18 @@ func isPublicIP(ip net.IP) bool {
 // UploadTempFromURL 服务端下载图片 URL 并转存到临时区，返回临时 key。
 func (s *DailyRecommendationService) UploadTempFromURL(ctx context.Context, imageURL string) (string, error) {
 	// SSRF 防护：仅允许 http(s) 且解析到公网 IP 的 URL
-	u, err := url.Parse(imageURL)
+	raw, err := normalizeImageURL(imageURL)
+	if err != nil {
+		return "", err
+	}
+	u, err := url.Parse(raw)
 	if err != nil {
 		return "", fmt.Errorf("无效的图片 URL: %w", err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return "", fmt.Errorf("不支持的 URL 协议: %s", u.Scheme)
+		return "", fmt.Errorf("不支持的 URL 协议: %s（%s）", u.Scheme, clipURL(raw))
 	}
+	referer := refererForHost(u.Hostname())
 	if host := u.Hostname(); host != "" {
 		if ips, err := net.DefaultResolver.LookupIPAddr(ctx, host); err == nil {
 			for _, ip := range ips {
@@ -201,16 +268,18 @@ func (s *DailyRecommendationService) UploadTempFromURL(ctx context.Context, imag
 				return fmt.Errorf("重定向到不支持的协议: %s", req.URL.Scheme)
 			}
 			// 跟随重定向时保留 Referer
-			req.Header.Set("Referer", "https://music.163.com/")
+			req.Header.Set("Referer", referer)
 			return nil
 		},
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
 		return "", fmt.Errorf("无效的图片 URL: %w", err)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", "https://music.163.com/")
+	if referer != "" {
+		req.Header.Set("Referer", referer)
+	}
 	req.Header.Set("Accept", "image/webp,image/apng,image/*,*/*;q=0.8")
 
 	resp, err := client.Do(req)

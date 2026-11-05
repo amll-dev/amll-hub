@@ -1,11 +1,19 @@
 import { atom } from 'jotai';
 import type { LyricLine } from '@applemusic-like-lyrics/lyric';
-import type { NcmMusicInfo, NcmPlaylistDetail, NcmSong } from '@/lib/types';
+import type {
+  MusicPlatform,
+  NcmMusicInfo,
+  NcmPlaylistDetail,
+  NcmSong,
+  QmQuality,
+} from '@/lib/types';
 import type { NcmQuality } from '@/atoms/player';
 
 /** 点击搜索结果后解析出的歌曲 */
 export interface ParsedSong {
   songId: string;
+  /** 曲目来源平台 */
+  platform: MusicPlatform;
   info: NcmMusicInfo;
   /** 从搜索结果/歌单项传入的时长 */
   metaDuration?: number;
@@ -15,7 +23,10 @@ export interface ParsedSong {
   lyricError: string | null;
 }
 
-// ===== 网易云解析 atoms（全局唯一且跨路由持久，替代原 NcmParseProvider） =====
+// 解析页 atoms
+
+/** 当前音源 */
+export const parsePlatformAtom = atom<MusicPlatform>('ncm');
 
 /** 已提交的搜索词（点击搜索时更新），驱动搜索 Query */
 export const ncmSearchQueryAtom = atom('');
@@ -32,6 +43,9 @@ export const ncmSongIdInputAtom = atom('');
 export const ncmPlaylistIdAtom = atom('');
 
 export const ncmQualityAtom = atom<NcmQuality | null>(null);
+
+/** QM 音质 */
+export const qmQualityAtom = atom<QmQuality>('hq');
 
 // ===== 派生数据（Query 结果由 hook 侧映射，atoms 只存提交源） =====
 export type { NcmSong, NcmPlaylistDetail };
