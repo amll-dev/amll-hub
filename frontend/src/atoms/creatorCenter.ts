@@ -1,15 +1,15 @@
 import { atom, getDefaultStore } from 'jotai';
 
-// ===== 创作中心页状态 atoms（替代 CreatorCenter 页的 useState） =====
+// 创作中心页状态 atoms
 
-/** 页面主视图：首页 / 内容管理 / 投稿 */
-export type View = 'home' | 'content' | 'submit';
+/** 页面主视图 */
+export type View = 'home' | 'content' | 'submit' | 'requests' | 'request-edit';
 
-/** 投稿 Tab：歌词 / 每日推荐 / 搜索IP */
-export type SubmitTab = 'lyrics' | 'daily' | 'search-ip';
+/** 投稿 Tab */
+export type SubmitTab = 'lyrics' | 'daily' | 'search-ip' | 'requests';
 
-/** 内容管理主 Tab：歌词 / 每日推荐 / 搜索IP */
-export type ContentMainTab = 'lyrics' | 'daily' | 'search-ip';
+/** 内容管理主 Tab */
+export type ContentMainTab = 'lyrics' | 'daily' | 'search-ip' | 'requests';
 
 /** 当前页面视图 */
 export const viewAtom = atom<View>('home');

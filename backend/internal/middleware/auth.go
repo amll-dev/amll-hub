@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strings"
 
@@ -33,6 +34,28 @@ func Auth(jwtSecret string) gin.HandlerFunc {
 			return
 		}
 		c.Next()
+	}
+}
+
+// ServiceTokenHeader 内部服务调用时携带固定 token 的头
+const ServiceTokenHeader = "X-Service-Token"
+
+// ServiceName 内部调用放行时写入 context 的虚拟用户名
+const ServiceName = "service"
+
+// AuthOrService 校验 JWT；携带合法 service token 的内部调用直接放行
+func AuthOrService(jwtSecret, serviceToken string) gin.HandlerFunc {
+	auth := Auth(jwtSecret)
+	return func(c *gin.Context) {
+		if serviceToken != "" {
+			got := c.GetHeader(ServiceTokenHeader)
+			if subtle.ConstantTimeCompare([]byte(got), []byte(serviceToken)) == 1 {
+				c.Set(UserNameKey, ServiceName)
+				c.Next()
+				return
+			}
+		}
+		auth(c)
 	}
 }
 

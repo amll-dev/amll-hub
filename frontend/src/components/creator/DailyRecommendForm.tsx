@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ImagePlus, Loader2, Music, Search } from 'lucide-react';
+import { Check, ImagePlus, Loader2 } from 'lucide-react';
 import { DatePicker } from '@/components/DatePicker';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { insertMarkup, MARKUP_BUTTONS, parseMarkupText } from '@/lib/markup';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
 import { useFormDraft } from '@/hooks/useFormDraft';
-import type { NcmSong } from '@/lib/types';
+import { MusicSearchPanel, type PickedSong } from '@/components/shared/MusicSearchPanel';
+import { qmCoverAbsolute, qmCoverProxy } from '@/lib/qm';
+import type { MusicPlatform } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -35,39 +37,23 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
     songName: string;
     artist: string;
     ncmId: string;
+    qqId: string;
     comment: string;
   }>('daily-recommend');
   const [date, setDate] = useState(todayKey);
   const [songName, setSongName] = useState(draft?.songName ?? '');
   const [artist, setArtist] = useState(draft?.artist ?? '');
   const [ncmId, setNcmId] = useState(draft?.ncmId ?? '');
+  const [qqId, setQqId] = useState(draft?.qqId ?? '');
   const [comment, setComment] = useState(draft?.comment ?? '');
   // 搜索结果选中后，递增 key 触发输入框文字淡入动画
   const [flashKey, setFlashKey] = useState(0);
 
-  // 网易云搜索：已提交关键词驱动 Query（缓存去重，重复搜索不发请求）
-  const [committedQ, setCommittedQ] = useState('');
-  const [ncmQuery, setNcmQuery] = useState('');
-  // ID 解析路径的独立 loading 与错误（搜索 loading/错误由 Query 提供）
+  // 网易云 ID 解析路径的独立 loading
   const [parseSearching, setParseSearching] = useState(false);
   const [parseError, setParseError] = useState('');
-  const ncmSearchQuery = useQuery({
-    queryKey: queryKeys.ncmSearch(committedQ),
-    queryFn: () => api.searchNcm(committedQ, 8),
-    enabled: !!committedQ,
-    staleTime: 60_000,
-  });
-  const ncmSearching = ncmSearchQuery.isFetching || parseSearching;
-  const ncmResults: NcmSong[] = committedQ ? (ncmSearchQuery.data?.data ?? []) : [];
-  const ncmError =
-    parseError ||
-    (ncmSearchQuery.error
-      ? ncmSearchQuery.error instanceof Error
-        ? ncmSearchQuery.error.message
-        : '搜索失败'
-      : committedQ && !ncmSearchQuery.isFetching && ncmResults.length === 0
-        ? '没有找到相关歌曲'
-        : '');
+  const ncmSearching = parseSearching;
+  const [qmParsing, setQmParsing] = useState(false);
 
   // 封面上传
   const [cover, setCover] = useState<{
@@ -114,6 +100,7 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
       date: string;
       comment: string;
       ncmId?: string;
+      qqId?: string;
     }) => api.createDailyRecommendation(vars),
     onMutate: () => setSubmitMsg(null),
     onSuccess: (_d, vars) => {
@@ -124,6 +111,7 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
       setSongName('');
       setArtist('');
       setNcmId('');
+      setQqId('');
       setComment('');
       removeCover();
       clearDraft();
@@ -143,30 +131,25 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
 
   // 草稿自动保存：空表单不写
   useEffect(() => {
-    if (!songName && !artist && !ncmId && !comment) return;
-    setDraft({ songName, artist, ncmId, comment });
-  }, [songName, artist, ncmId, comment, setDraft]);
-
-  // 网易云搜索
-  const doNcmSearch = () => {
-    const q = ncmQuery.trim();
-    if (!q) return;
-    setCommittedQ(q);
-  };
+    if (!songName && !artist && !ncmId && !qqId && !comment) return;
+    setDraft({ songName, artist, ncmId, qqId, comment });
+  }, [songName, artist, ncmId, qqId, comment, setDraft]);
 
   // 从搜索结果中选中一首，回填表单
-  const pickNcmSong = (song: NcmSong) => {
+  const pickSong = (song: PickedSong, platform: MusicPlatform) => {
     setSongName(song.name);
-    setArtist(song.artists.map((a) => a.name).join(' / '));
-    setNcmId(String(song.id));
-    setCommittedQ('');
-    setNcmQuery('');
+    setArtist(song.artists);
+    if (platform === 'ncm') setNcmId(song.id);
+    else setQqId(song.id);
     setParseError('');
     setSubmitMsg(null);
     setFlashKey((k) => k + 1);
-    // 自动下载并上传封面
-    if (song.picUrl) {
-      fetchCoverFromUrl(song.picUrl);
+    // 自动下载并上传封面（QQ 的 cover 是同源代理地址，上传需还原成绝对 CDN 地址）
+    if (song.cover) {
+      void fetchCoverFromUrl(
+        song.cover,
+        platform === 'qq' ? qmCoverAbsolute(song.cover) : undefined
+      );
     }
   };
 
@@ -178,7 +161,7 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
     return m?.[1] ?? null;
   };
 
-  const fetchCoverFromUrl = async (url: string) => {
+  const fetchCoverFromUrl = async (url: string, uploadUrl?: string) => {
     if (cover) URL.revokeObjectURL(cover.url);
     // 用远程 URL 作为预览，后端只负责上传到临时区
     setCover({
@@ -201,7 +184,7 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
       });
     }, 50);
     try {
-      const { tempKey } = await api.uploadDailyCoverFromUrl(url);
+      const { tempKey } = await api.uploadDailyCoverFromUrl(uploadUrl || url);
       const elapsed = Date.now() - startTime;
       if (elapsed < minDuration) {
         await new Promise((r) => setTimeout(r, minDuration - elapsed));
@@ -249,6 +232,30 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
       setParseError(e instanceof Error ? e.message : '解析失败');
     } finally {
       setParseSearching(false);
+    }
+  };
+
+  // 通过 QQ 音乐 ID 获取歌曲详情并回填
+  const fetchQmById = async () => {
+    const id = qqId.trim();
+    if (!/^\d+$/.test(id)) {
+      setParseError('请输入 QQ 音乐的纯数字歌曲 ID');
+      return;
+    }
+    setQmParsing(true);
+    setParseError('');
+    try {
+      const info = await api.parseQmMusic(id);
+      if (info.name) setSongName(info.name);
+      if (info.artistName) setArtist(info.artistName);
+      setSubmitMsg(null);
+      if (info.cover) {
+        void fetchCoverFromUrl(qmCoverProxy(info.cover, 800), qmCoverAbsolute(info.cover, 800));
+      }
+    } catch (e) {
+      setParseError(e instanceof Error ? e.message : '解析失败');
+    } finally {
+      setQmParsing(false);
     }
   };
 
@@ -327,99 +334,15 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
       date,
       comment,
       ncmId: ncmId.trim() || undefined,
+      qqId: qqId.trim() || undefined,
     });
   };
 
   return (
     <motion.div variants={staggerContainer} initial="hidden" animate="show" className="space-y-6">
-      {/* 填写方式 + 网易云搜索 */}
-      <motion.div variants={fadeUp} className="rounded-md border border-line bg-card p-5">
-        <label className="mb-2 block text-sm font-medium text-ink-2">从网易云搜索填表</label>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={ncmQuery}
-            onChange={(e) => setNcmQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                doNcmSearch();
-              }
-            }}
-            placeholder="输入歌名 / 歌手搜索"
-            className="h-11 flex-1 rounded-md border border-input bg-background px-4 text-sm outline-none transition-all duration-200 focus:border-primary focus:ring-2 focus:ring-primary/20"
-          />
-          <motion.button
-            type="button"
-            {...buttonTap}
-            onClick={doNcmSearch}
-            disabled={ncmSearching || !ncmQuery.trim()}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {ncmSearching ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="h-4 w-4" />
-            )}
-            搜索
-          </motion.button>
-        </div>
-
-        <AnimatePresence>
-          {ncmError && (
-            <motion.p
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.2 }}
-              className="mt-2 text-xs text-error"
-            >
-              {ncmError}
-            </motion.p>
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {ncmResults.length > 0 && (
-            <motion.ul
-              key="ncm-results"
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8, transition: { duration: 0.18, ease: [0.2, 0.8, 0.2, 1] } }}
-              transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
-              className="mt-3 max-h-72 divide-y divide-line overflow-y-auto rounded-md border border-line bg-background"
-            >
-              {ncmResults.map((song) => (
-                <li
-                  key={song.id}
-                  onClick={() => pickNcmSong(song)}
-                  className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm transition-colors hover:bg-surface-2"
-                >
-                  {song.picUrl ? (
-                    <img
-                      src={`${song.picUrl}?param=80y80`}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                      className="h-10 w-10 shrink-0 rounded object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-surface-2">
-                      <Music className="h-4 w-4 text-ink-3" />
-                    </div>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-foreground">{song.name}</p>
-                    <p className="truncate text-xs text-ink-3">
-                      {song.artists.map((a) => a.name).join(' / ')}
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-xs text-ink-3">{song.duration}</span>
-                </li>
-              ))}
-            </motion.ul>
-          )}
-        </AnimatePresence>
+      {/* 从音乐平台搜索填表（网易云 / QQ 音乐切换） */}
+      <motion.div variants={fadeUp}>
+        <MusicSearchPanel onPick={pickSong} />
       </motion.div>
 
       {/* 网易云ID 解析 */}
@@ -451,6 +374,49 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
           </motion.button>
         </div>
       </motion.div>
+
+      {/* QQ 音乐ID 解析 */}
+      <motion.div variants={fadeUp}>
+        <label className="mb-1.5 block text-sm font-medium text-ink-2">
+          QQ 音乐ID <span className="text-xs text-ink-3">（可选）</span>
+        </label>
+        <div className="flex gap-2">
+          <motion.input
+            key={`qqid-${flashKey}`}
+            type="text"
+            value={qqId}
+            onChange={(e) => setQqId(e.target.value)}
+            placeholder="歌曲数字 ID"
+            maxLength={50}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            className="h-11 flex-1 rounded-md border border-input bg-background px-4 text-sm outline-none transition-colors duration-200 focus:border-primary focus:ring-2 focus:ring-primary/20"
+          />
+          <motion.button
+            type="button"
+            {...buttonTap}
+            onClick={fetchQmById}
+            disabled={qmParsing || !qqId.trim()}
+            className="inline-flex h-11 items-center justify-center rounded-md border border-line bg-card px-4 text-sm font-medium text-ink-2 transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {qmParsing ? <Loader2 className="h-4 w-4 animate-spin" /> : '解析'}
+          </motion.button>
+        </div>
+      </motion.div>
+      <AnimatePresence>
+        {parseError && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2 }}
+            className="mt-2 text-xs text-error"
+          >
+            {parseError}
+          </motion.p>
+        )}
+      </AnimatePresence>
 
       {/* 音乐名称 */}
       <motion.div variants={fadeUp}>

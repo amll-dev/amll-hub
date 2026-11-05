@@ -54,7 +54,7 @@ async function fetchOnlineView(
     api.getOnlineLyric(platform, songId).catch(() => null),
   ]);
   const matchText = (
-    arr: { time: number; text: string }[] | undefined,
+    arr: { time: number; text: string }[] | null | undefined,
     time: number
   ): string | undefined => {
     if (!arr || arr.length === 0) return undefined;

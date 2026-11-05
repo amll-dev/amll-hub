@@ -46,8 +46,10 @@ type CreateSubmissionInput struct {
 	TargetRawLyricFile string `json:"targetRawLyricFile"`
 	// DiffSnapshot 修正差异快照
 	DiffSnapshot map[string]any `json:"diffSnapshot"`
-	Type         string         `json:"type"`
-	Status       string         `json:"status"`
+	// PetitionIDs 关联的歌词请愿 ID
+	PetitionIDs []int64 `json:"petitionIds"`
+	Type        string  `json:"type"`
+	Status      string  `json:"status"`
 } // Submission 投稿 DTO
 type Submission struct {
 	ID                   int64          `json:"id"`
@@ -1129,6 +1131,45 @@ func extractPlatformId(m map[string]any, platformKey string) string {
 		}
 	}
 	return ""
+}
+
+// extractPlatformIDs 从 metadata.platform_ids 嵌套 map 中提取指定平台的全部 ID。
+func extractPlatformIDs(m map[string]any, platformKey string) []string {
+	if m == nil {
+		return nil
+	}
+	rawPids, ok := m["platform_ids"]
+	if !ok {
+		return nil
+	}
+	pids, ok := rawPids.(map[string]any)
+	if !ok {
+		return nil
+	}
+	rawIds, ok := pids[platformKey]
+	if !ok {
+		return nil
+	}
+	var out []string
+	switch val := rawIds.(type) {
+	case string:
+		if s := strings.TrimSpace(val); s != "" {
+			out = append(out, s)
+		}
+	case []any:
+		for _, item := range val {
+			if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+				out = append(out, strings.TrimSpace(s))
+			}
+		}
+	case []string:
+		for _, s := range val {
+			if s = strings.TrimSpace(s); s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
 }
 
 func normalizeTags(tags []string) model.JSONStringArray {

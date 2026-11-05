@@ -397,6 +397,7 @@ CREATE TABLE daily_recommendations (
     artist VARCHAR(200) NOT NULL DEFAULT '',
     cover_key VARCHAR(500) NOT NULL DEFAULT '',
     ncm_id VARCHAR(50) NOT NULL DEFAULT '',
+    qq_id VARCHAR(50) NOT NULL DEFAULT '',
     comment TEXT NOT NULL DEFAULT '',
     submitter VARCHAR(100) NOT NULL,
     submitter_info JSONB NOT NULL DEFAULT '{}',
@@ -419,6 +420,108 @@ CREATE TABLE daily_recommendation_likes (
 );
 
 CREATE INDEX idx_daily_rec_likes_rec ON daily_recommendation_likes(recommendation_id);
+
+--  歌词请愿表（全站公开浏览、登录后可发起/支持/评论；同一平台 ID 的请愿会合并到已有记录）
+CREATE TABLE lyric_requests (
+    id               BIGSERIAL PRIMARY KEY,
+    song_name        VARCHAR(255) NOT NULL,
+    artist           VARCHAR(255) NOT NULL,
+    album            VARCHAR(255) NOT NULL DEFAULT '',
+    -- 平台 ID：找不到或没有时统一存 '0'
+    ncm_id           VARCHAR(50)  NOT NULL DEFAULT '0',
+    qq_id            VARCHAR(50)  NOT NULL DEFAULT '0',
+    spotify_id       VARCHAR(100) NOT NULL DEFAULT '0',
+    apple_music_id   VARCHAR(100) NOT NULL DEFAULT '0',
+    -- 该歌曲在 Apple Music 上有逐词歌词
+    has_apple_ttml   BOOLEAN      NOT NULL DEFAULT FALSE,
+    -- 其他备注（可确认的其他信息）
+    extra_info       TEXT         NOT NULL DEFAULT '',
+    -- 备注（补充说明）
+    note             TEXT         NOT NULL DEFAULT '',
+    -- pending 待处理 / completed 已完成
+    status           VARCHAR(20)  NOT NULL DEFAULT 'pending',
+    requester_name   VARCHAR(100) NOT NULL,
+    requester_info   JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    -- 支持数（发起人默认算一次支持）
+    support_count    INT          NOT NULL DEFAULT 0,
+    -- 合并的请愿提交次数（同一首歌被重复发起时累加）
+    request_count    INT          NOT NULL DEFAULT 1,
+    completed_at     TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE  lyric_requests                IS '歌词请愿';
+COMMENT ON COLUMN lyric_requests.status         IS 'pending 待处理 / completed 已完成';
+COMMENT ON COLUMN lyric_requests.support_count  IS '支持数，发起人自动算一次';
+COMMENT ON COLUMN lyric_requests.request_count  IS '被发起请愿的次数（平台 ID 命中时合并累加）';
+
+-- 平台 ID 去重查询（只索引有效 ID，'0' 不参与）
+CREATE INDEX idx_lyric_requests_ncm
+    ON lyric_requests(ncm_id) WHERE ncm_id <> '0';
+CREATE INDEX idx_lyric_requests_qq
+    ON lyric_requests(qq_id) WHERE qq_id <> '0';
+CREATE INDEX idx_lyric_requests_spotify
+    ON lyric_requests(spotify_id) WHERE spotify_id <> '0';
+CREATE INDEX idx_lyric_requests_apple
+    ON lyric_requests(apple_music_id) WHERE apple_music_id <> '0';
+
+CREATE INDEX idx_lyric_requests_status      ON lyric_requests(status);
+CREATE INDEX idx_lyric_requests_support     ON lyric_requests(support_count DESC, created_at DESC);
+CREATE INDEX idx_lyric_requests_created     ON lyric_requests(created_at DESC);
+CREATE INDEX idx_lyric_requests_requester   ON lyric_requests(requester_name, created_at DESC);
+
+CREATE TRIGGER trg_lyric_requests_updated_at
+    BEFORE UPDATE ON lyric_requests
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+--  请愿支持记录（一人一条，取消即删）
+CREATE TABLE lyric_request_supports (
+    id         BIGSERIAL PRIMARY KEY,
+    request_id BIGINT       NOT NULL REFERENCES lyric_requests(id) ON DELETE CASCADE,
+    user_name  VARCHAR(100) NOT NULL,
+    user_info  JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    UNIQUE(request_id, user_name)
+);
+
+COMMENT ON TABLE lyric_request_supports IS '歌词请愿支持记录';
+
+CREATE INDEX idx_lyric_request_supports_request ON lyric_request_supports(request_id, created_at DESC);
+CREATE INDEX idx_lyric_request_supports_user    ON lyric_request_supports(user_name);
+
+--  请愿评论
+CREATE TABLE lyric_request_comments (
+    id         BIGSERIAL PRIMARY KEY,
+    request_id BIGINT       NOT NULL REFERENCES lyric_requests(id) ON DELETE CASCADE,
+    user_name  VARCHAR(100) NOT NULL,
+    user_info  JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    content    TEXT         NOT NULL,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+COMMENT ON TABLE lyric_request_comments IS '歌词请愿评论';
+
+CREATE INDEX idx_lyric_request_comments_request ON lyric_request_comments(request_id, created_at);
+
+--  投稿与歌词请愿关联（一个投稿可关联多个请愿，不同平台 ID 可能命中不同人发起的请愿）
+CREATE TABLE submission_petition_links (
+    id                BIGSERIAL PRIMARY KEY,
+    submission_id     BIGINT      NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+    request_id        BIGINT      NOT NULL REFERENCES lyric_requests(id) ON DELETE CASCADE,
+    linked_by         VARCHAR(100) NOT NULL,
+    -- 关联邮件 / 完成邮件是否已发送（幂等，避免重试重复发信）
+    link_notified     BOOLEAN     NOT NULL DEFAULT FALSE,
+    complete_notified BOOLEAN     NOT NULL DEFAULT FALSE,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(submission_id, request_id)
+);
+
+COMMENT ON TABLE submission_petition_links IS '投稿与歌词请愿的关联';
+
+CREATE INDEX idx_sp_links_submission ON submission_petition_links(submission_id);
+CREATE INDEX idx_sp_links_request    ON submission_petition_links(request_id);
 
 --  最新收录歌曲快照表（每次同步后记录，最多9首）
 CREATE TABLE latest_songs (

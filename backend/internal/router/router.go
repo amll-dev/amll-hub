@@ -24,6 +24,7 @@ type RouterDeps struct {
 	NotFound     *handler.NotFoundHandler
 	OnlineSearch *handler.OnlineSearchHandler
 	CloudMusic   *handler.CloudMusicHandler
+	QMMusic      *handler.QMMusicHandler
 	Auth         *handler.AuthHandler
 	AuthGithub   *handler.AuthGithubHandler
 	Migration    *handler.MigrationHandler
@@ -34,6 +35,8 @@ type RouterDeps struct {
 	Upload       *handler.UploadHandler
 	SearchIP     *handler.SearchIPHandler
 	DailyRec     *handler.DailyRecommendationHandler
+	LyricRequest *handler.LyricRequestHandler
+	PetitionLink *handler.PetitionLinkHandler
 	WS           *handler.WSHandler
 	Validate     *handler.ValidateHandler
 	LatestSong   *handler.LatestSongHandler
@@ -47,6 +50,7 @@ type RouterDeps struct {
 	ReviewerCache *middleware.ReviewerCache
 	AdminCache    *middleware.AdminCache
 	JWTSecret     string
+	ServiceToken  string
 }
 
 // New 构建并返回 Gin 引擎
@@ -60,6 +64,7 @@ func New(deps RouterDeps) *gin.Engine {
 	nfH := deps.NotFound
 	onlineSearchH := deps.OnlineSearch
 	cloudMusicH := deps.CloudMusic
+	qmMusicH := deps.QMMusic
 	authH := deps.Auth
 	authGithubH := deps.AuthGithub
 	migrationH := deps.Migration
@@ -70,6 +75,8 @@ func New(deps RouterDeps) *gin.Engine {
 	uploadH := deps.Upload
 	searchIpH := deps.SearchIP
 	dailyRecH := deps.DailyRec
+	lyricRequestH := deps.LyricRequest
+	petitionLinkH := deps.PetitionLink
 	wsH := deps.WS
 	validateH := deps.Validate
 	latestSongH := deps.LatestSong
@@ -82,6 +89,10 @@ func New(deps RouterDeps) *gin.Engine {
 	reviewerCache := deps.ReviewerCache
 	adminCache := deps.AdminCache
 	jwtSecret := deps.JWTSecret
+	serviceToken := deps.ServiceToken
+	if serviceToken == "" {
+		logrus.Warn("SERVICE_TOKEN 未配置：worker 无法调用需要鉴权的媒体接口")
+	}
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -152,10 +163,25 @@ func New(deps RouterDeps) *gin.Engine {
 			online.GET("/lyrics/:platform/:songId", onlineSearchH.GetLyric)
 		}
 
-		// 网易云解析
-		api.GET("/ncm/search", cloudMusicH.Search)
-		api.GET("/ncm/parse-music", cloudMusicH.ParseMusic)
-		api.GET("/ncm/parse-playlist", cloudMusicH.ParsePlaylist)
+		// 媒体解析
+		media := api.Group("")
+		media.Use(middleware.AuthOrService(jwtSecret, serviceToken))
+		{
+			// ncm解析
+			media.GET("/ncm/search", cloudMusicH.Search)
+			media.GET("/ncm/parse-music", cloudMusicH.ParseMusic)
+			media.GET("/ncm/parse-playlist", cloudMusicH.ParsePlaylist)
+
+			// QM解析
+			media.GET("/qm/search", qmMusicH.Search)
+			media.GET("/qm/song", qmMusicH.Song)
+			media.GET("/qm/parse-music", qmMusicH.ParseMusic)
+			media.GET("/qm/parse-playlist", qmMusicH.ParsePlaylist)
+			media.GET("/qm/convert", qmMusicH.Convert)
+		}
+
+		// Q封面
+		api.GET("/qm/cover", qmMusicH.Cover)
 
 		// 批量查询
 		api.POST("/songs/batch", batchH.Post)
@@ -270,6 +296,10 @@ func New(deps RouterDeps) *gin.Engine {
 			sub.POST("/submissions/:id/revision/adopt", revisionH.Adopt)
 			sub.POST("/submissions/:id/revision/reject", revisionH.Reject)
 
+			// 投稿 ↔ 请愿关联
+			sub.GET("/submissions/:id/petitions", petitionLinkH.List)
+			sub.DELETE("/submissions/:id/petitions/:requestId", petitionLinkH.Unbind)
+
 			// 评论
 			sub.GET("/submissions/:id/comments", commentH.List)
 			sub.POST("/submissions/:id/comments", commentH.Create)
@@ -320,6 +350,8 @@ func New(deps RouterDeps) *gin.Engine {
 				adminGrp.GET("/reviewers", adminH.ListReviewers)
 				adminGrp.POST("/reviewers", adminH.AddReviewer)
 				adminGrp.DELETE("/reviewers/:username", adminH.RemoveReviewer)
+				// 歌词请愿状态
+				adminGrp.POST("/lyric-requests/:id/status", lyricRequestH.SetStatus)
 			}
 
 			// 系统公告
@@ -350,11 +382,31 @@ func New(deps RouterDeps) *gin.Engine {
 			// 点赞
 			sub.GET("/daily-recommendations/like/:id", dailyRecH.GetLike)
 			sub.POST("/daily-recommendations/like/:id", dailyRecH.ToggleLike)
+
+			// 歌词请愿（登录用户）
+			sub.POST("/lyric-requests/match", petitionLinkH.Match)
+			sub.POST("/lyric-requests", lyricRequestH.Create)
+			// 静态段 /mine 必须在公开组 /:id 之前注册
+			sub.GET("/lyric-requests/mine", lyricRequestH.ListMine)
+			sub.PUT("/lyric-requests/:id", lyricRequestH.Update)
+			sub.DELETE("/lyric-requests/:id", lyricRequestH.Withdraw)
+			sub.POST("/lyric-requests/:id/support", lyricRequestH.ToggleSupport)
+			sub.POST("/lyric-requests/:id/comments", lyricRequestH.CreateComment)
 		}
 
 		// 搜索IP显示
 		api.POST("/search-ip/match", searchIpH.Match)
 		api.GET("/search-ip/image/*key", searchIpH.GetImage)
+
+		// 歌词请愿
+		lrPub := api.Group("/lyric-requests")
+		lrPub.Use(middleware.OptionalAuth(jwtSecret))
+		{
+			lrPub.GET("", lyricRequestH.List)
+			lrPub.GET("/hot", lyricRequestH.Hot)
+			lrPub.GET("/:id", lyricRequestH.Get)
+			lrPub.GET("/:id/comments", lyricRequestH.ListComments)
+		}
 
 		// 每日推荐
 		api.GET("/daily-recommendations", dailyRecH.ListAll)

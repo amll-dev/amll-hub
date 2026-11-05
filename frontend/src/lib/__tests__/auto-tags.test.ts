@@ -36,19 +36,57 @@ describe('detectAutoTags', () => {
     ).toEqual([]);
   });
 
-  it('单个元数据字段超过 18 条才打地瓜藤', () => {
-    const albums = (n: number) => Array.from({ length: n }, (_, i) => `album-${i}`);
-    expect(detectAutoTags({ metadata: meta({ album: albums(18) }), lines: [] })).toEqual([]);
-    expect(detectAutoTags({ metadata: meta({ album: albums(19) }), lines: [] })).toEqual([
-      AutoTag.Melon,
+  it('按 artists 识别プロセカ标签（大小写不敏感完全相等）', () => {
+    expect(detectAutoTags({ metadata: meta({ artist: ['Hatsune Miku'] }), lines: [] })).toEqual([
+      AutoTag.Proseka,
     ]);
-    // 平台 ID 与角色元数据同样计数
+    expect(detectAutoTags({ metadata: meta({ artist: ['leo/need'] }), lines: [] })).toEqual([
+      AutoTag.Proseka,
+    ]);
     expect(
-      detectAutoTags({ metadata: meta({ platformIds: { ncmMusicId: albums(19) } }), lines: [] })
-    ).toEqual([AutoTag.Melon]);
+      detectAutoTags({ metadata: meta({ artist: ['  初音未来  ', '東雲彰人'] }), lines: [] })
+    ).toEqual([AutoTag.Proseka]);
     expect(
-      detectAutoTags({ metadata: meta({ rawProperties: { vocals: albums(19) } }), lines: [] })
+      detectAutoTags({ metadata: meta({ artist: ['25点，Nightcord见。'] }), lines: [] })
+    ).toEqual([AutoTag.Proseka]);
+  });
+
+  it('プロセカ 不做前缀 / 包含 / 模糊匹配', () => {
+    // 「初音ミク」不在判定集合里
+    expect(detectAutoTags({ metadata: meta({ artist: ['初音ミク'] }), lines: [] })).toEqual([]);
+    // 「Hatsune Miku feat. 初音未来」不是完全相等
+    expect(
+      detectAutoTags({ metadata: meta({ artist: ['Hatsune Miku feat. 初音未来'] }), lines: [] })
+    ).toEqual([]);
+    // 缺少感叹号
+    expect(detectAutoTags({ metadata: meta({ artist: ['MORE MORE JUMP'] }), lines: [] })).toEqual(
+      []
+    );
+    // 只认 artists，标题/专辑里出现不算
+    expect(
+      detectAutoTags({ metadata: meta({ title: ['Leo/need'], album: ['初音未来'] }), lines: [] })
+    ).toEqual([]);
+  });
+
+  it('网易云音乐 ID 达到 5 条才打地瓜藤', () => {
+    const ids = (n: number) => Array.from({ length: n }, (_, i) => `${100 + i}`);
+    expect(
+      detectAutoTags({ metadata: meta({ platformIds: { ncmMusicId: ids(4) } }), lines: [] })
+    ).toEqual([]);
+    expect(
+      detectAutoTags({ metadata: meta({ platformIds: { ncmMusicId: ids(5) } }), lines: [] })
     ).toEqual([AutoTag.Melon]);
+    // 空串不计入 ID 数量
+    expect(
+      detectAutoTags({
+        metadata: meta({ platformIds: { ncmMusicId: ['1', '2', '3', '4', ' '] } }),
+        lines: [],
+      })
+    ).toEqual([]);
+    // 其它元数据字段再多也不再触发
+    expect(
+      detectAutoTags({ metadata: meta({ album: ids(20), title: ids(30) }), lines: [] })
+    ).toEqual([]);
   });
 
   it('译文语种 ≥2 打多语言翻译（简繁各算一种）', () => {
@@ -93,7 +131,10 @@ describe('detectAutoTags', () => {
 
   it('多标签按固定顺序返回且不重复', () => {
     const tags = detectAutoTags({
-      metadata: meta({ artist: ['HOYO-MiX'], album: Array.from({ length: 20 }, () => 'a') }),
+      metadata: meta({
+        artist: ['HOYO-MiX', '初音未来'],
+        platformIds: { ncmMusicId: Array.from({ length: 6 }, (_, i) => `${100 + i}`) },
+      }),
       lines: [
         line({
           translations: [
@@ -104,6 +145,12 @@ describe('detectAutoTags', () => {
         }),
       ],
     });
-    expect(tags).toEqual([AutoTag.HoyoMix, AutoTag.Melon, AutoTag.MultiLang, AutoTag.WordTimed]);
+    expect(tags).toEqual([
+      AutoTag.HoyoMix,
+      AutoTag.Proseka,
+      AutoTag.Melon,
+      AutoTag.MultiLang,
+      AutoTag.WordTimed,
+    ]);
   });
 });

@@ -106,20 +106,37 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 	}
 
 	// 解析参数
-	var submissionID int64
+	var submissionID, requestID int64
 	isListPage := c.Query("listPage") == "true"
 	if !isListPage {
-		idStr := c.Query("submissionId")
-		if idStr == "" {
-			pkg.BadRequest(c, "submissionId 或 listPage 必填其一")
-			return
+		if idStr := c.Query("requestId"); idStr != "" {
+			id, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil || id <= 0 {
+				pkg.BadRequest(c, "requestId 非法")
+				return
+			}
+			requestID = id
+		} else {
+			idStr := c.Query("submissionId")
+			if idStr == "" {
+				pkg.BadRequest(c, "submissionId、requestId 或 listPage 必填其一")
+				return
+			}
+			id, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil || id <= 0 {
+				pkg.BadRequest(c, "submissionId 非法")
+				return
+			}
+			submissionID = id
 		}
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil || id <= 0 {
-			pkg.BadRequest(c, "submissionId 非法")
-			return
-		}
-		submissionID = id
+	}
+
+	// 房间键
+	room := ""
+	if submissionID > 0 {
+		room = ws.SubmissionRoom(submissionID)
+	} else if requestID > 0 {
+		room = ws.RequestRoom(requestID)
 	}
 
 	// 升级为ws
@@ -134,16 +151,16 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 
 	// 关闭回调
 	onClose := func() {}
-	if submissionID > 0 && h.viewers != nil {
+	if room != "" && h.viewers != nil {
 		onClose = func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			_ = h.viewers.NotifyViewers(ctx, submissionID)
+			_ = h.viewers.NotifyRoom(ctx, room)
 		}
 	}
 
 	// 创建客户端并注册到 hub
-	client := ws.NewClient(conn, h.hub, submissionID, username, claims.DisplayName, claims.Avatar, onClose)
+	client := ws.NewClient(conn, h.hub, room, submissionID, username, claims.DisplayName, claims.Avatar, onClose)
 	h.hub.Register(client)
 
 	// 启动读写 goroutine

@@ -37,6 +37,8 @@ const loadReviewCenter = () =>
   import('@/pages/ReviewCenter').then((m) => ({ default: m.ReviewCenter }));
 const loadSubmissionDetailPage = () =>
   import('@/pages/SubmissionDetailPage').then((m) => ({ default: m.SubmissionDetailPage }));
+const loadRequestDetailPage = () =>
+  import('@/pages/creator/RequestDetailPage').then((m) => ({ default: m.RequestDetailPage }));
 const loadLyricEditorPage = () =>
   import('@/pages/LyricEditorPage').then((m) => ({ default: m.LyricEditorPage }));
 const loadRegister = () => import('@/pages/Register').then((m) => ({ default: m.Register }));
@@ -67,6 +69,7 @@ export const UserProfilePage = lazy(loadUserProfilePage);
 export const CreatorCenter = lazy(loadCreatorCenter);
 export const ReviewCenter = lazy(loadReviewCenter);
 export const SubmissionDetailPage = lazy(loadSubmissionDetailPage);
+export const RequestDetailPage = lazy(loadRequestDetailPage);
 export const LyricEditorPage = lazy(loadLyricEditorPage);
 export const Register = lazy(loadRegister);
 export const ResetPassword = lazy(loadResetPassword);
@@ -95,6 +98,9 @@ export const pagePreloads: Record<string, () => Promise<unknown>> = {
   '/user/:name': loadUserProfilePage,
   '/creator': loadCreatorCenter,
   '/creator/lyrics/detail': loadSubmissionDetailPage,
+  '/creator/requests': loadCreatorCenter,
+  '/creator/requests/:id': loadRequestDetailPage,
+  '/creator/requests/:id/edit': loadCreatorCenter,
   '/review': loadReviewCenter,
   '/review/detail': loadSubmissionDetailPage,
   '/review/editor': loadLyricEditorPage,
@@ -107,7 +113,15 @@ export const pagePreloads: Record<string, () => Promise<unknown>> = {
 /** 预取路由 chunk（幂等，可安全重复调用） */
 export function preloadRoute(path: string): void {
   // 动态路由（如 /user/alice）按模板回落到 '/user/:name'
-  const loader =
-    pagePreloads[path] ?? (path.startsWith('/user/') ? pagePreloads['/user/:name'] : undefined);
+  let loader = pagePreloads[path];
+  if (!loader) {
+    if (path.startsWith('/user/')) {
+      loader = pagePreloads['/user/:name'];
+    } else if (/^\/creator\/requests\/\d+\/edit$/.test(path)) {
+      loader = pagePreloads['/creator/requests/:id/edit'];
+    } else if (/^\/creator\/requests\/\d+$/.test(path)) {
+      loader = pagePreloads['/creator/requests/:id'];
+    }
+  }
   loader?.().catch(() => {});
 }

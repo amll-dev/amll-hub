@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAtom } from 'jotai';
 import {
   contentTabAtom,
@@ -24,6 +24,7 @@ import {
   FolderOpen,
   Home,
   LayoutDashboard,
+  ScrollText,
   Search,
   Upload,
 } from 'lucide-react';
@@ -47,6 +48,9 @@ import { LyricSubmitForm } from '@/components/creator/LyricSubmitForm';
 import { DailyRecommendForm } from '@/components/creator/DailyRecommendForm';
 import { SearchIpForm } from '@/components/creator/SearchIpForm';
 import { SearchIpDetail } from '@/components/creator/SearchIpDetail';
+import { RequestList } from '@/components/petition/RequestList';
+import { RequestSubmitPanel } from '@/components/petition/RequestSubmitPanel';
+import { RequestEditPanel } from '@/components/petition/RequestEditPanel';
 import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -59,12 +63,14 @@ const submitTabs: { key: SubmitTab; label: string }[] = [
   { key: 'lyrics', label: '歌词投稿' },
   { key: 'daily', label: '每日推荐投稿' },
   { key: 'search-ip', label: '搜索IP显示投稿' },
+  { key: 'requests', label: '歌词请愿' },
 ];
 
 const submitMenuOptions: { key: SubmitTab; label: string; icon: typeof FileText }[] = [
   { key: 'lyrics', label: '歌词投稿', icon: FileText },
   { key: 'daily', label: '每日推荐投稿', icon: CalendarDays },
   { key: 'search-ip', label: '搜索IP显示投稿', icon: Search },
+  { key: 'requests', label: '歌词请愿', icon: ScrollText },
 ];
 
 // 内容管理主 tab
@@ -72,6 +78,7 @@ const contentMainTabs: { key: ContentMainTab; label: string }[] = [
   { key: 'lyrics', label: '歌词管理' },
   { key: 'daily', label: '每日推荐管理' },
   { key: 'search-ip', label: '搜索IP管理' },
+  { key: 'requests', label: '我的请愿' },
 ];
 
 // 歌词管理下的状态筛选
@@ -88,7 +95,13 @@ const lyricsStatusTabs: { key: LyricsStatusTab; label: string }[] = [
 // 状态与语言的展示元数据统一在 status.ts（纯模块，不带 marked 依赖）
 
 /** 内容管理页面 */
-function ContentManagement({ initialTab = 'lyrics' }: { initialTab?: ContentMainTab }) {
+function ContentManagement({
+  initialTab = 'lyrics',
+  onCreateRequest,
+}: {
+  initialTab?: ContentMainTab;
+  onCreateRequest: () => void;
+}) {
   const [mainTab, setMainTab] = useState<ContentMainTab>(initialTab);
   const [statusTab, setStatusTab] = useState<LyricsStatusTab>('all');
 
@@ -133,8 +146,10 @@ function ContentManagement({ initialTab = 'lyrics' }: { initialTab?: ContentMain
               <LyricsList statusTab={statusTab} setStatusTab={setStatusTab} />
             ) : mainTab === 'daily' ? (
               <DailyRecommendList />
-            ) : (
+            ) : mainTab === 'search-ip' ? (
               <SearchIpList />
+            ) : (
+              <RequestList scope="mine" onCreate={onCreateRequest} />
             )}
           </motion.div>
         </AnimatePresence>
@@ -523,6 +538,7 @@ function SearchIpList() {
 export function CreatorCenter() {
   const { user, openLogin } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   // 页面状态存全局 atoms（卸载时复位，语义同原 useState）
   const [view, setView] = useAtom(viewAtom);
@@ -538,14 +554,25 @@ export function CreatorCenter() {
   // 支持 ?tab=lyrics|daily|search-ip 直达对应投稿表单（主页投稿按钮等外部入口用）
   useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'lyrics' || tab === 'daily' || tab === 'search-ip') {
+    if (tab === 'lyrics' || tab === 'daily' || tab === 'search-ip' || tab === 'requests') {
       setSubmitTab(tab);
       setView('submit');
     }
   }, [searchParams, setSubmitTab, setView]);
 
+  // 歌词请愿列表对游客开放
+  const onRequestsRoute = location.pathname === '/creator/requests';
+  // 编辑请愿
+  const editMatch = /^\/creator\/requests\/(\d+)\/edit$/.exec(location.pathname);
+  const editingId = editMatch ? Number(editMatch[1]) : null;
+
+  useEffect(() => {
+    if (onRequestsRoute) setView('requests');
+    else if (editingId) setView('request-edit');
+  }, [onRequestsRoute, editingId, setView]);
+
   // 未登录拦截
-  if (!user) {
+  if (!user && !onRequestsRoute) {
     return (
       <PageContainer className="py-32 text-center">
         <h1 className="text-2xl font-bold tracking-tight">请先登录</h1>
@@ -562,7 +589,7 @@ export function CreatorCenter() {
     );
   }
 
-  const initial = (user.displayName || user.name || '?').charAt(0).toUpperCase();
+  const initial = (user?.displayName || user?.name || '?').charAt(0).toUpperCase();
 
   return (
     // 锁定视口高度：顶栏与侧边栏固定，只有右侧内容区独立滚动
@@ -597,25 +624,39 @@ export function CreatorCenter() {
           </div>
           {/* 右：消息通知 + 头像 + 欢迎语 */}
           <div className="flex items-center gap-4">
-            <NotificationBellResponsive />
-            <Separator orientation="vertical" className="mx-1 h-5" />
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-                {user.avatar ? (
-                  <img
-                    src={user.avatar}
-                    alt={user.displayName || user.name}
-                    decoding="async"
-                    className="h-9 w-9 rounded-full object-cover"
-                  />
-                ) : (
-                  initial
-                )}
+            {user && (
+              <>
+                <NotificationBellResponsive />
+                <Separator orientation="vertical" className="mx-1 h-5" />
+              </>
+            )}
+            {user ? (
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+                  {user.avatar ? (
+                    <img
+                      src={user.avatar}
+                      alt={user.displayName || user.name}
+                      decoding="async"
+                      className="h-9 w-9 rounded-full object-cover"
+                    />
+                  ) : (
+                    initial
+                  )}
+                </div>
+                <span className="hidden text-sm text-ink-2 sm:inline">
+                  你好，{user.displayName || user.name}
+                </span>
               </div>
-              <span className="hidden text-sm text-ink-2 sm:inline">
-                你好，{user.displayName || user.name}
-              </span>
-            </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => openLogin('/creator/requests')}
+                className={buttonVariants({ size: 'sm' })}
+              >
+                登录
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -625,67 +666,88 @@ export function CreatorCenter() {
         {/* 左侧边栏 */}
         <aside className="hidden w-56 shrink-0 md:block">
           {/* 投稿按钮区 */}
-          <div
-            className="relative"
-            onMouseEnter={() => setSubmitMenuOpen(true)}
-            onMouseLeave={() => setSubmitMenuOpen(false)}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                setSubmitTab('lyrics');
-                setView('submit');
-              }}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+          {user && (
+            <div
+              className="relative"
+              onMouseEnter={() => setSubmitMenuOpen(true)}
+              onMouseLeave={() => setSubmitMenuOpen(false)}
             >
-              <Upload className="h-4 w-4" />
-              投稿
-            </button>
-            <AnimatePresence>
-              {submitMenuOpen && (
-                <motion.div
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -8 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute left-full top-0 z-50 ml-2 w-48 overflow-hidden rounded-md border border-line bg-card py-1 shadow-lg"
-                >
-                  {submitMenuOptions.map((opt) => (
-                    <button
-                      key={opt.key}
-                      type="button"
-                      onClick={() => {
-                        setSubmitTab(opt.key);
-                        setView('submit');
-                        setSubmitMenuOpen(false);
-                      }}
-                      className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-ink-2 transition-colors hover:bg-surface-2 hover:text-primary"
-                    >
-                      <opt.icon className="h-4 w-4" />
-                      {opt.label}
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSubmitTab('lyrics');
+                  setView('submit');
+                }}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+              >
+                <Upload className="h-4 w-4" />
+                投稿
+              </button>
+              <AnimatePresence>
+                {submitMenuOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -8 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute left-full top-0 z-50 ml-2 w-48 overflow-hidden rounded-md border border-line bg-card py-1 shadow-lg"
+                  >
+                    {submitMenuOptions.map((opt) => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => {
+                          setSubmitTab(opt.key);
+                          setView('submit');
+                          setSubmitMenuOpen(false);
+                        }}
+                        className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-ink-2 transition-colors hover:bg-surface-2 hover:text-primary"
+                      >
+                        <opt.icon className="h-4 w-4" />
+                        {opt.label}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
 
           {/* 导航菜单 */}
           <nav className="mt-6 space-y-1">
             <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-ink-3">
               内容管理
             </p>
+            {user && (
+              <>
+                <NavItem
+                  icon={<Home className="h-4 w-4" />}
+                  label="首页"
+                  active={view === 'home'}
+                  onClick={() => {
+                    if (onRequestsRoute || editingId) navigate('/creator');
+                    setView('home');
+                  }}
+                />
+                <NavItem
+                  icon={<FolderOpen className="h-4 w-4" />}
+                  label="内容管理"
+                  active={view === 'content'}
+                  onClick={() => {
+                    if (onRequestsRoute || editingId) navigate('/creator');
+                    setView('content');
+                  }}
+                />
+              </>
+            )}
             <NavItem
-              icon={<Home className="h-4 w-4" />}
-              label="首页"
-              active={view === 'home'}
-              onClick={() => setView('home')}
-            />
-            <NavItem
-              icon={<FolderOpen className="h-4 w-4" />}
-              label="内容管理"
-              active={view === 'content'}
-              onClick={() => setView('content')}
+              icon={<ScrollText className="h-4 w-4" />}
+              label="歌词请愿"
+              active={view === 'requests'}
+              onClick={() => {
+                if (onRequestsRoute || editingId) navigate('/creator');
+                setView('requests');
+              }}
             />
           </nav>
         </aside>
@@ -713,6 +775,40 @@ export function CreatorCenter() {
               </motion.div>
             )}
 
+            {/* 歌词请愿 */}
+            {view === 'requests' && (
+              <motion.div
+                key="requests"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, pointerEvents: 'none' }}
+                transition={{ duration: 0.15 }}
+                className="col-start-1 row-start-1 min-w-0 self-start rounded-lg border border-line bg-card p-6"
+              >
+                <RequestList
+                  scope="all"
+                  onCreate={() => {
+                    setSubmitTab('requests');
+                    setView('submit');
+                  }}
+                />
+              </motion.div>
+            )}
+
+            {/* 编辑请愿 */}
+            {view === 'request-edit' && editingId && (
+              <motion.div
+                key="request-edit"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, pointerEvents: 'none' }}
+                transition={{ duration: 0.15 }}
+                className="col-start-1 row-start-1 min-w-0 self-start rounded-lg border border-line bg-card p-6 pb-[100px]"
+              >
+                <RequestEditPanel id={editingId} />
+              </motion.div>
+            )}
+
             {/* 内容管理 */}
             {view === 'content' && (
               <motion.div
@@ -723,7 +819,13 @@ export function CreatorCenter() {
                 transition={{ duration: 0.15 }}
                 className="col-start-1 row-start-1 self-start"
               >
-                <ContentManagement initialTab={contentTab} />
+                <ContentManagement
+                  initialTab={contentTab}
+                  onCreateRequest={() => {
+                    setSubmitTab('requests');
+                    setView('submit');
+                  }}
+                />
               </motion.div>
             )}
 
@@ -786,6 +888,18 @@ export function CreatorCenter() {
                         />
                       )}
                       {submitTab === 'search-ip' && <SearchIpForm />}
+                      {submitTab === 'requests' && (
+                        <RequestSubmitPanel
+                          onSuccess={({ id, merged }) => {
+                            if (merged) {
+                              navigate(`/creator/requests/${id}`);
+                              return;
+                            }
+                            setContentTab('requests');
+                            setView('content');
+                          }}
+                        />
+                      )}
                     </motion.div>
                   </AnimatePresence>
                 </div>

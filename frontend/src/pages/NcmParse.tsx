@@ -14,12 +14,7 @@ import {
 import { useNcmParse } from '@/hooks/useNcmParse';
 import { useAuth } from '@/hooks/useAuth';
 import { PageContainer } from '@/components/PageContainer';
-import {
-  usePlayer,
-  NCM_QUALITY_LABEL,
-  NCM_QUALITY_ORDER,
-  type PlaylistItem,
-} from '@/hooks/usePlayer';
+import { usePlayer, NCM_QUALITY_LABEL, type PlaylistItem } from '@/hooks/usePlayer';
 import {
   buttonTap,
   fadeUp,
@@ -33,7 +28,17 @@ import { downloadMusicWithMeta, downloadAllAsZip, type BatchProgress } from '@/l
 import { api } from '@/lib/api';
 import { formatBytes, formatDuration } from '@/lib/format';
 import { isQualityDowngraded, normalizeNcmLevel } from '@/lib/quality';
+import { QM_QUALITY_LABEL, type QmQuality } from '@/lib/types';
+import { PLATFORM_OPTIONS } from '@/lib/platform';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { SegmentedSwitch } from '@/components/shared/SegmentedSwitch';
+import { SongSearchRow } from '@/components/shared/SongSearchRow';
+
+/** 搜索 / 歌单模式 */
+const PARSE_MODE_OPTIONS = [
+  { value: 'search', label: '搜索歌曲' },
+  { value: 'playlist', label: '解析歌单' },
+] as const;
 
 const AUTO_HEIGHT_MS = 300;
 const AUTO_HEIGHT_EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
@@ -104,7 +109,7 @@ export function NcmParse() {
     <PageContainer>
       <motion.div initial="hidden" animate="show" variants={fadeUp}>
         <h1 className="text-3xl font-bold tracking-tight">音乐解析</h1>
-        <p className="mt-2 text-sm text-ink-2">搜索歌曲并点击解析，或通过歌单 ID 批量解析。</p>
+        <p className="mt-2 text-sm text-ink-2">搜索歌曲后点击解析，或通过歌单 ID 批量解析。</p>
       </motion.div>
 
       <motion.div
@@ -123,7 +128,8 @@ export function NcmParse() {
 
 // ===== 搜索区（含歌单入口） =====
 function SearchSection() {
-  const { doSearch, searchLoading, doParsePlaylist, playlistLoading } = useNcmParse();
+  const { doSearch, searchLoading, doParsePlaylist, playlistLoading, platform, setPlatform } =
+    useNcmParse();
   const [q, setQ] = useState('');
   const [mode, setMode] = useState<'search' | 'playlist'>('search');
 
@@ -132,38 +138,11 @@ function SearchSection() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-1 rounded-lg bg-surface-2 p-1">
-        {(['search', 'playlist'] as const).map((m) => {
-          const active = mode === m;
-          return (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMode(m)}
-              className="relative rounded-md px-4 py-1.5 text-sm font-medium transition-colors"
-            >
-              {active && (
-                <motion.span
-                  layoutId="ncm-mode-indicator"
-                  className="absolute inset-0 rounded-md bg-card shadow-sm"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{
-                    layout: { type: 'spring', stiffness: 380, damping: 30 },
-                    opacity: { duration: 0.2 },
-                  }}
-                />
-              )}
-              <span
-                className={`relative z-10 transition-colors ${
-                  active ? 'text-primary' : 'text-ink-2 hover:text-foreground'
-                }`}
-              >
-                {m === 'search' ? '搜索歌曲' : '解析歌单'}
-              </span>
-            </button>
-          );
-        })}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <SegmentedSwitch options={PARSE_MODE_OPTIONS} value={mode} onChange={setMode} />
+
+        {/* 音源切换 */}
+        <SegmentedSwitch options={PLATFORM_OPTIONS} value={platform} onChange={setPlatform} />
       </div>
 
       <form
@@ -285,9 +264,13 @@ function SearchResultItem({ song }: { song: import('@/lib/types').NcmSong }) {
   const isActive = parsedSong?.songId === String(song.id);
   return (
     <motion.li variants={listItem}>
-      <button
-        type="button"
-        onClick={() =>
+      <SongSearchRow
+        song={song}
+        thumbSrc={song.picUrl || song.album.picUrl}
+        active={isActive}
+        loading={isActive && parseLoading}
+        disabled={parseLoading}
+        onSelect={() =>
           parseSong(String(song.id), {
             name: song.name,
             artists: song.artists.map((a) => a.name).join(' / '),
@@ -295,24 +278,7 @@ function SearchResultItem({ song }: { song: import('@/lib/types').NcmSong }) {
             duration: parseDurationStr(song.duration),
           })
         }
-        disabled={parseLoading}
-        className={`flex w-full items-center gap-4 px-4 py-3 text-left transition-colors ${
-          isActive ? 'bg-primary-tint' : 'hover:bg-surface-2'
-        }`}
-      >
-        <Cover src={song.picUrl || song.album.picUrl} alt={song.name} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-foreground">{song.name}</p>
-          <p className="truncate text-xs text-ink-2">
-            {song.artists.map((a) => a.name).join(' / ')}
-            {song.album?.name ? ` · ${song.album.name}` : ''}
-          </p>
-        </div>
-        <span className="shrink-0 text-xs text-ink-3">{song.duration || '--:--'}</span>
-        {isActive && parseLoading && (
-          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" />
-        )}
-      </button>
+      />
     </motion.li>
   );
 }
@@ -369,9 +335,17 @@ function SongIdParsePanel() {
 
 /** 音质下拉：自定义样式 + 动画 */
 function QualitySelect() {
-  const { quality, setPageQuality } = useNcmParse();
+  const { qualityOptions, qualityValue, setQualityValue } = useNcmParse();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const activeLabel = qualityOptions.find((o) => o.value === qualityValue)?.label ?? qualityValue;
+  const [buttonWidth, setButtonWidth] = useState<number>();
+  useLayoutEffect(() => {
+    const el = measureRef.current;
+    if (!el) return;
+    setButtonWidth(el.getBoundingClientRect().width);
+  }, [activeLabel]);
 
   useEffect(() => {
     if (!open) return;
@@ -385,18 +359,39 @@ function QualitySelect() {
   }, [open]);
 
   return (
-    <div ref={containerRef} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-md border border-line bg-card px-3 py-1.5 text-sm text-foreground outline-none transition-colors hover:border-primary focus:border-primary"
+    <div ref={containerRef} className="relative shrink-0">
+      <span
+        ref={measureRef}
+        aria-hidden="true"
+        className="pointer-events-none invisible absolute left-0 top-0 flex w-max items-center gap-2 whitespace-nowrap rounded-md border border-line px-3 py-1.5 text-sm"
       >
         <span className="text-ink-3">音质</span>
-        <span className="font-medium">{NCM_QUALITY_LABEL[quality]}</span>
+        <span className="font-medium">{activeLabel}</span>
+        <ChevronDown className="h-3.5 w-3.5" />
+      </span>
+
+      <motion.button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        initial={false}
+        animate={buttonWidth === undefined ? undefined : { width: buttonWidth }}
+        transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
+        className="flex items-center gap-2 overflow-hidden rounded-md border border-line bg-card px-3 py-1.5 text-sm text-foreground outline-none transition-colors hover:border-primary focus:border-primary"
+      >
+        <span className="shrink-0 text-ink-3">音质</span>
+        <motion.span
+          key={activeLabel}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.18, delay: 0.06 }}
+          className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left font-medium"
+        >
+          {activeLabel}
+        </motion.span>
         <ChevronDown
-          className={`h-3.5 w-3.5 text-ink-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          className={`h-3.5 w-3.5 shrink-0 text-ink-3 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
         />
-      </button>
+      </motion.button>
 
       <AnimatePresence>
         {open && (
@@ -407,21 +402,21 @@ function QualitySelect() {
             transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
             className="absolute right-0 z-50 mt-1.5 min-w-[8rem] overflow-hidden rounded-md border border-line bg-card py-1 shadow-lg"
           >
-            {NCM_QUALITY_ORDER.map((q) => {
-              const active = q === quality;
+            {qualityOptions.map((o) => {
+              const active = o.value === qualityValue;
               return (
-                <li key={q}>
+                <li key={o.value}>
                   <button
                     type="button"
                     onClick={() => {
-                      setPageQuality(q);
+                      setQualityValue(o.value);
                       setOpen(false);
                     }}
                     className={`flex w-full items-center justify-between px-3 py-1.5 text-left text-sm transition-colors hover:bg-surface-2 ${
                       active ? 'text-primary' : 'text-ink-2'
                     }`}
                   >
-                    <span>{NCM_QUALITY_LABEL[q]}</span>
+                    <span>{o.label}</span>
                     {active && <Check className="h-3.5 w-3.5" />}
                   </button>
                 </li>
@@ -436,7 +431,15 @@ function QualitySelect() {
 
 // ===== 歌单结果列表 =====
 function PlaylistResultsList() {
-  const { playlistDetail, playlistLoading, playlistError, quality, applyQuality } = useNcmParse();
+  const {
+    playlistDetail,
+    playlistLoading,
+    playlistError,
+    quality,
+    applyQuality,
+    platform,
+    qualityValue,
+  } = useNcmParse();
   const { track, playAll } = usePlayer();
   const [batchDownloading, setBatchDownloading] = useState(false);
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
@@ -460,6 +463,8 @@ function PlaylistResultsList() {
     name: t.name,
     artists: t.ar.map((a) => a.name).join(' / '),
     cover: t.al?.picUrl,
+    platform,
+    level: platform === 'qq' ? qualityValue : undefined,
   }));
 
   const handlePlayAll = () => {
@@ -475,8 +480,16 @@ function PlaylistResultsList() {
     setBatchProgress({ done: 0, total: items.length, failed: 0 });
     try {
       await downloadAllAsZip(items, (p) => setBatchProgress(p), {
-        quality,
+        quality: platform === 'qq' ? qualityValue : quality,
         zipName: playlistDetail.name,
+        // QQ 音源走 qm 解析
+        resolver:
+          platform === 'qq'
+            ? async (songId, level) => {
+                const m = await api.parseQmMusic(songId, level);
+                return { url: m.url, name: m.name, artists: m.artistName, cover: m.cover };
+              }
+            : undefined,
       });
     } catch {
       // 忽略
@@ -621,7 +634,7 @@ function PlayIconButton({
   cover?: string;
 }) {
   const { playNcmSong, loading: playerLoading, track } = usePlayer();
-  const { applyQuality } = useNcmParse();
+  const { applyQuality, platform } = useNcmParse();
   const isCurrent = track?.ncmSongId === songId;
   return (
     <button
@@ -631,7 +644,7 @@ function PlayIconButton({
         if (playerLoading) return;
         // 播放前把页面选择的音质同步到全局，播放器内部会按全局音质重新解析
         applyQuality();
-        void playNcmSong(songId, { name, artists, cover });
+        void playNcmSong(songId, { name, artists, cover, platform });
       }}
       disabled={playerLoading}
       title={isCurrent ? '正在播放' : '播放'}
@@ -662,7 +675,7 @@ function DownloadIconButton({
   artists: string;
   cover?: string;
 }) {
-  const { applyQuality } = useNcmParse();
+  const { applyQuality, platform, qualityValue } = useNcmParse();
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -671,6 +684,16 @@ function DownloadIconButton({
     setDownloading(true);
     setError(null);
     try {
+      if (platform === 'qq') {
+        const m = await api.parseQmMusic(songId, qualityValue);
+        if (!m.url) throw new Error('无可用播放链接');
+        await downloadMusicWithMeta(m.url, {
+          title: m.name || name,
+          artists: m.artistName || artists,
+          coverUrl: cover ?? m.cover,
+        });
+        return;
+      }
       // 下载同样跟随页面选择的音质
       const q = applyQuality();
       const info = await api.parseNcmMusic(songId, q);
@@ -761,18 +784,21 @@ function ParseResultCard({
   parsedSong: NonNullable<ReturnType<typeof useNcmParse>['parsedSong']>;
   loading: boolean;
 }) {
-  const { info, songId, metaDuration, lyricLines, lyricError } = parsedSong;
+  const { info, songId, metaDuration, lyricLines, lyricError, platform: songPlatform } = parsedSong;
   const { playNcmSong, loading: playerLoading, track, quality } = usePlayer();
-  const { applyQuality } = useNcmParse();
+  const { applyQuality, qualityValue } = useNcmParse();
   const isCurrent = track?.ncmSongId === songId;
   const [downloading, setDownloading] = useState(false);
   const [dlError, setDlError] = useState<string | null>(null);
 
+  const isQQ = songPlatform === 'qq';
   // 时长优先用 parse-music 返回，回退到搜索结果传入的 metaDuration
   const durationMs = info.duration ?? metaDuration ?? 0;
-  const actualQuality = normalizeNcmLevel(info.level);
-  const downgraded = isQualityDowngraded(actualQuality, quality);
-  const qualityLabel = NCM_QUALITY_LABEL[actualQuality ?? quality];
+  const actualQuality = isQQ ? null : normalizeNcmLevel(info.level);
+  const downgraded = !isQQ && isQualityDowngraded(actualQuality, quality);
+  const qualityLabel = isQQ
+    ? (QM_QUALITY_LABEL[info.level as QmQuality] ?? info.level ?? '-')
+    : NCM_QUALITY_LABEL[actualQuality ?? quality];
 
   const handleDownload = async () => {
     if (downloading || !info.url) return;
@@ -810,8 +836,11 @@ function ParseResultCard({
           </h2>
           <p className="mt-2 text-sm text-ink-2">{info.artists ?? '未知歌手'}</p>
 
-          {/* 元信息行：音质 / 时长 / 文件大小 / 音乐 ID */}
+          {/* 元信息行：音源 / 音质 / 时长 / 文件大小 / 音乐 ID */}
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3">
+            <span>
+              音源 <span className="text-ink-2">{isQQ ? 'QQ 音乐' : '网易云'}</span>
+            </span>
             <span>
               音质 <span className="text-ink-2">{qualityLabel}</span>
               {downgraded && (
@@ -852,6 +881,8 @@ function ParseResultCard({
                     name: info.name,
                     artists: info.artists,
                     cover: info.cover,
+                    platform: songPlatform,
+                    level: isQQ ? qualityValue : undefined,
                   });
                 }}
                 disabled={playerLoading}

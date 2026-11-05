@@ -65,6 +65,7 @@ type DailyRecommendation struct {
 	Artist        string     `gorm:"type:varchar(200);not null;default:''" json:"artist"`
 	CoverKey      string     `gorm:"column:cover_key;type:varchar(500);not null;default:''" json:"coverKey"`
 	NcmID         string     `gorm:"column:ncm_id;type:varchar(50);not null;default:''" json:"ncmId"`
+	QQID          string     `gorm:"column:qq_id;type:varchar(50);not null;default:''" json:"qqId"`
 	Comment       string     `gorm:"type:text;not null;default:''" json:"comment"`
 	Submitter     string     `gorm:"type:varchar(100);not null" json:"submitter"`
 	SubmitterInfo JSONObject `gorm:"type:jsonb;default:'{}'" json:"submitterInfo"`

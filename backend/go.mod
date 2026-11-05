@@ -17,7 +17,7 @@ require (
 	gorm.io/gorm v1.25.11
 )
 
-require github.com/cybaka520/AMLLHub-Music-API v0.0.0-20260709020609-44a3a67cec13
+require github.com/cybaka520/AMLLHub-Music-API v0.0.0-20261101074547-e28507b69fc7
 
 require (
 	github.com/gin-contrib/gzip v1.2.6

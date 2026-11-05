@@ -40,6 +40,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { NCM_QUALITY_LABEL, usePlayer, type NcmQuality } from '@/hooks/usePlayer';
+import { QM_QUALITY_LABEL, type QmQuality } from '@/lib/types';
 
 /** 将回调包装为 AMLL 期望的 { onEmit } 结构 */
 const toEmit = <T,>(onEmit: T) => ({ onEmit });
@@ -121,6 +122,39 @@ const PlayerStateSync: FC = () => {
       store.set(musicQualityTagAtom, null);
       return;
     }
+    if (track.platform === 'qq') {
+      const level = (track.actualLevel ?? track.level ?? 'hq') as QmQuality;
+      const qm2type: Record<QmQuality, AudioQualityType> = {
+        'hi-res': AudioQualityType.HiResLossless,
+        lossless: AudioQualityType.Lossless,
+        hq: AudioQualityType.Standard,
+        sq: AudioQualityType.Standard,
+        lq: AudioQualityType.Standard,
+      };
+      const qm2codec: Record<QmQuality, string> = {
+        'hi-res': 'FLAC',
+        lossless: 'FLAC',
+        hq: 'MP3',
+        sq: 'MP3',
+        lq: 'AAC',
+      };
+      const type = qm2type[level] ?? AudioQualityType.None;
+      store.set(musicQualityAtom, {
+        type,
+        codec: qm2codec[level] ?? '',
+        channels: 2,
+        sampleRate: level === 'hi-res' ? 96000 : 44100,
+        sampleFormat: 'S16',
+      });
+      store.set(
+        musicQualityTagAtom,
+        type === AudioQualityType.None || type === AudioQualityType.Standard
+          ? null
+          : { tagIcon: true, tagText: QM_QUALITY_LABEL[level], isDolbyAtmos: false }
+      );
+      return;
+    }
+
     const q2type: Record<NcmQuality, AudioQualityType> = {
       standard: AudioQualityType.Standard,
       exhigh: AudioQualityType.Standard,

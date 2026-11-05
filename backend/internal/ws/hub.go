@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"sync"
 	"time"
 
@@ -35,6 +36,7 @@ const (
 // Message WebSocket 推送消息
 type Message struct {
 	Type         string `json:"type"`
+	Room         string `json:"room,omitempty"` // 房间键：sub:<id> / req:<id>
 	SubmissionID int64  `json:"submissionId,omitempty"`
 	Username     string `json:"username,omitempty"` // 通知频道：消息归属用户，broadcastLocal 按此路由
 	Data         any    `json:"data,omitempty"`
@@ -44,7 +46,8 @@ type Message struct {
 type Client struct {
 	conn         *websocket.Conn
 	mode         string // ModeViewers / ModeNotifications
-	submissionID int64  // 0 表示列表页连接
+	room         string // 房间键（sub:<id> / req:<id>），空表示列表页连接
+	submissionID int64  // 投稿 ID（仅投稿房间有值）
 	username     string
 	displayName  string
 	avatar       string
@@ -62,6 +65,7 @@ type Viewer struct {
 
 // ViewersPayload 观众列表推送负载
 type ViewersPayload struct {
+	Room         string   `json:"room,omitempty"`
 	SubmissionID int64    `json:"submissionId"`
 	Viewers      []Viewer `json:"viewers"`
 }
@@ -71,7 +75,7 @@ type Hub struct {
 	rdb *redis.Client
 
 	mu            sync.RWMutex
-	clientsBySub  map[int64]map[*Client]struct{} // submissionId -> clients
+	clientsByRoom map[string]map[*Client]struct{} // room -> clients
 	listClients   map[*Client]struct{}
 	clientsByUser map[string]map[*Client]struct{} // username -> clients（多标签页 = 多 Client）
 
@@ -79,14 +83,14 @@ type Hub struct {
 	unregister chan *Client
 
 	// 客户端注册/注销后的回调，通过 SetViewerNotifier 注入
-	viewerNotifier func(submissionID int64)
+	viewerNotifier func(room string)
 }
 
 // NewHub 创建 Hub
 func NewHub(rdb *redis.Client) *Hub {
 	return &Hub{
 		rdb:           rdb,
-		clientsBySub:  make(map[int64]map[*Client]struct{}),
+		clientsByRoom: make(map[string]map[*Client]struct{}),
 		listClients:   make(map[*Client]struct{}),
 		clientsByUser: make(map[string]map[*Client]struct{}),
 		register:      make(chan *Client, 64),
@@ -95,7 +99,7 @@ func NewHub(rdb *redis.Client) *Hub {
 }
 
 // SetViewerNotifier 注入观众列表通知回调（由 main 注入 ViewerService.NotifyViewers）
-func (h *Hub) SetViewerNotifier(fn func(submissionID int64)) {
+func (h *Hub) SetViewerNotifier(fn func(room string)) {
 	h.viewerNotifier = fn
 }
 
@@ -157,11 +161,11 @@ func (h *Hub) registerClient(c *Client) {
 		}
 		set[c] = struct{}{}
 	default:
-		if c.submissionID > 0 {
-			set, ok := h.clientsBySub[c.submissionID]
+		if c.room != "" {
+			set, ok := h.clientsByRoom[c.room]
 			if !ok {
 				set = make(map[*Client]struct{})
-				h.clientsBySub[c.submissionID] = set
+				h.clientsByRoom[c.room] = set
 			}
 			set[c] = struct{}{}
 		} else {
@@ -170,8 +174,8 @@ func (h *Hub) registerClient(c *Client) {
 	}
 	h.mu.Unlock()
 	// 注册成功后触发观众列表广播（此时客户端已在 map 中，不会漏算）
-	if c.mode != ModeNotifications && c.submissionID > 0 && h.viewerNotifier != nil {
-		h.viewerNotifier(c.submissionID)
+	if c.mode != ModeNotifications && c.room != "" && h.viewerNotifier != nil {
+		h.viewerNotifier(c.room)
 	}
 }
 
@@ -190,11 +194,11 @@ func (h *Hub) unregisterClient(c *Client) {
 			}
 		}
 	default:
-		if c.submissionID > 0 {
-			if set, ok := h.clientsBySub[c.submissionID]; ok {
+		if c.room != "" {
+			if set, ok := h.clientsByRoom[c.room]; ok {
 				delete(set, c)
 				if len(set) == 0 {
-					delete(h.clientsBySub, c.submissionID)
+					delete(h.clientsByRoom, c.room)
 				}
 			}
 		} else {
@@ -202,11 +206,11 @@ func (h *Hub) unregisterClient(c *Client) {
 		}
 	}
 	safeClose(c.send)
-	subID := c.submissionID
+	room := c.room
 	h.mu.Unlock()
 	// 注销后触发观众列表广播
-	if subID > 0 && h.viewerNotifier != nil {
-		h.viewerNotifier(subID)
+	if room != "" && h.viewerNotifier != nil {
+		h.viewerNotifier(room)
 	}
 }
 
@@ -220,8 +224,12 @@ func (h *Hub) broadcastLocal(channel string, payload []byte) {
 
 	switch channel {
 	case ChannelViewers:
-		// 推送给该投稿详情页所有客户端
-		if set, ok := h.clientsBySub[msg.SubmissionID]; ok {
+		// 推送给该房间所有客户端
+		room := msg.Room
+		if room == "" && msg.SubmissionID > 0 {
+			room = SubmissionRoom(msg.SubmissionID)
+		}
+		if set, ok := h.clientsByRoom[room]; ok {
 			for c := range set {
 				safeSend(c.send, payload)
 			}
@@ -233,7 +241,7 @@ func (h *Hub) broadcastLocal(channel string, payload []byte) {
 		}
 		// 同时推给该投稿详情页客户端
 		if msg.SubmissionID > 0 {
-			if set, ok := h.clientsBySub[msg.SubmissionID]; ok {
+			if set, ok := h.clientsByRoom[SubmissionRoom(msg.SubmissionID)]; ok {
 				for c := range set {
 					safeSend(c.send, payload)
 				}
@@ -268,10 +276,11 @@ func safeClose(ch chan []byte) {
 }
 
 // PublishViewers 发布观众列表变更到 Redis（其他实例收到后广播本地）
-func (h *Hub) PublishViewers(ctx context.Context, submissionID int64, viewers []Viewer) error {
-	p := ViewersPayload{SubmissionID: submissionID, Viewers: viewers}
+func (h *Hub) PublishViewers(ctx context.Context, room string, submissionID int64, viewers []Viewer) error {
+	p := ViewersPayload{Room: room, SubmissionID: submissionID, Viewers: viewers}
 	data, err := json.Marshal(Message{
 		Type:         TypeViewers,
+		Room:         room,
 		SubmissionID: submissionID,
 		Data:         p,
 	})
@@ -311,10 +320,10 @@ func (h *Hub) PublishNotification(ctx context.Context, username string, data any
 }
 
 // CollectViewers 收集指定投稿当前实例的在线观众
-func (h *Hub) CollectViewers(submissionID int64) []Viewer {
+func (h *Hub) CollectViewers(room string) []Viewer {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	set, ok := h.clientsBySub[submissionID]
+	set, ok := h.clientsByRoom[room]
 	if !ok {
 		return []Viewer{}
 	}
@@ -329,20 +338,27 @@ func (h *Hub) CollectViewers(submissionID int64) []Viewer {
 	return viewers
 }
 
-// NewClient 创建客户端（观众/列表页连接，保留原签名）
-func NewClient(conn *websocket.Conn, hub *Hub, submissionID int64, username, displayName, avatar string, onClose func()) *Client {
-	return newClient(conn, hub, ModeViewers, submissionID, username, displayName, avatar, onClose)
+// SubmissionRoom 投稿房间键
+func SubmissionRoom(id int64) string { return "sub:" + strconv.FormatInt(id, 10) }
+
+// RequestRoom 歌词请愿房间键
+func RequestRoom(id int64) string { return "req:" + strconv.FormatInt(id, 10) }
+
+// NewClient 创建客户端（观众/列表页连接；room 为空表示列表页）
+func NewClient(conn *websocket.Conn, hub *Hub, room string, submissionID int64, username, displayName, avatar string, onClose func()) *Client {
+	return newClient(conn, hub, ModeViewers, room, submissionID, username, displayName, avatar, onClose)
 }
 
 // NewNotificationClient 创建站内消息客户端（按 username 分组路由）
 func NewNotificationClient(conn *websocket.Conn, hub *Hub, username string) *Client {
-	return newClient(conn, hub, ModeNotifications, 0, username, "", "", nil)
+	return newClient(conn, hub, ModeNotifications, "", 0, username, "", "", nil)
 }
 
-func newClient(conn *websocket.Conn, hub *Hub, mode string, submissionID int64, username, displayName, avatar string, onClose func()) *Client {
+func newClient(conn *websocket.Conn, hub *Hub, mode, room string, submissionID int64, username, displayName, avatar string, onClose func()) *Client {
 	return &Client{
 		conn:         conn,
 		mode:         mode,
+		room:         room,
 		submissionID: submissionID,
 		username:     username,
 		displayName:  displayName,

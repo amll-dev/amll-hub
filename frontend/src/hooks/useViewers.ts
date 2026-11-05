@@ -10,19 +10,21 @@ export interface Viewer {
 
 /**
  * WebSocket 观看者 hook。
- * 连接 /ws/viewers?submissionId=…，上报并接收“正在查看该投稿的用户列表”
+ * 连接 /ws/viewers?submissionId=…（或 requestId=…），
+ * 上报并接收“正在查看该页面的用户列表”
  */
-export function useViewers(submissionId: number) {
+export function useViewers(id: number, kind: 'submission' | 'request' = 'submission') {
   const [count, setCount] = useState(0);
   const [viewers, setViewers] = useState<Viewer[]>([]);
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
-    if (!submissionId) return;
+    if (!id) return;
     const token = getToken();
+    const param = kind === 'request' ? 'requestId' : 'submissionId';
     // 从 VITE_API_BASE 推导 WS 地址
     const url = wsUrl(
-      `/ws/viewers?submissionId=${submissionId}${token ? `&token=${encodeURIComponent(token)}` : ''}`
+      `/ws/viewers?${param}=${id}${token ? `&token=${encodeURIComponent(token)}` : ''}`
     );
 
     // 用局部变量跟踪本 effect 周期的取消状态，
@@ -93,7 +95,7 @@ export function useViewers(submissionId: number) {
       ws?.close();
       ws = null;
     };
-  }, [submissionId]);
+  }, [id, kind]);
 
   return { count, viewers, showModal, setShowModal };
 }

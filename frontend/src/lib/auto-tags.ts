@@ -7,6 +7,7 @@ export const AutoTag = {
   HoyoFair: 'HoYoFair',
   Msr: 'MSR',
   Wuthering: '鸣潮先约电台',
+  Proseka: 'プロセカ',
   Melon: '地—瓜——藤——————————',
   MultiLang: '多语言翻译',
   WordTimed: '逐字翻译/音译',
@@ -21,19 +22,110 @@ const CREATOR_KEYWORDS: { keyword: string; tag: string }[] = [
   { keyword: '鸣潮先约电台', tag: AutoTag.Wuthering },
 ];
 
-/** 单个元数据字段条目数超过该值即打「地瓜藤」（合并了过多版本/平台的投稿） */
-const META_ENTRY_LIMIT = 18;
+/** 网易云音乐 ID 数量达到该值即打「地瓜藤」 */
+const MELON_NCM_ID_MIN = 5;
 
-/** 打「地瓜藤」时需要统计的数组型元数据字段 */
-const META_LIST_FIELDS = [
-  'title',
-  'artist',
-  'album',
-  'isrc',
-  'songwriters',
-  'authorIds',
-  'authorNames',
-] as const;
+/** 「プロセカ」判定集合 */
+const PROSEKA_KEYWORDS = [
+  // Virtual Singer
+  'Virtual Singer',
+  'バーチャル・シンガー',
+  '虛擬歌手',
+  '虚拟歌手',
+  '巡音ルカ',
+  '巡音流歌',
+  'MEGURINE LUKA',
+  '初音未来',
+  'Hatsune Miku',
+  '鏡音リン',
+  'Kagamine Rin',
+  '鏡音鈴',
+  '镜音铃',
+  '鏡音レン',
+  'Kagamine Len',
+  '鏡音連',
+  '镜音连',
+  'MEIKO',
+  'メイコ',
+  'KAITO',
+  'カイト',
+  // Leo/need
+  'Leo/need',
+  '星乃一歌',
+  'Hoshino Ichika',
+  '天馬咲希',
+  '天马咲希',
+  'Tenma Saki',
+  '望月穂波',
+  'Mochizuki Honami',
+  '日野森志歩',
+  '日野森志步',
+  'Hinomori Shiho',
+  // MORE MORE JUMP!
+  'MORE MORE JUMP!',
+  '花里实乃理',
+  '花里實乃理',
+  '花里みのり',
+  'Hanasato Minori',
+  '桐谷遥',
+  '桐谷遙',
+  'Kiritani Haruka',
+  '桃井爱莉',
+  '桃井愛莉',
+  'Momoi Airi',
+  '日野森雫',
+  'Hinomori Shizuku',
+  // Vivid Bad Squad
+  'Vivid Bad Squad',
+  'Azusawa Kohane',
+  '小豆沢こはね',
+  '小豆澤心羽',
+  '小豆泽心羽',
+  'Shiraishi An',
+  '白石杏',
+  'Shinonome Akito',
+  '東雲彰人',
+  '东云彰人',
+  'Aoyagi Toya',
+  '青柳冬弥',
+  '青柳冬彌',
+  // Wonderlands×Showtime
+  'Wonderlands×Showtime',
+  'Tenma Tsukasa',
+  '天馬司',
+  '天马司',
+  'Otori Emu',
+  '鳳えむ',
+  '鳳笑夢',
+  '凤笑梦',
+  'Kusanagi Nene',
+  '草薙寧々',
+  '草薙寧寧',
+  '草薙宁宁',
+  'Kamishiro Rui',
+  '神代類',
+  '神代类',
+  // 25-ji, Nightcord de.
+  '25-ji, Nightcord de.',
+  '25時、ナイトコードで。',
+  '25点，Nightcord见。',
+  'Nightcord at 25:00',
+  'Yoisaki Kanade',
+  '宵崎奏',
+  'Asahina Mafuyu',
+  '朝比奈まふゆ',
+  '朝比奈真冬',
+  'Shinonome Ena',
+  '東雲絵名',
+  '東雲繪名',
+  '东云绘名',
+  'Akiyama Mizuki',
+  '暁山瑞希',
+  '曉山瑞希',
+  '晓山瑞希',
+];
+
+const PROSEKA_KEYWORD_SET = new Set(PROSEKA_KEYWORDS.map((name) => name.toLowerCase()));
 
 /** 「多语言翻译」所需的最少译文语种数 */
 const MULTI_LANG_MIN = 2;
@@ -54,19 +146,16 @@ function creatorTags(metadata: TTMLMetadata): string[] {
   return tags;
 }
 
-/** 单个元数据字段的最大条目数（平台 ID、rawProperties 也算） */
-function maxMetaEntries(metadata: TTMLMetadata): number {
-  let max = 0;
-  for (const field of META_LIST_FIELDS) {
-    max = Math.max(max, metadata[field]?.length ?? 0);
-  }
-  for (const values of Object.values(metadata.platformIds ?? {})) {
-    max = Math.max(max, values?.length ?? 0);
-  }
-  for (const values of Object.values(metadata.rawProperties ?? {})) {
-    max = Math.max(max, values?.length ?? 0);
-  }
-  return max;
+/** artists 是否属于 プロセカ：按条目完全相等 */
+function isProsekaArtist(metadata: TTMLMetadata): boolean {
+  return (metadata.artist ?? []).some((artist) =>
+    PROSEKA_KEYWORD_SET.has(artist.trim().toLowerCase())
+  );
+}
+
+/** 网易云音乐 ID 数量 */
+function ncmIdCount(metadata: TTMLMetadata): number {
+  return (metadata.platformIds?.ncmMusicId ?? []).filter((id) => id.trim() !== '').length;
 }
 
 /** 一段副歌词（翻译 / 音译）是否带逐字时间轴 */
@@ -107,7 +196,9 @@ export interface AutoTagInput {
 export function detectAutoTags({ metadata, lines }: AutoTagInput): string[] {
   const tags = creatorTags(metadata);
 
-  if (maxMetaEntries(metadata) > META_ENTRY_LIMIT) tags.push(AutoTag.Melon);
+  if (isProsekaArtist(metadata)) tags.push(AutoTag.Proseka);
+
+  if (ncmIdCount(metadata) >= MELON_NCM_ID_MIN) tags.push(AutoTag.Melon);
 
   const { languages, wordTimed } = lyricFeatures(lines);
   if (languages >= MULTI_LANG_MIN) tags.push(AutoTag.MultiLang);

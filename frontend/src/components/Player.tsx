@@ -18,6 +18,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { lazy } from 'react';
 import { PlaylistPanel } from '@/components/PlaylistPanel';
 import { formatDuration } from '@/lib/format';
+import { QM_QUALITY_LABEL, QM_QUALITY_ORDER, type QmQuality } from '@/lib/types';
 import { useAtomValue } from 'jotai';
 import { playerActions } from '@/boot/PlayerBoot';
 import {
@@ -87,8 +88,14 @@ function RepeatIcon({ mode }: { mode: RepeatMode }) {
 const ctrlBtn =
   'inline-flex items-center justify-center rounded-full transition-transform duration-150 hover:scale-110 active:scale-90';
 
-/** 多网易云 ID 选择弹窗 */
-export function NcmSelectDialog() {
+/** 选 ID 弹窗的平台展示名 */
+const CHOICE_PLATFORM_LABEL: Record<string, string> = {
+  ncm: '网易云',
+  qq: 'QQ 音乐',
+};
+
+/** 多平台 / 多版本 ID 选择弹窗 */
+export function SongIdSelectDialog() {
   const selectRequest = useAtomValue(selectRequestAtom);
   const { resolveSelect } = playerActions;
   return (
@@ -110,18 +117,23 @@ export function NcmSelectDialog() {
             className="w-full max-w-md rounded-lg border border-line bg-card p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-base font-semibold text-foreground">选择网易云歌曲 ID</h3>
-            <p className="mt-1 text-sm text-ink-2">该歌曲有多个网易云 ID，请选择要播放的版本：</p>
+            <h3 className="text-base font-semibold text-foreground">选择播放的歌曲 ID</h3>
+            <p className="mt-1 text-sm text-ink-2">
+              该歌曲有多个平台 / 版本 ID，请选择要播放的一个：
+            </p>
             {/* ID 过多时限制高度内部滚动 */}
             <ul className="mt-3 max-h-[50vh] space-y-1.5 overflow-y-auto pr-1">
-              {selectRequest.ids.map((id, idx) => (
-                <li key={`${id}-${idx}`}>
+              {selectRequest.choices.map((choice, idx) => (
+                <li key={`${choice.platform}-${choice.id}-${idx}`}>
                   <button
                     type="button"
-                    onClick={() => resolveSelect(id)}
-                    className="block w-full rounded-md border border-input bg-surface-2 px-3 py-2 text-left font-medium text-sm transition-colors hover:border-primary hover:bg-primary-tint hover:text-primary"
+                    onClick={() => resolveSelect(choice)}
+                    className="flex w-full items-center gap-2 rounded-md border border-input bg-surface-2 px-3 py-2 text-left text-sm transition-colors hover:border-primary hover:bg-primary-tint hover:text-primary"
                   >
-                    {id}
+                    <span className="shrink-0 rounded border border-line bg-card px-1.5 py-0.5 text-[10px] text-ink-3">
+                      {CHOICE_PLATFORM_LABEL[choice.platform] ?? choice.platform}
+                    </span>
+                    <span className="font-medium">{choice.id}</span>
                   </button>
                 </li>
               ))}
@@ -234,8 +246,16 @@ function QualityControl() {
   const [open, setOpen] = useState(false);
   if (!track) return null;
 
+  // QQ 曲目另一套档位：档位与降级信息都挂在 track 上
+  const isQQ = track.platform === 'qq';
+  const qmLevel = (track.level ?? 'hq') as QmQuality;
+  const qmActual = (track.actualLevel ?? qmLevel) as QmQuality;
+  const options: readonly string[] = isQQ ? QM_QUALITY_ORDER : NCM_QUALITY_ORDER;
+  const currentLabel = isQQ ? QM_QUALITY_LABEL[qmLevel] : NCM_QUALITY_LABEL[quality];
+  const currentValue: string = isQQ ? qmLevel : quality;
+
   // 上游拿不到用户所选的音质时会自动降级，按钮上标出来，别让用户以为拿到了杜比
-  const downgraded = isQualityDowngraded(actualQuality, quality);
+  const downgraded = isQQ ? qmActual !== qmLevel : isQualityDowngraded(actualQuality, quality);
   return (
     <div className="relative">
       <button
@@ -244,11 +264,13 @@ function QualityControl() {
         className="flex items-center gap-1.5 rounded-full border border-line bg-surface-2/60 px-2.5 py-1 text-[11px] font-medium text-ink-2 transition-colors hover:border-primary hover:text-primary"
         title={
           downgraded
-            ? `所选音质「${NCM_QUALITY_LABEL[quality]}」不可用，已降级为「${NCM_QUALITY_LABEL[actualQuality ?? 'standard']}」`
+            ? isQQ
+              ? `所选音质「${QM_QUALITY_LABEL[qmLevel]}」不可用，已降级为「${QM_QUALITY_LABEL[qmActual]}」`
+              : `所选音质「${NCM_QUALITY_LABEL[quality]}」不可用，已降级为「${NCM_QUALITY_LABEL[actualQuality ?? 'standard']}」`
             : '切换音质'
         }
       >
-        {NCM_QUALITY_LABEL[quality as NcmQuality]}
+        {currentLabel}
         {downgraded && (
           <span className="rounded bg-warning/15 px-1 text-[10px] font-semibold text-warning">
             已降级
@@ -267,21 +289,21 @@ function QualityControl() {
               transition={{ duration: 0.15 }}
               className="absolute bottom-full left-1/2 z-[170] mb-2 -translate-x-1/2 rounded-lg border border-line bg-card p-1 shadow-lg"
             >
-              {NCM_QUALITY_ORDER.map((q) => (
+              {options.map((q) => (
                 <button
                   key={q}
                   type="button"
                   onClick={async () => {
                     setOpen(false);
-                    if (q !== quality) {
-                      await reloadWithQuality(q);
+                    if (q !== currentValue) {
+                      await reloadWithQuality(q as NcmQuality);
                     }
                   }}
                   className={`block w-full whitespace-nowrap rounded px-3 py-1.5 text-left text-xs transition-colors hover:bg-primary-tint hover:text-primary ${
-                    q === quality ? 'text-primary' : 'text-ink-2'
+                    q === currentValue ? 'text-primary' : 'text-ink-2'
                   }`}
                 >
-                  {NCM_QUALITY_LABEL[q]}
+                  {isQQ ? QM_QUALITY_LABEL[q as QmQuality] : NCM_QUALITY_LABEL[q as NcmQuality]}
                 </button>
               ))}
             </motion.div>
@@ -580,7 +602,7 @@ export function Player() {
   return (
     <>
       <PlayerBar />
-      <NcmSelectDialog />
+      <SongIdSelectDialog />
       <PlaylistPanel />
       <Suspense fallback={null}>
         <LyricsPage />

@@ -1,0 +1,15 @@
+{{.DisplayName}}，你好：
+
+{{.Headline}}
+{{.Preheader}}
+
+歌曲：《{{.SongName}}》{{if .Artist}}（{{.Artist}}）{{end}}
+{{.Lead}}
+{{if .Tip}}
+{{.Tip}}
+{{end}}
+查看请愿：{{.DetailURL}}
+
+——
+本邮件由 AMLL Hub 系统自动发送，请勿直接回复。
+{{.SiteURL}} · © {{.Year}} AMLL Hub

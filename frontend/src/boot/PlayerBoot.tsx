@@ -2,8 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAtom, useStore } from 'jotai';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { getToken } from '@/lib/auth';
+import { openLogin } from '@/atoms/auth';
+import { qmCoverProxy, qmToLyricLines } from '@/lib/qm';
 import { normalizeNcmLevel } from '@/lib/quality';
-import type { SearchHit } from '@/lib/types';
+import type { MusicPlatform, QmQuality, SearchHit } from '@/lib/types';
 import {
   NCM_QUALITY_ORDER,
   trackAtom,
@@ -28,6 +31,7 @@ import {
   type NcmQuality,
   type PlayerTrack,
   type PlaylistItem,
+  type SelectChoice,
 } from '@/atoms/player';
 
 // ===== 代码级开关 =====
@@ -180,6 +184,10 @@ export interface PlayerActions {
       cover?: string;
       skipTtml?: boolean;
       customTtml?: string;
+      /** 来源平台 */
+      platform?: MusicPlatform;
+      /** QM 档位 */
+      level?: string;
     }
   ) => Promise<void>;
   playDirect: (opts: {
@@ -190,7 +198,7 @@ export interface PlayerActions {
     customTtml?: string;
   }) => void;
   close: () => void;
-  resolveSelect: (songId: string | null) => void;
+  resolveSelect: (choice: SelectChoice | null) => void;
   toggleShuffle: () => void;
   cycleRepeatMode: () => void;
   setVolume: (v: number) => void;
@@ -198,7 +206,7 @@ export interface PlayerActions {
   openLyricsPage: () => void;
   setQuality: (q: NcmQuality) => void;
   cycleQuality: () => void;
-  reloadWithQuality: (q: NcmQuality) => Promise<void>;
+  reloadWithQuality: (q: NcmQuality | QmQuality) => Promise<void>;
   togglePlaylistPanel: () => void;
   closePlaylistPanel: () => void;
   playAll: (items: PlaylistItem[]) => void;
@@ -277,7 +285,7 @@ export function PlayerBoot() {
   const [currentIndex, setCurrentIndex] = useAtom(currentIndexAtom);
   const [, setShowPlaylistPanel] = useAtom(showPlaylistPanelAtom);
   // 保存 playHit 调用时的 resolver，弹窗选择后继续播放流程
-  const selectResolverRef = useRef<((songId: string | null) => void) | null>(null);
+  const selectResolverRef = useRef<((choice: SelectChoice | null) => void) | null>(null);
 
   // refs：让 onEnd 闭包能读到最新值
   const playlistRef = useRef(playlist);
@@ -520,6 +528,10 @@ export function PlayerBoot() {
     if (manualLoadRef.current) return;
     // 杜比全景声播不了，没必要预载
     if (isUnplayableQuality(qualityRef.current)) {
+      preloadedRef.current = null;
+      return;
+    }
+    if (item.platform === 'qq') {
       preloadedRef.current = null;
       return;
     }
@@ -828,13 +840,24 @@ export function PlayerBoot() {
           cover?: string;
           skipTtml?: boolean;
           customTtml?: string;
+          /** 来源平台 */
+          platform?: MusicPlatform;
+          /** QM 档位 */
+          level?: string;
         };
         q?: NcmQuality;
       } = {}
     ) => {
+      if (!getToken()) {
+        openLogin(undefined, '登录后即可播放音乐');
+        return;
+      }
+
+      const platform = opts.meta?.platform ?? 'ncm';
+      const isQQ = platform === 'qq';
+      const qmLevel = opts.meta?.level || 'hq';
       const useQ = opts.q ?? quality;
-      // 杜比全景声浏览器解不了：发请求前就拦住，别让用户等一个必然失败的请求
-      if (isUnplayableQuality(useQ)) {
+      if (!isQQ && isUnplayableQuality(useQ)) {
         toast.error(DOLBY_HINT);
         return;
       }
@@ -845,14 +868,25 @@ export function PlayerBoot() {
       ensureAudioContext();
       audioContextRef.current?.resume().catch(() => {});
       try {
-        const info = await api.parseNcmMusic(songId, useQ);
+        const info = isQQ
+          ? await api.parseQmMusic(songId, qmLevel).then((m) => ({
+              url: m.url,
+              name: m.name,
+              artists: m.artistName,
+              cover: qmCoverProxy(m.cover, 800),
+              level: m.actualLevel,
+              lyric: m.lyric,
+              tlyric: m.translation,
+              lines: qmToLyricLines(m.lyrics),
+            }))
+          : await api.parseNcmMusic(songId, useQ);
         if (!info.url) {
           throw new Error('未能获取播放链接（可能无版权）');
         }
         const hit = opts.hit;
         // 记录实际拿到的音质：上游拿不到用户所选音质时会自动降级，
         // 播放器据此提示「已降级」（见 Player.tsx 的 QualityControl）
-        setActualQuality(normalizeNcmLevel(info.level));
+        setActualQuality(isQQ ? null : normalizeNcmLevel(info.level));
         setTrack({
           title: info.name || opts.meta?.name || hit?.musicNames[0] || '未知歌曲',
           artists: opts.meta?.artists || hit?.artists.join(' / ') || info.artists || '未知歌手',
@@ -860,9 +894,13 @@ export function PlayerBoot() {
           audioUrl: info.url,
           hit,
           ncmSongId: songId,
+          platform,
+          level: isQQ ? qmLevel : undefined,
+          actualLevel: isQQ ? info.level : undefined,
+          customLyricLines: isQQ && 'lines' in info ? (info.lines ?? undefined) : undefined,
           ncmLyric: info.lyric,
           ncmTLyric: info.tlyric,
-          skipTtml: opts.meta?.skipTtml,
+          skipTtml: isQQ ? true : opts.meta?.skipTtml,
           customTtml: opts.meta?.customTtml,
         });
         // 切歌时清空旧歌词
@@ -898,12 +936,6 @@ export function PlayerBoot() {
     ]
   );
 
-  // 搜索命中播放
-  const playBySongId = useCallback(
-    (songId: string, hit: SearchHit, q?: NcmQuality) => resolveAndPlay(songId, { hit, q }),
-    [resolveAndPlay]
-  );
-
   // 网易云解析页播放
   const playNcmSong = useCallback(
     (
@@ -914,6 +946,10 @@ export function PlayerBoot() {
         cover?: string;
         skipTtml?: boolean;
         customTtml?: string;
+        /** 来源平台 */
+        platform?: MusicPlatform;
+        /** QM 档位 */
+        level?: string;
       }
     ) => resolveAndPlay(songId, { meta }),
     [resolveAndPlay]
@@ -968,53 +1004,85 @@ export function PlayerBoot() {
 
   // 用指定音质重新加载当前曲目，保持当前播放进度
   const reloadWithQuality = useCallback(
-    async (q: NcmQuality) => {
+    async (q: NcmQuality | QmQuality) => {
       if (!track) return;
       // 记录当前进度，track 更新后恢复
       pendingSeekRef.current = activeElRef.current?.currentTime ?? null;
-      setQuality(q);
+
+      // QQ 曲目按 qm 档位重新解析，ncm 走全局音质
+      if (track.platform === 'qq') {
+        await resolveAndPlay(track.ncmSongId ?? '', {
+          meta: {
+            name: track.title,
+            artists: track.artists,
+            cover: track.cover,
+            platform: 'qq',
+            level: q,
+          },
+        });
+        return;
+      }
+
+      const ncmQuality = q as NcmQuality;
+      setQuality(ncmQuality);
       await resolveAndPlay(
         track.ncmSongId ?? '',
         track.hit
-          ? { hit: track.hit, q }
-          : { meta: { name: track.title, artists: track.artists, cover: track.cover }, q }
+          ? { hit: track.hit, q: ncmQuality }
+          : {
+              meta: {
+                name: track.title,
+                artists: track.artists,
+                cover: track.cover,
+                platform: track.platform,
+              },
+              q: ncmQuality,
+            }
       );
     },
     [track, resolveAndPlay, setQuality]
   );
 
-  // 对外入口：处理多 ncm id 选择
+  // 对外入口
   const playHit = useCallback(
     async (hit: SearchHit) => {
-      const ncmIds = hit.platformIds['ncm'] ?? [];
-      if (ncmIds.length === 0) {
-        setError('该歌曲没有网易云 ID，无法播放');
+      const choices: SelectChoice[] = [];
+      for (const platform of ['ncm', 'qq'] as const) {
+        for (const id of hit.platformIds[platform] ?? []) {
+          if (id) choices.push({ platform, id });
+        }
+      }
+      if (choices.length === 0) {
+        setError('该歌曲没有关联的网易云或 QQ 音乐 ID，无法播放');
         return;
       }
-      if (ncmIds.length === 1) {
-        await playBySongId(ncmIds[0] ?? '', hit);
+      const playChoice = (choice: SelectChoice) =>
+        resolveAndPlay(choice.id, { hit, meta: { platform: choice.platform } });
+      const only = choices[0];
+      if (choices.length === 1 && only) {
+        await playChoice(only);
         return;
       }
-      // 多个 id：弹窗让用户选择
+      // 多个 ID 或跨平台：弹窗让用户选择
       await new Promise<void>((resolve) => {
-        selectResolverRef.current = (songId) => {
+        selectResolverRef.current = (choice) => {
           setSelectRequest(null);
           // 异步解析，不阻塞 promise
-          if (songId) {
-            void playBySongId(songId, hit);
+          if (choice) {
+            void playChoice(choice);
           }
           resolve();
         };
-        setSelectRequest({ ids: ncmIds, hit });
+        setSelectRequest({ choices, hit });
       });
     },
-    [playBySongId, setError, setSelectRequest]
+    [resolveAndPlay, setError, setSelectRequest]
   );
 
-  const resolveSelect = useCallback((songId: string | null) => {
+  const resolveSelect = useCallback((choice: SelectChoice | null) => {
     const resolver = selectResolverRef.current;
     selectResolverRef.current = null;
-    resolver?.(songId);
+    resolver?.(choice);
   }, []);
 
   // 播放下一首
@@ -1065,7 +1133,13 @@ export function PlayerBoot() {
       const item = list[nextIdx];
       if (!item) return;
       void resolveAndPlay(item.songId, {
-        meta: { name: item.name, artists: item.artists, cover: item.cover },
+        meta: {
+          name: item.name,
+          artists: item.artists,
+          cover: item.cover,
+          platform: item.platform,
+          level: item.level,
+        },
       });
     },
     [resolveAndPlay, startCrossfade, setCurrentIndex, setPlaying]
@@ -1086,14 +1160,26 @@ export function PlayerBoot() {
       if (!item) return;
       if (!standby || transitionRef.current) {
         void resolveAndPlay(item.songId, {
-          meta: { name: item.name, artists: item.artists, cover: item.cover },
+          meta: {
+            name: item.name,
+            artists: item.artists,
+            cover: item.cover,
+            platform: item.platform,
+            level: item.level,
+          },
         });
         return;
       }
       // 杜比全景声播不了，直接走普通路径（会在 resolveAndPlay 里被拦住并提示）
-      if (isUnplayableQuality(qualityRef.current)) {
+      if (isUnplayableQuality(qualityRef.current) || item.platform === 'qq') {
         void resolveAndPlay(item.songId, {
-          meta: { name: item.name, artists: item.artists, cover: item.cover },
+          meta: {
+            name: item.name,
+            artists: item.artists,
+            cover: item.cover,
+            platform: item.platform,
+            level: item.level,
+          },
         });
         return;
       }
@@ -1131,7 +1217,13 @@ export function PlayerBoot() {
       } catch {
         // 回退普通切歌路径
         void resolveAndPlay(item.songId, {
-          meta: { name: item.name, artists: item.artists, cover: item.cover },
+          meta: {
+            name: item.name,
+            artists: item.artists,
+            cover: item.cover,
+            platform: item.platform,
+            level: item.level,
+          },
         });
       } finally {
         manualLoadRef.current = false;
@@ -1178,7 +1270,13 @@ export function PlayerBoot() {
       const first = items[0];
       if (!first) return;
       void resolveAndPlay(first.songId, {
-        meta: { name: first.name, artists: first.artists, cover: first.cover },
+        meta: {
+          name: first.name,
+          artists: first.artists,
+          cover: first.cover,
+          platform: first.platform,
+          level: first.level,
+        },
       });
     },
     [resolveAndPlay, setCurrentIndex, setPlaylist]
@@ -1194,7 +1292,13 @@ export function PlayerBoot() {
       const item = list[index];
       if (!item) return;
       void resolveAndPlay(item.songId, {
-        meta: { name: item.name, artists: item.artists, cover: item.cover },
+        meta: {
+          name: item.name,
+          artists: item.artists,
+          cover: item.cover,
+          platform: item.platform,
+          level: item.level,
+        },
       });
     },
     [resolveAndPlay, setCurrentIndex]
@@ -1292,6 +1396,20 @@ export function PlayerBoot() {
     (async () => {
       try {
         const { parseLrc, parseTTML } = await import('@applemusic-like-lyrics/lyric');
+        // QQ 曲目优先用库内已校对过的 qq-lyrics TTML
+        if (track.platform === 'qq' && track.ncmSongId) {
+          const ttml = await api.getQqLyricTtml(track.ncmSongId);
+          if (cancelled) return;
+          if (ttml !== null) {
+            setLyricData(parseTTML(ttml).lines);
+            return;
+          }
+        }
+        // 库内没有时用 QRC 逐字，避免回退成 LRC 丢掉逐字时间轴
+        if (track.customLyricLines && track.customLyricLines.length > 0) {
+          setLyricData(track.customLyricLines);
+          return;
+        }
         if (track.customTtml) {
           setLyricData(parseTTML(track.customTtml).lines);
           return;

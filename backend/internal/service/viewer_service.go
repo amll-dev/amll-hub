@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/amll-dev/amll-hub/backend/internal/ws"
@@ -29,8 +31,20 @@ func (s *ViewerService) NotifyViewers(ctx context.Context, submissionID int64) e
 	if submissionID <= 0 {
 		return nil
 	}
-	viewers := s.hub.CollectViewers(submissionID)
-	return s.hub.PublishViewers(ctx, submissionID, viewers)
+	return s.NotifyRoom(ctx, ws.SubmissionRoom(submissionID))
+}
+
+// NotifyRoom 通知指定房间的观众列表更新
+func (s *ViewerService) NotifyRoom(ctx context.Context, room string) error {
+	if room == "" {
+		return nil
+	}
+	var submissionID int64
+	if strings.HasPrefix(room, "sub:") {
+		submissionID, _ = strconv.ParseInt(strings.TrimPrefix(room, "sub:"), 10, 64)
+	}
+	viewers := s.hub.CollectViewers(room)
+	return s.hub.PublishViewers(ctx, room, submissionID, viewers)
 }
 
 // NotifySubmissionChanged 投稿状态变更通知

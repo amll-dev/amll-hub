@@ -16,6 +16,10 @@ pub struct Config {
     pub migration: MigrationConfig,
     pub worker: WorkerConfig,
     pub ncm: NcmConfig,
+    pub qm: QmConfig,
+    /// 内部服务 token
+    #[serde(default)]
+    pub service_token: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -299,6 +303,11 @@ pub struct NcmConfig {
     pub api_base: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct QmConfig {
+    pub api_base: String,
+}
+
 /// 从当前目录向上查找 .env 文件
 fn find_dotenv() -> Option<PathBuf> {
     let mut dir = std::env::current_dir().ok()?;
@@ -496,7 +505,12 @@ pub fn load() -> anyhow::Result<Config> {
                 .parse::<i64>()
                 .unwrap_or(200),
         )?
-        .set_override("ncm.api_base", env_or("NCM_API_BASE", ""))?;
+        .set_override("ncm.api_base", env_or("NCM_API_BASE", ""))?
+        .set_override(
+            "qm.api_base",
+            env_or("QM_API_BASE", "http://localhost:8080"),
+        )?
+        .set_override("service_token", env_or("SERVICE_TOKEN", ""))?;
 
     let cfg = builder.build()?;
     let result: Config = cfg.try_deserialize()?;

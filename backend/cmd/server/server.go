@@ -106,6 +106,12 @@ func Run() {
 	// 每日推荐 repository
 	dailyRecRepo := repository.NewDailyRecommendationRepo(db)
 
+	// 歌词请愿 repository
+	lyricRequestRepo := repository.NewLyricRequestRepo(db)
+
+	// 投稿  请愿关联 repository
+	petitionLinkRepo := repository.NewPetitionLinkRepo(db)
+
 	// 4. 初始化 service
 	syncSvc := service.NewSyncService(cfg, syncRepo, progressRepo, mq)
 	lyricsSvc := service.NewLyricsService(cfg, songRepo, minioClient, redisClient)
@@ -115,6 +121,7 @@ func Run() {
 	notFoundSvc := service.NewNotFoundService(notFoundRepo, redisClient, mq)
 	onlineSearchSvc := service.NewOnlineSearchService(cfg)
 	cloudMusicSvc := service.NewCloudMusicService(cfg, redisClient)
+	qmMusicSvc := service.NewQMMusicService(cfg, redisClient)
 	authSvc := service.NewAuthService(
 		infrastructure.NewCasdoorClient(cfg.Casdoor),
 		redisClient,
@@ -179,6 +186,17 @@ func Run() {
 	// 每日推荐
 	dailyRecSvc := service.NewDailyRecommendationService(dailyRecRepo, minioClient, cfg.MinIO.Bucket)
 
+	// 歌词请愿
+	lyricRequestSvc := service.NewLyricRequestService(lyricRequestRepo)
+
+	// 投稿  请愿关联
+	petitionLinkSvc := service.NewPetitionLinkService(petitionLinkRepo, lyricRequestRepo, subRepo)
+	// 请愿关联/完成邮件
+	petitionLinkSvc.SetMailer(mailSender, mailResolver, cfg.Email.SiteURL)
+	// 审核状态变化 → 同步请愿状态
+	reviewSvc.SetPetitionSync(petitionLinkSvc.SyncBySubmission)
+	revisionSvc.SetPetitionSync(petitionLinkSvc.SyncBySubmission)
+
 	// 最新收录
 	latestSongRepo := repository.NewLatestSongRepo(db)
 	latestSongSvc := service.NewLatestSongService(latestSongRepo)
@@ -220,10 +238,10 @@ func Run() {
 	// 注入 hub 给 notifSvc
 	notifSvc.SetHub(hub)
 	// 注入观众列表通知回调给 hub
-	hub.SetViewerNotifier(func(submissionID int64) {
+	hub.SetViewerNotifier(func(room string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = viewerSvc.NotifyViewers(ctx, submissionID)
+		_ = viewerSvc.NotifyRoom(ctx, room)
 	})
 
 	// 注入通知服务（T1~T3 触发点）
@@ -262,18 +280,21 @@ func Run() {
 	nfH := handler.NewNotFoundHandler(notFoundSvc)
 	onlineSearchH := handler.NewOnlineSearchHandler(onlineSearchSvc)
 	cloudMusicH := handler.NewCloudMusicHandler(cloudMusicSvc)
+	qmMusicH := handler.NewQMMusicHandler(qmMusicSvc)
 	authH := handler.NewAuthHandler(authSvc, reviewerCache, adminCache)
 	authGithubH := handler.NewAuthGithubHandler(githubBindSvc, reviewerCache, adminCache)
 	migrationH := handler.NewMigrationHandler(migrationSvc)
 
 	// 投稿 handler
-	submissionH := handler.NewSubmissionHandler(submissionSvc, reviewerCache)
+	submissionH := handler.NewSubmissionHandler(submissionSvc, reviewerCache, petitionLinkSvc)
 	reviewH := handler.NewReviewHandler(reviewSvc)
 	revisionH := handler.NewRevisionHandler(revisionSvc)
 	commentH := handler.NewCommentHandler(submissionSvc)
 	uploadH := handler.NewUploadHandler(fileSvc, submissionSvc)
 	searchIpH := handler.NewSearchIPHandler(searchIpSvc)
 	dailyRecH := handler.NewDailyRecommendationHandler(dailyRecSvc)
+	lyricRequestH := handler.NewLyricRequestHandler(lyricRequestSvc)
+	petitionLinkH := handler.NewPetitionLinkHandler(petitionLinkSvc, reviewerCache, adminCache)
 	validateH := handler.NewValidateHandler(validateSvc)
 	latestSongH := handler.NewLatestSongHandler(latestSongSvc)
 	adminH := handler.NewAdminHandler(reviewerRepo, reviewerCache, userSearchSvc)
@@ -295,6 +316,7 @@ func Run() {
 		NotFound:     nfH,
 		OnlineSearch: onlineSearchH,
 		CloudMusic:   cloudMusicH,
+		QMMusic:      qmMusicH,
 		Auth:         authH,
 		AuthGithub:   authGithubH,
 		Migration:    migrationH,
@@ -305,6 +327,8 @@ func Run() {
 		Upload:       uploadH,
 		SearchIP:     searchIpH,
 		DailyRec:     dailyRecH,
+		LyricRequest: lyricRequestH,
+		PetitionLink: petitionLinkH,
 		WS:           wsH,
 		Validate:     validateH,
 		LatestSong:   latestSongH,
@@ -318,6 +342,7 @@ func Run() {
 		ReviewerCache: reviewerCache,
 		AdminCache:    adminCache,
 		JWTSecret:     cfg.Casdoor.JWTSecret,
+		ServiceToken:  cfg.ServiceToken,
 	})
 
 	srv := &http.Server{

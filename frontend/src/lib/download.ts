@@ -62,9 +62,19 @@ export async function downloadAllAsZip(
     quality?: string;
     concurrency?: number;
     zipName?: string;
+    /** 自定义解析器 */
+    resolver?: (
+      songId: string,
+      quality: string
+    ) => Promise<{ url?: string; name?: string; artists?: string; cover?: string }>;
   } = {}
 ): Promise<void> {
-  const { quality = 'exhigh', concurrency = 4, zipName = 'songs' } = options;
+  const {
+    quality = 'exhigh',
+    concurrency = 4,
+    zipName = 'songs',
+    resolver = (songId, q) => api.parseNcmMusic(songId, q),
+  } = options;
   if (items.length === 0) return;
 
   const zip = new JSZip();
@@ -75,7 +85,7 @@ export async function downloadAllAsZip(
 
   const processItem = async (item: BatchDownloadItem) => {
     try {
-      const info = await api.parseNcmMusic(item.songId, quality);
+      const info = await resolver(item.songId, quality);
       if (!info.url) {
         failed++;
         done++;

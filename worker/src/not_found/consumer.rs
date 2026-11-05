@@ -93,7 +93,11 @@ async fn process_once(msg: &NotFoundMessage, app: &Arc<AppState>) -> Result<()> 
     // 2. 调用 API 解析分类
     let client = app.http_client.clone();
 
-    let parse_ctx = ParseContext::new(app.cfg.ncm.api_base.clone());
+    let parse_ctx = ParseContext::new(
+        app.cfg.ncm.api_base.clone(),
+        app.cfg.qm.api_base.clone(),
+        app.cfg.service_token.clone(),
+    );
     let result = parse_and_categorize(&client, &parse_ctx, &msg.platform, &msg.platform_id).await?;
 
     info!(
