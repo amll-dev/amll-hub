@@ -98,21 +98,25 @@ where
                 let delivery = match delivery {
                     Ok(d) => d,
                     Err(e) => {
-                        tracing::error!(error = %e, "consumer error");
-                        break;
+                        tracing::error!(error = %e, "consumer stream error");
+                        return Err(anyhow::anyhow!("consumer stream error: {e}"));
                     }
                 };
                 let tag = delivery.delivery_tag;
                 match handler(delivery).await {
                     Ok(()) => {
-                        let _ = channel
+                        if let Err(e) = channel
                             .basic_ack(tag, BasicAckOptions::default())
-                            .await;
+                            .await
+                        {
+                            tracing::error!(error = %e, "basic_ack failed");
+                            return Err(anyhow::anyhow!("basic_ack failed: {e}"));
+                        }
                     }
                     Err(e) => {
                         tracing::error!(error = %e, "task failed after retries, sending to DLQ");
                         // nack(requeue=false) 触发 dead-lettering 到 DLQ，避免毒消息无限重投
-                        let _ = channel
+                        if let Err(e) = channel
                             .basic_nack(
                                 tag,
                                 BasicNackOptions {
@@ -120,7 +124,11 @@ where
                                     requeue: false,
                                 },
                             )
-                            .await;
+                            .await
+                        {
+                            tracing::error!(error = %e, "basic_nack failed");
+                            return Err(anyhow::anyhow!("basic_nack failed: {e}"));
+                        }
                     }
                 }
             }

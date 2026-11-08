@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/infrastructure"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/redis/go-redis/v9"
 	logrus "github.com/sirupsen/logrus"
@@ -348,29 +349,31 @@ func (s *NotFoundService) StartWeeklyClearTask(ctx context.Context) {
 	duration := time.Until(nextMonday)
 
 	time.AfterFunc(duration, func() {
-		taskCtx, taskCancel := context.WithCancel(ctx)
-		defer taskCancel()
+		pkg.RunSafe("not-found-weekly-clear", func() {
+			taskCtx, taskCancel := context.WithCancel(ctx)
+			defer taskCancel()
 
-		runCtx, runCancel := context.WithTimeout(taskCtx, 5*time.Minute)
-		if _, err := s.ClearWeekly(runCtx); err != nil {
-			logrus.WithError(err).Error("[not_found] weekly clear failed")
-		}
-		runCancel()
-
-		ticker := time.NewTicker(7 * 24 * time.Hour)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				runCtx, runCancel := context.WithTimeout(taskCtx, 5*time.Minute)
-				if _, err := s.ClearWeekly(runCtx); err != nil {
-					logrus.WithError(err).Error("[not_found] weekly clear failed")
-				}
-				runCancel()
-			case <-taskCtx.Done():
-				return
+			runCtx, runCancel := context.WithTimeout(taskCtx, 5*time.Minute)
+			if _, err := s.ClearWeekly(runCtx); err != nil {
+				logrus.WithError(err).Error("[not_found] weekly clear failed")
 			}
-		}
+			runCancel()
+
+			ticker := time.NewTicker(7 * 24 * time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					runCtx, runCancel := context.WithTimeout(taskCtx, 5*time.Minute)
+					if _, err := s.ClearWeekly(runCtx); err != nil {
+						logrus.WithError(err).Error("[not_found] weekly clear failed")
+					}
+					runCancel()
+				case <-taskCtx.Done():
+					return
+				}
+			}
+		})
 	})
 	logrus.Infof("[not_found] weekly clear task scheduled, next run at %s", nextMonday.Format(time.RFC3339))
 }

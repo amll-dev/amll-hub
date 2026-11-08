@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	ttml "github.com/xiaowumin-mark/amll-ttml"
@@ -76,6 +77,26 @@ func toViewResponse(parsed ttml.TTMLLyric) *LyricViewResponse {
 // parseTTML 解析 TTML
 func parseTTML(ttmlText string) (ttml.TTMLLyric, error) {
 	return ttml.ParseLyric(dedupeTransliterations(ttmlText))
+}
+
+// ExtractTTMLAuthorGithubID 从 TTML 元数据中提取歌词作者 GitHub 数字 ID
+func ExtractTTMLAuthorGithubID(content []byte) (int64, bool) {
+	parsed, err := parseTTML(string(content))
+	if err != nil {
+		return 0, false
+	}
+	for _, meta := range parsed.Metadata {
+		if meta.Key != "ttmlAuthorGithub" {
+			continue
+		}
+		for _, value := range meta.Value {
+			id, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+			if err == nil && id > 0 {
+				return id, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // ViewLyric 解析 raw-lyrics 下的 TTML 文件为结构化歌词数据，

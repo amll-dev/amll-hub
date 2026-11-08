@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Music } from 'lucide-react';
 import { api } from '@/lib/api';
+import { qmCoverProxy } from '@/lib/qm';
 import type { LatestSongItem } from '@/lib/types';
 import { staggerContainer, whileInViewProps } from '@/lib/motion';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -30,7 +31,7 @@ export function LatestEntries() {
   }, []);
 
   return (
-    <motion.section {...whileInViewProps} variants={staggerContainer}>
+    <motion.section {...whileInViewProps} variants={staggerContainer} className="min-w-0">
       <h2 className="mb-4 text-xl font-bold">最新收录</h2>
       {loading ? (
         <ul className="space-y-1">
@@ -65,7 +66,7 @@ export function LatestEntries() {
               <span className="w-6 text-center text-sm text-ink-3">{idx + 1}</span>
               {e.coverUrl ? (
                 <img
-                  src={e.coverUrl}
+                  src={qmCoverProxy(e.coverUrl, 96)}
                   alt={e.title}
                   className="h-12 w-12 shrink-0 rounded-md object-cover"
                   loading="lazy"
@@ -76,7 +77,7 @@ export function LatestEntries() {
                   {e.title.charAt(0)}
                 </div>
               )}
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{e.title}</div>
                 <div className="truncate text-xs text-ink-2">{e.artist}</div>
               </div>

@@ -30,6 +30,7 @@ type Config struct {
 	OnlineSearch OnlineSearchConfig
 	Casdoor      CasdoorConfig
 	Submission   SubmissionConfig
+	PluginStore  PluginStoreConfig
 	Worker       WorkerConfig
 	Email        EmailConfig
 	ServiceToken string
@@ -188,6 +189,24 @@ type SubmissionConfig struct {
 	MaxImageSize int64
 }
 
+// PluginStoreConfig 插件商店配置
+type PluginStoreConfig struct {
+	Bucket string
+
+	MaxArtifactBytes int64 // 48 MiB
+	MaxUnpackedBytes int64 // 64 MiB
+	MaxEntryBytes    int64 // 33 MiB
+	MaxManifestBytes int64 // 4 MiB
+	MaxEntries       int   // 64
+	MaxIconBytes     int64 // 256 KiB
+
+	CatalogCacheTTL time.Duration
+	MaxCatalogItems int
+	MaxCatalogBytes int64
+
+	ReservedIDs []string
+}
+
 // Worker 服务配置
 type WorkerConfig struct {
 	// Worker 地址
@@ -213,6 +232,21 @@ type EmailConfig struct {
 	EmailCacheTTL time.Duration
 	// TimeoutSec 单次发送超时（秒）
 	TimeoutSec int
+}
+
+// splitCSV 把逗号分隔的环境变量拆成去空白的字符串列表
+func splitCSV(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if v := strings.TrimSpace(part); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // findDotEnv查找 .env 文件
@@ -326,8 +360,21 @@ func Load() (*Config, error) {
 	v.SetDefault("SUBMISSION_AUTO_REJECT_AFTER", "96h")
 	v.SetDefault("SUBMISSION_REVIEWER_CACHE_TTL", "30s")
 	v.SetDefault("SUBMISSION_MAX_TTML_SIZE", 2*1024*1024)    // 2MB
-	v.SetDefault("SUBMISSION_MAX_AUDIO_SIZE", 50*1024*1024)  // 50MB
+	v.SetDefault("SUBMISSION_MAX_AUDIO_SIZE", 150*1024*1024) // 150MB
 	v.SetDefault("SUBMISSION_MAX_IMAGE_SIZE", 100*1024*1024) // 100MB
+
+	// Plugin Store 插件商店
+	v.SetDefault("PLUGIN_STORE_BUCKET", "plugin-store")
+	v.SetDefault("PLUGIN_STORE_MAX_ARTIFACT_BYTES", 48*1024*1024)
+	v.SetDefault("PLUGIN_STORE_MAX_UNPACKED_BYTES", 64*1024*1024)
+	v.SetDefault("PLUGIN_STORE_MAX_ENTRY_BYTES", 33*1024*1024)
+	v.SetDefault("PLUGIN_STORE_MAX_MANIFEST_BYTES", 4*1024*1024)
+	v.SetDefault("PLUGIN_STORE_MAX_ENTRIES", 64)
+	v.SetDefault("PLUGIN_STORE_MAX_ICON_BYTES", 256*1024)
+	v.SetDefault("PLUGIN_STORE_CATALOG_CACHE_TTL", "60s")
+	v.SetDefault("PLUGIN_STORE_MAX_CATALOG_ITEMS", 256)
+	v.SetDefault("PLUGIN_STORE_MAX_CATALOG_BYTES", 4*1024*1024)
+	v.SetDefault("PLUGIN_STORE_RESERVED_IDS", "")
 
 	// Worker
 	v.SetDefault("WORKER_BASE_URL", "http://localhost:9090")
@@ -444,6 +491,19 @@ func Load() (*Config, error) {
 			MaxTTMLSize:         v.GetInt64("SUBMISSION_MAX_TTML_SIZE"),
 			MaxAudioSize:        v.GetInt64("SUBMISSION_MAX_AUDIO_SIZE"),
 			MaxImageSize:        v.GetInt64("SUBMISSION_MAX_IMAGE_SIZE"),
+		},
+		PluginStore: PluginStoreConfig{
+			Bucket:           v.GetString("PLUGIN_STORE_BUCKET"),
+			MaxArtifactBytes: v.GetInt64("PLUGIN_STORE_MAX_ARTIFACT_BYTES"),
+			MaxUnpackedBytes: v.GetInt64("PLUGIN_STORE_MAX_UNPACKED_BYTES"),
+			MaxEntryBytes:    v.GetInt64("PLUGIN_STORE_MAX_ENTRY_BYTES"),
+			MaxManifestBytes: v.GetInt64("PLUGIN_STORE_MAX_MANIFEST_BYTES"),
+			MaxEntries:       v.GetInt("PLUGIN_STORE_MAX_ENTRIES"),
+			MaxIconBytes:     v.GetInt64("PLUGIN_STORE_MAX_ICON_BYTES"),
+			CatalogCacheTTL:  v.GetDuration("PLUGIN_STORE_CATALOG_CACHE_TTL"),
+			MaxCatalogItems:  v.GetInt("PLUGIN_STORE_MAX_CATALOG_ITEMS"),
+			MaxCatalogBytes:  v.GetInt64("PLUGIN_STORE_MAX_CATALOG_BYTES"),
+			ReservedIDs:      splitCSV(v.GetString("PLUGIN_STORE_RESERVED_IDS")),
 		},
 		Worker: WorkerConfig{
 			BaseURL: v.GetString("WORKER_BASE_URL"),

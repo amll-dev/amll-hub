@@ -12,6 +12,7 @@ import (
 
 	"github.com/amll-dev/amll-hub/backend/internal/mail"
 	"github.com/amll-dev/amll-hub/backend/internal/model"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 )
 
@@ -275,7 +276,7 @@ func (s *AnnouncementService) writeProgress(
 		status = model.AnnouncementMailDone
 	}
 	// 独立超时：调用方 ctx 可能已取消
-	c, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	c, cancel := pkg.DetachedTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := s.repo.UpdateMailProgress(c, id, sent, failed, skipped, status, finish); err != nil {
 		logrus.WithError(err).WithField("announcement_id", id).Warn("update announcement mail progress failed")

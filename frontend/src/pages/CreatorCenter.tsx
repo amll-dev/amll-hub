@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAtom } from 'jotai';
 import {
@@ -9,13 +9,7 @@ import {
   type ContentMainTab,
   type SubmitTab,
 } from '@/atoms/creatorCenter';
-import {
-  keepPreviousData,
-  useInfiniteQuery,
-  useQuery,
-  useQueryClient,
-  type InfiniteData,
-} from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -24,6 +18,7 @@ import {
   FolderOpen,
   Home,
   LayoutDashboard,
+  Package,
   ScrollText,
   Search,
   Upload,
@@ -33,7 +28,6 @@ import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
 import { formatDateTime } from '@/lib/format';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
-import { useSentinel } from '@/hooks/useSentinel';
 import { parseMarkupText } from '@/lib/markup';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
 import { NavItem } from '@/components/NavItem';
@@ -44,6 +38,7 @@ import { FirstSubmissionBadge } from '@/components/submission/FirstSubmissionBad
 import { RevisionBadge } from '@/components/submission/RevisionBadge';
 import { buttonVariants } from '@/components/ui/button';
 import { CardDetailSkeleton, ListSkeleton } from '@/components/ui/Skeleton';
+import { ListPagination } from '@/components/ui/list-pagination';
 import { LyricSubmitForm } from '@/components/creator/LyricSubmitForm';
 import { DailyRecommendForm } from '@/components/creator/DailyRecommendForm';
 import { SearchIpForm } from '@/components/creator/SearchIpForm';
@@ -51,6 +46,8 @@ import { SearchIpDetail } from '@/components/creator/SearchIpDetail';
 import { RequestList } from '@/components/petition/RequestList';
 import { RequestSubmitPanel } from '@/components/petition/RequestSubmitPanel';
 import { RequestEditPanel } from '@/components/petition/RequestEditPanel';
+import { PluginSubmissionList } from '@/components/plugin/PluginSubmissionList';
+import { PluginSubmitForm } from '@/components/plugin/PluginSubmitForm';
 import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -64,6 +61,7 @@ const submitTabs: { key: SubmitTab; label: string }[] = [
   { key: 'daily', label: '每日推荐投稿' },
   { key: 'search-ip', label: '搜索IP显示投稿' },
   { key: 'requests', label: '歌词请愿' },
+  { key: 'plugins', label: '插件投稿' },
 ];
 
 const submitMenuOptions: { key: SubmitTab; label: string; icon: typeof FileText }[] = [
@@ -71,6 +69,7 @@ const submitMenuOptions: { key: SubmitTab; label: string; icon: typeof FileText 
   { key: 'daily', label: '每日推荐投稿', icon: CalendarDays },
   { key: 'search-ip', label: '搜索IP显示投稿', icon: Search },
   { key: 'requests', label: '歌词请愿', icon: ScrollText },
+  { key: 'plugins', label: '插件投稿', icon: Package },
 ];
 
 // 内容管理主 tab
@@ -158,7 +157,7 @@ function ContentManagement({
   );
 }
 
-/** 歌词管理列表（无限滚动：每页 20 条，滚动到底自动加载下一页） */
+/** 歌词管理列表（分页：每页 20 条） */
 function LyricsList({
   statusTab,
   setStatusTab,
@@ -167,58 +166,47 @@ function LyricsList({
   setStatusTab: (t: LyricsStatusTab) => void;
 }) {
   const queryClient = useQueryClient();
+  const [page, setPage] = useState(1);
   const listKey = queryKeys.submissions({
     mode: 'creator',
     status: statusTab,
     limit: LIST_PAGE_SIZE,
+    page,
   });
 
-  const listQuery = useInfiniteQuery({
+  const listQuery = useQuery({
     queryKey: listKey,
-    queryFn: ({ pageParam }) =>
-      api.listSubmissions({ status: statusTab, page: pageParam, limit: LIST_PAGE_SIZE }),
-    initialPageParam: 1,
-    getNextPageParam: (last, all) => {
-      const fetched = all.reduce((n, p) => n + (p.items?.length ?? 0), 0);
-      if (typeof last.total === 'number' && last.total > 0) {
-        return fetched < last.total ? all.length + 1 : undefined;
-      }
-      return (last.items?.length ?? 0) < LIST_PAGE_SIZE ? undefined : all.length + 1;
-    },
+    queryFn: () => api.listSubmissions({ status: statusTab, page, limit: LIST_PAGE_SIZE }),
     placeholderData: keepPreviousData,
     staleTime: 15_000,
   });
-  const items = useMemo(
-    () => listQuery.data?.pages.flatMap((p) => p.items ?? []) ?? [],
-    [listQuery.data]
-  );
-  const total = listQuery.data?.pages[0]?.total ?? 0;
+  const items = listQuery.data?.items ?? [];
+  const total = listQuery.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
   const errorMsg =
     listQuery.error instanceof Error ? listQuery.error.message : listQuery.error ? '加载失败' : '';
 
-  const loadMore = () => {
-    if (listQuery.hasNextPage && !listQuery.isFetchingNextPage) {
-      void listQuery.fetchNextPage();
-    }
-  };
-  const sentinelRef = useSentinel(loadMore, listQuery.hasNextPage === true && !errorMsg);
+  // 切换状态筛选时回到第一页
+  useEffect(() => {
+    setPage(1);
+  }, [statusTab]);
 
-  // 订阅全局投稿状态变更：直接补丁缓存里的所有已加载页
+  // 条目减少后当前页可能越界
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  // 订阅全局投稿状态变更：直接补丁当前页
   useSubmissionListSync((payload) => {
     const id = payload.id ?? payload.submissionId;
     if (!id || !payload.status) return;
-    queryClient.setQueryData<InfiniteData<SubmissionListResult>>(listKey, (prev) =>
+    queryClient.setQueryData<SubmissionListResult>(listKey, (prev) =>
       prev
         ? {
             ...prev,
-            pages: prev.pages.map((p) => ({
-              ...p,
-              items: (p.items ?? []).map((it) =>
-                it.id === id
-                  ? { ...it, status: payload.status as SubmissionListItem['status'] }
-                  : it
-              ),
-            })),
+            items: (prev.items ?? []).map((it) =>
+              it.id === id ? { ...it, status: payload.status as SubmissionListItem['status'] } : it
+            ),
           }
         : prev
     );
@@ -257,8 +245,7 @@ function LyricsList({
       ) : (
         <>
           <p className="mb-3 text-xs text-ink-3">
-            已加载 {items.length}
-            {total > items.length ? ` / 共 ${total} 条` : ' 条'}
+            共 {total} 条 · 第 {page} / {totalPages} 页
           </p>
           <ul className="space-y-2">
             {items.map((item) => {
@@ -301,19 +288,7 @@ function LyricsList({
             })}
           </ul>
 
-          {/* 无限滚动：哨兵进入视口自动加载下一页，按钮兜底 */}
-          {(listQuery.hasNextPage || listQuery.isFetchingNextPage) && (
-            <div ref={sentinelRef} className="pt-2 text-center">
-              <button
-                type="button"
-                onClick={loadMore}
-                disabled={!listQuery.hasNextPage || listQuery.isFetchingNextPage}
-                className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-card px-5 text-sm text-ink-2 transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {listQuery.isFetchingNextPage ? '加载中…' : '加载更多'}
-              </button>
-            </div>
-          )}
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </>
       )}
     </motion.div>
@@ -322,15 +297,23 @@ function LyricsList({
 
 /** 每日推荐管理列表 */
 function DailyRecommendList() {
+  const [page, setPage] = useState(1);
   const { data, isPending, error } = useQuery({
-    queryKey: queryKeys.dailySubmissions,
-    queryFn: () => api.listDailySubmissions(),
+    queryKey: queryKeys.dailySubmissions(page),
+    queryFn: () => api.listDailySubmissions({ page, limit: LIST_PAGE_SIZE }),
+    placeholderData: keepPreviousData,
     staleTime: 15_000,
   });
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
   const errorMsg = error instanceof Error ? error.message : error ? '加载失败' : '';
   const [detailId, setDetailId] = useState<number | null>(null);
+
+  // 条目减少后当前页可能越界
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   if (detailId !== null) {
     return <DailyRecommendDetail id={detailId} onBack={() => setDetailId(null)} />;
@@ -346,7 +329,9 @@ function DailyRecommendList() {
         <EmptyState icon={CalendarDays} title="暂无每日推荐投稿" description="换个筛选条件试试" />
       ) : (
         <>
-          <p className="mb-3 text-xs text-ink-3">共 {total} 条</p>
+          <p className="mb-3 text-xs text-ink-3">
+            共 {total} 条 · 第 {page} / {totalPages} 页
+          </p>
           <ul className="space-y-2">
             {items.map((item) => {
               const meta = statusMeta[item.status] ?? {
@@ -376,6 +361,7 @@ function DailyRecommendList() {
               );
             })}
           </ul>
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </>
       )}
     </>
@@ -473,15 +459,23 @@ function DailyRecommendDetail({ id, onBack }: { id: number; onBack: () => void }
 
 /** 搜索IP管理列表 */
 function SearchIpList() {
+  const [page, setPage] = useState(1);
   const { data, isPending, error } = useQuery({
-    queryKey: queryKeys.searchIpSubmissions('mine'),
-    queryFn: () => api.listSearchIpSubmissions(),
+    queryKey: queryKeys.searchIpSubmissions('mine', undefined, page),
+    queryFn: () => api.listSearchIpSubmissions({ page, limit: LIST_PAGE_SIZE }),
+    placeholderData: keepPreviousData,
     staleTime: 15_000,
   });
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
   const errorMsg = error instanceof Error ? error.message : error ? '加载失败' : '';
   const [detailId, setDetailId] = useState<number | null>(null);
+
+  // 条目减少后当前页可能越界
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   // 点击进入详情
   if (detailId !== null) {
@@ -498,7 +492,9 @@ function SearchIpList() {
         <EmptyState icon={Search} title="暂无搜索IP投稿" description="换个筛选条件试试" />
       ) : (
         <>
-          <p className="mb-3 text-xs text-ink-3">共 {total} 条</p>
+          <p className="mb-3 text-xs text-ink-3">
+            共 {total} 条 · 第 {page} / {totalPages} 页
+          </p>
           <ul className="space-y-2">
             {items.map((item) => {
               const meta = statusMeta[item.status] ?? {
@@ -527,6 +523,7 @@ function SearchIpList() {
               );
             })}
           </ul>
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </>
       )}
     </>
@@ -551,9 +548,14 @@ export function CreatorCenter() {
   // 离开页面时复位
   useEffect(() => () => resetCreatorCenter(), []);
 
-  // 支持 ?tab=lyrics|daily|search-ip 直达对应投稿表单（主页投稿按钮等外部入口用）
+  // 支持 ?tab=lyrics|daily|search-ip|requests|plugins 直达对应投稿表单
   useEffect(() => {
     const tab = searchParams.get('tab');
+    if (tab === 'plugins') {
+      setSubmitTab('plugins');
+      setView('submit');
+      return;
+    }
     if (tab === 'lyrics' || tab === 'daily' || tab === 'search-ip' || tab === 'requests') {
       setSubmitTab(tab);
       setView('submit');
@@ -562,6 +564,8 @@ export function CreatorCenter() {
 
   // 歌词请愿列表对游客开放
   const onRequestsRoute = location.pathname === '/creator/requests';
+  // 插件管理入口：/creator/plugins 映射到内容管理的插件 Tab
+  const onPluginsRoute = location.pathname === '/creator/plugins';
   // 编辑请愿
   const editMatch = /^\/creator\/requests\/(\d+)\/edit$/.exec(location.pathname);
   const editingId = editMatch ? Number(editMatch[1]) : null;
@@ -569,7 +573,8 @@ export function CreatorCenter() {
   useEffect(() => {
     if (onRequestsRoute) setView('requests');
     else if (editingId) setView('request-edit');
-  }, [onRequestsRoute, editingId, setView]);
+    else if (onPluginsRoute) setView('plugins');
+  }, [onRequestsRoute, editingId, onPluginsRoute, setView]);
 
   // 未登录拦截
   if (!user && !onRequestsRoute) {
@@ -725,7 +730,7 @@ export function CreatorCenter() {
                   label="首页"
                   active={view === 'home'}
                   onClick={() => {
-                    if (onRequestsRoute || editingId) navigate('/creator');
+                    if (onRequestsRoute || editingId || onPluginsRoute) navigate('/creator');
                     setView('home');
                   }}
                 />
@@ -734,7 +739,8 @@ export function CreatorCenter() {
                   label="内容管理"
                   active={view === 'content'}
                   onClick={() => {
-                    if (onRequestsRoute || editingId) navigate('/creator');
+                    if (onRequestsRoute || editingId || onPluginsRoute) navigate('/creator');
+                    setContentTab('lyrics');
                     setView('content');
                   }}
                 />
@@ -745,10 +751,21 @@ export function CreatorCenter() {
               label="歌词请愿"
               active={view === 'requests'}
               onClick={() => {
-                if (onRequestsRoute || editingId) navigate('/creator');
+                if (onRequestsRoute || editingId || onPluginsRoute) navigate('/creator');
                 setView('requests');
               }}
             />
+            {user && (
+              <NavItem
+                icon={<Package className="h-4 w-4" />}
+                label="插件管理"
+                active={view === 'plugins'}
+                onClick={() => {
+                  if (onRequestsRoute || editingId) navigate('/creator/plugins');
+                  setView('plugins');
+                }}
+              />
+            )}
           </nav>
         </aside>
 
@@ -820,11 +837,30 @@ export function CreatorCenter() {
                 className="col-start-1 row-start-1 self-start"
               >
                 <ContentManagement
+                  key={contentTab}
                   initialTab={contentTab}
                   onCreateRequest={() => {
                     setSubmitTab('requests');
                     setView('submit');
                   }}
+                />
+              </motion.div>
+            )}
+
+            {/* 插件管理 */}
+            {view === 'plugins' && (
+              <motion.div
+                key="plugins"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, pointerEvents: 'none' }}
+                transition={{ duration: 0.15 }}
+                className="col-start-1 row-start-1 min-w-0 self-start rounded-lg border border-line bg-card p-6 pb-[100px]"
+              >
+                <PluginSubmissionList
+                  onManage={(key) =>
+                    navigate(`/creator/plugins/detail?key=${encodeURIComponent(key)}`)
+                  }
                 />
               </motion.div>
             )}
@@ -888,6 +924,14 @@ export function CreatorCenter() {
                         />
                       )}
                       {submitTab === 'search-ip' && <SearchIpForm />}
+                      {submitTab === 'plugins' && (
+                        <PluginSubmitForm
+                          onSuccess={() => {
+                            navigate('/creator/plugins');
+                            setView('plugins');
+                          }}
+                        />
+                      )}
                       {submitTab === 'requests' && (
                         <RequestSubmitPanel
                           onSuccess={({ id, merged }) => {

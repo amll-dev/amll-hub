@@ -18,6 +18,7 @@ import { queryKeys } from '@/lib/query';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
 import { useFormDraft } from '@/hooks/useFormDraft';
 import { useUnrearrangedMode } from '@/hooks/useUnrearrangedMode';
+import { TagInput } from '@/components/ui/tag-input';
 import { detectLanguages, type LangCode } from '@/lib/lang-detect';
 import { detectAutoTags } from '@/lib/auto-tags';
 import {
@@ -118,7 +119,6 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   const [otherLangs, setOtherLangs] = useState<string[]>(draft?.otherLangs ?? []);
   const [otherLangInput, setOtherLangInput] = useState('');
   const [tags, setTags] = useState<string[]>(draft?.tags ?? []);
-  const [tagInput, setTagInput] = useState('');
   const [submitMsg, setSubmitMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
@@ -340,18 +340,26 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
         }
       }
       setAudioProgress(null);
-      return { id: created.id, audioFailures };
+      return { id: created.id, audioFailures, petitionLinkFailed: created.petitionLinkFailed };
     },
     onMutate: () => setSubmitMsg(null),
     onSuccess: (result, { status }) => {
       reset();
-      // 音源失败不回滚投稿，提示去详情页补传
+      const warnings: string[] = [];
       if (result.audioFailures.length > 0) {
+        warnings.push(
+          `${result.audioFailures.length} 个音源上传失败（${result.audioFailures.join('、')}）`
+        );
+      }
+      if (result.petitionLinkFailed) {
+        warnings.push('歌词请愿关联失败');
+      }
+      if (warnings.length > 0) {
         setSubmitMsg({
           type: 'error',
-          text: `${status === 'draft' ? '草稿已保存' : '投稿已创建'}，但 ${
-            result.audioFailures.length
-          } 个音源上传失败（${result.audioFailures.join('、')}），可在详情页补传`,
+          text: `${status === 'draft' ? '草稿已保存' : '投稿已创建'}，但 ${warnings.join(
+            '，'
+          )}，可在详情页重试`,
         });
       } else {
         setSubmitMsg({
@@ -359,7 +367,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
           text: status === 'draft' ? '草稿已保存，正在跳转…' : '投稿成功，正在跳转…',
         });
       }
-      const delay = result.audioFailures.length > 0 ? 3000 : 1200;
+      const delay = warnings.length > 0 ? 3000 : 1200;
       setTimeout(() => {
         setSubmitMsg(null);
         onSuccess?.();
@@ -397,7 +405,6 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     autoPriorityRef.current = 0;
     unrearranged.reset();
     setTags([]);
-    setTagInput('');
     setAutoTags([]);
     autoTagsRef.current = [];
     setShowTtml(false);
@@ -415,12 +422,8 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     setDraft({ notes, languages, otherLangs, tags, langAuto: autoLangs.length > 0, autoTags });
   }, [notes, languages, otherLangs, tags, autoLangs, autoTags, setDraft]);
 
-  const addTag = () => {
-    const t = tagInput.trim();
-    if (t && !tags.includes(t)) {
-      setTags([...tags, t]);
-    }
-    setTagInput('');
+  const addTag = (tag: string) => {
+    setTags([...tags, tag]);
   };
 
   const removeTag = (t: string) => {
@@ -682,7 +685,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
             {validation && !validation.valid && (
               <Alert variant="destructive" className="mt-3">
                 <AlertTitle>
-                  {isUnrearranged ? '格式校验未通过（不影响提交）' : '校验未通过'}
+                  {isUnrearranged ? '格式校验未通过' : '校验未通过'}
                 </AlertTitle>
                 <AlertDescription>
                   {validation.parseError && <p className="text-xs">{validation.parseError}</p>}
@@ -947,49 +950,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
       {formReady && (
         <motion.div variants={fadeUp}>
           <label className="mb-1.5 block text-sm font-medium text-ink-2">标签（可选）</label>
-          <input
-            type="text"
-            value={tagInput}
-            onChange={(e) => setTagInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addTag();
-              }
-            }}
-            placeholder="输入标签后按回车添加"
-            className="h-10 w-full rounded-md border border-input bg-surface-2 px-4 text-sm outline-none focus:border-primary"
-          />
-          {tags.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {tags.map((t) => {
-                const auto = autoTags.includes(t);
-                return (
-                  <span
-                    key={t}
-                    title={auto ? '根据歌词文件自动识别，可删除' : undefined}
-                    className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-3 py-1 text-xs text-primary"
-                  >
-                    {auto && <Sparkles className="h-3 w-3" aria-hidden />}
-                    {t}
-                    <button
-                      type="button"
-                      onClick={() => removeTag(t)}
-                      className="text-primary/60 hover:text-primary"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-          )}
-          {autoTags.length > 0 && (
-            <p className="mt-2 flex items-start gap-1.5 text-xs text-ink-3">
-              <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-              带星标的标签由文件元数据与歌词特性自动识别，可手动删除
-            </p>
-          )}
+          <TagInput tags={tags} onAdd={addTag} onRemove={removeTag} autoTags={autoTags} />
         </motion.div>
       )}
 

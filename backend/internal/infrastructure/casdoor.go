@@ -22,6 +22,9 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 )
 
+// maxCasdoorResponseBytes 限制读取 Casdoor 响应体大小，避免异常响应耗尽内存
+const maxCasdoorResponseBytes = 16 << 20
+
 // CasdoorClient Casdoor HTTP 客户端
 type CasdoorClient struct {
 	cfg  config.CasdoorConfig
@@ -110,7 +113,7 @@ func (c *CasdoorClient) doWithBasicAuthAndCookies(ctx context.Context, method, p
 	}
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxCasdoorResponseBytes))
 	if err != nil {
 		return nil, nil, fmt.Errorf("read casdoor response: %w", err)
 	}
@@ -169,7 +172,7 @@ func (c *CasdoorClient) doWithBasicAuthWithCookieJar(ctx context.Context, method
 	}
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxCasdoorResponseBytes))
 	if err != nil {
 		return nil, nil, fmt.Errorf("read casdoor response: %w", err)
 	}
@@ -234,7 +237,7 @@ func (c *CasdoorClient) doRequest(req *http.Request) (*casdoorResponse, error) {
 	}
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxCasdoorResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("read casdoor response: %w", err)
 	}
@@ -336,7 +339,7 @@ func (c *CasdoorClient) Login(ctx context.Context, username, password string) (*
 	}
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxCasdoorResponseBytes))
 	if err != nil {
 		return nil, "", fmt.Errorf("read casdoor login response: %w", err)
 	}

@@ -52,12 +52,18 @@ func (h *SubmissionHandler) Create(c *gin.Context) {
 		return
 	}
 	// 关联歌词请愿
+	petitionLinkFailed := false
 	if len(req.PetitionIDs) > 0 && req.Status != "draft" && h.petitions != nil {
 		if err := h.petitions.Bind(ctx, id, req.PetitionIDs, user.Name); err != nil {
-			logrus.WithError(err).WithField("submission_id", id).Warn("bind petitions failed")
+			logrus.WithError(err).WithField("submission_id", id).Error("bind petitions failed")
+			petitionLinkFailed = true
 		}
 	}
-	pkg.OK(c, gin.H{"id": id})
+	resp := gin.H{"id": id}
+	if petitionLinkFailed {
+		resp["petitionLinkFailed"] = true
+	}
+	pkg.OK(c, resp)
 }
 
 // List GET /api/v1/submissions
@@ -315,6 +321,11 @@ func currentUser(c *gin.Context) *service.SubmissionUser {
 
 // writeSubmissionErr 统一处理投稿服务错误
 func writeSubmissionErr(c *gin.Context, err error) {
+	var validationErr *service.ValidationError
+	if errors.As(err, &validationErr) {
+		pkg.BadRequest(c, validationErr.Message)
+		return
+	}
 	switch {
 	case errors.Is(err, service.ErrSubmissionNotFound):
 		pkg.NotFound(c, "投稿不存在")
@@ -330,6 +341,12 @@ func writeSubmissionErr(c *gin.Context, err error) {
 		pkg.BadRequest(c, "勾选未重排歌词时必须填写原因")
 	case errors.Is(err, service.ErrMissingRevisionTarget):
 		pkg.BadRequest(c, "修正已有歌词时必须选择要修正的原歌词")
+	case errors.Is(err, service.ErrTooManyAudios):
+		pkg.BadRequest(c, "每个投稿最多上传 5 个音频附件")
+	case errors.As(err, new(*service.TTMLValidationError)):
+		pkg.BadRequest(c, err.Error())
+	case errors.Is(err, service.ErrInvalidTTMLFileName):
+		pkg.BadRequest(c, "TTML 文件名不符合 {毫秒时间戳}-{GitHub数字ID}-{8位字母数字}.ttml")
 	case errors.Is(err, service.ErrInvalidInput):
 		pkg.BadRequest(c, "请求参数非法")
 	case errors.Is(err, service.ErrUpstreamUnavailable):

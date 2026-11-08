@@ -12,6 +12,18 @@ use crate::not_found::ncm_api;
 /// 最新收录列表最大保留条数
 const LATEST_SONGS_MAX: usize = 9;
 
+/// 拉取 QQ 音乐元数据，失败时返回 None
+async fn fetch_qq_meta(app: &Arc<AppState>, platform_id: &str) -> Option<ncm_api::SongMeta> {
+    ncm_api::fetch_qm_song_detail(
+        &app.http_client,
+        &app.cfg.qm.api_base,
+        &app.cfg.service_token,
+        platform_id,
+    )
+    .await
+    .ok()
+}
+
 /// 同步完成后记录最新收录歌曲快照
 pub async fn record_latest_songs(app: &Arc<AppState>, repo: &Repository, history_id: i64) {
     // 查询同步历史获取时间窗口
@@ -51,12 +63,12 @@ pub async fn record_latest_songs(app: &Arc<AppState>, repo: &Repository, history
     }
 
     // 新增歌曲 id 集合，合并旧记录时用于去重
-    let new_song_ids: HashSet<i64> = songs.iter().map(|(s, _)| s.id).collect();
+    let new_song_ids: HashSet<i64> = songs.iter().map(|(s, _, _)| s.id).collect();
 
     // 构建新记录（置于列表头部，sort_order 从 0 开始）
     let now: chrono::DateTime<chrono::FixedOffset> = chrono::Utc::now().into();
     let mut items: Vec<latest_song::ActiveModel> = Vec::with_capacity(LATEST_SONGS_MAX);
-    for (i, (song_model, ncm_id)) in songs.into_iter().enumerate() {
+    for (i, (song_model, ncm_id, qq_id)) in songs.into_iter().enumerate() {
         // 从 songs 表 music_name (JSON 数组) 获取标题
         let music_name: Vec<String> =
             serde_json::from_value(song_model.music_name.clone()).unwrap_or_default();
@@ -65,6 +77,7 @@ pub async fn record_latest_songs(app: &Arc<AppState>, repo: &Repository, history
         // 从网易云 API 获取歌曲信息（标题、艺术家、封面）
         let mut artist = String::new();
         let mut cover_url = String::new();
+        let mut ncm_resolved = false;
         if let Some(ref ncm) = ncm_id
             && let Some((ncm_title, ncm_artist, ncm_cover)) =
                 ncm_api::fetch_song_meta(&app.http_client, &app.cfg.ncm.api_base, ncm).await
@@ -74,9 +87,24 @@ pub async fn record_latest_songs(app: &Arc<AppState>, repo: &Repository, history
             }
             artist = ncm_artist;
             cover_url = ncm_cover;
+            ncm_resolved = true;
         }
 
-        // 网易云信息失败时回退到 songs 表数据
+        // 网易云拿不到封面时，用 QQ 音乐元数据补封面；
+        if cover_url.is_empty()
+            && let Some(ref qq) = qq_id
+            && let Some(meta) = fetch_qq_meta(app, qq).await
+        {
+            if !ncm_resolved && !meta.name.is_empty() {
+                title = meta.name;
+            }
+            if artist.is_empty() {
+                artist = meta.artists.join(" / ");
+            }
+            cover_url = meta.cover;
+        }
+
+        // 网易云与 QQ 都拿不到歌手时回退到 songs 表数据
         if artist.is_empty()
             && let Ok(names) = repo.get_artists_by_song_id(song_model.id).await
         {
@@ -110,13 +138,21 @@ pub async fn record_latest_songs(app: &Arc<AppState>, repo: &Repository, history
         if new_song_ids.contains(&old.song_id) || items.len() >= LATEST_SONGS_MAX {
             continue;
         }
+        // 旧记录缺封面时（历史 QQ 歌曲），用 QQ 元数据补一次
+        let mut cover_url = old.cover_url.clone();
+        if cover_url.is_empty()
+            && let Ok(Some(qq)) = repo.get_platform_id(old.song_id, "qq").await
+            && let Some(meta) = fetch_qq_meta(app, &qq).await
+        {
+            cover_url = meta.cover;
+        }
         items.push(latest_song::ActiveModel {
             sync_history_id: Set(old.sync_history_id),
             song_id: Set(old.song_id),
             ncm_id: Set(old.ncm_id),
             title: Set(old.title),
             artist: Set(old.artist),
-            cover_url: Set(old.cover_url),
+            cover_url: Set(cover_url),
             sort_order: Set(items.len() as i32),
             created_at: Set(old.created_at),
             ..Default::default()

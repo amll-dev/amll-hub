@@ -65,6 +65,9 @@ func (s *ValidateService) Validate(ctx context.Context, ttmlContent []byte) (*Tt
 	return nil, fmt.Errorf("%w: 校验服务不可用: %v", ErrUpstreamUnavailable, lastErr)
 }
 
+// maxValidateResponseBytes 限制 Worker 校验响应体大小（含重排后的 TTML）
+const maxValidateResponseBytes = 16 << 20
+
 func (s *ValidateService) doValidate(ctx context.Context, url string, body []byte) (*TtmlValidateResult, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -78,7 +81,7 @@ func (s *ValidateService) doValidate(ctx context.Context, url string, body []byt
 	}
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxValidateResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}

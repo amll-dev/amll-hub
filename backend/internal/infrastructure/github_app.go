@@ -49,7 +49,10 @@ func (c *GitHubAppClient) Enabled() bool {
 	return c.cfg.AppID != 0 && c.cfg.InstallationID != 0 && len(c.privateKey) > 0
 }
 
-// installationToken 获取 installation access token，
+// maxGitHubResponseBytes 限制读取 GitHub API 响应体大小，避免异常响应耗尽内存
+const maxGitHubResponseBytes = 10 << 20
+
+// installationToken 获取 installation access token
 func (c *GitHubAppClient) installationToken(ctx context.Context) (string, error) {
 	if !c.Enabled() {
 		return "", fmt.Errorf("github app not configured (need GITHUB_APP_ID, GITHUB_INSTALLATION_ID, GITHUB_PRIVATE_KEY_PATH)")
@@ -85,7 +88,7 @@ func (c *GitHubAppClient) installationToken(ctx context.Context) (string, error)
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxGitHubResponseBytes))
 	if err != nil {
 		return "", fmt.Errorf("read token response: %w", err)
 	}

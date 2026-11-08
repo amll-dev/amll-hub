@@ -409,13 +409,22 @@ export interface FileHistoryItem {
   uploadedAt: string;
 }
 
-// 评论
-export interface SubmissionComment {
+// 评论基础结构
+export interface CommentBase {
   id: number;
-  submissionId: number;
   author: UserInfo;
   content: string;
   createdAt: string;
+}
+
+// 投稿评论
+export interface SubmissionComment extends CommentBase {
+  submissionId: number;
+}
+
+// 插件评论
+export interface PluginComment extends CommentBase {
+  pluginKey: string;
 }
 
 // 音频附件
@@ -1071,4 +1080,260 @@ export interface PetitionLinkItem {
   artist: string;
   status: LyricRequestStatus;
   linkedAt: string;
+}
+
+// ===== 插件广场 =====
+
+export type PluginChannel = 'trusted-js' | 'theme';
+export type PluginReviewStatus = 'pending' | 'approved' | 'rejected';
+export type PluginListingStatus = 'unlisted' | 'listed' | 'yanked';
+export type PluginStatus = 'active' | 'hidden' | 'blocked';
+export type PluginPlatform = 'web' | 'desktop';
+
+export interface PluginIssue {
+  path: string;
+  message: string;
+}
+
+export interface Plugin {
+  id: number;
+  pluginKey: string;
+  name: string;
+  summary: string;
+  descriptionMd: string;
+  author: string;
+  homepage: string;
+  repoUrl: string;
+  license: string;
+  tags: string[];
+  ownerUsername: string;
+  status: PluginStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PluginVersionFull {
+  id: number;
+  pluginId: number;
+  version: string;
+  channel: PluginChannel;
+  apiVersion: number;
+  minAppVersion: string;
+  platforms: PluginPlatform[];
+  entry: string;
+  sha256: string;
+  sizeBytes: number;
+  manifest: Record<string, unknown>;
+  readmeMd: string;
+  changelogMd: string;
+  reviewStatus: PluginReviewStatus;
+  listingStatus: PluginListingStatus;
+  submittedBy: string;
+  submitterInfo: UserInfo;
+  reviewer: string;
+  reviewerInfo: UserInfo;
+  reviewComment: string;
+  downloadCount: number;
+  submittedAt: string;
+  reviewedAt?: string;
+  listedAt?: string;
+  yankedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PluginVersionItem {
+  version: string;
+  channel: PluginChannel;
+  apiVersion: number;
+  platforms: PluginPlatform[];
+  listedAt?: string;
+  yankedAt?: string;
+}
+
+export interface PluginVersionSummary {
+  id: number;
+  version: string;
+  channel: PluginChannel;
+  apiVersion: number;
+  platforms: PluginPlatform[];
+  sha256: string;
+  sizeBytes: number;
+  downloadCount: number;
+  minAppVersion: string;
+  listedAt?: string;
+}
+
+export interface PluginRatingSummary {
+  /** 平均分，一位小数 */
+  score: number;
+  count: number;
+  /** 1-5 星各档人数，键为 "1"…"5" */
+  distribution: Record<string, number>;
+}
+
+export interface PluginStoreListItem {
+  plugin: Plugin;
+  version: PluginVersionSummary;
+  versions: PluginVersionItem[];
+  iconUrl?: string;
+  rating: PluginRatingSummary;
+}
+
+export interface PluginStoreListResult {
+  items: PluginStoreListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface PluginDetailResult {
+  plugin: Plugin;
+  version: PluginVersionFull;
+  versions: PluginVersionItem[];
+  iconUrl?: string;
+  rating: PluginRatingSummary;
+  /** 当前用户评分，0 表示未评分 */
+  myScore: number;
+  /** 全部历史版本的下载总数 */
+  totalDownloads: number;
+}
+
+export interface PluginSubmissionResult {
+  id: number;
+  pluginKey: string;
+  version: string;
+  channel: PluginChannel;
+  reviewStatus: PluginReviewStatus;
+  listingStatus: PluginListingStatus;
+  sha256: string;
+  issues: PluginIssue[];
+  iconUploadFailed?: boolean;
+}
+
+export interface PluginReviewHistoryItem {
+  id: number;
+  versionId: number;
+  reviewer: string;
+  reviewerInfo: UserInfo;
+  action: 'approve' | 'reject';
+  comment: string;
+  reviewedAt: string;
+}
+
+export interface PluginValidateResult {
+  ok: boolean;
+  kind: PluginChannel | '';
+  manifest: Record<string, unknown> | null;
+  issues: PluginIssue[];
+  entry?: string;
+}
+
+export interface PluginSubmissionPayload {
+  summary: string;
+  descriptionMd: string;
+  homepage: string;
+  repoUrl: string;
+  license: string;
+  tags: string[];
+  readmeMd: string;
+  changelogMd: string;
+  platforms: PluginPlatform[];
+  minAppVersion: string;
+}
+
+export interface PluginReviewQueueItem {
+  version: PluginVersionFull;
+  pluginKey: string;
+  pluginName: string;
+  pluginSummary: string;
+}
+
+export interface PluginReviewQueueResult {
+  items: PluginReviewQueueItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface PluginReviewDetailResult {
+  plugin: Plugin;
+  version: PluginVersionFull;
+  history: PluginReviewHistoryItem[];
+}
+
+export interface PluginAuditItem {
+  id: number;
+  operator: string;
+  operatorInfo: UserInfo;
+  action: string;
+  targetType: string;
+  targetId: number;
+  reason: string;
+  createdAt: string;
+}
+
+export interface PluginAuditListResult {
+  items: PluginAuditItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface PluginAdminListResult {
+  items: Plugin[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface PluginAdminDetailResult {
+  plugin: Plugin;
+  versions: PluginVersionFull[];
+}
+
+export interface PluginManagementVersion {
+  id: number;
+  version: string;
+  channel: PluginChannel;
+  apiVersion: number;
+  platforms: PluginPlatform[];
+  sha256: string;
+  sizeBytes: number;
+  reviewStatus: PluginReviewStatus;
+  listingStatus: PluginListingStatus;
+  reviewComment: string;
+  downloadCount: number;
+  submitterInfo?: UserInfo;
+  reviewer?: string;
+  reviewerInfo?: UserInfo;
+  submittedAt: string;
+  reviewedAt?: string;
+  listedAt?: string;
+}
+
+export interface PluginManagementItem {
+  plugin: Plugin;
+  versions: PluginManagementVersion[];
+  latestVersion?: PluginManagementVersion;
+  listedCount: number;
+  pendingCount: number;
+  totalDownloads: number;
+  iconUrl?: string;
+}
+
+export interface PluginManagementListResult {
+  items: PluginManagementItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface PluginManagementUpdatePayload {
+  summary: string;
+  descriptionMd: string;
+  homepage: string;
+  repoUrl: string;
+  license: string;
+  tags: string[];
 }

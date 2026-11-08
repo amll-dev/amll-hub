@@ -11,8 +11,11 @@ import (
 	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/minio/minio-go/v7"
+	logrus "github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 // SearchIPImagePrefix 搜索IP图片在 MinIO 中的前缀
@@ -102,13 +105,21 @@ type MatchResult struct {
 // 过滤逻辑：移除没有上传图片的 member；移除既无 group 图片又无 member 的 group
 // 图片处理：将临时对象（search-ip/tmp/）复制为正式对象（search-ip/），并删除临时对象
 func (s *SearchIPService) CreateSubmission(ctx context.Context, submitter string, submitterInfo model.JSONObject, input *CreateSearchIPInput) (*CreateSearchIPResult, error) {
+	title := strings.TrimSpace(input.Title)
+	if title == "" {
+		return nil, invalidInput("标题不能为空")
+	}
+	if pkg.UTF16Len(title) > 200 {
+		return nil, invalidInput("标题不能超过 200 个字符")
+	}
+
 	groupsRaw, ok := input.Data["groups"]
 	if !ok {
-		return nil, errors.New("data.groups 字段缺失")
+		return nil, invalidInput("data.groups 字段缺失")
 	}
 	groups, ok := groupsRaw.(map[string]any)
 	if !ok {
-		return nil, errors.New("data.groups 格式错误")
+		return nil, invalidInput("data.groups 格式错误")
 	}
 
 	imageKeys := model.JSONObject{}
@@ -203,11 +214,11 @@ func (s *SearchIPService) CreateSubmission(ctx context.Context, submitter string
 	}
 
 	if len(filteredGroups) == 0 {
-		return nil, errors.New("没有有效的数据（所有 group 均无图片）")
+		return nil, invalidInput("没有有效的数据（所有 group 均无图片）")
 	}
 
 	sub := &model.SearchIPSubmission{
-		Title:         input.Title,
+		Title:         title,
 		Data:          model.JSONObject{"groups": filteredGroups},
 		ImageKeys:     imageKeys,
 		Submitter:     submitter,
@@ -227,10 +238,10 @@ func (s *SearchIPService) CreateSubmission(ctx context.Context, submitter string
 
 // UploadTemp 上传图片到 MinIO 临时区，返回临时 key
 func (s *SearchIPService) UploadTemp(ctx context.Context, fileName string, content []byte) (string, error) {
-	ext := path.Ext(fileName)
-	if !isAllowedImageExt(ext) {
-		return "", fmt.Errorf("不支持的图片格式: %s", ext)
+	if err := validateImageUpload(fileName, content); err != nil {
+		return "", err
 	}
+	ext := strings.ToLower(path.Ext(fileName))
 	key := fmt.Sprintf("%s%d-%d%s", SearchIPTempPrefix, time.Now().UnixNano(), len(content), ext)
 	_, err := s.minio.PutObject(ctx, s.bucket, key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
 		ContentType: imageContentType(ext),
@@ -280,7 +291,7 @@ func (s *SearchIPService) CleanTempFiles(ctx context.Context) error {
 
 // StartTempCleaner 启动临时文件清理定时任务（每 10 分钟清理一次）
 func (s *SearchIPService) StartTempCleaner(ctx context.Context) {
-	go func() {
+	pkg.GoSafe("search-ip-temp-cleaner", func() {
 		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -288,10 +299,12 @@ func (s *SearchIPService) StartTempCleaner(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_ = s.CleanTempFiles(ctx)
+				if err := s.CleanTempFiles(ctx); err != nil {
+					logrus.WithError(err).Warn("clean search ip temp files failed")
+				}
 			}
 		}
-	}()
+	})
 }
 
 // Match 匹配搜索IP
@@ -477,9 +490,9 @@ func submitterLabel(sub model.SearchIPSubmission) string {
 	return sub.Submitter
 }
 
-// ListBySubmitter 按提交人查询投稿列表
-func (s *SearchIPService) ListBySubmitter(ctx context.Context, submitter string) (*SearchIPListResult, error) {
-	subs, err := s.repo.ListBySubmitter(ctx, submitter)
+// ListBySubmitter 按提交人分页查询投稿列表
+func (s *SearchIPService) ListBySubmitter(ctx context.Context, submitter string, page, size int) (*SearchIPListResult, error) {
+	subs, total, err := s.repo.ListBySubmitter(ctx, submitter, page, size)
 	if err != nil {
 		return nil, fmt.Errorf("查询投稿列表失败: %w", err)
 	}
@@ -487,12 +500,12 @@ func (s *SearchIPService) ListBySubmitter(ctx context.Context, submitter string)
 	for _, sub := range subs {
 		items = append(items, toListItem(sub))
 	}
-	return &SearchIPListResult{Total: int64(len(items)), Items: items}, nil
+	return &SearchIPListResult{Total: total, Items: items}, nil
 }
 
-// ListAll 查询全部投稿列表，status 为空或 all 时不过滤
-func (s *SearchIPService) ListAll(ctx context.Context, status string) (*SearchIPListResult, error) {
-	subs, err := s.repo.ListAll(ctx, status)
+// ListAll 分页查询全部投稿列表，status 为空或 all 时不过滤
+func (s *SearchIPService) ListAll(ctx context.Context, status string, page, size int) (*SearchIPListResult, error) {
+	subs, total, err := s.repo.ListAll(ctx, status, page, size)
 	if err != nil {
 		return nil, fmt.Errorf("查询投稿列表失败: %w", err)
 	}
@@ -500,7 +513,7 @@ func (s *SearchIPService) ListAll(ctx context.Context, status string) (*SearchIP
 	for _, sub := range subs {
 		items = append(items, toListItem(sub))
 	}
-	return &SearchIPListResult{Total: int64(len(items)), Items: items}, nil
+	return &SearchIPListResult{Total: total, Items: items}, nil
 }
 
 // Review 审核搜索IP投稿
@@ -512,7 +525,7 @@ func (s *SearchIPService) Review(ctx context.Context, id int64, action string) e
 	case "reject":
 		newStatus = "rejected"
 	default:
-		return fmt.Errorf("无效的审核动作: %s", action)
+		return invalidInput("无效的审核动作: %s", action)
 	}
 	fromStatuses := []string{"pending"}
 
@@ -530,11 +543,17 @@ func (s *SearchIPService) Review(ctx context.Context, id int64, action string) e
 	return nil
 }
 
-// GetByID 查询投稿详情
-func (s *SearchIPService) GetByID(ctx context.Context, id int64) (*SearchIPDetail, error) {
+// GetByID 查询投稿详情；仅投稿者本人或审核员可查看
+func (s *SearchIPService) GetByID(ctx context.Context, id int64, viewer string, canManage bool) (*SearchIPDetail, error) {
 	sub, err := s.repo.GetByID(ctx, id)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrSubmissionNotFound
+		}
 		return nil, fmt.Errorf("查询投稿详情失败: %w", err)
+	}
+	if !canManage && sub.Submitter != viewer {
+		return nil, ErrForbidden
 	}
 	return &SearchIPDetail{
 		ID:            sub.ID,

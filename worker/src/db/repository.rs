@@ -412,13 +412,13 @@ impl Repository {
             .await?)
     }
 
-    /// 查询同步窗口内新增的歌曲（最多 limit 首），附带 NCM platform_id
+    /// 查询同步窗口内新增的歌曲（最多 limit 首），附带 NCM / QQ 音乐 platform_id
     pub async fn query_new_songs_in_window(
         &self,
         start: chrono::DateTime<chrono::FixedOffset>,
         end: chrono::DateTime<chrono::FixedOffset>,
         limit: u64,
-    ) -> Result<Vec<(song::Model, Option<String>)>> {
+    ) -> Result<Vec<(song::Model, Option<String>, Option<String>)>> {
         let songs = song::Entity::find()
             .filter(song::Column::IsDeleted.eq(false))
             .filter(song::Column::CreatedAt.between(start, end))
@@ -429,15 +429,25 @@ impl Repository {
 
         let mut results = Vec::with_capacity(songs.len());
         for s in songs {
-            let ncm_id = platform_mapping::Entity::find()
-                .filter(platform_mapping::Column::SongId.eq(s.id))
-                .filter(platform_mapping::Column::Platform.eq("ncm"))
-                .one(&self.db)
-                .await?
-                .map(|m| m.platform_id);
-            results.push((s, ncm_id));
+            let ncm_id = self.get_platform_id(s.id, "ncm").await?;
+            let qq_id = self.get_platform_id(s.id, "qq").await?;
+            results.push((s, ncm_id, qq_id));
         }
         Ok(results)
+    }
+
+    /// 查询歌曲在指定平台的 platform_id
+    pub async fn get_platform_id(
+        &self,
+        song_id: i64,
+        platform: &str,
+    ) -> Result<Option<String>> {
+        Ok(platform_mapping::Entity::find()
+            .filter(platform_mapping::Column::SongId.eq(song_id))
+            .filter(platform_mapping::Column::Platform.eq(platform))
+            .one(&self.db)
+            .await?
+            .map(|m| m.platform_id))
     }
 
     /// 查询歌曲的艺术家名称列表

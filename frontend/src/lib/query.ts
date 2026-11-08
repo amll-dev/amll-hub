@@ -87,13 +87,14 @@ export const queryKeys = {
   /** 身份验证状态（改联系方式 / 改密码前会查询） */
   identity: ['auth', 'identity'] as const,
 
-  // 投稿（page 不进 key：无限滚动由 useInfiniteQuery 的 pageParam 管理）
+  // 投稿（creator 模式用无限滚动，page 不进 key；review 模式按页查询，page 进 key）
   submissions: (params: {
     mode: 'creator' | 'review';
     status?: string;
     search?: string;
     language?: string;
     limit?: number;
+    page?: number;
   }) => ['submissions', params] as const,
   submission: (id: number) => ['submission', id] as const,
   submissionComments: (id: number) => ['submission', id, 'comments'] as const,
@@ -115,16 +116,17 @@ export const queryKeys = {
   userActivityOf: (name: string, year: number) => ['user-activity', name, year] as const,
 
   // 搜索IP投稿
-  searchIpSubmissions: (scope: 'mine' | 'all', status?: string) =>
-    ['search-ip-submissions', scope, status] as const,
+  searchIpSubmissions: (scope: 'mine' | 'all', status?: string, page?: number) =>
+    ['search-ip-submissions', scope, status, page] as const,
   searchIpSubmission: (id: number) => ['search-ip-submission', id] as const,
 
   // 每日推荐
   dailyList: ['daily-recommendations'] as const,
   dailyToday: ['daily-recommendations', 'today'] as const,
   dailyLikeStatus: (id: number) => ['daily-recommendations', id, 'like'] as const,
-  dailySubmissions: ['daily-recommendations', 'submissions'] as const,
-  dailySubmission: (id: number) => ['daily-recommendations', 'submissions', id] as const,
+  dailySubmissions: (page?: number) =>
+    ['daily-recommendations', 'submissions', 'list', page] as const,
+  dailySubmission: (id: number) => ['daily-recommendations', 'submissions', 'detail', id] as const,
   dailyDateCheck: (date: string) => ['daily-recommendations', 'date-check', date] as const,
 
   // 歌词查看
@@ -135,6 +137,34 @@ export const queryKeys = {
 
   // 审核员管理
   reviewers: ['admin', 'reviewers'] as const,
+
+  // 插件广场
+  pluginList: (params: {
+    page?: number;
+    pageSize?: number;
+    q?: string;
+    channel?: string;
+    sort?: string;
+  }) => ['plugins', 'list', params] as const,
+  pluginDetail: (key: string) => ['plugin', key] as const,
+  myPluginSubmissions: (params: { page?: number; pageSize?: number; status?: string }) =>
+    ['plugins', 'mine', params] as const,
+  myPlugins: (params: { page?: number; pageSize?: number; q?: string }) =>
+    ['plugins', 'mine-plugins', params] as const,
+  myPluginDetail: (key: string) => ['plugins', 'mine-plugin', key] as const,
+  pluginComments: (key: string) => ['plugin', key, 'comments'] as const,
+  pluginReviewQueue: (params: { page?: number; pageSize?: number; q?: string; status?: string }) =>
+    ['plugins', 'review-queue', params] as const,
+  pluginReviewDetail: (id: number) => ['plugin-review', id] as const,
+  adminPlugins: (params: { page?: number; pageSize?: number; q?: string }) =>
+    ['plugins', 'admin', params] as const,
+  adminPluginDetail: (id: number) => ['plugin', 'admin', id] as const,
+  adminPluginAudit: (params: {
+    page?: number;
+    pageSize?: number;
+    targetType?: string;
+    targetId?: number;
+  }) => ['plugins', 'audit', params] as const,
 
   // GitHub 投稿数据迁移
   githubMigration: ['github-migration', 'status'] as const,

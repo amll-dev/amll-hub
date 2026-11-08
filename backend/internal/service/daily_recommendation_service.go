@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/minio/minio-go/v7"
+	logrus "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -28,6 +30,13 @@ const DailyRecTempPrefix = "daily-rec/tmp/"
 
 // DailyRecTempTTL 临时文件存活时长
 const DailyRecTempTTL = time.Hour
+
+// 每日推荐输入长度上限，与前端表单保持一致
+const (
+	maxDailyRecNameLen    = 100
+	maxDailyRecIDLen      = 50
+	maxDailyRecCommentLen = 7000
+)
 
 // DailyRecommendationService 每日推荐服务
 type DailyRecommendationService struct {
@@ -75,17 +84,38 @@ type DailyRecListResult struct {
 
 // CreateRecommendation 创建每日推荐
 func (s *DailyRecommendationService) CreateRecommendation(ctx context.Context, submitter string, submitterInfo model.JSONObject, input *CreateDailyRecInput) (*CreateDailyRecResult, error) {
-	if input.SongName == "" || input.Artist == "" || input.Date == "" || input.Comment == "" {
-		return nil, errors.New("必填字段缺失")
+	songName := strings.TrimSpace(input.SongName)
+	artist := strings.TrimSpace(input.Artist)
+	comment := strings.TrimSpace(input.Comment)
+	ncmID := strings.TrimSpace(input.NcmID)
+	qqID := strings.TrimSpace(input.QQID)
+
+	if songName == "" || artist == "" || input.Date == "" || comment == "" {
+		return nil, invalidInput("必填字段缺失")
+	}
+	if pkg.UTF16Len(songName) > maxDailyRecNameLen || pkg.UTF16Len(artist) > maxDailyRecNameLen {
+		return nil, invalidInput("音乐名称和歌手不能超过 %d 个字符", maxDailyRecNameLen)
+	}
+	if pkg.UTF16Len(ncmID) > maxDailyRecIDLen || pkg.UTF16Len(qqID) > maxDailyRecIDLen {
+		return nil, invalidInput("平台歌曲 ID 不能超过 %d 个字符", maxDailyRecIDLen)
+	}
+	if ncmID != "" && !digitIDPattern.MatchString(ncmID) {
+		return nil, invalidInput("网易云音乐 ID 应为纯数字，请先解析链接")
+	}
+	if qqID != "" && !digitIDPattern.MatchString(qqID) {
+		return nil, invalidInput("QQ 音乐 ID 应为纯数字，请先解析链接")
+	}
+	if pkg.UTF16Len(comment) > maxDailyRecCommentLen {
+		return nil, invalidInput("推荐语不能超过 %d 个字符", maxDailyRecCommentLen)
 	}
 	if input.CoverTempKey == "" {
-		return nil, errors.New("封面未上传")
+		return nil, invalidInput("封面未上传")
 	}
 
 	// 解析日期字符串为 time.Time
 	parsedDate, err := time.Parse("2006-01-02", input.Date)
 	if err != nil {
-		return nil, errors.New("日期格式错误，应为 YYYY-MM-DD")
+		return nil, invalidInput("日期格式错误，应为 YYYY-MM-DD")
 	}
 
 	// 检查日期是否已被占用
@@ -94,7 +124,7 @@ func (s *DailyRecommendationService) CreateRecommendation(ctx context.Context, s
 		return nil, fmt.Errorf("检查日期失败: %w", err)
 	}
 	if exists {
-		return nil, errors.New("该日期已有推荐，请更换日期")
+		return nil, invalidInput("该日期已有推荐，请更换日期")
 	}
 
 	// 将临时封面转为正式
@@ -107,12 +137,12 @@ func (s *DailyRecommendationService) CreateRecommendation(ctx context.Context, s
 
 	rec := &model.DailyRecommendation{
 		Date:          model.DateOnly(parsedDate),
-		SongName:      input.SongName,
-		Artist:        input.Artist,
+		SongName:      songName,
+		Artist:        artist,
 		CoverKey:      coverKey,
-		NcmID:         input.NcmID,
-		QQID:          input.QQID,
-		Comment:       input.Comment,
+		NcmID:         ncmID,
+		QQID:          qqID,
+		Comment:       comment,
 		Submitter:     submitter,
 		SubmitterInfo: submitterInfo,
 		Status:        "approved",
@@ -127,10 +157,10 @@ func (s *DailyRecommendationService) CreateRecommendation(ctx context.Context, s
 
 // UploadTemp 上传图片到 MinIO 临时区，返回临时 key
 func (s *DailyRecommendationService) UploadTemp(ctx context.Context, fileName string, content []byte) (string, error) {
-	ext := path.Ext(fileName)
-	if !isAllowedImageExt(ext) {
-		return "", fmt.Errorf("不支持的图片格式: %s", ext)
+	if err := validateImageUpload(fileName, content); err != nil {
+		return "", err
 	}
+	ext := strings.ToLower(path.Ext(fileName))
 	key := fmt.Sprintf("%s%d-%d%s", DailyRecTempPrefix, time.Now().UnixNano(), len(content), ext)
 	_, err := s.minio.PutObject(ctx, s.bucket, key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
 		ContentType: imageContentType(ext),
@@ -238,21 +268,21 @@ func (s *DailyRecommendationService) UploadTempFromURL(ctx context.Context, imag
 	// SSRF 防护：仅允许 http(s) 且解析到公网 IP 的 URL
 	raw, err := normalizeImageURL(imageURL)
 	if err != nil {
-		return "", err
+		return "", invalidInput("%v", err)
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("无效的图片 URL: %w", err)
+		return "", invalidInput("无效的图片 URL: %v", err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return "", fmt.Errorf("不支持的 URL 协议: %s（%s）", u.Scheme, clipURL(raw))
+		return "", invalidInput("不支持的 URL 协议: %s（%s）", u.Scheme, clipURL(raw))
 	}
 	referer := refererForHost(u.Hostname())
 	if host := u.Hostname(); host != "" {
 		if ips, err := net.DefaultResolver.LookupIPAddr(ctx, host); err == nil {
 			for _, ip := range ips {
 				if !isPublicIP(ip.IP) {
-					return "", fmt.Errorf("不允许访问内网地址: %s", host)
+					return "", invalidInput("不允许访问内网地址: %s", host)
 				}
 			}
 		}
@@ -265,7 +295,7 @@ func (s *DailyRecommendationService) UploadTempFromURL(ctx context.Context, imag
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			// 重定向目标同样只允许 http(s)
 			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
-				return fmt.Errorf("重定向到不支持的协议: %s", req.URL.Scheme)
+				return invalidInput("重定向到不支持的协议: %s", req.URL.Scheme)
 			}
 			// 跟随重定向时保留 Referer
 			req.Header.Set("Referer", referer)
@@ -274,7 +304,7 @@ func (s *DailyRecommendationService) UploadTempFromURL(ctx context.Context, imag
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
-		return "", fmt.Errorf("无效的图片 URL: %w", err)
+		return "", invalidInput("无效的图片 URL: %v", err)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	if referer != "" {
@@ -284,21 +314,25 @@ func (s *DailyRecommendationService) UploadTempFromURL(ctx context.Context, imag
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("下载图片失败: %w", err)
+		var validationErr *ValidationError
+		if errors.As(err, &validationErr) {
+			return "", err
+		}
+		return "", fmt.Errorf("%w: 下载图片失败: %v", ErrUpstreamUnavailable, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("下载图片失败: HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("%w: 下载图片失败: HTTP %d", ErrUpstreamUnavailable, resp.StatusCode)
 	}
 
 	// 限制最大读取 100MB
 	limited := io.LimitReader(resp.Body, 100<<20)
 	content, err := io.ReadAll(limited)
 	if err != nil {
-		return "", fmt.Errorf("读取图片内容失败: %w", err)
+		return "", fmt.Errorf("%w: 读取图片内容失败: %v", ErrUpstreamUnavailable, err)
 	}
 	if len(content) == 0 {
-		return "", errors.New("图片内容为空")
+		return "", invalidInput("图片内容为空")
 	}
 
 	// 校验 Content-Length（如果响应头有提供）
@@ -307,101 +341,23 @@ func (s *DailyRecommendationService) UploadTempFromURL(ctx context.Context, imag
 		if _, err := fmt.Sscanf(cl, "%d", &expected); err == nil && expected > 0 {
 			if int64(len(content)) != expected {
 				if expected > 100<<20 {
-					return "", fmt.Errorf("图片过大: %d 字节 (上限 100MB)", expected)
+					return "", invalidInput("图片过大: %d 字节 (上限 100MB)", expected)
 				}
-				return "", fmt.Errorf("图片下载不完整: 读取 %d 字节, 预期 %d 字节", len(content), expected)
+				return "", fmt.Errorf("%w: 图片下载不完整: 读取 %d 字节, 预期 %d 字节", ErrUpstreamUnavailable, len(content), expected)
 			}
 		}
 	}
 
-	// 校验图片 magic bytes
-	if !isValidImageContent(content) {
-		return "", errors.New("下载的内容不是有效的图片")
-	}
-
-	// 优先从 Content-Type 推断扩展名，回退到 magic bytes，再回退到 URL 路径
-	ext := extFromContentType(resp.Header.Get("Content-Type"))
+	// 只用真实内容判定格式，避免 URL / Content-Type 与实际内容不一致
+	ext := sniffImageExt(content)
 	if ext == "" {
-		ext = extFromMagicBytes(content)
+		return "", invalidInput("下载的内容不是有效的图片")
 	}
-	if ext == "" {
-		ext = path.Ext(path.Base(imageURL))
-	}
-	// 兜底为 .jpg
 	if !isAllowedImageExt(ext) {
-		ext = ".jpg"
+		return "", invalidInput("不支持的图片格式: %s", ext)
 	}
 	fileName := fmt.Sprintf("cover-%d%s", time.Now().UnixNano(), ext)
 	return s.UploadTemp(ctx, fileName, content)
-}
-
-// isValidImageContent 通过 magic bytes 校验是否为有效图片
-func isValidImageContent(content []byte) bool {
-	if len(content) < 4 {
-		return false
-	}
-	// JPEG: FF D8 FF
-	if content[0] == 0xFF && content[1] == 0xD8 && content[2] == 0xFF {
-		return true
-	}
-	// PNG: 89 50 4E 47
-	if content[0] == 0x89 && content[1] == 0x50 && content[2] == 0x4E && content[3] == 0x47 {
-		return true
-	}
-	// GIF: 47 49 46 38
-	if content[0] == 0x47 && content[1] == 0x49 && content[2] == 0x46 && content[3] == 0x38 {
-		return true
-	}
-	// WebP: RIFF....WEBP
-	if len(content) >= 12 && string(content[0:4]) == "RIFF" && string(content[8:12]) == "WEBP" {
-		return true
-	}
-	// BMP: 42 4D
-	if content[0] == 0x42 && content[1] == 0x4D {
-		return true
-	}
-	return false
-}
-
-// extFromMagicBytes 通过 magic bytes 推断图片扩展名
-func extFromMagicBytes(content []byte) string {
-	if len(content) < 4 {
-		return ""
-	}
-	if content[0] == 0xFF && content[1] == 0xD8 && content[2] == 0xFF {
-		return ".jpg"
-	}
-	if content[0] == 0x89 && content[1] == 0x50 && content[2] == 0x4E && content[3] == 0x47 {
-		return ".png"
-	}
-	if content[0] == 0x47 && content[1] == 0x49 && content[2] == 0x46 && content[3] == 0x38 {
-		return ".gif"
-	}
-	if len(content) >= 12 && string(content[0:4]) == "RIFF" && string(content[8:12]) == "WEBP" {
-		return ".webp"
-	}
-	if content[0] == 0x42 && content[1] == 0x4D {
-		return ".bmp"
-	}
-	return ""
-}
-
-// extFromContentType 根据 Content-Type 返回图片扩展名（含点号），非图片返回空串
-func extFromContentType(ct string) string {
-	ct = strings.ToLower(strings.TrimSpace(strings.Split(ct, ";")[0]))
-	switch ct {
-	case "image/jpeg", "image/jpg":
-		return ".jpg"
-	case "image/png":
-		return ".png"
-	case "image/webp":
-		return ".webp"
-	case "image/gif":
-		return ".gif"
-	case "image/bmp":
-		return ".bmp"
-	}
-	return ""
 }
 
 // promoteTemp 将临时对象转存为正式对象，返回正式 key
@@ -465,7 +421,7 @@ func (s *DailyRecommendationService) CleanTempFiles(ctx context.Context) error {
 
 // StartTempCleaner 启动临时文件清理定时任务
 func (s *DailyRecommendationService) StartTempCleaner(ctx context.Context) {
-	go func() {
+	pkg.GoSafe("daily-rec-temp-cleaner", func() {
 		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -473,10 +429,12 @@ func (s *DailyRecommendationService) StartTempCleaner(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_ = s.CleanTempFiles(ctx)
+				if err := s.CleanTempFiles(ctx); err != nil {
+					logrus.WithError(err).Warn("clean daily rec temp files failed")
+				}
 			}
 		}
-	}()
+	})
 }
 
 // ListAll 返回所有已通过的推荐（公开展示用）
@@ -486,7 +444,11 @@ func (s *DailyRecommendationService) ListAll(ctx context.Context) ([]model.Daily
 
 // GetByDate 按日期查询单条
 func (s *DailyRecommendationService) GetByDate(ctx context.Context, date string) (*model.DailyRecommendation, error) {
-	return s.repo.GetByDate(ctx, date)
+	rec, err := s.repo.GetByDate(ctx, date)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	return rec, err
 }
 
 // GetToday 查询今天的推荐；若今天没有则回退到往期最新一期
@@ -495,7 +457,14 @@ func (s *DailyRecommendationService) GetToday(ctx context.Context) (*model.Daily
 	if err == nil {
 		return rec, nil
 	}
-	return s.repo.GetLatestApproved(ctx)
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	rec, err = s.repo.GetLatestApproved(ctx)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	return rec, err
 }
 
 // CheckDate 检查日期是否可用（返回 true 表示可用）
@@ -504,9 +473,9 @@ func (s *DailyRecommendationService) CheckDate(ctx context.Context, date string)
 	return !exists, err
 }
 
-// ListBySubmitter 按提交人查询列表
-func (s *DailyRecommendationService) ListBySubmitter(ctx context.Context, submitter string) (*DailyRecListResult, error) {
-	recs, err := s.repo.ListBySubmitter(ctx, submitter)
+// ListBySubmitter 按提交人分页查询列表
+func (s *DailyRecommendationService) ListBySubmitter(ctx context.Context, submitter string, page, size int) (*DailyRecListResult, error) {
+	recs, total, err := s.repo.ListBySubmitter(ctx, submitter, page, size)
 	if err != nil {
 		return nil, err
 	}
@@ -521,7 +490,7 @@ func (s *DailyRecommendationService) ListBySubmitter(ctx context.Context, submit
 			CreatedAt: rec.CreatedAt.Format("2006-01-02 15:04"),
 		})
 	}
-	return &DailyRecListResult{Total: int64(len(items)), Items: items}, nil
+	return &DailyRecListResult{Total: total, Items: items}, nil
 }
 
 // GetByID 查询详情

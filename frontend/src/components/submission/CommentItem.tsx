@@ -3,10 +3,10 @@ import { UserAvatar } from '@/components/submission/UserAvatar';
 import { UserDisplayName } from '@/components/submission/UserDisplayName';
 import { renderMarkdown } from '@/components/submission/shared';
 import { formatDateTime } from '@/lib/format';
-import type { SubmissionComment } from '@/lib/types';
+import type { CommentBase } from '@/lib/types';
 
 /** 评论列表项 */
-export function CommentItem({ c, isLast }: { c: SubmissionComment; isLast: boolean }) {
+export function CommentItem({ c, isLast }: { c: CommentBase; isLast: boolean }) {
   const html = useMemo(() => renderMarkdown(c.content), [c.content]);
 
   return (

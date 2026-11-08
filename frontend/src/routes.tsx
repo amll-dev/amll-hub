@@ -33,6 +33,14 @@ const loadUserProfilePage = () =>
   import('@/pages/user/UserProfilePage').then((m) => ({ default: m.UserProfilePage }));
 const loadCreatorCenter = () =>
   import('@/pages/CreatorCenter').then((m) => ({ default: m.CreatorCenter }));
+const loadPluginStore = () =>
+  import('@/pages/PluginStore').then((m) => ({ default: m.PluginStore }));
+const loadPluginDetail = () =>
+  import('@/pages/PluginDetail').then((m) => ({ default: m.PluginDetail }));
+const loadPluginAdmin = () =>
+  import('@/pages/PluginAdmin').then((m) => ({ default: m.PluginAdmin }));
+const loadPluginManageDetailPage = () =>
+  import('@/pages/PluginManageDetailPage').then((m) => ({ default: m.PluginManageDetailPage }));
 const loadReviewCenter = () =>
   import('@/pages/ReviewCenter').then((m) => ({ default: m.ReviewCenter }));
 const loadSubmissionDetailPage = () =>
@@ -67,6 +75,10 @@ export const GithubCallback = lazy(loadGithubCallback);
 export const MessagesPage = lazy(loadMessagesPage);
 export const UserProfilePage = lazy(loadUserProfilePage);
 export const CreatorCenter = lazy(loadCreatorCenter);
+export const PluginStore = lazy(loadPluginStore);
+export const PluginDetail = lazy(loadPluginDetail);
+export const PluginAdmin = lazy(loadPluginAdmin);
+export const PluginManageDetailPage = lazy(loadPluginManageDetailPage);
 export const ReviewCenter = lazy(loadReviewCenter);
 export const SubmissionDetailPage = lazy(loadSubmissionDetailPage);
 export const RequestDetailPage = lazy(loadRequestDetailPage);
@@ -97,11 +109,17 @@ export const pagePreloads: Record<string, () => Promise<unknown>> = {
   '/messages': loadMessagesPage,
   '/user/:name': loadUserProfilePage,
   '/creator': loadCreatorCenter,
+  '/creator/plugins': loadCreatorCenter,
+  '/creator/plugins/detail': loadPluginManageDetailPage,
+  '/plugins': loadPluginStore,
+  '/plugins/admin': loadPluginAdmin,
+  '/plugins/:key': loadPluginDetail,
   '/creator/lyrics/detail': loadSubmissionDetailPage,
   '/creator/requests': loadCreatorCenter,
   '/creator/requests/:id': loadRequestDetailPage,
   '/creator/requests/:id/edit': loadCreatorCenter,
   '/review': loadReviewCenter,
+  '/review/plugin': loadPluginManageDetailPage,
   '/review/detail': loadSubmissionDetailPage,
   '/review/editor': loadLyricEditorPage,
   '/register': loadRegister,
@@ -121,6 +139,8 @@ export function preloadRoute(path: string): void {
       loader = pagePreloads['/creator/requests/:id/edit'];
     } else if (/^\/creator\/requests\/\d+$/.test(path)) {
       loader = pagePreloads['/creator/requests/:id'];
+    } else if (path.startsWith('/plugins/')) {
+      loader = pagePreloads['/plugins/:key'];
     }
   }
   loader?.().catch(() => {});

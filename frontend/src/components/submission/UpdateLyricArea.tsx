@@ -157,7 +157,7 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
       {isUnrearranged && file && !validating && (
         <div className="mt-3 flex items-center gap-1.5 rounded-md border border-amber-500/60 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-300">
           <AlertTriangle className="h-4 w-4" />
-          未重排模式：元数据照常解析，文件原样上传
+          未重排模式
         </div>
       )}
 
@@ -171,7 +171,7 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
       {/* 校验未通过 */}
       {validation && !validation.valid && (
         <Alert variant="destructive" className="mt-3">
-          <AlertTitle>{isUnrearranged ? '格式校验未通过（不影响提交）' : '校验未通过'}</AlertTitle>
+          <AlertTitle>{isUnrearranged ? '格式校验未通过' : '校验未通过'}</AlertTitle>
           <AlertDescription>
             {validation.parseError && (
               <p className="text-xs text-red-500">{validation.parseError}</p>

@@ -16,7 +16,10 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/infrastructure"
 )
 
-// GitHub App 上传
+// maxGitHubResponseBytes 限制读取 GitHub API 响应体大小
+const maxGitHubResponseBytes = 10 << 20
+
+// GitHubService GitHub App 上传
 type GitHubService struct {
 	app  *infrastructure.GitHubAppClient
 	http *http.Client
@@ -87,7 +90,7 @@ func (s *GitHubService) UploadFile(ctx context.Context, fileName string, content
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxGitHubResponseBytes))
 		return fmt.Errorf("upload to github failed: status=%d body=%s", resp.StatusCode, string(respBody))
 	}
 	return nil
@@ -114,14 +117,14 @@ func (s *GitHubService) getFileSHA(ctx context.Context, token, owner, repo, path
 		return "", nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxGitHubResponseBytes))
 		return "", fmt.Errorf("get file sha failed: status=%d body=%s", resp.StatusCode, string(respBody))
 	}
 
 	var file struct {
 		SHA string `json:"sha"`
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxGitHubResponseBytes))
 	if err != nil {
 		return "", err
 	}

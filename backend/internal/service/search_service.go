@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/amll-dev/amll-hub/backend/internal/config"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/meilisearch/meilisearch-go"
 	logrus "github.com/sirupsen/logrus"
 )
@@ -373,16 +374,18 @@ func (s *SearchService) CountByFields(ctx context.Context, query string) (map[st
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			res, err := s.Search(ctx, SearchRequest{Query: query, Field: field, Limit: 1})
-			mu.Lock()
-			defer mu.Unlock()
-			if err != nil {
-				if firstErr == nil {
-					firstErr = err
+			pkg.RunSafe("search-count", func() {
+				res, err := s.Search(ctx, SearchRequest{Query: query, Field: field, Limit: 1})
+				mu.Lock()
+				defer mu.Unlock()
+				if err != nil {
+					if firstErr == nil {
+						firstErr = err
+					}
+					return
 				}
-				return
-			}
-			totals[field] = res.TotalHits
+				totals[field] = res.TotalHits
+			})
 		}()
 	}
 	wg.Wait()

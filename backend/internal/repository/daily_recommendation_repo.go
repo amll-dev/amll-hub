@@ -61,11 +61,20 @@ func (r *DailyRecommendationRepo) CheckDate(ctx context.Context, date string) (b
 	return count > 0, err
 }
 
-// ListBySubmitter 按提交人查询列表
-func (r *DailyRecommendationRepo) ListBySubmitter(ctx context.Context, submitter string) ([]model.DailyRecommendation, error) {
+// ListBySubmitter 按提交人分页查询列表，同时返回总数
+func (r *DailyRecommendationRepo) ListBySubmitter(ctx context.Context, submitter string, page, size int) ([]model.DailyRecommendation, int64, error) {
+	page, size = normalizePage(page, size)
+	base := r.db.WithContext(ctx).Model(&model.DailyRecommendation{}).Where("submitter = ?", submitter)
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 	var recs []model.DailyRecommendation
-	err := r.db.WithContext(ctx).Where("submitter = ?", submitter).Order("created_at DESC").Find(&recs).Error
-	return recs, err
+	err := base.Order("created_at DESC").
+		Offset((page - 1) * size).
+		Limit(size).
+		Find(&recs).Error
+	return recs, total, err
 }
 
 // GetByID 按 ID 查询详情

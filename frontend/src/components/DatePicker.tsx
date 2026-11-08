@@ -1,31 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { buttonTap } from '@/lib/motion';
+import {
+  WEEKDAYS,
+  MONTHS,
+  buildMonthCells,
+  formatDateKey,
+  type MonthDayCell as DayCell,
+} from '@/lib/date';
 import { cn } from '@/lib/utils';
-
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
-const MONTHS = [
-  '1月',
-  '2月',
-  '3月',
-  '4月',
-  '5月',
-  '6月',
-  '7月',
-  '8月',
-  '9月',
-  '10月',
-  '11月',
-  '12月',
-];
-
-function formatDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
 
 function parseDateKey(key: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
@@ -33,12 +17,30 @@ function parseDateKey(key: string): Date | null {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
-interface DayCell {
-  date: Date;
-  dateKey: string;
-  isOtherMonth: boolean;
-  isToday: boolean;
-  isSelected: boolean;
+/** 把手动输入的日期文本规范化为 YYYY-MM-DD；无法识别或日期不存在时返回 null */
+function normalizeDateInput(raw: string): string | null {
+  const text = raw.trim();
+  if (!text) return '';
+  const m = /^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})日?$/.exec(text);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const date = new Date(year, month - 1, day);
+  // 排除 2 月 30 日这类不存在的日期
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+  return formatDateKey(date);
+}
+
+/** 输入框里只保留数字并按 YYYY-MM-DD 自动补「-」，避免分隔符被删掉 */
+function formatDateInput(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 4) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6)}`;
 }
 
 export function DatePicker({
@@ -48,6 +50,7 @@ export function DatePicker({
   max,
   id,
   className,
+  allowInput = false,
   'aria-invalid': ariaInvalid,
   'aria-describedby': ariaDescribedBy,
 }: {
@@ -59,6 +62,8 @@ export function DatePicker({
   id?: string;
   /** 触发器附加样式 */
   className?: string;
+  /** 允许直接键入日期（YYYY-MM-DD、YYYY/M/D 等），默认只能通过日历选择 */
+  allowInput?: boolean;
   'aria-invalid'?: boolean;
   'aria-describedby'?: string;
 }) {
@@ -73,6 +78,36 @@ export function DatePicker({
   );
   const [direction, setDirection] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  /** 输入框里的原始文本（仅 allowInput 时使用） */
+  const [draft, setDraft] = useState(value);
+  const [editing, setEditing] = useState(false);
+  /** 日历面板视图：日期网格 / 年份快速选择 */
+  const [view, setView] = useState<'day' | 'year'>('day');
+  /** 年份网格的起始年份（一页 12 年） */
+  const [yearPageStart, setYearPageStart] = useState(
+    () => Math.floor(currentMonth.getFullYear() / 12) * 12
+  );
+  /** 年份翻页方向：1 下一页，-1 上一页 */
+  const [yearDirection, setYearDirection] = useState(0);
+
+  const goPrevYearPage = () => {
+    setYearDirection(-1);
+    setYearPageStart((s) => s - 12);
+  };
+  const goNextYearPage = () => {
+    setYearDirection(1);
+    setYearPageStart((s) => s + 12);
+  };
+
+  // 关闭日历后回到日期视图
+  useEffect(() => {
+    if (!open) setView('day');
+  }, [open]);
+
+  // 外部（日历点选、表单重置）改动 value 时同步输入框；编辑中不打断用户输入
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
 
   // 点击外部关闭
   useEffect(() => {
@@ -86,42 +121,10 @@ export function DatePicker({
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, [open]);
 
-  const cells = useMemo<DayCell[]>(() => {
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
-    const firstDayWeek = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const prevMonthLastDay = new Date(year, month, 0).getDate();
-
-    // 构造单个日格。定义在 useMemo 内部，保证下方依赖数组完整
-    const buildCell = (date: Date, isOtherMonth: boolean): DayCell => {
-      const dateKey = formatDateKey(date);
-      return {
-        date,
-        dateKey,
-        isOtherMonth,
-        isToday: dateKey === todayKey,
-        isSelected: dateKey === value,
-      };
-    };
-
-    const result: DayCell[] = [];
-
-    for (let i = firstDayWeek - 1; i >= 0; i--) {
-      const date = new Date(year, month - 1, prevMonthLastDay - i);
-      result.push(buildCell(date, true));
-    }
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month, day);
-      result.push(buildCell(date, false));
-    }
-    const remaining = 42 - result.length;
-    for (let day = 1; day <= remaining; day++) {
-      const date = new Date(year, month + 1, day);
-      result.push(buildCell(date, true));
-    }
-    return result;
-  }, [currentMonth, value, todayKey]);
+  const cells = useMemo<DayCell[]>(
+    () => buildMonthCells(currentMonth.getFullYear(), currentMonth.getMonth(), todayKey, value),
+    [currentMonth, value, todayKey]
+  );
 
   const goPrev = () => {
     setDirection(-1);
@@ -146,6 +149,21 @@ export function DatePicker({
     setOpen(false);
   };
 
+  /** 提交手动输入：合法则回写，非法（含超出 max）则回退到当前已选日期 */
+  const commitDraft = () => {
+    const key = normalizeDateInput(draft);
+    if (key === null || (key !== '' && max && key > max)) {
+      setDraft(value);
+      return;
+    }
+    setDraft(key);
+    if (key !== value) onChange(key);
+    if (key) {
+      const date = parseDateKey(key);
+      if (date) setCurrentMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+    }
+  };
+
   const monthVariants = {
     enter: (dir: number) => ({
       opacity: 0,
@@ -165,29 +183,85 @@ export function DatePicker({
 
   return (
     <div ref={containerRef} className="relative">
-      {/* 触发按钮 */}
-      <button
-        type="button"
-        id={id}
-        aria-invalid={ariaInvalid}
-        aria-describedby={ariaDescribedBy}
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          'flex h-11 w-full items-center justify-between rounded-md border bg-background px-4 text-sm outline-none transition-all duration-200',
-          open
-            ? 'border-primary ring-2 ring-primary/20'
-            : 'border-input hover:border-primary/50 focus:border-primary',
-          ariaInvalid && 'border-error',
-          className
-        )}
-      >
-        <span className={selectedDate ? 'text-foreground' : 'text-ink-3'}>{displayText}</span>
-        <CalendarDays
-          className={`h-4 w-4 text-ink-3 transition-transform duration-200 ${
-            open ? 'scale-110 text-primary' : ''
-          }`}
-        />
-      </button>
+      {/* 触发区：可手动输入时用输入框，右侧图标打开日历 */}
+      {allowInput ? (
+        <div
+          className={cn(
+            'flex h-11 w-full items-center gap-2 rounded-md border bg-background px-4 text-sm outline-none transition-all duration-200',
+            open
+              ? 'border-primary ring-2 ring-primary/20'
+              : 'border-input hover:border-primary/50 focus-within:border-primary',
+            ariaInvalid && 'border-error',
+            className
+          )}
+        >
+          <input
+            id={id}
+            type="text"
+            autoComplete="off"
+            value={draft}
+            placeholder={placeholder}
+            aria-invalid={ariaInvalid}
+            aria-describedby={ariaDescribedBy}
+            onChange={(e) => {
+              // 粘贴完整日期时直接规范化；其余情况按数字重新拼「-」，分隔符不可被单独删除
+              const key = normalizeDateInput(e.target.value);
+              setDraft(key ?? formatDateInput(e.target.value));
+            }}
+            onFocus={() => setEditing(true)}
+            onBlur={() => {
+              setEditing(false);
+              commitDraft();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                // 提交日期而不是触发表单提交
+                e.preventDefault();
+                commitDraft();
+                setOpen(false);
+              } else if (e.key === 'Escape') {
+                setOpen(false);
+              }
+            }}
+            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-ink-3"
+          />
+          <button
+            type="button"
+            aria-label="打开日历"
+            onClick={() => setOpen((v) => !v)}
+            className="shrink-0"
+          >
+            <CalendarDays
+              className={`h-4 w-4 text-ink-3 transition-transform duration-200 ${
+                open ? 'scale-110 text-primary' : ''
+              }`}
+            />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          id={id}
+          aria-invalid={ariaInvalid}
+          aria-describedby={ariaDescribedBy}
+          onClick={() => setOpen((v) => !v)}
+          className={cn(
+            'flex h-11 w-full items-center justify-between rounded-md border bg-background px-4 text-sm outline-none transition-all duration-200',
+            open
+              ? 'border-primary ring-2 ring-primary/20'
+              : 'border-input hover:border-primary/50 focus:border-primary',
+            ariaInvalid && 'border-error',
+            className
+          )}
+        >
+          <span className={selectedDate ? 'text-foreground' : 'text-ink-3'}>{displayText}</span>
+          <CalendarDays
+            className={`h-4 w-4 text-ink-3 transition-transform duration-200 ${
+              open ? 'scale-110 text-primary' : ''
+            }`}
+          />
+        </button>
+      )}
 
       {/* 下拉日历 */}
       <AnimatePresence>
@@ -204,95 +278,207 @@ export function DatePicker({
               <motion.button
                 type="button"
                 {...buttonTap}
-                onClick={goPrev}
+                onClick={view === 'day' ? goPrev : goPrevYearPage}
                 className="flex h-7 w-7 items-center justify-center rounded-md border border-line text-ink-2 transition-colors hover:border-primary hover:bg-surface-2"
               >
                 <ChevronLeft className="h-4 w-4" />
               </motion.button>
 
-              <div className="flex items-center gap-2">
-                <AnimatePresence mode="wait">
-                  <motion.span
-                    key={`${currentMonth.getFullYear()}-${currentMonth.getMonth()}`}
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 4 }}
-                    transition={{ duration: 0.2 }}
-                    className="text-sm font-semibold text-foreground"
-                  >
-                    {currentMonth.getFullYear()}年{MONTHS[currentMonth.getMonth()]}
-                  </motion.span>
+              <div className="relative flex items-center justify-center">
+                <AnimatePresence mode="wait" initial={false}>
+                  {view === 'day' ? (
+                    <motion.div
+                      key="month"
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 4 }}
+                      transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
+                      className="flex items-center gap-2"
+                    >
+                      <motion.button
+                        type="button"
+                        title="快速切换年份"
+                        onClick={() => {
+                          const year = currentMonth.getFullYear();
+                          setYearPageStart(Math.floor(year / 12) * 12);
+                          setView('year');
+                        }}
+                        className="flex items-center gap-1 rounded px-1 py-0.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface-2 hover:text-primary"
+                      >
+                        <AnimatePresence mode="wait">
+                          <motion.span
+                            key={`${currentMonth.getFullYear()}-${currentMonth.getMonth()}`}
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 4 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            {currentMonth.getFullYear()}年{MONTHS[currentMonth.getMonth()]}
+                          </motion.span>
+                        </AnimatePresence>
+                        <ChevronDown className="h-3.5 w-3.5 text-ink-3" />
+                      </motion.button>
+                      {value !== todayKey && (
+                        <motion.button
+                          type="button"
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          onClick={goToday}
+                          className="rounded bg-primary px-2 py-0.5 text-[11px] text-primary-foreground hover:opacity-90"
+                        >
+                          今天
+                        </motion.button>
+                      )}
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="year"
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 4 }}
+                      transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
+                    >
+                      <AnimatePresence mode="wait" initial={false}>
+                        <motion.span
+                          key={yearPageStart}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.15 }}
+                          className="block text-sm font-semibold text-foreground"
+                        >
+                          {yearPageStart}–{yearPageStart + 11}年
+                        </motion.span>
+                      </AnimatePresence>
+                    </motion.div>
+                  )}
                 </AnimatePresence>
-                {value !== todayKey && (
-                  <motion.button
-                    type="button"
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    onClick={goToday}
-                    className="rounded bg-primary px-2 py-0.5 text-[11px] text-primary-foreground hover:opacity-90"
-                  >
-                    今天
-                  </motion.button>
-                )}
               </div>
 
               <motion.button
                 type="button"
                 {...buttonTap}
-                onClick={goNext}
+                onClick={view === 'day' ? goNext : goNextYearPage}
                 className="flex h-7 w-7 items-center justify-center rounded-md border border-line text-ink-2 transition-colors hover:border-primary hover:bg-surface-2"
               >
                 <ChevronRight className="h-4 w-4" />
               </motion.button>
             </div>
 
-            {/* 星期表头 */}
-            <div className="mb-1 grid grid-cols-7 gap-1">
-              {WEEKDAYS.map((d) => (
-                <div key={d} className="py-1 text-center text-[11px] font-semibold text-ink-3">
-                  {d}
-                </div>
-              ))}
-            </div>
-
-            {/* 日期网格 */}
-            <AnimatePresence mode="wait" custom={direction}>
-              <motion.div
-                key={`${currentMonth.getFullYear()}-${currentMonth.getMonth()}`}
-                custom={direction}
-                variants={monthVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
-                className="grid grid-cols-7 gap-1"
-              >
-                {cells.map((cell, i) => {
-                  const disabled = !!max && cell.dateKey > max;
-                  let cls =
-                    'aspect-square flex items-center justify-center rounded-md text-xs cursor-pointer transition-colors';
-                  if (cell.isOtherMonth) cls += ' text-ink-3 opacity-40';
-                  else cls += ' text-foreground hover:bg-surface-2';
-                  if (cell.isToday) cls += ' !bg-primary !text-primary-foreground font-semibold';
-                  if (cell.isSelected && !cell.isToday)
-                    cls += ' !bg-[#fef3c7] !text-[#92400e] font-semibold ring-1 ring-[#f59e0b]';
-                  if (disabled) cls += ' pointer-events-none opacity-25';
-
-                  return (
+            <AnimatePresence mode="wait" initial={false}>
+              {view === 'year' ? (
+                <motion.div
+                  key="year"
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
+                >
+                  <AnimatePresence mode="wait" initial={false} custom={yearDirection}>
                     <motion.div
-                      key={i}
-                      whileHover={disabled ? undefined : { scale: 1.1 }}
-                      whileTap={disabled ? undefined : { scale: 0.9 }}
-                      transition={{ duration: 0.12 }}
-                      className={cls}
-                      onClick={disabled ? undefined : () => handleSelect(cell)}
+                      key={yearPageStart}
+                      custom={yearDirection}
+                      variants={monthVariants}
+                      initial="enter"
+                      animate="center"
+                      exit="exit"
+                      transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+                      className="grid grid-cols-4 gap-1"
                     >
-                      {cell.date.getDate()}
+                      {Array.from({ length: 12 }, (_, i) => yearPageStart + i).map((year) => {
+                        const isCurrent = year === currentMonth.getFullYear();
+                        // 整年都在上限之后才禁用，当年仍可选（月内日期会按 max 单独禁用）
+                        const disabled = !!max && `${year}-12-31` > max;
+                        return (
+                          <motion.button
+                            key={year}
+                            type="button"
+                            disabled={disabled}
+                            whileHover={disabled ? undefined : { scale: 1.05 }}
+                            whileTap={disabled ? undefined : { scale: 0.95 }}
+                            transition={{ duration: 0.12 }}
+                            onClick={() => {
+                              setCurrentMonth(new Date(year, currentMonth.getMonth(), 1));
+                              setView('day');
+                            }}
+                            className={cn(
+                              'flex h-10 items-center justify-center rounded-md text-xs transition-colors',
+                              isCurrent
+                                ? '!bg-[#fef3c7] !text-[#92400e] font-semibold ring-1 ring-[#f59e0b]'
+                                : 'text-foreground hover:bg-surface-2',
+                              disabled && 'cursor-not-allowed opacity-25'
+                            )}
+                          >
+                            {year}
+                          </motion.button>
+                        );
+                      })}
                     </motion.div>
-                  );
-                })}
-              </motion.div>
+                  </AnimatePresence>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="day"
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ duration: 0.16, ease: [0.2, 0.8, 0.2, 1] }}
+                >
+                  {/* 星期表头 */}
+                  <div className="mb-1 grid grid-cols-7 gap-1">
+                    {WEEKDAYS.map((d) => (
+                      <div
+                        key={d}
+                        className="py-1 text-center text-[11px] font-semibold text-ink-3"
+                      >
+                        {d}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 日期网格 */}
+                  <AnimatePresence mode="wait" initial={false} custom={direction}>
+                    <motion.div
+                      key={`${currentMonth.getFullYear()}-${currentMonth.getMonth()}`}
+                      custom={direction}
+                      variants={monthVariants}
+                      initial="enter"
+                      animate="center"
+                      exit="exit"
+                      transition={{ duration: 0.2, ease: [0.2, 0.8, 0.2, 1] }}
+                      className="grid grid-cols-7 gap-1"
+                    >
+                      {cells.map((cell, i) => {
+                        const disabled = !!max && cell.dateKey > max;
+                        let cls =
+                          'aspect-square flex items-center justify-center rounded-md text-xs cursor-pointer transition-colors';
+                        if (cell.isOtherMonth) cls += ' text-ink-3 opacity-40';
+                        else cls += ' text-foreground hover:bg-surface-2';
+                        if (cell.isToday)
+                          cls += ' !bg-primary !text-primary-foreground font-semibold';
+                        if (cell.isSelected && !cell.isToday)
+                          cls +=
+                            ' !bg-[#fef3c7] !text-[#92400e] font-semibold ring-1 ring-[#f59e0b]';
+                        if (disabled) cls += ' pointer-events-none opacity-25';
+
+                        return (
+                          <motion.div
+                            key={i}
+                            whileHover={disabled ? undefined : { scale: 1.1 }}
+                            whileTap={disabled ? undefined : { scale: 0.9 }}
+                            transition={{ duration: 0.12 }}
+                            className={cls}
+                            onClick={disabled ? undefined : () => handleSelect(cell)}
+                          >
+                            {cell.date.getDate()}
+                          </motion.div>
+                        );
+                      })}
+                    </motion.div>
+                  </AnimatePresence>
+                </motion.div>
+              )}
             </AnimatePresence>
           </motion.div>
         )}

@@ -3,6 +3,7 @@
 import ID3Writer from 'browser-id3-writer';
 import JSZip from 'jszip';
 import { api } from '@/lib/api';
+import { triggerDownload } from '@/lib/blob-download';
 
 interface DownloadMeta {
   title: string;
@@ -235,16 +236,4 @@ function guessExt(url: string, contentType: string): string {
   if (contentType.includes('ogg')) return 'ogg';
   if (contentType.includes('wav')) return 'wav';
   return 'mp3';
-}
-
-/** 创建 <a> 标签触发下载 */
-function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }

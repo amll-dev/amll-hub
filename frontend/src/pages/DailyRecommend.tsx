@@ -5,19 +5,12 @@ import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
+import { formatDateKey } from '@/lib/date';
 import type { DailyRecommendation } from '@/lib/types';
 import { DailyCalendar } from '@/components/DailyCalendar';
 import { RecommendCard, SkeletonCard, EmptyState } from '@/components/RecommendCard';
 import { PageContainer } from '@/components/PageContainer';
 import { whileInViewProps } from '@/lib/motion';
-
-/** 格式化日期为 YYYY-MM-DD */
-function formatDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
 
 /** 校验是否为合法 YYYY-MM-DD 日期字符串 */
 function isValidDateKey(s: string): boolean {

@@ -42,25 +42,7 @@ func NewReviewLeaseJob(
 
 // Run 阻塞执行，每 interval 扫描一次，直到 ctx 取消
 func (j *ReviewLeaseJob) Run(ctx context.Context) {
-	logrus.WithFields(logrus.Fields{
-		"interval": j.interval.String(),
-		"ttl":      j.ttl.String(),
-	}).Info("review-lease job started")
-
-	ticker := time.NewTicker(j.interval)
-	defer ticker.Stop()
-
-	j.runOnce(ctx)
-
-	for {
-		select {
-		case <-ctx.Done():
-			logrus.Info("review-lease job stopped")
-			return
-		case <-ticker.C:
-			j.runOnce(ctx)
-		}
-	}
+	runPeriodic(ctx, "review-lease", logrus.Fields{"ttl": j.ttl.String()}, j.interval, j.runOnce)
 }
 
 func (j *ReviewLeaseJob) runOnce(ctx context.Context) {

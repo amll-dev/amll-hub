@@ -4,6 +4,8 @@ import { motion } from 'framer-motion';
 import { Check, Loader2, Music, X } from 'lucide-react';
 import { parseBlob } from 'music-metadata';
 import { api } from '@/lib/api';
+import { AUDIO_EXTS, MAX_AUDIO_SIZE, audioExt } from '@/lib/audio';
+import { formatBytes } from '@/lib/format';
 import { buttonTap } from '@/lib/motion';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -107,6 +109,25 @@ export function UploadAudioArea({ submissionId, onClose, onSuccess }: UploadAudi
 
   // 选择音频文件后立即解析元数据，自动填入表单
   const handleAudioSelect = async (f: File) => {
+    // 清空 input 值，保证重复选择同一文件也能触发 change
+    if (audioInputRef.current) audioInputRef.current.value = '';
+
+    const ext = audioExt(f.name);
+    if (!AUDIO_EXTS.includes(ext)) {
+      setMsg({
+        type: 'error',
+        text: `不支持的音频格式（${ext || '未知'}），请选择 MP3 / FLAC / WAV / M4A / OGG / AAC`,
+      });
+      return;
+    }
+    if (f.size > MAX_AUDIO_SIZE) {
+      setMsg({
+        type: 'error',
+        text: `音频文件 ${formatBytes(f.size)} 超过 150 MB 上限，请压缩或更换更小的文件`,
+      });
+      return;
+    }
+
     setAudioFile(f);
     setParsing(true);
     try {
@@ -166,7 +187,9 @@ export function UploadAudioArea({ submissionId, onClose, onSuccess }: UploadAudi
         >
           <Music className="mx-auto h-7 w-7 text-ink-3" />
           <p className="mt-2 text-sm text-ink-2">
-            {audioFile ? audioFile.name : '点击或拖拽音频文件（MP3/M4A/FLAC/WAV）'}
+            {audioFile
+              ? `${audioFile.name}（${formatBytes(audioFile.size)}）`
+              : '点击或拖拽音频文件（MP3/M4A/FLAC/WAV，单个 ≤ 150 MB）'}
           </p>
           {parsing && (
             <p className="mt-1 inline-flex items-center gap-1 text-xs text-primary">

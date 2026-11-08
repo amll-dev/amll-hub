@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"path"
 	"strings"
 	"time"
@@ -56,10 +57,10 @@ func (s *FileService) MaxImageSize() int64 { return s.cfg.Submission.MaxImageSiz
 // UploadTTML 上传 TTML 到待审核目录
 func (s *FileService) UploadTTML(ctx context.Context, fileName string, content []byte) error {
 	if err := validateTTMLFileName(fileName); err != nil {
-		return err
+		return invalidInput("%v", err)
 	}
 	if len(content) > int(s.cfg.Submission.MaxTTMLSize) {
-		return fmt.Errorf("TTML 文件大小超过 %d 字节", s.cfg.Submission.MaxTTMLSize)
+		return invalidInput("TTML 文件大小超过 %d 字节", s.cfg.Submission.MaxTTMLSize)
 	}
 	key := PendingLyricsPrefix + fileName
 	_, err := s.minio.PutObject(ctx, s.bucket, key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
@@ -71,10 +72,10 @@ func (s *FileService) UploadTTML(ctx context.Context, fileName string, content [
 // UploadTTMLTemp 上传到临时对象，事务成功后再 Move 到正式 key，避免事务失败覆盖正式文件
 func (s *FileService) UploadTTMLTemp(ctx context.Context, fileName string, content []byte) (string, error) {
 	if err := validateTTMLFileName(fileName); err != nil {
-		return "", err
+		return "", invalidInput("%v", err)
 	}
 	if len(content) > int(s.cfg.Submission.MaxTTMLSize) {
-		return "", fmt.Errorf("TTML 文件大小超过 %d 字节", s.cfg.Submission.MaxTTMLSize)
+		return "", invalidInput("TTML 文件大小超过 %d 字节", s.cfg.Submission.MaxTTMLSize)
 	}
 	key := fmt.Sprintf("%s.tmp-%d-%s", PendingLyricsPrefix, time.Now().UnixNano(), fileName)
 	_, err := s.minio.PutObject(ctx, s.bucket, key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
@@ -89,11 +90,11 @@ func (s *FileService) UploadTTMLTemp(ctx context.Context, fileName string, conte
 // UploadAudio 上传音频附件
 func (s *FileService) UploadAudio(ctx context.Context, submissionID int64, fileName string, content []byte) (string, error) {
 	if len(content) > int(s.cfg.Submission.MaxAudioSize) {
-		return "", fmt.Errorf("音频文件大小超过 %d 字节", s.cfg.Submission.MaxAudioSize)
+		return "", invalidInput("音频文件大小超过 %d 字节", s.cfg.Submission.MaxAudioSize)
 	}
 	ext := path.Ext(fileName)
 	if !isAllowedAudioExt(ext) {
-		return "", fmt.Errorf("不支持的音频格式: %s", ext)
+		return "", invalidInput("不支持的音频格式: %s", ext)
 	}
 	key := fmt.Sprintf("%s%d-%d%s", MusicPrefix, submissionID, time.Now().UnixMilli(), ext)
 	_, err := s.minio.PutObject(ctx, s.bucket, key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
@@ -108,12 +109,12 @@ func (s *FileService) UploadAudio(ctx context.Context, submissionID int64, fileN
 // UploadCover 上传封面图，返回对象 key
 func (s *FileService) UploadCover(ctx context.Context, submissionID int64, fileName string, content []byte) (string, error) {
 	if len(content) > int(s.cfg.Submission.MaxImageSize) {
-		return "", fmt.Errorf("封面图大小超过 %d 字节", s.cfg.Submission.MaxImageSize)
+		return "", invalidInput("封面图大小超过 %d 字节", s.cfg.Submission.MaxImageSize)
 	}
-	ext := path.Ext(fileName)
-	if !isAllowedImageExt(ext) {
-		return "", fmt.Errorf("不支持的图片格式: %s", ext)
+	if err := validateImageUpload(fileName, content); err != nil {
+		return "", err
 	}
+	ext := strings.ToLower(path.Ext(fileName))
 	key := fmt.Sprintf("%s%d-%d%s", CoverPrefix, submissionID, time.Now().UnixMilli(), ext)
 	_, err := s.minio.PutObject(ctx, s.bucket, key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
 		ContentType: imageContentType(ext),
@@ -266,10 +267,10 @@ func RevisionLyricKey(fileName string) string {
 // UploadRevisionTTML 上传审核员修订版 TTML 到修订区
 func (s *FileService) UploadRevisionTTML(ctx context.Context, fileName string, content []byte) (string, error) {
 	if err := validateTTMLFileName(fileName); err != nil {
-		return "", err
+		return "", invalidInput("%v", err)
 	}
 	if len(content) > int(s.cfg.Submission.MaxTTMLSize) {
-		return "", fmt.Errorf("TTML 文件大小超过 %d 字节", s.cfg.Submission.MaxTTMLSize)
+		return "", invalidInput("TTML 文件大小超过 %d 字节", s.cfg.Submission.MaxTTMLSize)
 	}
 	key := RevisionLyricKey(fileName)
 	_, err := s.minio.PutObject(ctx, s.bucket, key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
@@ -279,6 +280,16 @@ func (s *FileService) UploadRevisionTTML(ctx context.Context, fileName string, c
 		return "", err
 	}
 	return key, nil
+}
+
+// GenerateTTMLFileName 按歌词仓库的命名规范生成 TTML 文件名
+func GenerateTTMLFileName(githubID int64) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	suffix := make([]byte, 8)
+	for i := range suffix {
+		suffix[i] = charset[rand.IntN(len(charset))]
+	}
+	return fmt.Sprintf("%d-%d-%s.ttml", time.Now().UnixMilli(), githubID, string(suffix))
 }
 
 // validateTTMLFileName 校验 TTML 文件名格式。
@@ -325,6 +336,26 @@ func isAllowedImageExt(ext string) bool {
 		return true
 	}
 	return false
+}
+
+// validateImageUpload 校验图片扩展名与真实内容是否一致。
+// 仅信任文件内容嗅探结果，避免把任意内容改名成图片后写入对象存储。
+func validateImageUpload(fileName string, content []byte) error {
+	ext := strings.ToLower(path.Ext(fileName))
+	if !isAllowedImageExt(ext) {
+		return invalidInput("不支持的图片格式: %s", ext)
+	}
+	actual := sniffImageExt(content)
+	if actual == "" {
+		return invalidInput("无法识别的图片内容")
+	}
+	if ext == ".jpeg" {
+		ext = ".jpg"
+	}
+	if actual != ext {
+		return invalidInput("图片内容与扩展名不匹配")
+	}
+	return nil
 }
 
 func audioContentType(ext string) string {

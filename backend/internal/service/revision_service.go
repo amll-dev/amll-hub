@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 )
 
@@ -26,6 +28,7 @@ type RevisionService struct {
 	files        *FileService
 	github       *GitHubService
 	viewers      *ViewerService
+	validate     *ValidateService
 	notifier     Notifier
 	db           *gorm.DB
 	petitionSync func(ctx context.Context, submissionID int64) error
@@ -34,6 +37,11 @@ type RevisionService struct {
 // SetNotifier 注入通知服务（main 装配阶段调用）
 func (s *RevisionService) SetNotifier(n Notifier) {
 	s.notifier = n
+}
+
+// SetValidateService 注入 TTML 校验服务（main 装配阶段调用）
+func (s *RevisionService) SetValidateService(v *ValidateService) {
+	s.validate = v
 }
 
 // NewRevisionService 创建审核修订服务
@@ -118,15 +126,23 @@ func (s *RevisionService) saveWithRevision(
 	if strings.TrimSpace(in.TTMLContent) == "" {
 		return fmt.Errorf("%w: 修订版 TTML 内容为空", ErrInvalidInput)
 	}
+	if err := ValidateRepoTTMLFileName(sub.FileName); err != nil {
+		return err
+	}
+	// 修订版一律由服务端校验并保存重排后的内容
+	prepared, err := PrepareTTML(ctx, s.validate, []byte(in.TTMLContent), true)
+	if err != nil {
+		return err
+	}
 
 	// 先落对象存储
-	key, err := s.files.UploadRevisionTTML(ctx, sub.FileName, []byte(in.TTMLContent))
+	key, err := s.files.UploadRevisionTTML(ctx, sub.FileName, prepared)
 	if err != nil {
 		return fmt.Errorf("上传修订版失败: %w", err)
 	}
 
 	now := time.Now()
-	ttmlContent := in.TTMLContent
+	ttmlContent := string(prepared)
 	metadata := model.JSONObject{}
 	if in.Metadata != nil {
 		metadata = model.JSONObject(in.Metadata)
@@ -213,6 +229,8 @@ func (s *RevisionService) saveWithoutRevision(
 	}
 
 	now := time.Now()
+	origStatus := sub.Status
+	sub.Status = conclusionStatus(action)
 	sub.Reviewer = reviewerInfo.Username
 	sub.ReviewedAt = &now
 	if comment != "" {
@@ -239,7 +257,7 @@ func (s *RevisionService) saveWithoutRevision(
 			SubmissionID: sub.ID,
 			Reviewer:     reviewerInfo.Username,
 			ReviewerInfo: reviewerInfo,
-			Status:       action,
+			Status:       sub.Status,
 			Comment:      comment,
 		}); err != nil {
 			return err
@@ -262,18 +280,20 @@ func (s *RevisionService) saveWithoutRevision(
 	case ActionApprove, ActionReject:
 		// 这两个会触发 GitHub 上传 / 文件删除等外部副作用，必须在事务提交后执行
 		// 先占位记录状态与报告，再由 ReviewService 完成文件搬运；
-		// 若搬运失败，状态会被 revertClaim 回滚，报告记录保留（便于追溯）
+		// 上传失败时回滚状态；若 GitHub 已成功但搬运失败，保留状态等待人工修复；报告记录保留。
 		if err := s.db.WithContext(ctx).Transaction(claim); err != nil {
 			return err
 		}
 		if err := s.applyConclusionSideEffects(ctx, sub, action, user); err != nil {
+			if !errors.Is(err, errSideEffectAfterGithub) {
+				s.revertConclusion(ctx, sub, origStatus)
+			}
 			return err
 		}
 	default:
 		if action == ActionRevision {
 			sub.RevisionRequestedAt = &now
 		}
-		sub.Status = action
 		if err := s.db.WithContext(ctx).Transaction(claim); err != nil {
 			return err
 		}
@@ -282,6 +302,45 @@ func (s *RevisionService) saveWithoutRevision(
 	s.broadcast(ctx, sub.ID)
 	s.notifyReviewResult(ctx, sub, comment)
 	return nil
+}
+
+// errSideEffectAfterGithub GitHub 上传成功后对象存储搬运失败，不适合回滚状态，需人工检查
+var errSideEffectAfterGithub = errors.New("github upload succeeded but storage move failed")
+
+// conclusionStatus 把审核动作映射为投稿状态
+func conclusionStatus(action string) string {
+	switch action {
+	case ActionApprove:
+		return model.StatusApproved
+	case ActionReject:
+		return model.StatusRejected
+	case ActionRevision:
+		return model.StatusNeedRevision
+	case ActionMissingAudio:
+		return model.StatusMissingAudio
+	default:
+		return action
+	}
+}
+
+// revertConclusion 外部副作用失败时回滚审核结论状态。
+// 使用脱离请求取消的 context，避免客户端断开后补偿无法执行。
+func (s *RevisionService) revertConclusion(ctx context.Context, sub *model.Submission, fromStatus string) {
+	sub.Status = fromStatus
+	sub.Reviewer = ""
+	sub.ReviewerInfo = nil
+	sub.ReviewedAt = nil
+	sub.ReviewComment = ""
+	c, cancel := pkg.DetachedTimeout(ctx, 5*time.Second)
+	defer cancel()
+	ok, err := s.subRepo.UpdateStatusWhere(c, nil, sub, []string{model.StatusApproved, model.StatusRejected})
+	if err != nil || !ok {
+		logrus.WithFields(logrus.Fields{
+			"submission_id": sub.ID,
+			"target_status": fromStatus,
+			"err":           err,
+		}).Error("revert revision conclusion failed, manual fix required")
+	}
 }
 
 // applyConclusionSideEffects 完成 approve/reject 的外部副作用
@@ -298,13 +357,33 @@ func (s *RevisionService) applyConclusionSideEffects(ctx context.Context, sub *m
 		return nil
 	}
 
+	if err := ValidateRepoTTMLFileName(sub.FileName); err != nil {
+		return err
+	}
+
 	reader, err := s.files.Get(ctx, PendingLyricKey(sub.FileName))
 	if err != nil {
 		return fmt.Errorf("读取待审核文件失败: %w", err)
 	}
 	defer func() { _ = reader.Close() }()
 
-	if err := s.github.UploadFile(ctx, sub.FileName, reader, user.Name); err != nil {
+	content, err := ReadTTMLLimited(reader, s.files.MaxTTMLSize())
+	if err != nil {
+		return err
+	}
+	prepared, err := PrepareTTML(ctx, s.validate, content, !sub.IsUnrearranged)
+	if err != nil {
+		return err
+	}
+
+	// 正常模式用重排结果覆盖待审核对象，保证对象存储与 GitHub 内容一致
+	if !sub.IsUnrearranged {
+		if err := s.files.UploadTTML(ctx, sub.FileName, prepared); err != nil {
+			return fmt.Errorf("保存重排歌词失败: %w", err)
+		}
+	}
+
+	if err := s.github.UploadFile(ctx, sub.FileName, bytes.NewReader(prepared), user.Name); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"submission_id": sub.ID,
 			"file":          sub.FileName,
@@ -314,8 +393,8 @@ func (s *RevisionService) applyConclusionSideEffects(ctx context.Context, sub *m
 	}
 
 	if err := s.files.Move(ctx, PendingLyricKey(sub.FileName), ApprovedLyricKey(sub.FileName)); err != nil {
-		// GitHub 已成功，保留 approved 状态等待人工修复
-		return fmt.Errorf("移动对象存储文件失败（GitHub 已上传，需人工检查）: %w", err)
+		// GitHub 已成功，保留结论状态等待人工修复
+		return fmt.Errorf("%w: %v", errSideEffectAfterGithub, err)
 	}
 	return nil
 }
@@ -339,6 +418,33 @@ func (s *RevisionService) AdoptRevision(ctx context.Context, user *SubmissionUse
 	if sub.RevisionFileKey == "" {
 		return ErrMissingFile
 	}
+	if err := ValidateRepoTTMLFileName(sub.FileName); err != nil {
+		return err
+	}
+
+	// 修订版字段在 ClearRevision 后会被清空，先保存局部值
+	revFileKey := sub.RevisionFileKey
+	revReviewer := sub.RevisionReviewer
+	revReviewerInfo := userInfoOrEmpty(sub.RevisionReviewerInfo)
+
+	// 读取修订版并做服务端校验/重排；失败时保持 revised 状态
+	reader, err := s.files.Get(ctx, revFileKey)
+	if err != nil {
+		return fmt.Errorf("读取修订版文件失败: %w", err)
+	}
+	content, err := ReadTTMLLimited(reader, s.files.MaxTTMLSize())
+	_ = reader.Close()
+	if err != nil {
+		return err
+	}
+	prepared, err := PrepareTTML(ctx, s.validate, content, true)
+	if err != nil {
+		return err
+	}
+	revFileKey, err = s.files.UploadRevisionTTML(ctx, sub.FileName, prepared)
+	if err != nil {
+		return fmt.Errorf("保存修订版失败: %w", err)
+	}
 
 	now := time.Now()
 	// 修订版快照：清空字段前先留一份，推 GitHub 失败时 revertAdopt 要靠它恢复
@@ -358,15 +464,8 @@ func (s *RevisionService) AdoptRevision(ctx context.Context, user *SubmissionUse
 	// 请愿联动
 	s.syncPetition(ctx, sub.ID)
 
-	// 推 GitHub：使用修订版内容
-	reader, err := s.files.Get(ctx, sub.RevisionFileKey)
-	if err != nil {
-		s.revertAdopt(ctx, sub, revSnapshot)
-		return fmt.Errorf("读取修订版文件失败: %w", err)
-	}
-	defer func() { _ = reader.Close() }()
-
-	if err := s.github.UploadFile(ctx, sub.FileName, reader, sub.RevisionReviewer); err != nil {
+	// 推 GitHub：使用规范化后的修订版内容
+	if err := s.github.UploadFile(ctx, sub.FileName, bytes.NewReader(prepared), revReviewer); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"submission_id": sub.ID,
 			"file":          sub.FileName,
@@ -377,7 +476,7 @@ func (s *RevisionService) AdoptRevision(ctx context.Context, user *SubmissionUse
 	}
 
 	// 修订版晋升为正式文件，待审核区的原始文件清理掉
-	if err := s.files.Move(ctx, sub.RevisionFileKey, ApprovedLyricKey(sub.FileName)); err != nil {
+	if err := s.files.Move(ctx, revFileKey, ApprovedLyricKey(sub.FileName)); err != nil {
 		return fmt.Errorf("移动修订版到正式目录失败（GitHub 已上传，需人工检查）: %w", err)
 	}
 	if err := s.files.Delete(ctx, PendingLyricKey(sub.FileName)); err != nil {
@@ -390,8 +489,8 @@ func (s *RevisionService) AdoptRevision(ctx context.Context, user *SubmissionUse
 	// 采纳记录进审核历史
 	if err := s.historyRepo.Insert(ctx, nil, &model.ReviewHistory{
 		SubmissionID: sub.ID,
-		Reviewer:     sub.RevisionReviewer,
-		ReviewerInfo: userInfoOrEmpty(sub.RevisionReviewerInfo),
+		Reviewer:     revReviewer,
+		ReviewerInfo: revReviewerInfo,
 		Status:       model.StatusApproved,
 		Comment:      "投稿者确认采用审核员修订版",
 	}); err != nil {
@@ -402,12 +501,15 @@ func (s *RevisionService) AdoptRevision(ctx context.Context, user *SubmissionUse
 	return nil
 }
 
-// revertAdopt 外部副作用失败时回滚 adopted 状态
+// revertAdopt 外部副作用失败时回滚 adopted 状态。
+// 使用脱离请求取消的 context，避免客户端断开后补偿无法执行。
 func (s *RevisionService) revertAdopt(ctx context.Context, sub *model.Submission, saved *model.Submission) {
 	sub.Status = model.StatusRevised
 	sub.ReviewedAt = nil
 	sub.RestoreRevision(saved)
-	ok, err := s.subRepo.UpdateStatusWhere(ctx, nil, sub, []string{model.StatusApproved})
+	c, cancel := pkg.DetachedTimeout(ctx, 5*time.Second)
+	defer cancel()
+	ok, err := s.subRepo.UpdateStatusWhere(c, nil, sub, []string{model.StatusApproved})
 	if err != nil || !ok {
 		logrus.WithFields(logrus.Fields{
 			"submission_id": sub.ID,
