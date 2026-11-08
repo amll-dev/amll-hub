@@ -312,9 +312,7 @@ export const api = {
    * 后端 GET /api/v1/lyrics/versions/:filename
    */
   lyricVersions(filename: string): Promise<LyricVersionsResult> {
-    return request<LyricVersionsResult>(
-      `/api/v1/lyrics/versions/${encodeURIComponent(filename)}`
-    );
+    return request<LyricVersionsResult>(`/api/v1/lyrics/versions/${encodeURIComponent(filename)}`);
   },
 
   /**
