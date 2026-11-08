@@ -230,16 +230,10 @@ async function requestForm<T>(
   form: FormData,
   options: { timeoutMs?: number; fileSizeMb?: string; networkErrorMessage?: string } = {}
 ): Promise<T> {
-  return baseRequest<T>(
-    path,
-    { method: 'POST', body: form },
-    false,
-    options.timeoutMs ?? 180_000,
-    {
-      networkErrorMessage: '上传失败：网络连接中断，请检查网络后重试',
-      ...options,
-    }
-  );
+  return baseRequest<T>(path, { method: 'POST', body: form }, false, options.timeoutMs ?? 180_000, {
+    networkErrorMessage: '上传失败：网络连接中断，请检查网络后重试',
+    ...options,
+  });
 }
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -600,10 +594,7 @@ export const api = {
     if (params.title) form.append('title', params.title);
     form.append('data', JSON.stringify(params.jsonData));
     form.append('tempKeys', JSON.stringify(params.tempKeys));
-    return requestForm<{ id: number; imageCount: number }>(
-      '/api/v1/search-ip/submissions',
-      form
-    );
+    return requestForm<{ id: number; imageCount: number }>('/api/v1/search-ip/submissions', form);
   },
 
   /**

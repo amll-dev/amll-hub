@@ -283,9 +283,7 @@ export function PluginAdmin() {
                       <PluginStatusBadge status={detail.plugin.status} />
                       <span className="text-xs text-ink-3">{detail.plugin.pluginKey}</span>
                     </div>
-                    <p className="mt-1 text-sm text-ink-2">
-                      {detail.plugin.summary || '暂无简介'}
-                    </p>
+                    <p className="mt-1 text-sm text-ink-2">{detail.plugin.summary || '暂无简介'}</p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {(['active', 'hidden', 'blocked'] as const).map((status) => (
                         <Button
@@ -312,7 +310,10 @@ export function PluginAdmin() {
                         variant="destructive"
                         size="sm"
                         onClick={() => {
-                          if (!window.confirm(`确定硬删除插件「${detail.plugin.name}」及全部版本？`)) return;
+                          if (
+                            !window.confirm(`确定硬删除插件「${detail.plugin.name}」及全部版本？`)
+                          )
+                            return;
                           const reason = askReason('删除');
                           if (reason === null) return;
                           deletePluginMutation.mutate({ id: detail.plugin.id, reason });

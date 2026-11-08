@@ -684,9 +684,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
             {/* 校验失败：未重排模式下仍展示已解析出的元数据，只是校验不作为门槛 */}
             {validation && !validation.valid && (
               <Alert variant="destructive" className="mt-3">
-                <AlertTitle>
-                  {isUnrearranged ? '格式校验未通过' : '校验未通过'}
-                </AlertTitle>
+                <AlertTitle>{isUnrearranged ? '格式校验未通过' : '校验未通过'}</AlertTitle>
                 <AlertDescription>
                   {validation.parseError && <p className="text-xs">{validation.parseError}</p>}
                   {validation.errors.map((err, i) => (

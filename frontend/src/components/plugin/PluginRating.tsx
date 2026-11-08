@@ -133,9 +133,7 @@ export function PluginRatingPanel({
 
       <div className="mt-4 border-t border-line pt-4">
         <p className="text-xs text-ink-2">
-          {myScore > 0
-            ? `你已评价 ${myScore} 星，点击可修改`
-            : `你如何评价 ${pluginName}？`}
+          {myScore > 0 ? `你已评价 ${myScore} 星，点击可修改` : `你如何评价 ${pluginName}？`}
         </p>
         <div
           className="mt-2 flex items-center gap-1"
