@@ -13,6 +13,9 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/config"
 )
 
+// maxGitHubOAuthResponseBytes 限制读取 GitHub OAuth/API 响应体大小
+const maxGitHubOAuthResponseBytes = 10 << 20
+
 // GithubOAuthClient 自建 GitHub OAuth 客户端（不依赖 Casdoor 第三方登录）
 type GithubOAuthClient struct {
 	cfg  config.GitHubOAuthConfig
@@ -75,7 +78,7 @@ func (c *GithubOAuthClient) ExchangeCode(ctx context.Context, code string) (stri
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxGitHubOAuthResponseBytes))
 	if err != nil {
 		return "", fmt.Errorf("read token response: %w", err)
 	}
@@ -142,7 +145,7 @@ func (c *GithubOAuthClient) getJSON(ctx context.Context, accessToken, apiURL str
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxGitHubOAuthResponseBytes))
 	if err != nil {
 		return fmt.Errorf("read github api response: %w", err)
 	}

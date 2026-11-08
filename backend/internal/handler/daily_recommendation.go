@@ -52,8 +52,7 @@ func (h *DailyRecommendationHandler) Create(c *gin.Context) {
 
 	result, err := h.svc.CreateRecommendation(ctx, user.Name, submitterInfo, input)
 	if err != nil {
-		logrus.WithError(err).Warn("create daily recommendation failed")
-		pkg.BadRequest(c, err.Error())
+		writeServiceErr(c, err, "create daily recommendation failed")
 		return
 	}
 
@@ -89,8 +88,7 @@ func (h *DailyRecommendationHandler) UploadTemp(c *gin.Context) {
 
 	tempKey, err := h.svc.UploadTemp(ctx, fh.Filename, content)
 	if err != nil {
-		logrus.WithError(err).Warn("upload daily rec temp image failed")
-		pkg.BadRequest(c, err.Error())
+		writeServiceErr(c, err, "upload daily rec temp image failed")
 		return
 	}
 
@@ -121,8 +119,7 @@ func (h *DailyRecommendationHandler) UploadTempFromURL(c *gin.Context) {
 
 	tempKey, err := h.svc.UploadTempFromURL(ctx, body.URL)
 	if err != nil {
-		logrus.WithError(err).Warn("upload daily rec temp image from url failed")
-		pkg.BadRequest(c, err.Error())
+		writeServiceErr(c, err, "upload daily rec temp image from url failed")
 		return
 	}
 	pkg.OK(c, gin.H{"tempKey": tempKey})
@@ -170,8 +167,13 @@ func (h *DailyRecommendationHandler) GetToday(c *gin.Context) {
 
 	rec, err := h.svc.GetToday(ctx)
 	if err != nil {
-		// 今天没有推荐，返回 null
-		pkg.OK(c, nil)
+		if errors.Is(err, service.ErrNotFound) {
+			// 今天没有推荐，返回 null
+			pkg.OK(c, nil)
+			return
+		}
+		logrus.WithError(err).Error("get today daily recommendation failed")
+		pkg.InternalError(c, "查询推荐失败")
 		return
 	}
 	pkg.OK(c, rec)
@@ -189,7 +191,12 @@ func (h *DailyRecommendationHandler) GetByDate(c *gin.Context) {
 
 	rec, err := h.svc.GetByDate(ctx, date)
 	if err != nil {
-		pkg.OK(c, nil)
+		if errors.Is(err, service.ErrNotFound) {
+			pkg.OK(c, nil)
+			return
+		}
+		logrus.WithError(err).Error("get daily recommendation by date failed")
+		pkg.InternalError(c, "查询推荐失败")
 		return
 	}
 	pkg.OK(c, rec)
@@ -206,7 +213,10 @@ func (h *DailyRecommendationHandler) ListMine(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	result, err := h.svc.ListBySubmitter(ctx, username)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	size, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+
+	result, err := h.svc.ListBySubmitter(ctx, username, page, size)
 	if err != nil {
 		pkg.InternalError(c, "查询列表失败")
 		return

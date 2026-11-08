@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/amll-dev/amll-hub/backend/internal/infrastructure"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 )
 
@@ -140,17 +141,19 @@ func (s *UserSearchService) GetInfos(
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			u, err := s.casdoor.GetUserProfile(ctx, name)
-			if err != nil || u == nil {
-				return
-			}
-			mu.Lock()
-			out[name] = UserSearchItem{
-				Name:        u.Name,
-				DisplayName: u.DisplayName,
-				Avatar:      u.Avatar,
-			}
-			mu.Unlock()
+			pkg.RunSafe("user-search-profile", func() {
+				u, err := s.casdoor.GetUserProfile(ctx, name)
+				if err != nil || u == nil {
+					return
+				}
+				mu.Lock()
+				out[name] = UserSearchItem{
+					Name:        u.Name,
+					DisplayName: u.DisplayName,
+					Avatar:      u.Avatar,
+				}
+				mu.Unlock()
+			})
 		}()
 	}
 	wg.Wait()

@@ -6,6 +6,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
@@ -17,11 +18,12 @@ import (
 type UploadHandler struct {
 	files *service.FileService
 	subs  *service.SubmissionService
+	binds *service.GithubBindService
 }
 
 // NewUploadHandler 创建上传 handler
-func NewUploadHandler(files *service.FileService, subs *service.SubmissionService) *UploadHandler {
-	return &UploadHandler{files: files, subs: subs}
+func NewUploadHandler(files *service.FileService, subs *service.SubmissionService, binds *service.GithubBindService) *UploadHandler {
+	return &UploadHandler{files: files, subs: subs, binds: binds}
 }
 
 // UploadTTML POST /api/v1/uploads/ttml
@@ -32,15 +34,9 @@ func (h *UploadHandler) UploadTTML(c *gin.Context) {
 		return
 	}
 
-	// 1. 优先从 multipart 表单读取
-	fileName := c.PostForm("fileName")
 	var content []byte
 	var err error
-
 	if fh, _ := c.FormFile("file"); fh != nil {
-		if fileName == "" {
-			fileName = fh.Filename
-		}
 		f, err := fh.Open()
 		if err != nil {
 			logrus.WithError(err).Warn("open ttml file failed")
@@ -55,14 +51,7 @@ func (h *UploadHandler) UploadTTML(c *gin.Context) {
 			return
 		}
 	} else {
-		// 2. 兼容 raw body 上传
-		if fileName == "" {
-			fileName = c.Query("fileName")
-		}
-		if fileName == "" {
-			pkg.BadRequest(c, "fileName 必填")
-			return
-		}
+		// 兼容 raw body 上传
 		content, err = readLimited(c.Request.Body, h.files.MaxTTMLSize())
 		if err != nil {
 			logrus.WithError(err).Warn("read ttml request body failed")
@@ -76,17 +65,30 @@ func (h *UploadHandler) UploadTTML(c *gin.Context) {
 		return
 	}
 
-	// 若 fileName 未带 .ttml 后缀，自动补全
-	if !strings.HasSuffix(fileName, ".ttml") {
-		fileName = fileName + ".ttml"
+	// 文件名中的作者 ID 优先取 TTML 元数据
+	githubID, ok := service.ExtractTTMLAuthorGithubID(content)
+	if !ok {
+		binding, bindErr := h.binds.GetBinding(c.Request.Context(), user.Name)
+		if bindErr != nil {
+			logrus.WithError(bindErr).Warn("get github binding failed")
+			pkg.Fail(c, http.StatusInternalServerError, http.StatusInternalServerError, "读取 GitHub 绑定信息失败")
+			return
+		}
+		if binding == nil {
+			pkg.BadRequest(c, "无法确定歌词作者 GitHub ID：请在歌词元数据中填写 ttmlAuthorGithub，或先绑定 GitHub 账号")
+			return
+		}
+		githubID = binding.GithubID
 	}
+
+	// 忽略客户端传来的原始文件名，杜绝任意文件名进入 MinIO 与 GitHub 仓库
+	fileName := service.GenerateTTMLFileName(githubID)
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
 	defer cancel()
 
 	if err := h.files.UploadTTML(ctx, fileName, content); err != nil {
-		logrus.WithError(err).Warn("upload ttml failed")
-		pkg.BadRequest(c, "上传 TTML 失败")
+		writeServiceErr(c, err, "upload ttml failed")
 		return
 	}
 	pkg.OK(c, gin.H{"fileName": fileName})
@@ -104,6 +106,15 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 	subID, err := strconv.ParseInt(subIDStr, 10, 64)
 	if err != nil || subID <= 0 {
 		pkg.BadRequest(c, "submissionId 必填且为正整数")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	// 先校验投稿归属与音频数量上限，避免超限后仍然写入对象存储
+	if err := h.subs.CheckAudioQuota(ctx, user, subID); err != nil {
+		writeSubmissionErr(c, err)
 		return
 	}
 
@@ -126,13 +137,9 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
-	defer cancel()
-
 	audioKey, err := h.files.UploadAudio(ctx, subID, audioFH.Filename, audioContent)
 	if err != nil {
-		logrus.WithError(err).Warn("upload audio failed")
-		pkg.BadRequest(c, err.Error())
+		writeServiceErr(c, err, "upload audio failed")
 		return
 	}
 
@@ -150,8 +157,7 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 			}
 			coverKey, err = h.files.UploadCover(ctx, subID, coverFH.Filename, coverBytes)
 			if err != nil {
-				logrus.WithError(err).Warn("upload cover failed")
-				pkg.BadRequest(c, err.Error())
+				writeServiceErr(c, err, "upload cover failed")
 				return
 			}
 		}
@@ -171,6 +177,13 @@ func (h *UploadHandler) UploadAudio(c *gin.Context) {
 		PlatformID: c.PostForm("platformId"),
 	}
 	if err := h.subs.AttachAudio(ctx, user, subID, audioIn); err != nil {
+		// 关联失败时清理刚上传的对象，避免超限请求不断堆积文件
+		cleanupCtx, cleanupCancel := pkg.DetachedTimeout(ctx, 5*time.Second)
+		defer cleanupCancel()
+		_ = h.files.Delete(cleanupCtx, audioKey)
+		if coverKey != "" {
+			_ = h.files.Delete(cleanupCtx, coverKey)
+		}
 		writeSubmissionErr(c, err)
 		return
 	}

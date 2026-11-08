@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { Layout } from '@/App';
 import { RouteErrorBoundary } from '@/components/ErrorBoundary';
 import { LyricEditorShell } from '@/components/review/LyricEditorShell';
@@ -15,6 +15,10 @@ import {
   OnlineLyricSearch,
   OnlineViewLyricPage,
   Placeholder,
+  PluginAdmin,
+  PluginDetail,
+  PluginManageDetailPage,
+  PluginStore,
   ProfileHome,
   ProfileInfo,
   ProfileLayout,
@@ -85,6 +89,12 @@ export const router = createBrowserRouter([
       { path: '/bind-account', element: <BindAccount /> },
       { path: '/messages', element: <MessagesPage /> },
       { path: '/creator', element: <CreatorCenter /> },
+      { path: '/creator/plugins', element: <CreatorCenter /> },
+      { path: '/creator/plugins/detail', element: <PluginManageDetailPage /> },
+      { path: '/plugins', element: <PluginStore /> },
+      { path: '/plugins/submit', element: <Navigate to="/creator?tab=plugins" replace /> },
+      { path: '/plugins/admin', element: <PluginAdmin /> },
+      { path: '/plugins/:key', element: <PluginDetail /> },
       { path: '/creator/requests', element: <CreatorCenter /> },
       { path: '/creator/requests/:id/edit', element: <CreatorCenter /> },
       { path: '/creator/requests/:id', element: <RequestDetailPage /> },
@@ -95,6 +105,7 @@ export const router = createBrowserRouter([
         ),
       },
       { path: '/review', element: <ReviewCenter /> },
+      { path: '/review/plugin', element: <PluginManageDetailPage reviewMode /> },
       {
         path: '/review/detail',
         element: (

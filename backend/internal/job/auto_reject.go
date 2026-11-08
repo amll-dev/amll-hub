@@ -57,25 +57,7 @@ func NewAutoRejectJob(
 
 // Run 阻塞执行，每 interval 执行一次扫描，直到 ctx 取消
 func (j *AutoRejectJob) Run(ctx context.Context) {
-	logrus.WithFields(logrus.Fields{
-		"interval": j.interval.String(),
-		"after":    j.after.String(),
-	}).Info("auto-reject job started")
-	ticker := time.NewTicker(j.interval)
-	defer ticker.Stop()
-
-	// 启动后立即执行一次
-	j.runOnce(ctx)
-
-	for {
-		select {
-		case <-ctx.Done():
-			logrus.Info("auto-reject job stopped")
-			return
-		case <-ticker.C:
-			j.runOnce(ctx)
-		}
-	}
+	runPeriodic(ctx, "auto-reject", logrus.Fields{"after": j.after.String()}, j.interval, j.runOnce)
 }
 
 func (j *AutoRejectJob) runOnce(ctx context.Context) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/amll-dev/amll-hub/backend/internal/mail"
 	"github.com/amll-dev/amll-hub/backend/internal/model"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/amll-dev/amll-hub/backend/internal/ws"
 )
@@ -225,56 +226,71 @@ func (s *NotificationService) NotifyReviewResult(ctx context.Context, sub *model
 	return err
 }
 
-// sendResultEmailAsync 异步发送审核结果邮件。
+// reviewResultMail 审核结果邮件的发送参数
+type reviewResultMail struct {
+	Fields   logrus.Fields
+	Username string
+	Params   mail.ReviewResultParams
+}
+
+// sendReviewResultEmailAsync 异步发送审核结果邮件。
 // 失败只记日志：邮件是站内消息的补充，不该影响审核流程本身。
+func (s *NotificationService) sendReviewResultEmailAsync(ctx context.Context, in reviewResultMail) {
+	if !s.sender.Enabled() {
+		return
+	}
+	// 脱离请求生命周期：审核接口可能已返回，不能被原 ctx 的取消打断
+	pkg.GoSafe("review-result-mail", func() {
+		c, cancel := pkg.DetachedTimeout(ctx, s.sender.Timeout()+10*time.Second)
+		defer cancel()
+
+		email, err := s.emails.Resolve(c, in.Username)
+		if err != nil {
+			logrus.WithError(err).WithFields(in.Fields).Warn("resolve user email failed, skip mail")
+			return
+		}
+		if email == "" {
+			logrus.WithFields(in.Fields).Warn("user has no email, skip review result mail")
+			return
+		}
+
+		params := in.Params
+		params.Username = in.Username
+		params.ReviewedAt = time.Now().Format("2006-01-02 15:04")
+		params.SiteURL = s.site
+		subject, htmlBody, textBody, err := s.sender.RenderReviewResult(params)
+		if err != nil {
+			logrus.WithError(err).WithFields(in.Fields).Warn("render review result mail failed")
+			return
+		}
+		if err := s.sender.Send(c, email, subject, htmlBody, textBody); err != nil {
+			logrus.WithError(err).WithFields(in.Fields).Warn("send review result email failed")
+			return
+		}
+		logrus.WithFields(in.Fields).Info("review result email sent")
+	})
+}
+
+// sendResultEmailAsync 歌词投稿审核结果邮件
 func (s *NotificationService) sendResultEmailAsync(
 	ctx context.Context,
 	sub *model.Submission,
 	result string,
 	comment string,
 ) {
-	if !s.sender.Enabled() {
-		return
-	}
-	// 脱离请求生命周期：审核接口可能已返回，不能被原 ctx 的取消打断
-	go func() {
-		c, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.sender.Timeout()+10*time.Second)
-		defer cancel()
-
-		fields := logrus.Fields{"submission_id": sub.ID, "username": sub.Submitter, "result": result}
-
-		email, err := s.emails.Resolve(c, sub.Submitter)
-		if err != nil {
-			logrus.WithError(err).WithFields(fields).Warn("resolve user email failed, skip mail")
-			return
-		}
-		if email == "" {
-			logrus.WithFields(fields).Warn("user has no email, skip review result mail")
-			return
-		}
-
-		subject, htmlBody, textBody, err := s.sender.RenderReviewResult(mail.ReviewResultParams{
+	s.sendReviewResultEmailAsync(ctx, reviewResultMail{
+		Fields:   logrus.Fields{"submission_id": sub.ID, "username": sub.Submitter, "result": result},
+		Username: sub.Submitter,
+		Params: mail.ReviewResultParams{
 			DisplayName:  sub.SubmitterInfo.DisplayName,
-			Username:     sub.Submitter,
 			Title:        sub.Title,
 			Artist:       sub.Artist,
 			SubmissionID: sub.ID,
 			Result:       result,
 			Comment:      comment,
-			ReviewedAt:   time.Now().Format("2006-01-02 15:04"),
 			DetailURL:    fmt.Sprintf("%s/creator/lyrics/detail?id=%d", s.site, sub.ID),
-			SiteURL:      s.site,
-		})
-		if err != nil {
-			logrus.WithError(err).WithFields(fields).Warn("render review result mail failed")
-			return
-		}
-		if err := s.sender.Send(c, email, subject, htmlBody, textBody); err != nil {
-			logrus.WithError(err).WithFields(fields).Warn("send review result email failed")
-			return
-		}
-		logrus.WithFields(fields).Info("review result email sent")
-	}()
+		},
+	})
 }
 
 // NotifyNewComment T3：投稿收到他人评论时通知投稿人
@@ -307,9 +323,90 @@ func (s *NotificationService) NotifyAutoRejected(ctx context.Context, sub *model
 	return err
 }
 
+// NotifyPluginReviewResult 插件审核结果通知发布者（站内信 + 邮件）
+func (s *NotificationService) NotifyPluginReviewResult(
+	ctx context.Context,
+	version *model.PluginVersion,
+	plugin *model.Plugin,
+	action string,
+	comment string,
+) error {
+	if version == nil || plugin == nil || version.SubmittedBy == "" {
+		return nil
+	}
+	approved := action == PluginActionApprove
+	result := model.NotifyResultRejected
+	title := "插件未通过审核"
+	content := fmt.Sprintf("插件《%s》v%s 未通过审核。%s", plugin.Name, version.Version, comment)
+	if approved {
+		result = model.NotifyResultApproved
+		title = "插件已通过审核"
+		content = fmt.Sprintf("插件《%s》v%s 已通过审核并上架", plugin.Name, version.Version)
+	}
+	err := s.Notify(ctx, NotifyInput{
+		Username:    version.SubmittedBy,
+		Type:        model.NotifyTypeReview,
+		Result:      result,
+		Title:       title,
+		Content:     content,
+		ActionPath:  "/creator/plugins",
+		ActionLabel: "查看我的投稿",
+	})
+	s.sendPluginResultEmailAsync(ctx, version, plugin, action, comment)
+	return err
+}
+
+// sendPluginResultEmailAsync 插件审核结果邮件
+func (s *NotificationService) sendPluginResultEmailAsync(
+	ctx context.Context,
+	version *model.PluginVersion,
+	plugin *model.Plugin,
+	action string,
+	comment string,
+) {
+	approved := action == PluginActionApprove
+	result := model.NotifyResultRejected
+	subject := fmt.Sprintf("插件《%s》v%s 未通过审核", plugin.Name, version.Version)
+	headline := "你的插件未通过审核"
+	lead := fmt.Sprintf("你提交的插件《%s》v%s 未通过本次审核。", plugin.Name, version.Version)
+	tip := "可根据审核意见调整后提交新版本；如有疑问可在插件详情页留言。"
+	button := "查看我的投稿"
+	if approved {
+		result = model.NotifyResultApproved
+		subject = fmt.Sprintf("插件《%s》v%s 已通过审核", plugin.Name, version.Version)
+		headline = "你的插件已通过审核"
+		lead = fmt.Sprintf("你提交的插件《%s》v%s 已通过审核并上架到插件商店。", plugin.Name, version.Version)
+		tip = "插件已进入商店目录，用户可通过商店提供者刷新并安装。"
+	}
+	s.sendReviewResultEmailAsync(ctx, reviewResultMail{
+		Fields: logrus.Fields{
+			"plugin":   plugin.PluginKey,
+			"version":  version.Version,
+			"username": version.SubmittedBy,
+			"action":   action,
+		},
+		Username: version.SubmittedBy,
+		Params: mail.ReviewResultParams{
+			DisplayName:  version.SubmitterInfo.DisplayName,
+			Title:        plugin.Name + " v" + version.Version,
+			Artist:       "插件商店",
+			SubmissionID: version.ID,
+			Result:       result,
+			Subject:      subject,
+			Headline:     headline,
+			Lead:         lead,
+			Tip:          tip,
+			Preheader:    subject,
+			Comment:      comment,
+			DetailURL:    s.site + "/creator/plugins",
+			ButtonText:   button,
+		},
+	})
+}
+
 // StartCleanupTask 启动 90 天历史消息清理任务（P8）
 func (s *NotificationService) StartCleanupTask(ctx context.Context) {
-	go func() {
+	pkg.GoSafe("notification-cleanup", func() {
 		interval := 24 * time.Hour
 		retention := 90 * 24 * time.Hour
 		ticker := time.NewTicker(interval)
@@ -329,7 +426,7 @@ func (s *NotificationService) StartCleanupTask(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 // publish WS 推送（失败只记日志；Redis Pub/Sub 是 at-most-once，前端有轮询兜底）

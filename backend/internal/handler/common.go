@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
+	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
@@ -38,4 +40,20 @@ func readLimited(r io.Reader, max int64) ([]byte, error) {
 func writeUpstreamErr(c *gin.Context, err error, message string) {
 	logrus.WithError(err).Warn("upstream service unavailable")
 	pkg.Fail(c, http.StatusBadGateway, http.StatusBadGateway, message)
+}
+
+// writeServiceErr 将 service 层错误映射为合适的 HTTP 响应：
+func writeServiceErr(c *gin.Context, err error, action string) {
+	var validationErr *service.ValidationError
+	switch {
+	case errors.As(err, &validationErr):
+		pkg.BadRequest(c, validationErr.Message)
+	case errors.Is(err, service.ErrInvalidInput):
+		pkg.BadRequest(c, "请求参数非法")
+	case errors.Is(err, service.ErrUpstreamUnavailable):
+		writeUpstreamErr(c, err, "上游服务暂不可用")
+	default:
+		logrus.WithError(err).Error(action)
+		pkg.InternalError(c, "内部错误")
+	}
 }

@@ -59,6 +59,22 @@ import type {
   PublicUserProfile,
   UpdateMyProfilePayload,
   UserSubmissionSort,
+  PluginAdminDetailResult,
+  PluginAdminListResult,
+  PluginAuditListResult,
+  PluginComment,
+  PluginDetailResult,
+  PluginManagementItem,
+  PluginManagementListResult,
+  PluginManagementUpdatePayload,
+  PluginRatingSummary,
+  PluginReviewDetailResult,
+  PluginReviewQueueResult,
+  PluginStoreListResult,
+  PluginSubmissionResult,
+  PluginValidateResult,
+  PluginChannel,
+  PluginStatus,
 } from './types';
 import type {
   CaptchaConfig,
@@ -69,6 +85,7 @@ import type {
   UserProfile,
 } from './auth';
 import { clearAuth, getToken } from './auth';
+import { triggerDownload } from './blob-download';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 
@@ -104,10 +121,12 @@ const REQUEST_TIMEOUT_MS = 30_000;
  */
 export class ApiError extends Error {
   readonly code: number;
-  constructor(message: string, code: number) {
+  readonly details?: unknown;
+  constructor(message: string, code: number, details?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -118,10 +137,16 @@ export class ApiError extends Error {
  * 3. 业务码/HTTP 状态统一转换为 ApiError
  * 4. dev 环境统一请求日志（方法/路径/耗时/状态）
  */
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function baseRequest<T>(
+  path: string,
+  init: RequestInit,
+  jsonHeaders: boolean,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+  opts: { fileSizeMb?: string; networkErrorMessage?: string } = {}
+): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(jsonHeaders ? { 'Content-Type': 'application/json' } : {}),
     ...((init?.headers as Record<string, string> | undefined) ?? {}),
   };
   if (token) {
@@ -129,7 +154,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = performance.now();
   const method = init?.method ?? 'GET';
 
@@ -139,6 +164,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       throw new Error('请求超时，请稍后重试', { cause: err });
+    }
+    if (opts.networkErrorMessage) {
+      throw new Error(opts.networkErrorMessage, { cause: err });
     }
     throw err;
   } finally {
@@ -171,6 +199,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(msg, 401);
   }
 
+  if (res.status === 413) {
+    throw new Error(
+      opts.fileSizeMb
+        ? `上传失败：文件过大（${opts.fileSizeMb} MB），服务器拒绝接收 413 Content Too Large`
+        : '请求失败：文件过大（413）'
+    );
+  }
+
   let json: ApiResponse<T>;
   try {
     json = (await res.json()) as ApiResponse<T>;
@@ -179,9 +215,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (json.code !== 200) {
-    throw new ApiError(json.message || `请求失败：HTTP ${res.status}`, json.code);
+    throw new ApiError(json.message || `请求失败：HTTP ${res.status}`, json.code, json.data);
   }
   return json.data as T;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return baseRequest<T>(path, init ?? {}, true);
+}
+
+/** multipart/form-data 请求（不设置 Content-Type，交给浏览器生成 boundary） */
+async function requestForm<T>(
+  path: string,
+  form: FormData,
+  options: { timeoutMs?: number; fileSizeMb?: string; networkErrorMessage?: string } = {}
+): Promise<T> {
+  return baseRequest<T>(path, { method: 'POST', body: form }, false, options.timeoutMs ?? 180_000, {
+    networkErrorMessage: '上传失败：网络连接中断，请检查网络后重试',
+    ...options,
+  });
 }
 
 function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -524,19 +576,10 @@ export const api = {
    * multipart/form-data，需单独 fetch
    */
   async uploadAvatar(file: File): Promise<string> {
-    const token = getToken();
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch(`${API_BASE}/api/v1/auth/avatar`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      body: form,
-    });
-    const json = (await res.json()) as ApiResponse<{ avatar: string }>;
-    if (json.code !== 200 || !json.data) {
-      throw new Error(json.message || `上传失败：HTTP ${res.status}`);
-    }
-    return json.data.avatar;
+    const data = await requestForm<{ avatar: string }>('/api/v1/auth/avatar', form);
+    return data.avatar;
   },
 
   /**
@@ -547,21 +590,11 @@ export const api = {
     jsonData: SearchIpData;
     tempKeys: Record<string, string>;
   }): Promise<{ id: number; imageCount: number }> {
-    const token = getToken();
     const form = new FormData();
     if (params.title) form.append('title', params.title);
     form.append('data', JSON.stringify(params.jsonData));
     form.append('tempKeys', JSON.stringify(params.tempKeys));
-    const res = await fetch(`${API_BASE}/api/v1/search-ip/submissions`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      body: form,
-    });
-    const json = (await res.json()) as ApiResponse<{ id: number; imageCount: number }>;
-    if (json.code !== 200 || !json.data) {
-      throw new Error(json.message || `投稿失败：HTTP ${res.status}`);
-    }
-    return json.data;
+    return requestForm<{ id: number; imageCount: number }>('/api/v1/search-ip/submissions', form);
   },
 
   /**
@@ -578,6 +611,8 @@ export const api = {
     const xhr = new XMLHttpRequest();
     const promise = new Promise<{ tempKey: string }>((resolve, reject) => {
       xhr.open('POST', `${API_BASE}/api/v1/search-ip/upload-temp`);
+      xhr.timeout = 120_000;
+      xhr.ontimeout = () => reject(new Error('上传超时，请稍后重试'));
       if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) {
@@ -703,19 +738,10 @@ export const api = {
 
   /** 上传主页背景图 POST /api/v1/users/me/banner（multipart） */
   async uploadBanner(file: File): Promise<string> {
-    const token = getToken();
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch(`${API_BASE}/api/v1/users/me/banner`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      body: form,
-    });
-    const json = (await res.json()) as ApiResponse<{ bannerKey: string }>;
-    if (json.code !== 200 || !json.data) {
-      throw new Error(json.message || `上传失败：HTTP ${res.status}`);
-    }
-    return json.data.bannerKey;
+    const data = await requestForm<{ bannerKey: string }>('/api/v1/users/me/banner', form);
+    return data.bannerKey;
   },
 
   /** MinIO 对象 key → 匿名可读的文件 URL */
@@ -740,20 +766,10 @@ export const api = {
    * multipart/form-data: file + fileName
    */
   async uploadTtml(file: Blob, fileName: string): Promise<{ fileName: string }> {
-    const token = getToken();
     const form = new FormData();
     form.append('file', file, fileName);
     form.append('fileName', fileName);
-    const res = await fetch(`${API_BASE}/api/v1/uploads/ttml`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      body: form,
-    });
-    const json = (await res.json()) as ApiResponse<{ fileName: string }>;
-    if (json.code !== 200 || !json.data) {
-      throw new Error(json.message || `上传失败：HTTP ${res.status}`);
-    }
-    return json.data;
+    return requestForm<{ fileName: string }>('/api/v1/uploads/ttml', form);
   },
 
   /**
@@ -773,7 +789,6 @@ export const api = {
       platformId?: string;
     }
   ): Promise<void> {
-    const token = getToken();
     const form = new FormData();
     form.append('audio', audioFile);
     form.append('submissionId', String(submissionId));
@@ -784,21 +799,12 @@ export const api = {
     if (meta?.platformId) form.append('platformId', meta.platformId);
     if (coverFile) form.append('cover', coverFile);
 
-    const res = await fetch(`${API_BASE}/api/v1/uploads/audio`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      body: form,
+    const sizeMb = (audioFile.size / (1024 * 1024)).toFixed(1);
+    await requestForm<unknown>('/api/v1/uploads/audio', form, {
+      timeoutMs: 5 * 60_000,
+      fileSizeMb: sizeMb,
+      networkErrorMessage: `上传失败：连接中断，文件（${sizeMb} MB）可能超过服务器允许的上传大小，请压缩或更换更小的文件后重试`,
     });
-    if (!res.ok) {
-      let message = `上传失败：HTTP ${res.status}`;
-      try {
-        const json = (await res.json()) as ApiResponse<unknown>;
-        if (json.message) message = json.message;
-      } catch {
-        // 响应非 JSON，使用默认消息
-      }
-      throw new Error(message);
-    }
   },
 
   /**
@@ -827,8 +833,8 @@ export const api = {
     status?: 'pending' | 'draft';
     /** 关联的歌词请愿 ID */
     petitionIds?: number[];
-  }): Promise<{ id: number }> {
-    return request<{ id: number }>('/api/v1/submissions', {
+  }): Promise<{ id: number; petitionLinkFailed?: boolean }> {
+    return request<{ id: number; petitionLinkFailed?: boolean }>('/api/v1/submissions', {
       method: 'POST',
       body: JSON.stringify(params),
     });
@@ -989,8 +995,14 @@ export const api = {
   },
 
   /** 搜索IP投稿列表 GET /api/v1/search-ip/submissions */
-  listSearchIpSubmissions(): Promise<SearchIpListResult> {
-    return request<SearchIpListResult>(`/api/v1/search-ip/submissions`);
+  listSearchIpSubmissions(
+    params: {
+      page?: number;
+      limit?: number;
+    } = {}
+  ): Promise<SearchIpListResult> {
+    const qs = buildQuery({ page: params.page, limit: params.limit });
+    return request<SearchIpListResult>(`/api/v1/search-ip/submissions${qs}`);
   },
 
   /** 搜索IP投稿详情 GET /api/v1/search-ip/submissions/:id */
@@ -999,8 +1011,14 @@ export const api = {
   },
 
   /** 全部搜索IP投稿列表（审核中心用，仅审核员）GET /api/v1/search-ip/submissions/all */
-  listAllSearchIpSubmissions(status?: string): Promise<SearchIpListResult> {
-    const qs = buildQuery({ status });
+  listAllSearchIpSubmissions(
+    params: {
+      status?: string;
+      page?: number;
+      limit?: number;
+    } = {}
+  ): Promise<SearchIpListResult> {
+    const qs = buildQuery({ status: params.status, page: params.page, limit: params.limit });
     return request<SearchIpListResult>(`/api/v1/search-ip/submissions/all${qs}`);
   },
 
@@ -1061,6 +1079,8 @@ export const api = {
     const xhr = new XMLHttpRequest();
     const promise = new Promise<{ tempKey: string }>((resolve, reject) => {
       xhr.open('POST', `${API_BASE}/api/v1/daily-recommendations/upload-temp`);
+      xhr.timeout = 120_000;
+      xhr.ontimeout = () => reject(new Error('上传超时，请稍后重试'));
       if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) {
@@ -1117,7 +1137,6 @@ export const api = {
     ncmId?: string;
     qqId?: string;
   }): Promise<{ id: number }> {
-    const token = getToken();
     const form = new FormData();
     form.append('songName', params.songName);
     form.append('artist', params.artist);
@@ -1126,16 +1145,7 @@ export const api = {
     form.append('comment', params.comment);
     if (params.ncmId) form.append('ncmId', params.ncmId);
     if (params.qqId) form.append('qqId', params.qqId);
-    const res = await fetch(`${API_BASE}/api/v1/daily-recommendations`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      body: form,
-    });
-    const json = (await res.json()) as ApiResponse<{ id: number }>;
-    if (json.code !== 200 || !json.data) {
-      throw new Error(json.message || `投稿失败：HTTP ${res.status}`);
-    }
-    return json.data;
+    return requestForm<{ id: number }>('/api/v1/daily-recommendations', form);
   },
 
   /** 获取所有已通过的每日推荐 GET /api/v1/daily-recommendations（公开） */
@@ -1166,8 +1176,14 @@ export const api = {
   },
 
   /** 我的每日推荐投稿列表 GET /api/v1/daily-recommendations/submissions */
-  listDailySubmissions(): Promise<DailyRecListResult> {
-    return request<DailyRecListResult>('/api/v1/daily-recommendations/submissions');
+  listDailySubmissions(
+    params: {
+      page?: number;
+      limit?: number;
+    } = {}
+  ): Promise<DailyRecListResult> {
+    const qs = buildQuery({ page: params.page, limit: params.limit });
+    return request<DailyRecListResult>(`/api/v1/daily-recommendations/submissions${qs}`);
   },
 
   /** 每日推荐投稿详情 GET /api/v1/daily-recommendations/submissions/:id */
@@ -1474,6 +1490,247 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ status }),
     });
+  },
+
+  // ===== 插件广场 =====
+  pluginStore: {
+    /** 公开列表 GET /api/v1/store/plugins */
+    list(params: {
+      page?: number;
+      pageSize?: number;
+      q?: string;
+      channel?: PluginChannel | '';
+      sort?: 'recent' | 'downloads' | 'name';
+    }): Promise<PluginStoreListResult> {
+      return request<PluginStoreListResult>(
+        `/api/v1/store/plugins${buildQuery({
+          page: params.page,
+          page_size: params.pageSize,
+          q: params.q,
+          channel: params.channel || undefined,
+          sort: params.sort,
+        })}`
+      );
+    },
+
+    /** 公开详情 GET /api/v1/store/plugins/:key */
+    detail(key: string): Promise<PluginDetailResult> {
+      return request<PluginDetailResult>(`/api/v1/store/plugins/${encodeURIComponent(key)}`);
+    },
+
+    /** 提交评分 POST /api/v1/store/plugins/:key/ratings */
+    rate(key: string, score: number): Promise<{ rating: PluginRatingSummary; myScore: number }> {
+      return request<{ rating: PluginRatingSummary; myScore: number }>(
+        `/api/v1/store/plugins/${encodeURIComponent(key)}/ratings`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ score }),
+        }
+      );
+    },
+
+    /** 预校验 POST /api/v1/store/submissions/validate */
+    validateSubmission(form: FormData): Promise<PluginValidateResult> {
+      return requestForm<PluginValidateResult>('/api/v1/store/submissions/validate', form);
+    },
+
+    /** 上传投稿 POST /api/v1/store/submissions */
+    createSubmission(form: FormData): Promise<PluginSubmissionResult> {
+      return requestForm<PluginSubmissionResult>('/api/v1/store/submissions', form);
+    },
+
+    /** 发布者插件列表 GET /api/v1/store/my/plugins */
+    myPlugins(params: {
+      page?: number;
+      pageSize?: number;
+      q?: string;
+    }): Promise<PluginManagementListResult> {
+      return request<PluginManagementListResult>(
+        `/api/v1/store/my/plugins${buildQuery({
+          page: params.page,
+          page_size: params.pageSize,
+          q: params.q,
+        })}`
+      );
+    },
+
+    /** 发布者单个插件详情 GET /api/v1/store/my/plugins/:key */
+    myPluginDetail(key: string): Promise<PluginManagementItem> {
+      return request<PluginManagementItem>(`/api/v1/store/my/plugins/${encodeURIComponent(key)}`);
+    },
+
+    /** 编辑插件级展示信息 PUT /api/v1/store/my/plugins/:key */
+    updateMyPlugin(key: string, payload: PluginManagementUpdatePayload): Promise<void> {
+      return request<void>(`/api/v1/store/my/plugins/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+    },
+
+    /** 下架插件 POST /api/v1/store/my/plugins/:key/unlist */
+    unlistMyPlugin(key: string): Promise<void> {
+      return request<void>(`/api/v1/store/my/plugins/${encodeURIComponent(key)}/unlist`, {
+        method: 'POST',
+      });
+    },
+
+    /** 回滚到历史版本 POST /api/v1/store/my/plugins/:key/versions/:id/rollback */
+    rollbackMyPluginVersion(key: string, versionId: number): Promise<void> {
+      return request<void>(
+        `/api/v1/store/my/plugins/${encodeURIComponent(key)}/versions/${versionId}/rollback`,
+        { method: 'POST' }
+      );
+    },
+
+    /** 审核员读取插件详情 GET /api/v1/store/review/plugins/:key */
+    reviewPluginDetail(key: string): Promise<PluginManagementItem> {
+      return request<PluginManagementItem>(
+        `/api/v1/store/review/plugins/${encodeURIComponent(key)}`
+      );
+    },
+
+    /** 带鉴权下载插件包（直接打开链接不会携带 token） */
+    async downloadSubmissionArtifact(versionId: number, filename: string): Promise<void> {
+      const token = getToken();
+      const res = await fetch(`/api/v1/store/submissions/${versionId}/artifact`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) {
+        let message = '下载失败';
+        try {
+          const data = (await res.json()) as { message?: string };
+          if (data?.message) message = data.message;
+        } catch {
+          // 忽略非 JSON 响应
+        }
+        throw new Error(message);
+      }
+      triggerDownload(await res.blob(), filename);
+    },
+
+    /** 上传插件图标 POST /api/v1/store/plugins/:key/icon */
+    uploadIcon(key: string, form: FormData): Promise<{ iconUrl: string }> {
+      return requestForm<{ iconUrl: string }>(
+        `/api/v1/store/plugins/${encodeURIComponent(key)}/icon`,
+        form
+      );
+    },
+
+    /** 插件评论列表 GET /api/v1/store/plugins/:key/comments */
+    pluginComments(key: string): Promise<PluginComment[]> {
+      return request<PluginComment[]>(`/api/v1/store/plugins/${encodeURIComponent(key)}/comments`);
+    },
+
+    /** 发表插件评论 POST /api/v1/store/plugins/:key/comments */
+    addPluginComment(key: string, content: string): Promise<void> {
+      return request<void>(`/api/v1/store/plugins/${encodeURIComponent(key)}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ content }),
+      });
+    },
+
+    /** 审核队列 GET /api/v1/store/review/queue */
+    reviewQueue(params: {
+      page?: number;
+      pageSize?: number;
+      q?: string;
+      status?: string;
+    }): Promise<PluginReviewQueueResult> {
+      return request<PluginReviewQueueResult>(
+        `/api/v1/store/review/queue${buildQuery({
+          page: params.page,
+          page_size: params.pageSize,
+          q: params.q,
+          status: params.status,
+        })}`
+      );
+    },
+
+    /** 审核详情 GET /api/v1/store/review/:id */
+    reviewDetail(id: number): Promise<PluginReviewDetailResult> {
+      return request<PluginReviewDetailResult>(`/api/v1/store/review/${id}`);
+    },
+
+    /** 审核通过 / 拒绝 POST /api/v1/store/review/:id/decision */
+    decideReview(id: number, action: 'approve' | 'reject', comment: string): Promise<void> {
+      return request<void>(`/api/v1/store/review/${id}/decision`, {
+        method: 'POST',
+        body: JSON.stringify({ action, comment }),
+      });
+    },
+
+    /** 管理端插件列表 GET /api/v1/store/admin/plugins */
+    adminList(params: {
+      page?: number;
+      pageSize?: number;
+      q?: string;
+    }): Promise<PluginAdminListResult> {
+      return request<PluginAdminListResult>(
+        `/api/v1/store/admin/plugins${buildQuery({
+          page: params.page,
+          page_size: params.pageSize,
+          q: params.q,
+        })}`
+      );
+    },
+
+    /** 管理端插件详情 GET /api/v1/store/admin/plugins/:id */
+    adminDetail(id: number): Promise<PluginAdminDetailResult> {
+      return request<PluginAdminDetailResult>(`/api/v1/store/admin/plugins/${id}`);
+    },
+
+    /** 上架 / 下架 / yank POST /api/v1/store/admin/versions/:id/listing */
+    adminListing(id: number, action: 'list' | 'unlist' | 'yank', reason = ''): Promise<void> {
+      return request<void>(`/api/v1/store/admin/versions/${id}/listing`, {
+        method: 'POST',
+        body: JSON.stringify({ action, reason }),
+      });
+    },
+
+    /** 插件状态 POST /api/v1/store/admin/plugins/:id/status */
+    adminStatus(id: number, status: PluginStatus, reason = ''): Promise<void> {
+      return request<void>(`/api/v1/store/admin/plugins/${id}/status`, {
+        method: 'POST',
+        body: JSON.stringify({ status, reason }),
+      });
+    },
+
+    /** 硬删除版本 DELETE /api/v1/store/admin/versions/:id */
+    adminDeleteVersion(id: number, reason = ''): Promise<void> {
+      return request<void>(`/api/v1/store/admin/versions/${id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ reason }),
+      });
+    },
+
+    /** 硬删除插件 DELETE /api/v1/store/admin/plugins/:id */
+    adminDeletePlugin(id: number, reason = ''): Promise<void> {
+      return request<void>(`/api/v1/store/admin/plugins/${id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ reason }),
+      });
+    },
+
+    /** 审计列表 GET /api/v1/store/admin/audit */
+    adminAudit(params: {
+      page?: number;
+      pageSize?: number;
+      targetType?: string;
+      targetId?: number;
+      operator?: string;
+      action?: string;
+    }): Promise<PluginAuditListResult> {
+      return request<PluginAuditListResult>(
+        `/api/v1/store/admin/audit${buildQuery({
+          page: params.page,
+          page_size: params.pageSize,
+          target_type: params.targetType,
+          target_id: params.targetId,
+          operator: params.operator,
+          action: params.action,
+        })}`
+      );
+    },
   },
 };
 

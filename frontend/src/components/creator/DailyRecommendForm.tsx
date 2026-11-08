@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Check, ImagePlus, Loader2 } from 'lucide-react';
 import { DatePicker } from '@/components/DatePicker';
 import { api } from '@/lib/api';
+import { formatDateKey } from '@/lib/date';
 import { queryKeys } from '@/lib/query';
 import { insertMarkup, MARKUP_BUTTONS, parseMarkupText } from '@/lib/markup';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
@@ -14,14 +15,6 @@ import type { MusicPlatform } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-
-/** 格式化日期为 YYYY-MM-DD */
-function formatDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
 
 /** 每日推荐投稿表单 */
 export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) => void }) {

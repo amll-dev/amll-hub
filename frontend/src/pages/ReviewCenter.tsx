@@ -1,12 +1,6 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  keepPreviousData,
-  useInfiniteQuery,
-  useQuery,
-  useQueryClient,
-  type InfiniteData,
-} from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAtom } from 'jotai';
 import {
   resetReviewCenterState,
@@ -25,6 +19,7 @@ import {
   Home,
   LayoutDashboard,
   Megaphone,
+  Package,
   Search,
   Shield,
   ShieldCheck,
@@ -35,14 +30,15 @@ import { formatDateTime } from '@/lib/format';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
-import { useSentinel } from '@/hooks/useSentinel';
 import { NavItem } from '@/components/NavItem';
 import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
 import { ListSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ListPagination } from '@/components/ui/list-pagination';
 import { SearchIpDetail } from '@/components/creator/SearchIpDetail';
 import { AnnouncementPanel } from '@/components/review/AnnouncementPanel';
 import { ReviewerManagePanel } from '@/components/review/ReviewerManagePanel';
+import { PluginReviewPanel } from '@/components/plugin/PluginReviewPanel';
 import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
 import { UserAvatar } from '@/components/submission/UserAvatar';
 import { UserDisplayName } from '@/components/submission/UserDisplayName';
@@ -66,7 +62,7 @@ const reviewTabs: { key: ReviewTab; label: string }[] = [
   { key: 'closed', label: '已关闭' },
 ];
 
-/** 审核列表分页大小（无限滚动） */
+/** 审核列表每页条数 */
 const LIST_PAGE_SIZE = 20;
 
 // 搜索IP投稿状态筛选选项
@@ -77,76 +73,69 @@ const searchIpTabs: { key: SearchIpTab; label: string }[] = [
   { key: 'rejected', label: '未通过' },
 ];
 
-/** 审核中心列表（无限滚动：每页 20 条，滚动到底自动加载下一页） */
+/** 审核中心列表（分页：每页 20 条） */
 function ReviewList() {
   const queryClient = useQueryClient();
   // 列表筛选状态存全局 atoms（页面卸载时统一复位）
   const [tab, setTab] = useAtom(reviewTabAtom);
   const [search, setSearch] = useAtom(reviewSearchAtom);
+  const [page, setPage] = useState(1);
   const trimmedSearch = search.trim() || undefined;
+
   const listKey = queryKeys.submissions({
     mode: 'review',
     status: tab,
     search: trimmedSearch,
     limit: LIST_PAGE_SIZE,
+    page,
   });
 
-  const listQuery = useInfiniteQuery({
+  const listQuery = useQuery({
     queryKey: listKey,
-    queryFn: ({ pageParam }) =>
+    queryFn: () =>
       api.listAllSubmissions({
         status: tab,
         search: trimmedSearch,
-        page: pageParam,
+        page,
         limit: LIST_PAGE_SIZE,
       }),
-    initialPageParam: 1,
-    getNextPageParam: (last, all) => {
-      const fetched = all.reduce((n, p) => n + (p.items?.length ?? 0), 0);
-      if (typeof last.total === 'number' && last.total > 0) {
-        return fetched < last.total ? all.length + 1 : undefined;
-      }
-      return (last.items?.length ?? 0) < LIST_PAGE_SIZE ? undefined : all.length + 1;
-    },
     placeholderData: keepPreviousData,
     staleTime: 15_000,
   });
-  const items = useMemo(
-    () => listQuery.data?.pages.flatMap((p) => p.items ?? []) ?? [],
-    [listQuery.data]
-  );
-  const total = listQuery.data?.pages[0]?.total ?? 0;
+  const items = listQuery.data?.items ?? [];
+  const total = listQuery.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
   const errorMsg =
     listQuery.error instanceof Error ? listQuery.error.message : listQuery.error ? '加载失败' : '';
 
-  const loadMore = () => {
-    if (listQuery.hasNextPage && !listQuery.isFetchingNextPage) {
-      void listQuery.fetchNextPage();
-    }
-  };
-  const sentinelRef = useSentinel(loadMore, listQuery.hasNextPage === true && !errorMsg);
+  // 切换筛选条件或搜索词时回到第一页
+  useEffect(() => {
+    setPage(1);
+  }, [tab, trimmedSearch]);
 
-  // 订阅全局投稿状态变更（审核员进入详情页标记审核中等场景）：补丁所有已加载页
+  // 条目减少后当前页可能越界（如末页稿件被审核掉），自动收回
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  // 订阅全局投稿状态变更（审核员进入详情页标记审核中等场景）：补丁当前页
   useSubmissionListSync((payload) => {
     const id = payload.id ?? payload.submissionId;
     if (!id || !payload.status) return;
-    queryClient.setQueryData<InfiniteData<SubmissionListResult>>(listKey, (prev) =>
+    queryClient.setQueryData<SubmissionListResult>(listKey, (prev) =>
       prev
         ? {
             ...prev,
-            pages: prev.pages.map((p) => ({
-              ...p,
-              items: (p.items ?? []).map((it) =>
-                it.id === id
-                  ? {
-                      ...it,
-                      status: payload.status as SubmissionListItem['status'],
-                      reviewer: payload.reviewer ?? it.reviewer,
-                      reviewerInfo: payload.reviewerInfo ?? it.reviewerInfo,
-                    }
-                  : it
-              ),
-            })),
+            items: (prev.items ?? []).map((it) =>
+              it.id === id
+                ? {
+                    ...it,
+                    status: payload.status as SubmissionListItem['status'],
+                    reviewer: payload.reviewer ?? it.reviewer,
+                    reviewerInfo: payload.reviewerInfo ?? it.reviewerInfo,
+                  }
+                : it
+            ),
           }
         : prev
     );
@@ -197,8 +186,7 @@ function ReviewList() {
         ) : (
           <>
             <p className="mb-3 text-xs text-ink-3">
-              已加载 {items.length}
-              {total > items.length ? ` / 共 ${total} 条` : ' 条'}
+              共 {total} 条 · 第 {page} / {totalPages} 页
             </p>
             <ul className="space-y-2">
               {items.map((item) => {
@@ -275,19 +263,7 @@ function ReviewList() {
               })}
             </ul>
 
-            {/* 无限滚动：哨兵进入视口自动加载下一页，按钮兜底 */}
-            {(listQuery.hasNextPage || listQuery.isFetchingNextPage) && (
-              <div ref={sentinelRef} className="pt-2 text-center">
-                <button
-                  type="button"
-                  onClick={loadMore}
-                  disabled={!listQuery.hasNextPage || listQuery.isFetchingNextPage}
-                  className="inline-flex h-9 items-center justify-center rounded-md border border-input bg-card px-5 text-sm text-ink-2 transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {listQuery.isFetchingNextPage ? '加载中…' : '加载更多'}
-                </button>
-              </div>
-            )}
+            <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
           </>
         )}
       </motion.div>
@@ -300,16 +276,28 @@ function SearchIpReviewList() {
   // 列表筛选与选中详情存全局 atoms（页面卸载时统一复位）
   const [tab, setTab] = useAtom(searchIpTabAtom);
   const [detailId, setDetailId] = useAtom(searchIpDetailIdAtom);
+  const [page, setPage] = useState(1);
 
   const { data, isPending, error } = useQuery({
-    queryKey: queryKeys.searchIpSubmissions('all', tab),
-    queryFn: () => api.listAllSearchIpSubmissions(tab),
+    queryKey: queryKeys.searchIpSubmissions('all', tab, page),
+    queryFn: () => api.listAllSearchIpSubmissions({ status: tab, page, limit: LIST_PAGE_SIZE }),
     placeholderData: keepPreviousData,
     staleTime: 15_000,
   });
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
   const errorMsg = error instanceof Error ? error.message : error ? '加载失败' : '';
+
+  // 切换筛选条件时回到第一页
+  useEffect(() => {
+    setPage(1);
+  }, [tab]);
+
+  // 条目减少后当前页可能越界，自动收回
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   // 点击进入详情
   if (detailId !== null) {
@@ -345,7 +333,9 @@ function SearchIpReviewList() {
           <EmptyState icon={Search} title="暂无搜索IP投稿" description="换个筛选条件试试" />
         ) : (
           <>
-            <p className="mb-3 text-xs text-ink-3">共 {total} 条</p>
+            <p className="mb-3 text-xs text-ink-3">
+              共 {total} 条 · 第 {page} / {totalPages} 页
+            </p>
             <ul className="space-y-2">
               {items.map((item) => {
                 const meta = statusMeta[item.status] ?? {
@@ -384,6 +374,7 @@ function SearchIpReviewList() {
                 );
               })}
             </ul>
+            <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
           </>
         )}
       </motion.div>
@@ -521,6 +512,12 @@ export function ReviewCenter() {
                   active={view === 'search-ip'}
                   onClick={() => setView('search-ip')}
                 />
+                <NavItem
+                  icon={<Package className="h-4 w-4" />}
+                  label="插件审核"
+                  active={view === 'plugins'}
+                  onClick={() => setView('plugins')}
+                />
               </>
             )}
             <NavItem
@@ -592,6 +589,21 @@ export function ReviewCenter() {
                   IP显示投稿审核
                 </h2>
                 <SearchIpReviewList />
+              </motion.div>
+            )}
+
+            {/* 插件审核 */}
+            {view === 'plugins' && (
+              <motion.div
+                key="plugins"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, pointerEvents: 'none' }}
+                transition={{ duration: 0.15 }}
+                className="col-start-1 row-start-1 self-start rounded-lg border border-line bg-card p-6"
+              >
+                <h2 className="mb-4 text-xl font-bold tracking-tight text-foreground">插件审核</h2>
+                <PluginReviewPanel />
               </motion.div>
             )}
 

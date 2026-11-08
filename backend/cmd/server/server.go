@@ -15,6 +15,7 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/job"
 	"github.com/amll-dev/amll-hub/backend/internal/mail"
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/amll-dev/amll-hub/backend/internal/router"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
@@ -112,6 +113,14 @@ func Run() {
 	// 投稿  请愿关联 repository
 	petitionLinkRepo := repository.NewPetitionLinkRepo(db)
 
+	// 插件商店 repository
+	pluginRepo := repository.NewPluginRepo(db)
+	pluginVersionRepo := repository.NewPluginVersionRepo(db)
+	pluginReviewRepo := repository.NewPluginReviewRepo(db)
+	pluginAuditRepo := repository.NewPluginAuditRepo(db)
+	pluginCommentRepo := repository.NewPluginCommentRepo(db)
+	pluginRatingRepo := repository.NewPluginRatingRepo(db)
+
 	// 4. 初始化 service
 	syncSvc := service.NewSyncService(cfg, syncRepo, progressRepo, mq)
 	lyricsSvc := service.NewLyricsService(cfg, songRepo, minioClient, redisClient)
@@ -203,6 +212,9 @@ func Run() {
 
 	// 歌词校验
 	validateSvc := service.NewValidateService(cfg.Worker.BaseURL)
+	submissionSvc.SetValidateService(validateSvc)
+	reviewSvc.SetValidateService(validateSvc)
+	revisionSvc.SetValidateService(validateSvc)
 
 	// 公开用户主页（本地扩展资料表）
 	userProfileRepo := repository.NewUserProfileRepo(db)
@@ -211,6 +223,28 @@ func Run() {
 	)
 	userSearchSvc := service.NewUserSearchService(casdoorClient, userProfileRepo, subRepo)
 
+	// 插件商店 service
+	pluginFileSvc, err := service.NewPluginStoreFileService(context.Background(), cfg, minioClient)
+	if err != nil {
+		logrus.Fatalf("init plugin store bucket: %v", err)
+	}
+	pluginValidator := service.NewPluginValidator(service.PluginContainerLimits{
+		MaxContainerBytes: cfg.PluginStore.MaxArtifactBytes,
+		MaxTotalBytes:     cfg.PluginStore.MaxUnpackedBytes,
+		MaxEntryBytes:     cfg.PluginStore.MaxEntryBytes,
+		MaxManifestBytes:  cfg.PluginStore.MaxManifestBytes,
+		MaxEntries:        cfg.PluginStore.MaxEntries,
+	})
+	pluginCatalogSvc := service.NewPluginCatalogService(cfg, redisClient, pluginRepo)
+	pluginStoreSvc := service.NewPluginStoreService(
+		cfg, db, pluginRepo, pluginVersionRepo, pluginReviewRepo, pluginAuditRepo, pluginCommentRepo, pluginRatingRepo,
+		pluginFileSvc, pluginValidator, pluginCatalogSvc,
+	)
+	pluginReviewSvc := service.NewPluginReviewService(
+		db, pluginRepo, pluginVersionRepo, pluginReviewRepo, pluginCatalogSvc,
+	)
+	// 插件商店审核结果通知
+	pluginReviewSvc.SetNotifier(notifSvc)
 	// 4.1 启动无歌词服务
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
@@ -231,7 +265,8 @@ func Run() {
 
 	// 4.2 启动 WebSocket Hub
 	hub := ws.NewHub(redisClient)
-	go hub.Run(appCtx)
+	pluginReviewSvc.SetHub(hub)
+	pkg.GoSafe("ws-hub", func() { hub.Run(appCtx) })
 
 	// 注入 hub 给 viewerSvc
 	viewerSvc.SetHub(hub)
@@ -257,14 +292,14 @@ func Run() {
 		cfg.Submission.AutoRejectAfter, cfg.Submission.AutoRejectInterval,
 	)
 	autoRejectJob.SetNotifier(notifSvc) // T4 触发点
-	go autoRejectJob.Run(appCtx)
+	pkg.GoSafe("auto-reject-job", func() { autoRejectJob.Run(appCtx) })
 
 	// 4.3.1 启动审核占用租约清理任务（心跳超时 → 回退待审核）
 	reviewLeaseJob := job.NewReviewLeaseJob(
 		subRepo, viewerSvc,
 		cfg.Submission.ReviewLeaseTTL, cfg.Submission.ReviewLeaseInterval,
 	)
-	go reviewLeaseJob.Run(appCtx)
+	pkg.GoSafe("review-lease-job", func() { reviewLeaseJob.Run(appCtx) })
 
 	// 4.4 审核员/超级管理员缓存
 	reviewerCache := middleware.NewReviewerCache(reviewerRepo, cfg.Submission.ReviewerCacheTTL)
@@ -290,8 +325,8 @@ func Run() {
 	reviewH := handler.NewReviewHandler(reviewSvc)
 	revisionH := handler.NewRevisionHandler(revisionSvc)
 	commentH := handler.NewCommentHandler(submissionSvc)
-	uploadH := handler.NewUploadHandler(fileSvc, submissionSvc)
-	searchIpH := handler.NewSearchIPHandler(searchIpSvc)
+	uploadH := handler.NewUploadHandler(fileSvc, submissionSvc, githubBindSvc)
+	searchIpH := handler.NewSearchIPHandler(searchIpSvc, reviewerCache)
 	dailyRecH := handler.NewDailyRecommendationHandler(dailyRecSvc)
 	lyricRequestH := handler.NewLyricRequestHandler(lyricRequestSvc)
 	petitionLinkH := handler.NewPetitionLinkHandler(petitionLinkSvc, reviewerCache, adminCache)
@@ -303,6 +338,11 @@ func Run() {
 	userActivityH := handler.NewUserActivityHandler(userActivitySvc)
 	userProfileH := handler.NewUserProfileHandler(userProfileSvc)
 	userSearchH := handler.NewUserSearchHandler(userSearchSvc)
+	pluginStoreH := handler.NewPluginStoreHandler(
+		pluginStoreSvc, pluginFileSvc, pluginCatalogSvc, cfg, reviewerCache, adminCache,
+	)
+	pluginReviewH := handler.NewPluginReviewHandler(pluginReviewSvc)
+	pluginAdminH := handler.NewPluginAdminHandler(pluginStoreSvc)
 	wsH := handler.NewWSHandler(hub, viewerSvc, reviewerCache, cfg.Casdoor.JWTSecret)
 
 	// 6. 启动 HTTP
@@ -338,6 +378,9 @@ func Run() {
 		UserActivity: userActivityH,
 		UserProfile:  userProfileH,
 		UserSearch:   userSearchH,
+		PluginStore:  pluginStoreH,
+		PluginReview: pluginReviewH,
+		PluginAdmin:  pluginAdminH,
 
 		ReviewerCache: reviewerCache,
 		AdminCache:    adminCache,
@@ -350,7 +393,7 @@ func Run() {
 		Handler:           r,
 		ReadTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      60 * time.Second,
+		WriteTimeout:      5 * time.Minute,
 		IdleTimeout:       120 * time.Second,
 	}
 

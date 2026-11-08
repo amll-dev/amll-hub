@@ -46,6 +46,9 @@ type RouterDeps struct {
 	UserActivity *handler.UserActivityHandler
 	UserProfile  *handler.UserProfileHandler
 	UserSearch   *handler.UserSearchHandler
+	PluginStore  *handler.PluginStoreHandler
+	PluginReview *handler.PluginReviewHandler
+	PluginAdmin  *handler.PluginAdminHandler
 
 	ReviewerCache *middleware.ReviewerCache
 	AdminCache    *middleware.AdminCache
@@ -86,6 +89,9 @@ func New(deps RouterDeps) *gin.Engine {
 	userActivityH := deps.UserActivity
 	userProfileH := deps.UserProfile
 	userSearchH := deps.UserSearch
+	pluginStoreH := deps.PluginStore
+	pluginReviewH := deps.PluginReview
+	pluginAdminH := deps.PluginAdmin
 	reviewerCache := deps.ReviewerCache
 	adminCache := deps.AdminCache
 	jwtSecret := deps.JWTSecret
@@ -132,6 +138,7 @@ func New(deps RouterDeps) *gin.Engine {
 			"/api/v1/uploads/file",
 			"/api/v1/search-ip/image",
 			"/api/v1/daily-recommendations/image",
+			"/api/v1/store/artifacts",
 		}),
 	))
 
@@ -238,6 +245,64 @@ func New(deps RouterDeps) *gin.Engine {
 			protected.POST("/qrcode/confirm", authH.ConfirmQRCode)
 			protected.POST("/qrcode/cancel", authH.CancelQRCode)
 			protected.GET("/github/bind-url", authGithubH.BindURL)
+		}
+
+		// 插件商店：公开接口（必须在 auth 组之前注册静态路径）
+		storePublic := api.Group("/store")
+		{
+			storePublic.GET("/catalog.json", pluginStoreH.Catalog)
+			storePublic.GET("/artifacts/:file", pluginStoreH.Artifact)
+			storePublic.GET("/plugins", pluginStoreH.ListPublic)
+			storePublic.GET("/plugins/:key", middleware.OptionalAuth(jwtSecret), pluginStoreH.GetPublic)
+			storePublic.GET("/plugins/:key/icon", pluginStoreH.GetIcon)
+			storePublic.GET("/plugins/:key/comments", pluginStoreH.ListComments)
+			storePublic.GET("/stats", pluginStoreH.Stats)
+		}
+
+		// 插件商店：发布者（登录）
+		storeAuth := api.Group("/store")
+		storeAuth.Use(middleware.Auth(jwtSecret))
+		{
+			storeAuth.POST("/submissions", pluginStoreH.CreateSubmission)
+			// 静态段 validate 必须先于 :id 注册
+			storeAuth.POST("/submissions/validate", pluginStoreH.ValidateSubmission)
+			storeAuth.GET("/submissions", pluginStoreH.ListMine)
+			storeAuth.GET("/submissions/:id", pluginStoreH.GetMine)
+			storeAuth.PUT("/submissions/:id", pluginStoreH.UpdateMine)
+			storeAuth.GET("/submissions/:id/artifact", pluginStoreH.DownloadMineArtifact)
+			storeAuth.POST("/plugins/:key/icon", pluginStoreH.UploadIcon)
+			storeAuth.POST("/plugins/:key/comments", pluginStoreH.CreateComment)
+			storeAuth.POST("/plugins/:key/ratings", pluginStoreH.RatePlugin)
+			// 发布者插件管理（创作中心）
+			storeAuth.GET("/my/plugins", pluginStoreH.ListMyPlugins)
+			storeAuth.GET("/my/plugins/:key", pluginStoreH.GetMyPlugin)
+			storeAuth.PUT("/my/plugins/:key", pluginStoreH.UpdateMyPlugin)
+			storeAuth.POST("/my/plugins/:key/unlist", pluginStoreH.UnlistMyPlugin)
+			storeAuth.POST("/my/plugins/:key/versions/:id/rollback", pluginStoreH.RollbackMyPluginVersion)
+		}
+
+		// 插件商店：审核员
+		storeReview := api.Group("/store/review")
+		storeReview.Use(middleware.Auth(jwtSecret), middleware.RequireReviewerOrAdmin(reviewerCache, adminCache))
+		{
+			storeReview.GET("/queue", pluginReviewH.Queue)
+			storeReview.GET("/plugins/:key", pluginStoreH.GetReviewPlugin)
+			storeReview.GET("/:id", pluginReviewH.Get)
+			storeReview.POST("/:id/decision", pluginReviewH.Decision)
+		}
+
+		// 插件商店：管理员
+		storeAdmin := api.Group("/store/admin")
+		storeAdmin.Use(middleware.Auth(jwtSecret), middleware.RequireAdmin(adminCache))
+		{
+			storeAdmin.POST("/versions/:id/listing", pluginAdminH.Listing)
+			storeAdmin.DELETE("/versions/:id", pluginAdminH.DeleteVersion)
+			storeAdmin.GET("/plugins", pluginAdminH.List)
+			storeAdmin.GET("/plugins/:id", pluginAdminH.Get)
+			storeAdmin.DELETE("/plugins/:id", pluginAdminH.DeletePlugin)
+			storeAdmin.POST("/plugins/:id/status", pluginAdminH.Status)
+			storeAdmin.GET("/audit", pluginAdminH.Audit)
+			storeAdmin.GET("/stats", pluginAdminH.Stats)
 		}
 
 		// 投稿模块

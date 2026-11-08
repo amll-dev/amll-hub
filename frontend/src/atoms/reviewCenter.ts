@@ -18,7 +18,7 @@ export type ReviewTab =
 export type SearchIpTab = 'all' | 'pending' | 'approved' | 'rejected';
 
 /** 审核中心主视图 */
-type View = 'home' | 'content' | 'search-ip' | 'announcement' | 'reviewers';
+type View = 'home' | 'content' | 'search-ip' | 'plugins' | 'announcement' | 'reviewers';
 
 /** 审核中心当前视图 */
 export const reviewViewAtom = atom<View>('home');

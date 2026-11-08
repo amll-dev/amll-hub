@@ -1,24 +1,10 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { buttonTap } from '@/lib/motion';
+import { WEEKDAYS, buildMonthCells, formatDateKey, type MonthDayCell } from '@/lib/date';
 
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
-
-/** 格式化日期为 YYYY-MM-DD */
-function formatDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-interface DayCell {
-  date: Date;
-  dateKey: string;
-  isOtherMonth: boolean;
-  isToday: boolean;
+interface DayCell extends MonthDayCell {
   hasRecommend: boolean;
-  isSelected: boolean;
 }
 
 export function DailyCalendar({
@@ -40,46 +26,16 @@ export function DailyCalendar({
   const isNotToday = selectedDate !== todayKey;
 
   const cells = useMemo<DayCell[]>(() => {
-    const year = currentMonth.getFullYear();
-    const month = currentMonth.getMonth();
-    const firstDay = new Date(year, month, 1);
-    const firstDayWeek = firstDay.getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const prevMonthLastDay = new Date(year, month, 0).getDate();
-
-    // 构造单个日格。定义在 useMemo 内部，保证下方依赖数组完整
-    const buildCell = (date: Date, isOtherMonth: boolean): DayCell => {
-      const dateKey = formatDateKey(date);
-      return {
-        date,
-        dateKey,
-        isOtherMonth,
-        isToday: dateKey === todayKey,
-        hasRecommend: recommendDates.has(dateKey),
-        isSelected: dateKey === selectedDate,
-      };
-    };
-
-    const result: DayCell[] = [];
-
-    for (let i = firstDayWeek - 1; i >= 0; i--) {
-      const day = prevMonthLastDay - i;
-      const date = new Date(year, month - 1, day);
-      result.push(buildCell(date, true));
-    }
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month, day);
-      result.push(buildCell(date, false));
-    }
-
-    const remaining = 42 - result.length;
-    for (let day = 1; day <= remaining; day++) {
-      const date = new Date(year, month + 1, day);
-      result.push(buildCell(date, true));
-    }
-
-    return result;
+    const base = buildMonthCells(
+      currentMonth.getFullYear(),
+      currentMonth.getMonth(),
+      todayKey,
+      selectedDate
+    );
+    return base.map((cell) => ({
+      ...cell,
+      hasRecommend: recommendDates.has(cell.dateKey),
+    }));
   }, [currentMonth, recommendDates, selectedDate, todayKey]);
 
   const goPrevMonth = () => {

@@ -107,6 +107,7 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 
 	// 解析参数
 	var submissionID, requestID int64
+	var pluginKey string
 	isListPage := c.Query("listPage") == "true"
 	if !isListPage {
 		if idStr := c.Query("requestId"); idStr != "" {
@@ -116,10 +117,12 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 				return
 			}
 			requestID = id
+		} else if key := strings.TrimSpace(c.Query("pluginKey")); key != "" {
+			pluginKey = key
 		} else {
 			idStr := c.Query("submissionId")
 			if idStr == "" {
-				pkg.BadRequest(c, "submissionId、requestId 或 listPage 必填其一")
+				pkg.BadRequest(c, "submissionId、requestId、pluginKey 或 listPage 必填其一")
 				return
 			}
 			id, err := strconv.ParseInt(idStr, 10, 64)
@@ -137,6 +140,8 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 		room = ws.SubmissionRoom(submissionID)
 	} else if requestID > 0 {
 		room = ws.RequestRoom(requestID)
+	} else if pluginKey != "" {
+		room = ws.PluginRoom(pluginKey)
 	}
 
 	// 升级为ws

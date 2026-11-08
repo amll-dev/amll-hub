@@ -17,6 +17,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// maxAudiosPerSubmission 单个投稿最多允许的音频附件数量，与前端 MAX_AUDIO_COUNT 保持一致
+const maxAudiosPerSubmission = 5
+
 // SubmissionUser 当前登录用户上下文信息（从 JWT Claims 提取）
 type SubmissionUser struct {
 	Name        string
@@ -206,6 +209,7 @@ type SubmissionService struct {
 	fileHistoryRepo *repository.FileHistoryRepo
 	commentRepo     *repository.CommentRepo
 	files           *FileService
+	validate        *ValidateService
 	notifier        Notifier
 	db              *gorm.DB
 }
@@ -213,6 +217,11 @@ type SubmissionService struct {
 // SetNotifier 注入通知服务（main 装配阶段调用）
 func (s *SubmissionService) SetNotifier(n Notifier) {
 	s.notifier = n
+}
+
+// SetValidateService 注入 TTML 校验服务（main 装配阶段调用）
+func (s *SubmissionService) SetValidateService(v *ValidateService) {
+	s.validate = v
 }
 
 // NewSubmissionService 创建投稿服务
@@ -241,6 +250,10 @@ func (s *SubmissionService) Create(ctx context.Context, user *SubmissionUser, in
 	if in.FileName == "" {
 		return 0, ErrMissingFile
 	}
+	// 文件名必须符合仓库命名规范
+	if err := ValidateRepoTTMLFileName(in.FileName); err != nil {
+		return 0, err
+	}
 	// 校验对象存储中是否存在该文件
 	exists, err := s.files.Exists(ctx, PendingLyricKey(in.FileName))
 	if err != nil {
@@ -248,6 +261,10 @@ func (s *SubmissionService) Create(ctx context.Context, user *SubmissionUser, in
 	}
 	if !exists {
 		return 0, ErrFileNotFound
+	}
+	// 服务端强制校验：正常模式保存重排结果，未重排模式仅校验并保留原文件
+	if err := s.preparePendingTTML(ctx, in.FileName, !in.IsUnrearranged); err != nil {
+		return 0, err
 	}
 
 	// 状态：默认 pending，允许 draft
@@ -460,10 +477,39 @@ func (s *SubmissionService) Stats(ctx context.Context, user *SubmissionUser, mod
 	}, nil
 }
 
+// preparePendingTTML 读取待审核区文件并做服务端校验。
+// regenerate 为 true 时用重排结果覆盖同一对象；为 false 时仅校验，保留原文件。
+func (s *SubmissionService) preparePendingTTML(ctx context.Context, fileName string, regenerate bool) error {
+	reader, err := s.files.Get(ctx, PendingLyricKey(fileName))
+	if err != nil {
+		return fmt.Errorf("读取歌词文件失败: %w", err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	content, err := ReadTTMLLimited(reader, s.files.MaxTTMLSize())
+	if err != nil {
+		return err
+	}
+	prepared, err := PrepareTTML(ctx, s.validate, content, regenerate)
+	if err != nil {
+		return err
+	}
+	if !regenerate {
+		return nil
+	}
+	if err := s.files.UploadTTML(ctx, fileName, prepared); err != nil {
+		return fmt.Errorf("保存重排歌词失败: %w", err)
+	}
+	return nil
+}
+
 // UpdateFile 更新投稿的 TTML 文件
 func (s *SubmissionService) UpdateFile(ctx context.Context, user *SubmissionUser, id int64, fileName string, metadata *CreateSubmissionInput) error {
 	if fileName == "" {
 		return ErrMissingFile
+	}
+	if err := ValidateRepoTTMLFileName(fileName); err != nil {
+		return err
 	}
 	exists, err := s.files.Exists(ctx, PendingLyricKey(fileName))
 	if err != nil {
@@ -471,6 +517,13 @@ func (s *SubmissionService) UpdateFile(ctx context.Context, user *SubmissionUser
 	}
 	if !exists {
 		return ErrFileNotFound
+	}
+	regenerate := true
+	if metadata != nil && metadata.IsUnrearranged {
+		regenerate = false
+	}
+	if err := s.preparePendingTTML(ctx, fileName, regenerate); err != nil {
+		return err
 	}
 
 	var sub *model.Submission
@@ -604,8 +657,14 @@ func (s *SubmissionService) SaveSubmitterContent(ctx context.Context, user *Subm
 		return ErrMissingFile
 	}
 
+	// 服务端强制校验与重排后再落对象存储
+	prepared, err := PrepareTTML(ctx, s.validate, []byte(in.TTML), true)
+	if err != nil {
+		return err
+	}
+
 	// 先写临时对象；事务成功后再替换正式文件，避免事务失败时正式文件已被覆盖
-	tempKey, uploadErr := s.files.UploadTTMLTemp(ctx, sub.FileName, []byte(in.TTML))
+	tempKey, uploadErr := s.files.UploadTTMLTemp(ctx, sub.FileName, prepared)
 	if uploadErr != nil {
 		return fmt.Errorf("保存歌词文件失败: %w", uploadErr)
 	}
@@ -954,6 +1013,32 @@ func (s *SubmissionService) ListComments(ctx context.Context, id int64) ([]Comme
 	return convertComments(comments), nil
 }
 
+// CheckAudioQuota 在上传音频文件前校验投稿者身份与数量上限，避免无效上传占用对象存储。
+func (s *SubmissionService) CheckAudioQuota(ctx context.Context, user *SubmissionUser, id int64) error {
+	sub, err := s.subRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrSubmissionNotFound
+		}
+		return err
+	}
+	if sub.Submitter != user.Name {
+		return ErrForbidden
+	}
+	return s.checkAudioCount(ctx, id)
+}
+
+func (s *SubmissionService) checkAudioCount(ctx context.Context, id int64) error {
+	audios, err := s.audioRepo.ListBySubmissionID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("查询音频附件失败: %w", err)
+	}
+	if len(audios) >= maxAudiosPerSubmission {
+		return ErrTooManyAudios
+	}
+	return nil
+}
+
 // AttachAudio 关联音频附件
 func (s *SubmissionService) AttachAudio(ctx context.Context, user *SubmissionUser, id int64, in *AttachAudioInput) error {
 	// 检查投稿者是否本人
@@ -966,6 +1051,9 @@ func (s *SubmissionService) AttachAudio(ctx context.Context, user *SubmissionUse
 	}
 	if sub.Submitter != user.Name {
 		return ErrForbidden
+	}
+	if err := s.checkAudioCount(ctx, id); err != nil {
+		return err
 	}
 	audio := &model.SubmissionAudio{
 		FileName:   in.FileName,

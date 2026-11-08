@@ -18,6 +18,7 @@ import {
   Pencil,
   Quote,
   Send,
+  XCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
@@ -27,29 +28,46 @@ import { renderMarkdown, type ActivityEntry } from '@/components/submission/shar
 import { RevisionConfirmInline } from '@/components/submission/RevisionConfirmInline';
 import { ActivityTimelineItem } from '@/components/submission/ActivityTimelineItem';
 import { CommentItem } from '@/components/submission/CommentItem';
-import type { ReviewAction, SubmissionComment, SubmissionDetail } from '@/lib/types';
+import type { CommentBase, ReviewAction, SubmissionDetail } from '@/lib/types';
 import { Textarea } from '@/components/ui/textarea';
 
-const reviewActions: { key: ReviewAction; label: string; color: string; icon: typeof Check }[] = [
-  {
-    key: 'approve',
+/** 审核动作 */
+type PluginReviewAction = 'approve' | 'reject';
+type ReviewActionKey = ReviewAction | PluginReviewAction;
+
+interface ReviewActionMeta {
+  label: string;
+  color: string;
+  icon: typeof Check;
+}
+
+/** 动作的通用样式与图标；插件仅在个别动作上覆盖文案 */
+const ACTION_META: Record<ReviewActionKey, ReviewActionMeta> = {
+  approve: {
     label: '通过',
     color: 'bg-green-600 hover:bg-green-700 text-white',
     icon: Check,
   },
-  {
-    key: 'revision',
+  reject: {
+    label: '拒绝',
+    color: 'bg-red-600 hover:bg-red-700 text-white',
+    icon: XCircle,
+  },
+  revision: {
     label: '需修改',
     color: 'bg-orange-500 hover:bg-orange-600 text-white',
     icon: Pencil,
   },
-  {
-    key: 'missing_audio',
+  missing_audio: {
     label: '缺音源',
     color: 'bg-orange-500 hover:bg-orange-600 text-white',
     icon: Music,
   },
-];
+};
+
+const submissionActionKeys: ReviewAction[] = ['approve', 'revision', 'missing_audio'];
+const pluginActionKeys: PluginReviewAction[] = ['approve', 'reject'];
+const pluginActionLabels: Partial<Record<ReviewActionKey, string>> = { approve: '通过并上架' };
 
 /** Markdown 工具栏按钮配置 */
 const MD_TOOLS: {
@@ -88,29 +106,38 @@ const MD_TOOLS: {
   },
 ];
 
+/** 评论目标 */
+export type CommentTarget = { kind: 'submission'; id: number } | { kind: 'plugin'; key: string };
+
 /** 合并后的时间线条目 */
 type TimelineEntry =
-  { kind: 'comment'; comment: SubmissionComment } | { kind: 'activity'; activity: ActivityEntry };
+  { kind: 'comment'; comment: CommentBase } | { kind: 'activity'; activity: ActivityEntry };
 
 export interface CommentSectionProps {
-  submissionId: number;
-  initialComments: SubmissionComment[];
-  isReviewer: boolean;
+  target: CommentTarget;
+  /** 父级详情已带回的评论作为首屏数据；不传则直接请求 */
+  initialComments?: CommentBase[];
+  isReviewer?: boolean;
   activityEntries: ActivityEntry[];
-  canReview: boolean;
-  onReviewed: () => void;
+  canReview?: boolean;
+  onReviewed?: () => void;
   detail?: SubmissionDetail;
+  /** 插件审核 */
+  pluginReview?: {
+    versionId: number;
+  };
 }
 
 /** 评论系统 */
 export function CommentSection({
-  submissionId,
+  target,
   initialComments,
-  isReviewer,
+  isReviewer = false,
   activityEntries,
-  canReview,
+  canReview = false,
   onReviewed,
   detail,
+  pluginReview,
 }: CommentSectionProps) {
   const [text, setText] = useState('');
   const [reviewMsg, setReviewMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(
@@ -121,47 +148,55 @@ export function CommentSection({
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
-  // 评论列表：以父级详情数据为初值，发评论后 invalidate 刷新
+  // 评论列表
+  const commentsKey =
+    target.kind === 'submission'
+      ? queryKeys.submissionComments(target.id)
+      : queryKeys.pluginComments(target.key);
   const commentsQuery = useQuery({
-    queryKey: queryKeys.submissionComments(submissionId),
-    queryFn: () => api.listSubmissionComments(submissionId),
+    queryKey: commentsKey,
+    queryFn: async (): Promise<CommentBase[]> =>
+      target.kind === 'submission'
+        ? api.listSubmissionComments(target.id)
+        : api.pluginStore.pluginComments(target.key),
     initialData: initialComments,
     staleTime: 15_000,
   });
   const comments = useMemo(() => commentsQuery.data ?? [], [commentsQuery.data]);
 
-  /** 评论 queryKey（onMutate/onError/onSettled 共用） */
-  const commentsKey = queryKeys.submissionComments(submissionId);
-
   /**
    * 乐观插入临时评论（API 返回 void 无新建对象，真实 id/时间
    * 由 onSettled 的 invalidate 拉服务端数据覆盖）。返回插入前列表供回滚。
    */
-  const optimisticInsert = (content: string): SubmissionComment[] => {
+  const optimisticInsert = (content: string): CommentBase[] => {
     void queryClient.cancelQueries({ queryKey: commentsKey });
-    const prev = queryClient.getQueryData<SubmissionComment[]>(commentsKey) ?? [];
-    queryClient.setQueryData(commentsKey, [
-      ...prev,
-      {
-        id: -Date.now(), // 负数临时 id，避免与服务端 id 撞 key
-        submissionId,
-        author: user ?? { username: '', displayName: '我', avatar: '' },
-        content,
-        createdAt: new Date().toISOString(),
-      },
-    ]);
+    const prev = queryClient.getQueryData<CommentBase[]>(commentsKey) ?? [];
+    const author = user
+      ? { username: user.name, displayName: user.displayName, avatar: user.avatar }
+      : { username: '', displayName: '我', avatar: '' };
+    // 临时评论只需展示字段，服务端返回后再补齐 submissionId / pluginKey
+    const optimistic: CommentBase = {
+      id: -Date.now(), // 负数临时 id，避免与服务端 id 撞 key
+      author,
+      content,
+      createdAt: new Date().toISOString(),
+    };
+    queryClient.setQueryData<CommentBase[]>(commentsKey, [...prev, optimistic]);
     return prev;
   };
 
   /** 失败回滚：恢复列表与输入框内容 */
-  const rollback = (prevComments: SubmissionComment[], content: string) => {
+  const rollback = (prevComments: CommentBase[], content: string) => {
     queryClient.setQueryData(commentsKey, prevComments);
     setText(content);
     setMode('write');
   };
 
   const postMutation = useMutation({
-    mutationFn: (content: string) => api.addSubmissionComment(submissionId, content),
+    mutationFn: (content: string) =>
+      target.kind === 'submission'
+        ? api.addSubmissionComment(target.id, content)
+        : api.pluginStore.addPluginComment(target.key, content),
     onMutate: (content) => {
       const prevComments = optimisticInsert(content);
       // 乐观清空输入，失败时在 onError 恢复
@@ -181,17 +216,33 @@ export function CommentSection({
 
   const reviewMutation = useMutation({
     // 有评论内容时先发评论再执行审核
-    mutationFn: async (actionKey: ReviewAction) => {
-      const content = text.trim();
-      if (content) {
-        await api.addSubmissionComment(submissionId, content);
+    mutationFn: async ({
+      action,
+      content,
+    }: {
+      action: ReviewAction | PluginReviewAction;
+      content: string;
+    }) => {
+      if (target.kind === 'plugin') {
+        if (!pluginReview) return content;
+        if (content) {
+          await api.pluginStore.addPluginComment(target.key, content);
+        }
+        await api.pluginStore.decideReview(
+          pluginReview.versionId,
+          action === 'reject' ? 'reject' : 'approve',
+          content
+        );
+        return content;
       }
-      await api.reviewSubmission(submissionId, actionKey, content);
+      if (content) {
+        await api.addSubmissionComment(target.id, content);
+      }
+      await api.reviewSubmission(target.id, action as ReviewAction, content);
       return content;
     },
-    onMutate: () => {
+    onMutate: ({ content }) => {
       setReviewMsg(null);
-      const content = text.trim();
       if (content) {
         const prevComments = optimisticInsert(content);
         setText('');
@@ -200,10 +251,18 @@ export function CommentSection({
       }
       return undefined;
     },
-    onSuccess: (content) => {
+    onSuccess: (content, vars) => {
       if (content) void queryClient.invalidateQueries({ queryKey: commentsKey });
-      setReviewMsg({ type: 'success', text: '审核完成' });
-      onReviewed();
+      setReviewMsg({
+        type: 'success',
+        text:
+          target.kind === 'plugin'
+            ? vars.action === 'reject'
+              ? '已拒绝'
+              : '已通过并上架'
+            : '审核完成',
+      });
+      onReviewed?.();
     },
     onError: (err, _action, ctx) => {
       // 评论可能已成功而审核失败：回滚临时项后 invalidate 拉回真实列表
@@ -259,14 +318,14 @@ export function CommentSection({
   };
 
   /** 审核 */
-  const doReview = (actionKey: ReviewAction) => {
+  const doReview = (actionKey: ReviewAction | PluginReviewAction) => {
     const content = text.trim();
     // 需修改必须输入理由
     if (actionKey === 'revision' && !content) {
       setReviewMsg({ type: 'error', text: '选择「需修改」时必须输入理由' });
       return;
     }
-    reviewMutation.mutate(actionKey);
+    reviewMutation.mutate({ action: actionKey, content });
   };
 
   /** 在光标处插入 Markdown 标记 */
@@ -301,7 +360,7 @@ export function CommentSection({
             isSubmitter={isSubmitter}
             onDone={() => {
               void queryClient.invalidateQueries({ queryKey: queryKeys.submission(detail.id) });
-              onReviewed();
+              onReviewed?.();
             }}
           />
         )}
@@ -416,24 +475,26 @@ export function CommentSection({
 
       {/* 操作按钮 */}
       <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
-        {canReview &&
-          reviewActions.map((a) => {
-            const Icon = a.icon;
+        {(pluginReview || canReview) &&
+          (pluginReview ? pluginActionKeys : submissionActionKeys).map((key) => {
+            const meta = ACTION_META[key];
+            const Icon = meta.icon;
+            const label = pluginReview ? (pluginActionLabels[key] ?? meta.label) : meta.label;
             return (
               <motion.button
-                key={a.key}
+                key={key}
                 type="button"
-                onClick={() => doReview(a.key)}
+                onClick={() => doReview(key)}
                 disabled={reviewing || posting}
                 {...buttonTap}
-                className={`inline-flex h-9 items-center gap-1.5 rounded-md px-4 text-sm font-semibold transition-colors disabled:opacity-50 ${a.color}`}
+                className={`inline-flex h-9 items-center gap-1.5 rounded-md px-4 text-sm font-semibold transition-colors disabled:opacity-50 ${meta.color}`}
               >
                 {reviewing ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Icon className="h-4 w-4" />
                 )}
-                {a.label}
+                {label}
               </motion.button>
             );
           })}

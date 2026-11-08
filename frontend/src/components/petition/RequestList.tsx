@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Plus, Search, ScrollText } from 'lucide-react';
+import { Plus, Search, ScrollText } from 'lucide-react';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { useAuth } from '@/hooks/useAuth';
@@ -11,6 +11,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ListSkeleton } from '@/components/ui/Skeleton';
+import { ListPagination } from '@/components/ui/list-pagination';
 import { RequestCard } from './RequestCard';
 import type { LyricRequestStatus } from '@/lib/types';
 
@@ -184,39 +185,11 @@ export function RequestList({
       )}
 
       {!isLoading && items.length > 0 && totalPages > 1 && (
-        <motion.div
-          variants={fadeUp}
-          className="flex items-center justify-between pt-1 text-xs text-ink-3"
-        >
-          <span>
+        <motion.div variants={fadeUp} className="pt-1">
+          <p className="mb-1 text-center text-xs text-ink-3">
             共 {data?.total ?? 0} 条 · 第 {page} / {totalPages} 页
-          </span>
-          <div className="flex gap-1">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className={buttonVariants({
-                variant: 'outline',
-                size: 'sm',
-                className: 'h-7 px-2',
-              })}
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className={buttonVariants({
-                variant: 'outline',
-                size: 'sm',
-                className: 'h-7 px-2',
-              })}
-            >
-              <ChevronRight className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          </p>
+          <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </motion.div>
       )}
     </motion.div>

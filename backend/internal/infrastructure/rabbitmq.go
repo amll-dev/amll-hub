@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/config"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	amqp "github.com/rabbitmq/amqp091-go"
 	logrus "github.com/sirupsen/logrus"
 )
@@ -286,7 +287,7 @@ func (r *RabbitMQ) reconnectWithBackoff(ctx context.Context) error {
 
 // 后台监听连接关闭并自动重连
 func (r *RabbitMQ) WatchAndReconnect(ctx context.Context) {
-	go func() {
+	pkg.GoSafe("rabbitmq-reconnect", func() {
 		for {
 			r.mu.RLock()
 			conn := r.Conn
@@ -312,7 +313,7 @@ func (r *RabbitMQ) WatchAndReconnect(ctx context.Context) {
 				r.mu.Unlock()
 			}
 		}
-	}()
+	})
 }
 
 // 在当前通道上发布消息

@@ -707,3 +707,133 @@ CREATE TRIGGER trg_github_migration_tasks_updated_at
     BEFORE UPDATE ON github_migration_tasks
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+--  插件主表
+CREATE TABLE plugins (
+    id              BIGSERIAL PRIMARY KEY,
+    plugin_key      VARCHAR(100) NOT NULL UNIQUE,
+    name            VARCHAR(128) NOT NULL,
+    summary         VARCHAR(512) NOT NULL DEFAULT '',
+    description_md  TEXT NOT NULL DEFAULT '',
+    author          VARCHAR(256) NOT NULL DEFAULT '',
+    homepage        VARCHAR(500) NOT NULL DEFAULT '',
+    repo_url        VARCHAR(500) NOT NULL DEFAULT '',
+    license         VARCHAR(128) NOT NULL DEFAULT '',
+    tags            JSONB NOT NULL DEFAULT '[]'::jsonb,
+    icon_key        VARCHAR(500) NOT NULL DEFAULT '',
+    owner_username  VARCHAR(100) NOT NULL DEFAULT '',
+    status          VARCHAR(20) NOT NULL DEFAULT 'active',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_plugins_status ON plugins(status);
+CREATE INDEX idx_plugins_owner ON plugins(owner_username);
+
+CREATE TRIGGER trg_plugins_updated_at
+    BEFORE UPDATE ON plugins
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+--  插件版本表
+--  同一插件允许重复版本号与重复插件包：更新插件时始终追加新的历史记录，
+--  因此 (plugin_id, version) 与 sha256 均不建唯一约束。
+CREATE TABLE plugin_versions (
+    id              BIGSERIAL PRIMARY KEY,
+    plugin_id       BIGINT NOT NULL REFERENCES plugins(id),
+    version         VARCHAR(64) NOT NULL,
+    channel         VARCHAR(20) NOT NULL,
+    api_version     INT NOT NULL DEFAULT 0,
+    min_app_version VARCHAR(64) NOT NULL DEFAULT '',
+    platforms       JSONB NOT NULL DEFAULT '[]'::jsonb,
+    entry           VARCHAR(512) NOT NULL,
+    artifact_key    VARCHAR(500) NOT NULL,
+    sha256          CHAR(64) NOT NULL,
+    size_bytes      BIGINT NOT NULL,
+    manifest        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    readme_md       TEXT NOT NULL DEFAULT '',
+    changelog_md    TEXT NOT NULL DEFAULT '',
+    review_status   VARCHAR(20) NOT NULL DEFAULT 'pending',
+    listing_status  VARCHAR(20) NOT NULL DEFAULT 'unlisted',
+    submitted_by    VARCHAR(100) NOT NULL,
+    submitter_info  JSONB NOT NULL DEFAULT '{}'::jsonb,
+    reviewer        VARCHAR(100) NOT NULL DEFAULT '',
+    reviewer_info   JSONB NOT NULL DEFAULT '{}'::jsonb,
+    review_comment  TEXT NOT NULL DEFAULT '',
+    download_count  BIGINT NOT NULL DEFAULT 0,
+    submitted_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reviewed_at     TIMESTAMPTZ,
+    listed_at       TIMESTAMPTZ,
+    yanked_at       TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_plugin_versions_sha ON plugin_versions(sha256);
+CREATE INDEX idx_plugin_versions_plugin ON plugin_versions(plugin_id, version);
+CREATE INDEX idx_plugin_versions_catalog ON plugin_versions(review_status, listing_status);
+CREATE INDEX idx_plugin_versions_pending ON plugin_versions(review_status, submitted_at);
+
+CREATE TRIGGER trg_plugin_versions_updated_at
+    BEFORE UPDATE ON plugin_versions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+--  插件审核历史
+CREATE TABLE plugin_review_history (
+    id            BIGSERIAL PRIMARY KEY,
+    version_id    BIGINT NOT NULL REFERENCES plugin_versions(id) ON DELETE CASCADE,
+    reviewer      VARCHAR(100) NOT NULL,
+    reviewer_info JSONB NOT NULL DEFAULT '{}'::jsonb,
+    action        VARCHAR(20) NOT NULL,
+    comment       TEXT NOT NULL DEFAULT '',
+    reviewed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_plugin_review_history_version
+    ON plugin_review_history(version_id, reviewed_at DESC);
+
+--  插件管理操作审计
+CREATE TABLE plugin_audit_logs (
+    id            BIGSERIAL PRIMARY KEY,
+    operator      VARCHAR(100) NOT NULL,
+    operator_info JSONB NOT NULL DEFAULT '{}'::jsonb,
+    action        VARCHAR(50) NOT NULL,
+    target_type   VARCHAR(20) NOT NULL,
+    target_id     BIGINT NOT NULL,
+    reason        TEXT NOT NULL DEFAULT '',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_plugin_audit_target
+    ON plugin_audit_logs(target_type, target_id, created_at DESC);
+
+--  插件评论表（对齐 submission_comments 的结构）
+CREATE TABLE plugin_comments (
+    id          BIGSERIAL PRIMARY KEY,
+    plugin_key  VARCHAR(100) NOT NULL REFERENCES plugins(plugin_key) ON DELETE CASCADE,
+    author      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    content     TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_plugin_comments_plugin ON plugin_comments(plugin_key, created_at);
+
+--  插件评分表：每个用户对每个插件只保留一条评分，重复评价视为修改
+CREATE TABLE plugin_ratings (
+    id          BIGSERIAL PRIMARY KEY,
+    plugin_key  VARCHAR(100) NOT NULL REFERENCES plugins(plugin_key) ON DELETE CASCADE,
+    username    VARCHAR(100) NOT NULL,
+    score       SMALLINT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_plugin_ratings_score CHECK (score BETWEEN 1 AND 5),
+    UNIQUE (plugin_key, username)
+);
+
+CREATE INDEX idx_plugin_ratings_plugin ON plugin_ratings(plugin_key);
+
+CREATE TRIGGER trg_plugin_ratings_updated_at
+    BEFORE UPDATE ON plugin_ratings
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();

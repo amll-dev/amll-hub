@@ -29,22 +29,39 @@ func (r *SearchIPRepo) ListApproved(ctx context.Context) ([]model.SearchIPSubmis
 	return subs, err
 }
 
-// ListBySubmitter 按提交人查询投稿列表
-func (r *SearchIPRepo) ListBySubmitter(ctx context.Context, submitter string) ([]model.SearchIPSubmission, error) {
+// ListBySubmitter 按提交人分页查询投稿列表，同时返回总数
+func (r *SearchIPRepo) ListBySubmitter(ctx context.Context, submitter string, page, size int) ([]model.SearchIPSubmission, int64, error) {
+	page, size = normalizePage(page, size)
+	base := r.db.WithContext(ctx).Model(&model.SearchIPSubmission{}).Where("submitter = ?", submitter)
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
 	var subs []model.SearchIPSubmission
-	err := r.db.WithContext(ctx).Where("submitter = ?", submitter).Order("created_at DESC").Find(&subs).Error
-	return subs, err
+	err := base.Order("created_at DESC").
+		Offset((page - 1) * size).
+		Limit(size).
+		Find(&subs).Error
+	return subs, total, err
 }
 
-// ListAll 查询全部投稿（审核中心用），status 为空或 all 时不过滤
-func (r *SearchIPRepo) ListAll(ctx context.Context, status string) ([]model.SearchIPSubmission, error) {
-	var subs []model.SearchIPSubmission
-	q := r.db.WithContext(ctx).Order("created_at DESC")
+// ListAll 分页查询全部投稿（审核中心用），status 为空或 all 时不过滤
+func (r *SearchIPRepo) ListAll(ctx context.Context, status string, page, size int) ([]model.SearchIPSubmission, int64, error) {
+	page, size = normalizePage(page, size)
+	base := r.db.WithContext(ctx).Model(&model.SearchIPSubmission{})
 	if status != "" && status != "all" {
-		q = q.Where("status = ?", status)
+		base = base.Where("status = ?", status)
 	}
-	err := q.Find(&subs).Error
-	return subs, err
+	var total int64
+	if err := base.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var subs []model.SearchIPSubmission
+	err := base.Order("created_at DESC").
+		Offset((page - 1) * size).
+		Limit(size).
+		Find(&subs).Error
+	return subs, total, err
 }
 
 // UpdateStatusWhere 条件更新状态（仅当当前状态在 fromStatuses 中时生效），返回是否更新成功

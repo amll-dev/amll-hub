@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAtom } from 'jotai';
 import { useForm } from 'react-hook-form';
@@ -25,6 +25,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { SectionCard } from '@/components/profile/SectionCard';
+import { AvatarUploadDialog } from '@/components/profile/AvatarUploadDialog';
 import type { Gender, PublicUserProfile } from '@/lib/types';
 
 const GENDER_OPTIONS: { value: Gender; label: string }[] = [
@@ -167,7 +168,13 @@ function LocalProfileForm({ username, profile }: { username: string; profile: Pu
                 <FormItem>
                   <FormLabel className="text-sm font-medium text-ink-2">生日</FormLabel>
                   <FormControl>
-                    <DatePicker value={field.value} onChange={field.onChange} max={today} />
+                    <DatePicker
+                      value={field.value}
+                      onChange={field.onChange}
+                      max={today}
+                      allowInput
+                      placeholder="YYYY-MM-DD"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -228,11 +235,13 @@ function BannerSection({ username, profile }: { username: string; profile: Publi
   const queryClient = useQueryClient();
   const [msg, setMsg] = useAtom(bannerMsgAtom);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  /** 选好但还没确认裁切的背景图原图 */
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
 
   const mutation = useMutation({
-    mutationFn: async (file: File) => {
-      const compressed = await compressBanner(file);
+    // 本地先按 3:1 居中裁切并压缩
+    mutationFn: async (vars: { file: File; zoom: number }) => {
+      const compressed = await compressBanner(vars.file, vars.zoom);
       return api.uploadBanner(compressed);
     },
     onMutate: () => setMsg(null),
@@ -244,24 +253,23 @@ function BannerSection({ username, profile }: { username: string; profile: Publi
     },
     onError: (err: Error) => setMsg({ ok: false, text: err.message || '上传失败' }),
     onSettled: () => {
-      setPreview(null);
+      setBannerFile(null);
       if (inputRef.current) inputRef.current.value = '';
     },
   });
 
-  // 本地预览的 objectURL 用完即回收
-  useEffect(() => {
-    if (!preview) return;
-    return () => URL.revokeObjectURL(preview);
-  }, [preview]);
+  const closeBannerDialog = () => {
+    setBannerFile(null);
+    if (inputRef.current) inputRef.current.value = '';
+  };
 
-  const bannerUrl = preview ?? (profile.bannerKey ? api.uploadFileUrl(profile.bannerKey) : '');
+  const bannerUrl = profile.bannerKey ? api.uploadFileUrl(profile.bannerKey) : '';
 
   return (
     <SectionCard
       icon={<ImageIcon />}
       title="主页背景图"
-      description="建议横图（3:1），上传后自动居中裁切并压缩为 WebP"
+      description="建议横图（3:1），上传前可调整裁切范围，保存时自动压缩为 WebP"
     >
       <div className="relative aspect-[3/1] w-full overflow-hidden rounded-md border border-line bg-surface-2">
         {bannerUrl ? (
@@ -286,9 +294,8 @@ function BannerSection({ username, profile }: { username: string; profile: Publi
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (!file) return;
-            setPreview(URL.createObjectURL(file));
-            mutation.mutate(file);
+            // 先弹预览框确认构图，确认后才压缩上传
+            if (file) setBannerFile(file);
           }}
         />
         <Button
@@ -307,6 +314,19 @@ function BannerSection({ username, profile }: { username: string; profile: Publi
         </Button>
         {msg && <p className={`text-sm ${msg.ok ? 'text-success' : 'text-error'}`}>{msg.text}</p>}
       </div>
+
+      <AvatarUploadDialog
+        open={bannerFile !== null}
+        file={bannerFile}
+        pending={mutation.isPending}
+        onCancel={closeBannerDialog}
+        onConfirm={(zoom) => {
+          if (!bannerFile) return;
+          mutation.mutate({ file: bannerFile, zoom }, { onSettled: closeBannerDialog });
+        }}
+        title="上传背景图"
+        shape="wide"
+      />
     </SectionCard>
   );
 }

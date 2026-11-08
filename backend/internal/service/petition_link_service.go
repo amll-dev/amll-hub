@@ -9,6 +9,7 @@ import (
 
 	"github.com/amll-dev/amll-hub/backend/internal/mail"
 	"github.com/amll-dev/amll-hub/backend/internal/model"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	logrus "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -80,18 +81,43 @@ func (s *PetitionLinkService) Match(
 	return s.reqs.ListByPlatformIDs(ctx, platformColumns(platformIDs))
 }
 
-// Bind 建立关联，并对新增的关联异步发送通知邮件
+// Bind 建立关联，并对新增的关联异步发送通知邮件。
+// 仅投稿者本人可操作，且请求 ID 必须存在、仍待处理并与投稿平台 ID 匹配，
+// 避免客户端伪造关联导致请愿状态被错误同步或通知邮件被滥用。
 func (s *PetitionLinkService) Bind(
 	ctx context.Context, submissionID int64, requestIDs []int64, actor string,
 ) error {
 	if submissionID <= 0 || len(requestIDs) == 0 {
 		return nil
 	}
-	// 去重、丢弃非法值、限量
+	sub, err := s.subs.GetByID(ctx, submissionID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrSubmissionNotFound
+		}
+		return fmt.Errorf("查询投稿失败: %w", err)
+	}
+	if sub.Submitter != actor {
+		return ErrForbidden
+	}
+
+	matched, err := s.Match(ctx, submissionPlatformIDs(sub))
+	if err != nil {
+		return fmt.Errorf("校验请愿关联失败: %w", err)
+	}
+	allowed := make(map[int64]struct{}, len(matched))
+	for _, req := range matched {
+		allowed[req.ID] = struct{}{}
+	}
+
+	// 去重、丢弃非法/不匹配值、限量
 	seen := make(map[int64]bool, len(requestIDs))
 	ids := make([]int64, 0, len(requestIDs))
 	for _, id := range requestIDs {
 		if id <= 0 || seen[id] {
+			continue
+		}
+		if _, ok := allowed[id]; !ok {
 			continue
 		}
 		seen[id] = true
@@ -112,6 +138,40 @@ func (s *PetitionLinkService) Bind(
 		s.sendLinkEmailsAsync(ctx, submissionID, inserted)
 	}
 	return nil
+}
+
+// submissionPlatformIDs 汇总投稿的四个平台 ID，用于校验请愿是否匹配。
+// 优先取 TTML 元数据中的多值 ID，并兼容旧数据中仅写入单值的列。
+func submissionPlatformIDs(sub *model.Submission) map[string][]string {
+	meta := map[string]any(sub.Metadata)
+	out := make(map[string][]string)
+	add := func(kind, metaKey, columnID string) {
+		values := extractPlatformIDs(meta, metaKey)
+		if v := strings.TrimSpace(columnID); v != "" {
+			values = append(values, v)
+		}
+		seen := make(map[string]struct{}, len(values))
+		clean := make([]string, 0, len(values))
+		for _, v := range values {
+			v = strings.TrimSpace(v)
+			if v == "" || v == "0" {
+				continue
+			}
+			if _, ok := seen[v]; ok {
+				continue
+			}
+			seen[v] = struct{}{}
+			clean = append(clean, v)
+		}
+		if len(clean) > 0 {
+			out[kind] = clean
+		}
+	}
+	add("ncm", "ncm_music_id", sub.NcmID)
+	add("qq", "qq_music_id", sub.QqID)
+	add("spotify", "spotify_id", sub.SpotifyID)
+	add("apple", "apple_music_id", sub.AmID)
+	return out
 }
 
 // Unbind 解除关联；投稿者本人或审核员/管理员可操作
@@ -279,9 +339,9 @@ func (s *PetitionLinkService) sendLinkEmailsAsync(
 	if !s.mailReady() {
 		return
 	}
-	go func() {
+	pkg.GoSafe("petition-link-mail", func() {
 		timeout := s.sender.Timeout() + 10*time.Second
-		c, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout*3)
+		c, cancel := pkg.DetachedTimeout(ctx, timeout*3)
 		defer cancel()
 
 		sub, err := s.subs.GetByID(c, submissionID)
@@ -296,7 +356,7 @@ func (s *PetitionLinkService) sendLinkEmailsAsync(
 		if err := s.links.MarkLinkNotified(c, submissionID, requestIDs); err != nil {
 			logrus.WithError(err).Warn("mark petition link notified failed")
 		}
-	}()
+	})
 }
 
 // sendCompleteEmailsAsync 审核通过通知：发起人 + 支持者 + 投稿者
@@ -306,9 +366,9 @@ func (s *PetitionLinkService) sendCompleteEmailsAsync(
 	if !s.mailReady() {
 		return
 	}
-	go func() {
+	pkg.GoSafe("petition-complete-mail", func() {
 		timeout := s.sender.Timeout() + 10*time.Second
-		c, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout*3)
+		c, cancel := pkg.DetachedTimeout(ctx, timeout*3)
 		defer cancel()
 
 		for _, requestID := range requestIDs {
@@ -321,7 +381,7 @@ func (s *PetitionLinkService) sendCompleteEmailsAsync(
 		if err := s.links.MarkCompleteNotified(c, sub.ID, requestIDs); err != nil {
 			logrus.WithError(err).Warn("mark petition complete notified failed")
 		}
-	}()
+	})
 }
 
 // sendPetitionMail 逐收件人渲染并发送（失败只记日志，不影响主流程）

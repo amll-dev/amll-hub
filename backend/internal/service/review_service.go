@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"gorm.io/gorm"
 )
@@ -34,6 +36,7 @@ type ReviewService struct {
 	files        *FileService
 	github       *GitHubService
 	viewers      *ViewerService
+	validate     *ValidateService
 	notifier     Notifier
 	db           *gorm.DB
 	petitionSync func(ctx context.Context, submissionID int64) error
@@ -42,6 +45,11 @@ type ReviewService struct {
 // SetNotifier 注入通知服务（main 装配阶段调用）
 func (s *ReviewService) SetNotifier(n Notifier) {
 	s.notifier = n
+}
+
+// SetValidateService 注入 TTML 校验服务（main 装配阶段调用）
+func (s *ReviewService) SetValidateService(v *ValidateService) {
+	s.validate = v
 }
 
 // NewReviewService 创建审核服务
@@ -269,14 +277,17 @@ func (s *ReviewService) claimAndRecord(ctx context.Context, sub *model.Submissio
 	})
 }
 
-// revertClaim 外部副作用失败时回滚状态迁移
+// revertClaim 外部副作用失败时回滚状态迁移。
+// 使用脱离请求取消的 context，避免客户端断开后补偿无法执行。
 func (s *ReviewService) revertClaim(ctx context.Context, sub *model.Submission, fromStatus string) {
 	sub.Status = fromStatus
 	sub.Reviewer = ""
 	sub.ReviewerInfo = nil
 	sub.ReviewedAt = nil
 	sub.ReviewComment = ""
-	ok, err := s.subRepo.UpdateStatusWhere(ctx, nil, sub, []string{model.StatusApproved, model.StatusRejected})
+	c, cancel := pkg.DetachedTimeout(ctx, 5*time.Second)
+	defer cancel()
+	ok, err := s.subRepo.UpdateStatusWhere(c, nil, sub, []string{model.StatusApproved, model.StatusRejected})
 	if err != nil || !ok {
 		logrus.WithFields(logrus.Fields{
 			"submission_id": sub.ID,
@@ -289,12 +300,17 @@ func (s *ReviewService) revertClaim(ctx context.Context, sub *model.Submission, 
 func (s *ReviewService) approve(ctx context.Context, sub *model.Submission, comment string, user *SubmissionUser, reviewerInfo model.UserInfo, now time.Time, fromStatuses []string) error {
 	origStatus := sub.Status
 
-	// 1. 原子抢占状态迁移权（并发审核员只有一个能成功）
+	// 1. 文件名必须符合仓库命名规范（不合法时不产生任何状态变更）
+	if err := ValidateRepoTTMLFileName(sub.FileName); err != nil {
+		return err
+	}
+
+	// 2. 原子抢占状态迁移权（并发审核员只有一个能成功）
 	if err := s.claimAndRecord(ctx, sub, model.StatusApproved, comment, reviewerInfo, now, fromStatuses); err != nil {
 		return err
 	}
 
-	// 2. 从 MinIO 拉取 TTML 内容
+	// 3. 从 MinIO 拉取 TTML 内容并做服务端校验
 	srcKey := PendingLyricKey(sub.FileName)
 	reader, err := s.files.Get(ctx, srcKey)
 	if err != nil {
@@ -303,8 +319,27 @@ func (s *ReviewService) approve(ctx context.Context, sub *model.Submission, comm
 	}
 	defer func() { _ = reader.Close() }()
 
-	// 3. 上传到 GitHub
-	if err := s.github.UploadFile(ctx, sub.FileName, reader, user.Name); err != nil {
+	content, err := ReadTTMLLimited(reader, s.files.MaxTTMLSize())
+	if err != nil {
+		s.revertClaim(ctx, sub, origStatus)
+		return err
+	}
+	prepared, err := PrepareTTML(ctx, s.validate, content, !sub.IsUnrearranged)
+	if err != nil {
+		s.revertClaim(ctx, sub, origStatus)
+		return err
+	}
+
+	// 正常模式用重排结果覆盖待审核对象，保证对象存储与 GitHub 内容一致
+	if !sub.IsUnrearranged {
+		if err := s.files.UploadTTML(ctx, sub.FileName, prepared); err != nil {
+			s.revertClaim(ctx, sub, origStatus)
+			return fmt.Errorf("保存重排歌词失败: %w", err)
+		}
+	}
+
+	// 4. 上传到 GitHub
+	if err := s.github.UploadFile(ctx, sub.FileName, bytes.NewReader(prepared), user.Name); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"submission_id": sub.ID,
 			"file":          sub.FileName,

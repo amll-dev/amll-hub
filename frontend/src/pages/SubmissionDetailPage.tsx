@@ -767,7 +767,7 @@ function SubmissionDetailContent({
 
           {/* 评论（含审核按钮） */}
           <CommentSection
-            submissionId={id}
+            target={{ kind: 'submission', id }}
             initialComments={detail.comments ?? []}
             isReviewer={isReviewer}
             activityEntries={activityEntries}

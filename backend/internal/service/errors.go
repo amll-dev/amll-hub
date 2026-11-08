@@ -102,6 +102,9 @@ var ErrMissingUnrearrangedReason = errors.New("missing unrearranged reason")
 // ErrMissingRevisionTarget 修正投稿未选择要修正的原歌词
 var ErrMissingRevisionTarget = errors.New("missing revision target")
 
+// ErrTooManyAudios 单个投稿的音频附件数量超过上限
+var ErrTooManyAudios = errors.New("too many audio attachments")
+
 // 歌词/索引模块
 
 // ErrLyricNotFound 歌词未找到

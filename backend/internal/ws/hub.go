@@ -16,6 +16,7 @@ import (
 const (
 	TypeViewers       = "viewers"            // 观众列表更新
 	TypeSubmissionChg = "submission_changed" // 投稿状态变更（列表页订阅）
+	TypePluginChg     = "plugin_changed"     // 插件状态变更（插件详情页订阅）
 	TypeNotification  = "notification"       // 站内消息推送（按用户路由）
 	TypePing          = "ping"
 )
@@ -338,11 +339,31 @@ func (h *Hub) CollectViewers(room string) []Viewer {
 	return viewers
 }
 
+// PublishPluginChanged 发布插件状态变更到插件房间
+func (h *Hub) PublishPluginChanged(ctx context.Context, pluginKey string, data any) error {
+	if pluginKey == "" {
+		return nil
+	}
+	room := PluginRoom(pluginKey)
+	dataBytes, err := json.Marshal(Message{
+		Type: TypePluginChg,
+		Room: room,
+		Data: data,
+	})
+	if err != nil {
+		return err
+	}
+	return h.rdb.Publish(ctx, ChannelViewers, dataBytes).Err()
+}
+
 // SubmissionRoom 投稿房间键
 func SubmissionRoom(id int64) string { return "sub:" + strconv.FormatInt(id, 10) }
 
 // RequestRoom 歌词请愿房间键
 func RequestRoom(id int64) string { return "req:" + strconv.FormatInt(id, 10) }
+
+// PluginRoom 插件房间键
+func PluginRoom(key string) string { return "plugin:" + key }
 
 // NewClient 创建客户端（观众/列表页连接；room 为空表示列表页）
 func NewClient(conn *websocket.Conn, hub *Hub, room string, submissionID int64, username, displayName, avatar string, onClose func()) *Client {

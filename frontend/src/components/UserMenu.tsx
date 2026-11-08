@@ -14,7 +14,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Bell, LogOut, Monitor, Moon, Palette, Sun, User, SquareUser } from 'lucide-react';
+import { Bell, LogOut, Monitor, Moon, Package, Palette, Sun, User, SquareUser } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { themeAtom, type ThemePreference } from '@/atoms/theme';
 import { preloadRoute } from '@/routes';
@@ -145,6 +145,18 @@ export function UserMenu() {
             >
               <Bell className="h-4 w-4" />
               消息中心
+            </Link>
+          </DropdownMenuItem>
+
+          <DropdownMenuItem asChild>
+            <Link
+              to="/plugins"
+              onClick={nav}
+              onMouseEnter={() => preloadRoute('/plugins')}
+              className="cursor-pointer"
+            >
+              <Package className="h-4 w-4" />
+              插件广场
             </Link>
           </DropdownMenuItem>
         </div>

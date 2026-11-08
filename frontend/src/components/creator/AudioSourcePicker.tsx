@@ -1,11 +1,7 @@
 import { useRef, useState } from 'react';
 import { Music, Plus, X } from 'lucide-react';
+import { AUDIO_EXTS, MAX_AUDIO_COUNT, MAX_AUDIO_SIZE, audioExt } from '@/lib/audio';
 import { formatBytes } from '@/lib/format';
-
-/** 允许的音频扩展名与上限，与后端 isAllowedAudioExt / SUBMISSION_MAX_AUDIO_SIZE 保持一致 */
-const AUDIO_EXTS = ['.mp3', '.flac', '.wav', '.m4a', '.ogg', '.aac'];
-export const MAX_AUDIO_COUNT = 5;
-const MAX_AUDIO_SIZE = 50 * 1024 * 1024;
 
 // 投稿表单的音源选择区
 export function AudioSourcePicker({
@@ -29,7 +25,7 @@ export function AudioSourcePicker({
     let overflow = 0;
 
     for (const f of Array.from(incoming)) {
-      const ext = f.name.slice(f.name.lastIndexOf('.')).toLowerCase();
+      const ext = audioExt(f.name);
       if (!AUDIO_EXTS.includes(ext)) {
         wrongExt++;
         continue;
@@ -53,7 +49,7 @@ export function AudioSourcePicker({
 
     const reasons: string[] = [];
     if (wrongExt) reasons.push(`${wrongExt} 个格式不支持`);
-    if (tooLarge) reasons.push(`${tooLarge} 个超过 50 MB`);
+    if (tooLarge) reasons.push(`${tooLarge} 个超过 150 MB`);
     if (overflow) reasons.push(`${overflow} 个超出 ${MAX_AUDIO_COUNT} 个上限`);
     setError(reasons.length > 0 ? `已忽略：${reasons.join('、')}` : '');
   };
@@ -110,7 +106,7 @@ export function AudioSourcePicker({
           <Music className="h-6 w-6 text-ink-3" />
           <p className="text-sm text-ink-2">拖拽或点击添加音频文件</p>
           <p className="text-xs text-ink-3">
-            MP3 / FLAC / WAV / M4A / OGG / AAC，单个 ≤ 50 MB，最多 {MAX_AUDIO_COUNT} 个
+            MP3 / FLAC / WAV / M4A / OGG / AAC，单个 ≤ 150 MB，最多 {MAX_AUDIO_COUNT} 个
           </p>
         </div>
       ) : (

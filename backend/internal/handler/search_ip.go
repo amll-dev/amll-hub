@@ -19,12 +19,13 @@ import (
 
 // SearchIPHandler 搜索IP投稿 handler
 type SearchIPHandler struct {
-	svc *service.SearchIPService
+	svc           *service.SearchIPService
+	reviewerCache *middleware.ReviewerCache
 }
 
 // NewSearchIPHandler 创建 SearchIPHandler
-func NewSearchIPHandler(svc *service.SearchIPService) *SearchIPHandler {
-	return &SearchIPHandler{svc: svc}
+func NewSearchIPHandler(svc *service.SearchIPService, reviewerCache *middleware.ReviewerCache) *SearchIPHandler {
+	return &SearchIPHandler{svc: svc, reviewerCache: reviewerCache}
 }
 
 // Create POST /api/v1/search-ip/submissions
@@ -78,8 +79,7 @@ func (h *SearchIPHandler) Create(c *gin.Context) {
 		TempKeys: tempKeys,
 	})
 	if err != nil {
-		logrus.WithError(err).Warn("create search ip submission failed")
-		pkg.BadRequest(c, err.Error())
+		writeServiceErr(c, err, "create search ip submission failed")
 		return
 	}
 
@@ -116,8 +116,7 @@ func (h *SearchIPHandler) UploadTemp(c *gin.Context) {
 
 	tempKey, err := h.svc.UploadTemp(ctx, fh.Filename, content)
 	if err != nil {
-		logrus.WithError(err).Warn("upload temp image failed")
-		pkg.BadRequest(c, err.Error())
+		writeServiceErr(c, err, "upload temp image failed")
 		return
 	}
 
@@ -140,7 +139,10 @@ func (h *SearchIPHandler) List(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	result, err := h.svc.ListBySubmitter(ctx, username)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	size, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+
+	result, err := h.svc.ListBySubmitter(ctx, username, page, size)
 	if err != nil {
 		logrus.WithError(err).Error("list search ip submissions failed")
 		pkg.InternalError(c, "查询列表失败")
@@ -157,7 +159,10 @@ func (h *SearchIPHandler) ListAll(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	result, err := h.svc.ListAll(ctx, status)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	size, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+
+	result, err := h.svc.ListAll(ctx, status, page, size)
 	if err != nil {
 		logrus.WithError(err).Error("list all search ip submissions failed")
 		pkg.InternalError(c, "查询列表失败")
@@ -198,17 +203,35 @@ func (h *SearchIPHandler) Review(c *gin.Context) {
 
 // GetDetail GET /api/v1/search-ip/submissions/:id
 func (h *SearchIPHandler) GetDetail(c *gin.Context) {
+	user := currentUser(c)
+	if user == nil {
+		pkg.Unauthorized(c)
+		return
+	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
 		pkg.BadRequest(c, "无效的 id")
 		return
 	}
 
+	isReviewer := false
+	if h.reviewerCache != nil {
+		isReviewer, _ = h.reviewerCache.IsReviewer(c.Request.Context(), user.Name)
+	}
+
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	result, err := h.svc.GetByID(ctx, id)
+	result, err := h.svc.GetByID(ctx, id, user.Name, isReviewer)
 	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrForbidden):
+			pkg.Forbidden(c)
+			return
+		case errors.Is(err, service.ErrSubmissionNotFound):
+			pkg.NotFound(c, "投稿不存在")
+			return
+		}
 		logrus.WithError(err).Error("get search ip detail failed")
 		pkg.InternalError(c, "查询详情失败")
 		return

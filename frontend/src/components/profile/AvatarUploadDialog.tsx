@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Minus, Plus, Upload } from 'lucide-react';
 import { buttonTap } from '@/lib/motion';
+import { formatBytes } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,6 +25,12 @@ interface AvatarUploadDialogProps {
   onCancel: () => void;
   /** 确认：带上当前放大倍数回调，由父级压缩后上传 */
   onConfirm: (zoom: number) => void;
+  /** 弹窗标题 */
+  title?: string;
+  /** 预览形状 */
+  shape?: 'circle' | 'square' | 'wide';
+  /** 预览下方的补充说明 */
+  hint?: string;
 }
 
 // 上传头像弹窗
@@ -33,6 +40,9 @@ export function AvatarUploadDialog({
   pending = false,
   onCancel,
   onConfirm,
+  title = '上传头像',
+  shape = 'circle',
+  hint,
 }: AvatarUploadDialogProps) {
   const [zoom, setZoom] = useState(1);
   const [preview, setPreview] = useState('');
@@ -57,16 +67,23 @@ export function AvatarUploadDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-4 w-4" />
-            上传头像
+            {title}
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex justify-center py-2">
-          <div className="relative h-44 w-44 overflow-hidden rounded-full bg-surface-2 ring-1 ring-line">
+          <div
+            className={cn(
+              'relative overflow-hidden bg-surface-2 ring-1 ring-line',
+              shape === 'wide'
+                ? 'aspect-[3/1] w-full rounded-lg'
+                : cn('h-44 w-44', shape === 'square' ? 'rounded-lg' : 'rounded-full')
+            )}
+          >
             {preview ? (
               <img
                 src={preview}
-                alt="头像预览"
+                alt="图片预览"
                 className="h-full w-full object-cover transition-transform duration-150"
                 style={{ transform: `scale(${zoom})` }}
               />
@@ -77,6 +94,13 @@ export function AvatarUploadDialog({
             )}
           </div>
         </div>
+
+        {file && (
+          <p className="text-center text-xs text-ink-3">
+            {file.name} · {formatBytes(file.size)}
+          </p>
+        )}
+        {hint && <p className="text-center text-xs text-ink-3">{hint}</p>}
 
         <div className="flex items-center gap-3">
           <Button

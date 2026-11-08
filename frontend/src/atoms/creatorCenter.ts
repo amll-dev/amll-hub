@@ -3,10 +3,10 @@ import { atom, getDefaultStore } from 'jotai';
 // 创作中心页状态 atoms
 
 /** 页面主视图 */
-export type View = 'home' | 'content' | 'submit' | 'requests' | 'request-edit';
+export type View = 'home' | 'content' | 'submit' | 'requests' | 'request-edit' | 'plugins';
 
 /** 投稿 Tab */
-export type SubmitTab = 'lyrics' | 'daily' | 'search-ip' | 'requests';
+export type SubmitTab = 'lyrics' | 'daily' | 'search-ip' | 'requests' | 'plugins';
 
 /** 内容管理主 Tab */
 export type ContentMainTab = 'lyrics' | 'daily' | 'search-ip' | 'requests';
