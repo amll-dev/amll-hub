@@ -12,6 +12,7 @@ import {
   Hash,
   Calendar,
   Github,
+  History,
   Play,
   Eye,
   Download,
@@ -184,6 +185,15 @@ function ResultActions({ hit }: { hit: SearchHit }) {
         className={`${btnBase} ${btnIdle}`}
       >
         <Eye className="h-4 w-4" />
+      </button>
+      {/* 历史版本 — 进入历史版本列表 */}
+      <button
+        type="button"
+        onClick={() => navigate(`/lyric/${encodeURIComponent(hit.rawLyricFile)}/versions`)}
+        title="查看历史版本"
+        className={`${btnBase} ${btnIdle}`}
+      >
+        <History className="h-4 w-4" />
       </button>
       {/* 下载 */}
       <button

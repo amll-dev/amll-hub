@@ -484,6 +484,8 @@ func New(deps RouterDeps) *gin.Engine {
 
 		// 歌词获取
 		// :folder ∈ {raw-lyrics, ncm-lyrics, qq-lyrics, spotify-lyrics, am-lyrics}
+		// 歌词历史版本（静态段需先于 /lyrics/:folder/:filename 注册）
+		api.GET("/lyrics/versions/:filename", lyricsH.ListVersions)
 		api.GET("/lyrics/:folder/:filename", lyricsH.GetLyrics)
 		// 歌词查看
 		api.GET("/lyrics/view/:filename", lyricsH.ViewLyric)

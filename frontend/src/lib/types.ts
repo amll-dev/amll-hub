@@ -45,6 +45,33 @@ export interface LyricViewResponse {
   lines: LyricViewLine[];
 }
 
+/** GET /api/v1/lyrics/versions/:filename 单个历史版本（对应 backend LyricVersionItem） */
+export interface LyricVersionItem {
+  id: number;
+  rawLyricFile: string;
+  musicNames: string[];
+  artists: string[];
+  albums: string[];
+  platformIds: Record<string, string[]>;
+  wordCount: number;
+  lineCount: number;
+  commitTimestamp?: number | null;
+  commitTime?: string | null;
+  ttmlAuthorGithub?: string;
+  ttmlAuthorGithubLogin?: string;
+  createdAt: string;
+  /** 是否为最新版本 */
+  isLatest: boolean;
+}
+
+/** GET /api/v1/lyrics/versions/:filename 响应（对应 backend LyricVersionsResult） */
+export interface LyricVersionsResult {
+  rawLyricFile: string;
+  musicNames: string[];
+  artists: string[];
+  versions: LyricVersionItem[];
+}
+
 // GET /api/v1/stats — 对应 backend/internal/service/stats_service.go StatsResponse
 export interface Stats {
   totalSongs: number;

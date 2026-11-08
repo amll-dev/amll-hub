@@ -131,6 +131,8 @@ export const queryKeys = {
 
   // 歌词查看
   viewLyric: (filename: string) => ['view-lyric', filename] as const,
+  /** 歌词历史版本 */
+  lyricVersions: (filename: string) => ['lyric-versions', filename] as const,
   parseLyric: (hash: string) => ['parse-lyric', hash] as const,
   onlineViewLyric: (platform: string, songId: string) =>
     ['online-view-lyric', platform, songId] as const,

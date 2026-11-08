@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
@@ -57,6 +58,69 @@ func (r *SongRepo) GetByRawLyricFile(ctx context.Context, rawFile string) (*mode
 		return nil, err
 	}
 	return &song, nil
+}
+
+// PlatformPair 平台 + 平台 ID 键
+type PlatformPair struct {
+	Platform   string
+	PlatformID string
+}
+
+// FindSongIDsByPlatformPairs 返回任一 (platform, platform_id) 命中的歌曲 ID
+func (r *SongRepo) FindSongIDsByPlatformPairs(ctx context.Context, pairs []PlatformPair) ([]int64, error) {
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+
+	// 分批拼接 OR 条件，避免单条 SQL 过长
+	const chunkSize = 100
+	ids := make(map[int64]struct{})
+	for start := 0; start < len(pairs); start += chunkSize {
+		end := start + chunkSize
+		if end > len(pairs) {
+			end = len(pairs)
+		}
+
+		var sb strings.Builder
+		args := make([]any, 0, (end-start)*2)
+		for i, p := range pairs[start:end] {
+			if i > 0 {
+				sb.WriteString(" OR ")
+			}
+			sb.WriteString("(platform = ? AND platform_id = ?)")
+			args = append(args, p.Platform, p.PlatformID)
+		}
+
+		var chunkIDs []int64
+		if err := r.db.WithContext(ctx).
+			Model(&model.PlatformMapping{}).
+			Where(sb.String(), args...).
+			Distinct().
+			Pluck("song_id", &chunkIDs).Error; err != nil {
+			return nil, err
+		}
+		for _, id := range chunkIDs {
+			ids[id] = struct{}{}
+		}
+	}
+
+	out := make([]int64, 0, len(ids))
+	for id := range ids {
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// GetSongsByIDs 按主键批量查询歌曲
+func (r *SongRepo) GetSongsByIDs(ctx context.Context, ids []int64) ([]model.Song, error) {
+	songs := make([]model.Song, 0, len(ids))
+	if len(ids) == 0 {
+		return songs, nil
+	}
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&songs).Error; err != nil {
+		return nil, err
+	}
+	return songs, nil
 }
 
 // BatchGetByPlatform 批量查询：返回 platform_id -> Song
