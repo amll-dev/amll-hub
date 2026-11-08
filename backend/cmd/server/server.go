@@ -124,7 +124,7 @@ func Run() {
 	// 4. 初始化 service
 	syncSvc := service.NewSyncService(cfg, syncRepo, progressRepo, mq)
 	lyricsSvc := service.NewLyricsService(cfg, songRepo, minioClient, redisClient)
-	searchSvc := service.NewSearchService(cfg, meiliClient)
+	searchSvc := service.NewSearchService(cfg, meiliClient, redisClient)
 	statsSvc := service.NewStatsService(songRepo, artistRepo, syncRepo)
 	indexSvc := service.NewIndexService(cfg, minioClient)
 	notFoundSvc := service.NewNotFoundService(notFoundRepo, redisClient, mq)

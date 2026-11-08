@@ -137,6 +137,31 @@ func (h *LyricsHandler) ViewLyric(c *gin.Context) {
 	pkg.OK(c, resp)
 }
 
+// ListVersions GET /api/v1/lyrics/versions/:filename
+// 返回与指定歌词共享平台 ID 的全部历史版本（按提交时间倒序）
+func (h *LyricsHandler) ListVersions(c *gin.Context) {
+	filename := c.Param("filename")
+	if filename == "" {
+		pkg.BadRequest(c, "invalid filename")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
+	defer cancel()
+
+	resp, err := h.svc.ListVersions(ctx, filename)
+	if err != nil {
+		if errors.Is(err, service.ErrLyricNotFound) {
+			pkg.Fail(c, http.StatusNotFound, http.StatusNotFound, "lyric not found")
+			return
+		}
+		logrus.WithError(err).Error("list lyric versions failed")
+		pkg.InternalError(c, "获取历史版本失败")
+		return
+	}
+	pkg.OK(c, resp)
+}
+
 // ParseLyric POST /api/v1/lyrics/parse
 // 解析任意 TTML 文本，返回结构化歌词数据（投稿详情页歌词预览用）
 // body = 原始 TTML 文本 (text/plain)

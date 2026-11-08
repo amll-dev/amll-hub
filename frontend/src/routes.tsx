@@ -11,6 +11,8 @@ const loadDailyRecommend = () =>
   import('@/pages/DailyRecommend').then((m) => ({ default: m.DailyRecommend }));
 const loadViewLyricPage = () =>
   import('@/pages/ViewLyricPage').then((m) => ({ default: m.ViewLyricPage }));
+const loadLyricVersionsPage = () =>
+  import('@/pages/LyricVersionsPage').then((m) => ({ default: m.LyricVersionsPage }));
 const loadOnlineViewLyricPage = () =>
   import('@/pages/OnlineViewLyricPage').then((m) => ({ default: m.OnlineViewLyricPage }));
 const loadProfileLayout = () =>
@@ -64,6 +66,7 @@ export const OnlineLyricSearch = lazy(loadOnlineLyricSearch);
 export const Ranking = lazy(loadRanking);
 export const DailyRecommend = lazy(loadDailyRecommend);
 export const ViewLyricPage = lazy(loadViewLyricPage);
+export const LyricVersionsPage = lazy(loadLyricVersionsPage);
 export const OnlineViewLyricPage = lazy(loadOnlineViewLyricPage);
 export const ProfileLayout = lazy(loadProfileLayout);
 export const ProfileHome = lazy(loadProfileHome);
@@ -98,6 +101,7 @@ export const pagePreloads: Record<string, () => Promise<unknown>> = {
   '/ranking': loadRanking,
   '/daily': loadDailyRecommend,
   '/lyric/:filename': loadViewLyricPage,
+  '/lyric/:filename/versions': loadLyricVersionsPage,
   '/online-lyric/:platform/:songId': loadOnlineViewLyricPage,
   '/stats': loadPlaceholder,
   '/docs': loadPlaceholder,
@@ -133,7 +137,9 @@ export function preloadRoute(path: string): void {
   // 动态路由（如 /user/alice）按模板回落到 '/user/:name'
   let loader = pagePreloads[path];
   if (!loader) {
-    if (path.startsWith('/user/')) {
+    if (/^\/lyric\/[^/]+\/versions$/.test(path)) {
+      loader = pagePreloads['/lyric/:filename/versions'];
+    } else if (path.startsWith('/user/')) {
       loader = pagePreloads['/user/:name'];
     } else if (/^\/creator\/requests\/\d+\/edit$/.test(path)) {
       loader = pagePreloads['/creator/requests/:id/edit'];

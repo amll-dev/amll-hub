@@ -20,6 +20,7 @@ import type {
   LyricRequestStatus,
   CreateLyricRequestResult,
   PetitionLinkItem,
+  LyricVersionsResult,
   LyricViewResponse,
   MessageType,
   NotificationListResult,
@@ -304,6 +305,16 @@ export const api = {
    */
   viewLyric(filename: string): Promise<LyricViewResponse> {
     return request<LyricViewResponse>(`/api/v1/lyrics/view/${encodeURIComponent(filename)}`);
+  },
+
+  /**
+   * 获取歌词的全部历史版本（按平台 ID 传递关联）。
+   * 后端 GET /api/v1/lyrics/versions/:filename
+   */
+  lyricVersions(filename: string): Promise<LyricVersionsResult> {
+    return request<LyricVersionsResult>(
+      `/api/v1/lyrics/versions/${encodeURIComponent(filename)}`
+    );
   },
 
   /**

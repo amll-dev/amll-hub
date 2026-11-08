@@ -17,6 +17,7 @@ func TestNew_RegistersUserProfileRoutes(t *testing.T) {
 		"GET /api/v1/users/search":                      false,
 		"GET /api/v1/search":                            false,
 		"GET /api/v1/search/counts":                     false,
+		"GET /api/v1/lyrics/versions/:filename":         false,
 		"GET /api/v1/store/catalog.json":                false,
 		"GET /api/v1/store/artifacts/:file":             false,
 		"GET /api/v1/store/plugins":                     false,
