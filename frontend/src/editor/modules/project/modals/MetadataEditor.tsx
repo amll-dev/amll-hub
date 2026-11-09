@@ -541,11 +541,9 @@ export const MetadataEditor = () => {
 
   // 弹窗 Portal 到 body，不在 Theme 作用域内，色阶要自己内联下发。
   // 色值从 CSS 变量读（editor-theme.css 是唯一来源），不硬编码。
-  const resolvedTheme = useAtomValue(resolvedThemeAtom);
-  const accentStyle = useMemo(
-    () => readBrandAccentStyle(),
-    [resolvedTheme, metadataEditorDialog]
-  );
+  // 订阅主题，主题切换时触发重渲染；accentStyle 每次渲染直接读取最新色阶。
+  useAtomValue(resolvedThemeAtom);
+  const accentStyle = readBrandAccentStyle();
 
   /**
    * 从网易云 ID 拉取歌曲资料并填进元数据。

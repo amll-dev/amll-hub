@@ -72,10 +72,8 @@ pub async fn consume_loop(
 
                 // 背压：并发任务已满时先等一个完成，避免内存无限堆积
                 while tasks.len() >= NF_CONCURRENCY {
-                    if let Some(joined) = tasks.join_next().await {
-                        if let Err(e) = joined {
-                            error!(error = %e, "nf task failed");
-                        }
+                    if let Some(Err(e)) = tasks.join_next().await {
+                        error!(error = %e, "nf task failed");
                     }
                 }
 
