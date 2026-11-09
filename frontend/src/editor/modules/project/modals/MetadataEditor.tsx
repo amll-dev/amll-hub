@@ -541,15 +541,9 @@ export const MetadataEditor = () => {
 
   // 弹窗 Portal 到 body，不在 Theme 作用域内，色阶要自己内联下发。
   // 色值从 CSS 变量读（editor-theme.css 是唯一来源），不硬编码。
-  const resolvedTheme = useAtomValue(resolvedThemeAtom);
-  const accentStyle = useMemo(
-    () => readBrandAccentStyle(),
-    // CSS 变量变化不触发 React 重渲染，靠主题值作为重算信号。
-    // readBrandAccentStyle() 内部不读 resolvedTheme，所以这里「用不到」
-    // 它是故意的 —— eslint-disable 是必要的，不是遗漏。
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 主题值仅作为重算信号
-    [resolvedTheme]
-  );
+  // 订阅主题，主题切换时触发重渲染；accentStyle 每次渲染直接读取最新色阶。
+  useAtomValue(resolvedThemeAtom);
+  const accentStyle = readBrandAccentStyle();
 
   /**
    * 从网易云 ID 拉取歌曲资料并填进元数据。

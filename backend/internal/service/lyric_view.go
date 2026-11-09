@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"strconv"
@@ -28,6 +29,7 @@ type LyricViewLine struct {
 	RomanLyric      string          `json:"romanLyric,omitempty"`
 	IsBG            bool            `json:"isBg"`
 	IsDuet          bool            `json:"isDuet"`
+	Key             string          `json:"key,omitempty"`
 	Words           []LyricViewWord `json:"words,omitempty"`
 }
 
@@ -38,7 +40,7 @@ type LyricViewResponse struct {
 }
 
 // toViewResponse 将 amll-ttml 解析结果转为前端友好的响应结构
-func toViewResponse(parsed ttml.TTMLLyric) *LyricViewResponse {
+func toViewResponse(parsed ttml.TTMLLyric, lineKeys []string) *LyricViewResponse {
 	resp := &LyricViewResponse{
 		Metadata: make(map[string][]string),
 		Lines:    make([]LyricViewLine, 0, len(parsed.LyricLines)),
@@ -46,7 +48,16 @@ func toViewResponse(parsed ttml.TTMLLyric) *LyricViewResponse {
 	for _, m := range parsed.Metadata {
 		resp.Metadata[m.Key] = append(resp.Metadata[m.Key], m.Value...)
 	}
+	keyIdx := 0
+	currentKey := ""
 	for _, line := range parsed.LyricLines {
+		if !line.IsBG {
+			currentKey = ""
+			if keyIdx < len(lineKeys) {
+				currentKey = lineKeys[keyIdx]
+			}
+			keyIdx++
+		}
 		var text strings.Builder
 		// 逐字透传
 		words := make([]LyricViewWord, 0, len(line.Words))
@@ -68,10 +79,55 @@ func toViewResponse(parsed ttml.TTMLLyric) *LyricViewResponse {
 			RomanLyric:      line.RomanLyric,
 			IsBG:            line.IsBG,
 			IsDuet:          line.IsDuet,
+			Key:             currentKey,
 			Words:           words,
 		})
 	}
 	return resp
+}
+
+// extractTTMLLineKeys 按顺序提取 body 内每个 <p> 的 itunes:key
+func extractTTMLLineKeys(ttmlText string) []string {
+	decoder := xml.NewDecoder(strings.NewReader(ttmlText))
+	keys := make([]string, 0)
+	inBody := false
+	for {
+		tok, err := decoder.Token()
+		if err != nil {
+			break
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch t.Name.Local {
+			case "body":
+				inBody = true
+			case "p":
+				if !inBody {
+					continue
+				}
+				var key string
+				hasBegin, hasEnd := false, false
+				for _, attr := range t.Attr {
+					switch attr.Name.Local {
+					case "begin":
+						hasBegin = true
+					case "end":
+						hasEnd = true
+					case "key":
+						key = strings.TrimSpace(attr.Value)
+					}
+				}
+				if hasBegin && hasEnd {
+					keys = append(keys, key)
+				}
+			}
+		case xml.EndElement:
+			if t.Name.Local == "body" {
+				inBody = false
+			}
+		}
+	}
+	return keys
 }
 
 // parseTTML 解析 TTML
@@ -120,7 +176,7 @@ func (s *LyricsService) ViewLyric(ctx context.Context, filename string) (*LyricV
 	if err != nil {
 		return nil, fmt.Errorf("parse ttml: %w", err)
 	}
-	return toViewResponse(parsed), nil
+	return toViewResponse(parsed, extractTTMLLineKeys(content.String())), nil
 }
 
 // ParseLyric 解析任意 TTML 文本为结构化歌词数据，
@@ -129,5 +185,5 @@ func (s *LyricsService) ParseLyric(ctx context.Context, ttmlText string) (*Lyric
 	if err != nil {
 		return nil, fmt.Errorf("parse ttml: %w", err)
 	}
-	return toViewResponse(parsed), nil
+	return toViewResponse(parsed, extractTTMLLineKeys(ttmlText)), nil
 }

@@ -64,7 +64,7 @@ async fn main() -> Result<()> {
     let mq = infra::rabbitmq::init_rabbitmq(&cfg).await?;
     let queue_name = cfg.rabbitmq.queue.clone();
     let channel = mq.channel.clone();
-    // 为 not_found 消费者使用独立 channel（QoS=5 已在 init_rabbitmq 中设置）
+    // 为 not_found 消费者使用独立 channel（QoS=并发上限已在 init_rabbitmq 中设置）
     let nf_channel = mq.nf_channel.clone();
     // 保留 mq 所有权直到程序结束，确保 Connection 不会被提前 Drop
 

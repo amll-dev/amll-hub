@@ -166,6 +166,7 @@ function LyricsList({
   setStatusTab: (t: LyricsStatusTab) => void;
 }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const listKey = queryKeys.submissions({
     mode: 'creator',
@@ -213,7 +214,7 @@ function LyricsList({
   });
 
   const openDetail = (id: number) => {
-    window.open(`/creator/lyrics/detail?id=${id}`, '_blank');
+    navigate(`/creator/lyrics/detail?id=${id}`);
   };
 
   return (

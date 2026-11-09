@@ -119,6 +119,8 @@ export const queryKeys = {
   searchIpSubmissions: (scope: 'mine' | 'all', status?: string, page?: number) =>
     ['search-ip-submissions', scope, status, page] as const,
   searchIpSubmission: (id: number) => ['search-ip-submission', id] as const,
+  /** 审核中心首页卡片（固定取少量最新待审核，与分页列表缓存区分） */
+  searchIpHomePending: ['search-ip-submissions', 'all', 'pending', 'home'] as const,
 
   // 每日推荐
   dailyList: ['daily-recommendations'] as const,

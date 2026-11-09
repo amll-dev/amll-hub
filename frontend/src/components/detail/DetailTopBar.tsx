@@ -2,13 +2,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Users, X } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
+import { UserMenu } from '@/components/UserMenu';
 import { Separator } from '@/components/ui/separator';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Viewer } from '@/hooks/useViewers';
 
 /** 在线观看者指示器 */
-function ViewersIndicator({
+export function ViewersIndicator({
   count,
   viewers,
   showModal,
@@ -130,6 +131,7 @@ export function DetailTopBar({
             showModal={showModal}
             setShowModal={setShowModal}
           />
+          <UserMenu />
         </div>
       </div>
     </header>

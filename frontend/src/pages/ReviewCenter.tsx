@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAtom } from 'jotai';
 import {
@@ -15,14 +15,15 @@ import {
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
+  ChevronRight,
   FolderOpen,
   Home,
-  LayoutDashboard,
   Megaphone,
   Package,
   Search,
   Shield,
   ShieldCheck,
+  type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { fadeUp, staggerContainer } from '@/lib/motion';
@@ -76,6 +77,7 @@ const searchIpTabs: { key: SearchIpTab; label: string }[] = [
 /** 审核中心列表（分页：每页 20 条） */
 function ReviewList() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   // 列表筛选状态存全局 atoms（页面卸载时统一复位）
   const [tab, setTab] = useAtom(reviewTabAtom);
   const [search, setSearch] = useAtom(reviewSearchAtom);
@@ -142,7 +144,7 @@ function ReviewList() {
   });
 
   const openDetail = (id: number) => {
-    window.open(`/review/detail?id=${id}`, '_blank');
+    navigate(`/review/detail?id=${id}`);
   };
 
   return (
@@ -382,6 +384,208 @@ function SearchIpReviewList() {
   );
 }
 
+/** 首页卡片最多展示的待审核条数 */
+const HOME_CARD_LIMIT = 5;
+
+/** 首页卡片内的单条待审核记录 */
+function HomePendingRow({
+  title,
+  tag,
+  time,
+  onOpen,
+}: {
+  title: string;
+  tag: string;
+  time: string;
+  onOpen: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-surface-2"
+      >
+        <span className="min-w-0 flex-1 truncate text-sm text-foreground" title={title}>
+          {title}
+        </span>
+        <span className="shrink-0 font-mono text-xs text-ink-3">{tag}</span>
+        <span className="shrink-0 text-xs text-ink-3">{time}</span>
+      </button>
+    </li>
+  );
+}
+
+/** 首页单块待审核卡片 */
+function HomePendingCard({
+  icon: Icon,
+  title,
+  count,
+  loading,
+  error,
+  onViewAll,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  count: number;
+  loading: boolean;
+  error: string;
+  onViewAll: () => void;
+  children: ReactNode;
+}) {
+  const isEmpty = !loading && !error && count === 0;
+
+  return (
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-line bg-card p-5">
+      <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
+        <h2 className="flex min-w-0 items-center gap-2 text-base font-bold tracking-tight text-foreground">
+          <Icon className="h-4 w-4 shrink-0 text-primary" />
+          <span className="truncate">{title}</span>
+          {count > 0 && (
+            <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+              {count}
+            </span>
+          )}
+        </h2>
+        <button
+          type="button"
+          onClick={onViewAll}
+          className="flex shrink-0 items-center gap-0.5 text-xs text-ink-3 transition-colors hover:text-primary"
+        >
+          查看全部
+          <ChevronRight className="h-3 w-3" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-8 animate-pulse rounded-md bg-surface-2" />
+            ))}
+          </div>
+        ) : error ? (
+          <p className="py-6 text-center text-xs text-error">{error}</p>
+        ) : isEmpty ? null : (
+          <ul className="space-y-0.5">{children}</ul>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** 审核中心首页 */
+function HomeOverview() {
+  const navigate = useNavigate();
+  const [, setView] = useAtom(reviewViewAtom);
+  const [, setSearchIpDetailId] = useAtom(searchIpDetailIdAtom);
+
+  const lyricsQuery = useQuery({
+    queryKey: queryKeys.submissions({
+      mode: 'review',
+      status: 'pending',
+      limit: HOME_CARD_LIMIT,
+      page: 1,
+    }),
+    queryFn: () => api.listAllSubmissions({ status: 'pending', page: 1, limit: HOME_CARD_LIMIT }),
+    staleTime: 15_000,
+  });
+
+  const searchIpQuery = useQuery({
+    queryKey: queryKeys.searchIpHomePending,
+    queryFn: () =>
+      api.listAllSearchIpSubmissions({ status: 'pending', page: 1, limit: HOME_CARD_LIMIT }),
+    staleTime: 15_000,
+  });
+
+  const pluginQuery = useQuery({
+    queryKey: queryKeys.pluginReviewQueue({
+      page: 1,
+      pageSize: HOME_CARD_LIMIT,
+      status: 'pending',
+    }),
+    queryFn: () =>
+      api.pluginStore.reviewQueue({ page: 1, pageSize: HOME_CARD_LIMIT, status: 'pending' }),
+    staleTime: 15_000,
+  });
+
+  const lyricsItems = lyricsQuery.data?.items ?? [];
+  const searchIpItems = searchIpQuery.data?.items ?? [];
+  const pluginItems = pluginQuery.data?.items ?? [];
+
+  const errText = (q: { error: unknown }) =>
+    q.error instanceof Error ? q.error.message : q.error ? '加载失败' : '';
+
+  return (
+    <div className="col-start-1 row-start-1 grid min-h-0 gap-4 lg:h-full lg:grid-cols-2 lg:grid-rows-2 lg:overflow-hidden">
+      {/* 歌词审核 */}
+      <HomePendingCard
+        icon={FolderOpen}
+        title="歌词审核"
+        count={lyricsQuery.data?.total ?? 0}
+        loading={lyricsQuery.isPending}
+        error={errText(lyricsQuery)}
+        onViewAll={() => setView('content')}
+      >
+        {lyricsItems.map((item) => (
+          <HomePendingRow
+            key={item.id}
+            title={item.title || '未命名'}
+            tag={`#${item.id}`}
+            time={formatDateTime(item.createdAt)}
+            onOpen={() => navigate(`/review/detail?id=${item.id}`)}
+          />
+        ))}
+      </HomePendingCard>
+
+      {/* IP显示投稿 */}
+      <HomePendingCard
+        icon={Search}
+        title="IP显示投稿"
+        count={searchIpQuery.data?.total ?? 0}
+        loading={searchIpQuery.isPending}
+        error={errText(searchIpQuery)}
+        onViewAll={() => setView('search-ip')}
+      >
+        {searchIpItems.map((item) => (
+          <HomePendingRow
+            key={item.id}
+            title={item.title || '未命名'}
+            tag={`#${item.id}`}
+            time={formatDateTime(item.createdAt)}
+            onOpen={() => {
+              setSearchIpDetailId(item.id);
+              setView('search-ip');
+            }}
+          />
+        ))}
+      </HomePendingCard>
+
+      {/* 插件审核 */}
+      <HomePendingCard
+        icon={Package}
+        title="插件审核"
+        count={pluginQuery.data?.total ?? 0}
+        loading={pluginQuery.isPending}
+        error={errText(pluginQuery)}
+        onViewAll={() => setView('plugins')}
+      >
+        {pluginItems.map((item) => (
+          <HomePendingRow
+            key={item.version.id}
+            title={item.pluginName}
+            tag={`v${item.version.version}`}
+            time={formatDateTime(item.version.submittedAt)}
+            onOpen={() =>
+              window.open(`/review/plugin?key=${encodeURIComponent(item.pluginKey)}`, '_blank')
+            }
+          />
+        ))}
+      </HomePendingCard>
+    </div>
+  );
+}
+
 /** 审核中心主页面 */
 export function ReviewCenter() {
   const { user, openLogin } = useAuth();
@@ -540,7 +744,7 @@ export function ReviewCenter() {
         {/* 主内容区 */}
         <main className="no-scrollbar grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-y-auto">
           <AnimatePresence>
-            {/* 首页占位 */}
+            {/* 首页 */}
             {view === 'home' && (
               <motion.div
                 key="home"
@@ -548,15 +752,9 @@ export function ReviewCenter() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="col-start-1 row-start-1 flex flex-col items-center justify-center rounded-lg border border-line bg-card p-12 text-center"
+                className="col-start-1 row-start-1 min-h-0"
               >
-                <LayoutDashboard className="mx-auto h-12 w-12 text-ink-3" />
-                <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">
-                  审核中心首页
-                </h2>
-                <p className="mt-2 text-sm text-ink-3">
-                  欢迎来到审核中心，这里将展示待审核稿件概览
-                </p>
+                <HomeOverview />
               </motion.div>
             )}
 

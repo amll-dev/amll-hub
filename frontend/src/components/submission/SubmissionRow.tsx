@@ -66,7 +66,7 @@ export function SubmissionRow({ item, href, showStatus = true, className }: Subm
   return (
     <li className={className}>
       {href ? (
-        <Link to={href} target="_blank" rel="noreferrer" className={cn(rowClass, interactiveClass)}>
+        <Link to={href} className={cn(rowClass, interactiveClass)}>
           {content}
         </Link>
       ) : (

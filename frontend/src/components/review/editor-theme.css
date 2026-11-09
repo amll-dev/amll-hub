@@ -32,8 +32,9 @@ body.editor-body {
   --accent-track: #fbdde0;
 }
 
-body.editor-body:has(.dark),
-body.editor-body.dark {
+html.dark body.editor-body,
+body.editor-body.dark,
+body.editor-body .dark {
   --accent-1: #2a1418;
   --accent-2: #3a1a20;
   --accent-3: #4a2127;

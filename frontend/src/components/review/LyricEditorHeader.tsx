@@ -11,7 +11,18 @@ import { ToolMode, toolModeAtom } from '@/editor/states/main.ts';
 import { metadataEditorDialogAtom } from '@/editor/states/dialogs.ts';
 import { EditorMenuBar } from '@/components/review/EditorTopMenu';
 import { UserMenu } from '@/components/UserMenu';
+import { ViewersIndicator } from '@/components/detail/DetailTopBar';
+import { statusMeta } from '@/components/submission/status';
+import type { Viewer } from '@/hooks/useViewers';
 import { cn } from '@/lib/utils';
+
+/** 在线观看者数据 */
+export interface EditorViewersState {
+  count: number;
+  viewers: Viewer[];
+  showModal: boolean;
+  setShowModal: (open: boolean) => void;
+}
 
 export interface EditorHeaderProps {
   title: string;
@@ -26,6 +37,10 @@ export interface EditorHeaderProps {
   mode?: 'review' | 'creator';
   /** 无参考音频：隐藏打轴与音频相关控件 */
   textOnly?: boolean;
+  /** 当前投稿状态（随 WS 广播实时同步） */
+  status?: string;
+  /** 在线观看者（WS） */
+  viewers?: EditorViewersState;
 }
 
 /** 参考音频选择器 */
@@ -132,9 +147,14 @@ export function LyricEditorHeader({
   saving,
   mode = 'review',
   textOnly = false,
+  status,
+  viewers,
 }: EditorHeaderProps) {
   const [, setMetadataEditorDialog] = useAtom(metadataEditorDialogAtom);
   const isCreator = mode === 'creator';
+  const statusBadge = status
+    ? (statusMeta[status] ?? { label: status, className: 'bg-surface-2 text-ink-2' })
+    : null;
 
   return (
     <div className="z-50 flex shrink-0 items-center justify-between gap-3 border-b border-border bg-background px-3 py-2">
@@ -150,7 +170,20 @@ export function LyricEditorHeader({
         </Button>
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{title}</div>
-          <div className="truncate text-[11px] text-ink-3">{subtitle}</div>
+          <div className="flex min-w-0 items-center gap-1.5">
+            {statusBadge && (
+              <span
+                className={cn(
+                  'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
+                  statusBadge.className
+                )}
+                title="投稿状态"
+              >
+                {statusBadge.label}
+              </span>
+            )}
+            <div className="truncate text-[11px] text-ink-3">{subtitle}</div>
+          </div>
         </div>
       </div>
 
@@ -188,6 +221,14 @@ export function LyricEditorHeader({
           {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
           {isCreator ? '提交修改' : '提交'}
         </Button>
+        {viewers && (
+          <ViewersIndicator
+            count={viewers.count}
+            viewers={viewers.viewers}
+            showModal={viewers.showModal}
+            setShowModal={viewers.setShowModal}
+          />
+        )}
         <UserMenu />
       </div>
     </div>
