@@ -14,7 +14,13 @@ export function ViewLyricPage() {
       backLabel="返回搜索"
     >
       {filename && (
-        <LyricViewer filename={filename} showHeader showActions rawLyricFile={filename} />
+        <LyricViewer
+          filename={filename}
+          showHeader
+          showActions
+          showLineNumbers
+          rawLyricFile={filename}
+        />
       )}
     </ViewLyricShell>
   );

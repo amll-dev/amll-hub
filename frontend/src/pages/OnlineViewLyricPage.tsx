@@ -32,6 +32,7 @@ export function OnlineViewLyricPage() {
         <LyricViewer
           online={{ platform: validPlatform, songId: decodeURIComponent(songId) }}
           showHeader
+          showLineNumbers
         />
       )}
     </ViewLyricShell>

@@ -1,12 +1,17 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use futures_lite::StreamExt;
+use lapin::{
+    options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions},
+    types::FieldTable,
+};
 use sea_orm::DatabaseConnection;
 use serde::Deserialize;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::app::AppState;
-use crate::infra;
+use crate::infra::rabbitmq::NF_CONCURRENCY;
 
 use super::ncm_api::{parse_and_categorize, ParseCategory, ParseContext};
 use super::whitelist::{add_cloud_music, add_pure_music, is_in_whitelist};
@@ -21,25 +26,102 @@ struct NotFoundMessage {
     client_ip: Option<String>,
 }
 
-/// 启动无歌词解析消费循环
+/// 启动无歌词解析消费循环（有界并发，QoS 已在 init_rabbitmq 中设为 NF_CONCURRENCY）
 pub async fn consume_loop(
     channel: lapin::Channel,
     nf_queue_name: String,
     app: Arc<AppState>,
     shutdown: Arc<tokio::sync::Notify>,
 ) -> Result<()> {
-    // nf_channel 的 QoS=5 已在 init_rabbitmq 中设置
-    infra::rabbitmq::consume_loop(
-        channel,
-        nf_queue_name,
-        "ttml-nf-worker",
-        shutdown,
-        move |delivery| {
-            let app = app.clone();
-            async move { handle_message(delivery, &app).await }
-        },
-    )
-    .await
+    let mut consumer = channel
+        .basic_consume(
+            &nf_queue_name,
+            "ttml-nf-worker",
+            BasicConsumeOptions::default(),
+            FieldTable::default(),
+        )
+        .await
+        .context("basic_consume nf queue")?;
+
+    info!(
+        queue = %nf_queue_name,
+        concurrency = NF_CONCURRENCY,
+        "nf consumer started"
+    );
+
+    let notified = shutdown.notified();
+    tokio::pin!(notified);
+
+    let mut tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
+
+    loop {
+        tokio::select! {
+            _ = &mut notified => {
+                info!(queue = %nf_queue_name, "shutdown signal received, stopping nf consumer");
+                break;
+            }
+            msg = consumer.next() => {
+                let Some(delivery) = msg else { break; };
+                let delivery = match delivery {
+                    Ok(d) => d,
+                    Err(e) => {
+                        error!(error = %e, "nf consumer stream error");
+                        return Err(anyhow::anyhow!("nf consumer stream error: {e}"));
+                    }
+                };
+
+                // 背压：并发任务已满时先等一个完成，避免内存无限堆积
+                while tasks.len() >= NF_CONCURRENCY {
+                    if let Some(joined) = tasks.join_next().await {
+                        if let Err(e) = joined {
+                            error!(error = %e, "nf task failed");
+                        }
+                    }
+                }
+
+                let tag = delivery.delivery_tag;
+                let task_app = app.clone();
+                let task_channel = channel.clone();
+                tasks.spawn(async move {
+                    match handle_message(delivery, &task_app).await {
+                        Ok(()) => {
+                            if let Err(e) = task_channel
+                                .basic_ack(tag, BasicAckOptions::default())
+                                .await
+                            {
+                                error!(error = %e, "basic_ack failed");
+                            }
+                        }
+                        Err(e) => {
+                            error!(error = %e, "task failed after retries, sending to DLQ");
+                            // nack(requeue=false) 触发 dead-lettering 到 DLQ，避免毒消息无限重投
+                            if let Err(e) = task_channel
+                                .basic_nack(
+                                    tag,
+                                    BasicNackOptions {
+                                        multiple: false,
+                                        requeue: false,
+                                    },
+                                )
+                                .await
+                            {
+                                error!(error = %e, "basic_nack failed");
+                            }
+                        }
+                    }
+                });
+            }
+            Some(joined) = tasks.join_next(), if !tasks.is_empty() => {
+                if let Err(e) = joined {
+                    error!(error = %e, "nf task failed");
+                }
+            }
+        }
+    }
+
+    // 等待进行中的任务处理完再退出
+    while tasks.join_next().await.is_some() {}
+    Ok(())
 }
 
 /// 无歌词解析最大重试次数

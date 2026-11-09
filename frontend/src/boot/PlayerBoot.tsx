@@ -1018,6 +1018,7 @@ export function PlayerBoot() {
             cover: track.cover,
             platform: 'qq',
             level: q,
+            customTtml: track.customTtml,
           },
         });
         return;
@@ -1396,6 +1397,10 @@ export function PlayerBoot() {
     (async () => {
       try {
         const { parseLrc, parseTTML } = await import('@applemusic-like-lyrics/lyric');
+        if (track.customTtml) {
+          setLyricData(parseTTML(track.customTtml).lines);
+          return;
+        }
         // QQ 曲目优先用库内已校对过的 qq-lyrics TTML
         if (track.platform === 'qq' && track.ncmSongId) {
           const ttml = await api.getQqLyricTtml(track.ncmSongId);
@@ -1408,10 +1413,6 @@ export function PlayerBoot() {
         // 库内没有时用 QRC 逐字，避免回退成 LRC 丢掉逐字时间轴
         if (track.customLyricLines && track.customLyricLines.length > 0) {
           setLyricData(track.customLyricLines);
-          return;
-        }
-        if (track.customTtml) {
-          setLyricData(parseTTML(track.customTtml).lines);
           return;
         }
         const rawLyricFile = track.hit?.rawLyricFile;

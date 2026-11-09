@@ -14,6 +14,9 @@ use crate::config::{
     MIGRATION_EXCHANGE, MIGRATION_USER_ROUTING,
 };
 
+/// not_found 消费者并发上限（同时作为 channel 的 QoS 预取数）
+pub const NF_CONCURRENCY: usize = 40;
+
 /// 初始化 RabbitMQ 连接与队列声明
 pub struct RabbitMq {
     /// 持有底层连接防止其被提前 Drop（channel 依赖该连接存活）
@@ -315,10 +318,10 @@ pub async fn init_rabbitmq(cfg: &Config) -> Result<RabbitMq> {
         .await
         .context("bind nf queue")?;
 
-    // 为 not_found 消费者创建独立 channel，并设置 QoS=5
+    // 为 not_found 消费者创建独立 channel，预取数等于并发上限
     let nf_channel = conn.create_channel().await.context("create nf channel")?;
     nf_channel
-        .basic_qos(5, BasicQosOptions { global: false })
+        .basic_qos(NF_CONCURRENCY as u16, BasicQosOptions { global: false })
         .await
         .context("nf channel qos")?;
 

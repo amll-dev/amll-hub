@@ -36,11 +36,15 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
+import { useViewers } from '@/hooks/useViewers';
 import { buildEditorAudioSources } from '@/lib/review/audio-sources';
 import { buildEditorSaveBundle } from '@/lib/review/editor-save-bundle';
-import type { ReviewAction } from '@/lib/types';
+import type { EditorContext, ReviewAction } from '@/lib/types';
 
 export type LyricEditorMode = 'review' | 'creator';
+
+/** 审核占用心跳间隔：需小于后端租约时长（默认 3 分钟）才能持续续约 */
+const REVIEW_HEARTBEAT_MS = 60_000;
 
 export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode }) {
   const { id } = useParams<{ id: string }>();
@@ -64,10 +68,16 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
   /** 原稿 TTML，保存时用来生成 diff 报告 */
   const [originalTtml, setOriginalTtml] = useState('');
 
+  const ctxQueryKey = useMemo(
+    () =>
+      isCreator
+        ? queryKeys.submitterEditorContext(submissionId)
+        : queryKeys.editorContext(submissionId),
+    [isCreator, submissionId]
+  );
+
   const ctxQuery = useQuery({
-    queryKey: isCreator
-      ? queryKeys.submitterEditorContext(submissionId)
-      : queryKeys.editorContext(submissionId),
+    queryKey: ctxQueryKey,
     queryFn: () =>
       isCreator ? api.getSubmitterEditorContext(submissionId) : api.getEditorContext(submissionId),
     enabled: Number.isFinite(submissionId),
@@ -144,16 +154,94 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
     });
   }, [sources, safeAudioIndex, audioSrc]);
 
-  // 打开时标记审核中，离开时释放占用（仅审核员）
+  // WS：观看者列表 + 投稿状态变更广播
+  const viewerState = useViewers(submissionId);
+
+  // 审核占用租约：进入编辑器即占用，心跳续约，离开/页面卸载时释放
+  const claimedRef = useRef(false);
+  const claimGenRef = useRef(0);
+  // 等上下文加载完成再占用：此时缓存已有数据，占用结果可直接补丁状态
+  const hasCtx = ctxQuery.isSuccess;
   useEffect(() => {
-    if (!ctx || isCreator) return;
-    if (ctx.status === 'pending') {
-      void api.markReviewing(submissionId).catch(() => {});
-    }
-    return () => {
-      void api.releaseReview(submissionId, true).catch(() => {});
+    if (isCreator || !hasCtx || !Number.isFinite(submissionId)) return;
+    const gen = ++claimGenRef.current;
+    const isCurrent = () => gen === claimGenRef.current;
+
+    const patchStatus = (status?: string) => {
+      if (!status) return;
+      queryClient.setQueryData<EditorContext>(ctxQueryKey, (prev) =>
+        prev && prev.status !== status ? { ...prev, status } : prev
+      );
     };
-  }, [ctx, isCreator, submissionId]);
+
+    const release = (keepalive = false) => {
+      if (!claimedRef.current) return;
+      claimedRef.current = false;
+      // keepalive：页面卸载期间也能把请求发出
+      api.releaseReview(submissionId, keepalive).catch(() => {});
+    };
+
+    const claim = async () => {
+      try {
+        const { held } = await api.markReviewing(submissionId);
+        // 过期实例（StrictMode 的第一轮 / 已切换稿件）：结果直接丢弃
+        if (!isCurrent()) return;
+        claimedRef.current = held;
+        // 他人已占用或已是终态：不抢占，状态以 WS 广播 / 心跳为准
+        if (held) patchStatus('reviewing');
+      } catch {
+        // 占用失败不影响编辑，交给后端租约兜底
+      }
+    };
+
+    const heartbeat = async () => {
+      // 页面不可见时不再续约：超时后自动释放，回来时重新占用
+      if (!isCurrent() || document.visibilityState !== 'visible') return;
+      try {
+        const { held, status } = await api.reviewHeartbeat(submissionId);
+        if (!isCurrent()) return;
+        claimedRef.current = held;
+        patchStatus(status);
+        if (!held) await claim();
+      } catch {
+        // 心跳失败静默，交给后端租约超时释放
+      }
+    };
+
+    const claimTimer = setTimeout(() => void claim(), 0);
+    const timer = setInterval(() => void heartbeat(), REVIEW_HEARTBEAT_MS);
+    // pagehide 比 beforeunload 更可靠：覆盖关标签页、刷新、前进后退、bfcache
+    const onPageHide = () => release(true);
+    window.addEventListener('pagehide', onPageHide);
+
+    return () => {
+      clearTimeout(claimTimer);
+      clearInterval(timer);
+      window.removeEventListener('pagehide', onPageHide);
+      // 只有最新一代实例才负责释放；被 StrictMode 替换掉的旧实例不在这里释放
+      if (isCurrent()) {
+        release();
+        claimGenRef.current += 1;
+      }
+    };
+  }, [ctxQueryKey, hasCtx, isCreator, queryClient, submissionId]);
+
+  // WS 状态更新：直接补丁编辑器上下文里的 status，不重拉 TTML（避免覆盖未保存内容）
+  useEffect(() => {
+    if (!Number.isFinite(submissionId)) return;
+    const handler = (e: Event) => {
+      const payload = (e as CustomEvent<unknown>).detail;
+      const obj =
+        typeof payload === 'object' && payload ? (payload as Record<string, unknown>) : null;
+      const newStatus = typeof payload === 'string' ? payload : (obj?.status as string | undefined);
+      if (!newStatus) return;
+      queryClient.setQueryData<EditorContext>(ctxQueryKey, (prev) =>
+        prev && prev.status !== newStatus ? { ...prev, status: newStatus } : prev
+      );
+    };
+    window.addEventListener('submission:status-update', handler);
+    return () => window.removeEventListener('submission:status-update', handler);
+  }, [ctxQueryKey, queryClient, submissionId]);
 
   // 把后端 TTML 灌进编辑器：审核员默认打轴，投稿者默认编辑
   useEffect(() => {
@@ -410,6 +498,8 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
           saving={isCreator ? submitMutation.isPending : saveMutation.isPending}
           mode={mode}
           textOnly={textOnly}
+          status={ctx.status}
+          viewers={viewerState}
         />
 
         <div className="relative min-h-0 flex-1">

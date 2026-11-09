@@ -29,6 +29,8 @@ export interface LyricViewerProps {
   showHeader?: boolean;
   showActions?: boolean;
   rawLyricFile?: string;
+  /** 是否展示歌词行号 */
+  showLineNumbers?: boolean;
 }
 
 /** 平台歌词模式返回：视图数据 + 原始歌词文本与下载文件名 */
@@ -244,6 +246,7 @@ export function LyricViewer({
   showHeader = true,
   showActions = true,
   rawLyricFile,
+  showLineNumbers = false,
 }: LyricViewerProps) {
   const [dlError, setDlError] = useState('');
   const onlinePlatform = online?.platform;
@@ -365,63 +368,80 @@ export function LyricViewer({
 
       {/* 歌词内容 */}
       <motion.div variants={listItem} className="space-y-1">
-        {groups.map((group, gi) => (
-          <motion.div key={gi} variants={listItem} className="space-y-0.5">
-            {group.map((line, li) => (
-              <div
-                key={li}
-                className={`flex gap-3 rounded-lg px-3 py-1.5 transition-colors hover:bg-primary-tint/50 sm:gap-4 sm:px-4 ${
-                  line.isDuet ? 'flex-row-reverse text-right' : ''
-                }`}
-              >
-                {/* 时间轴 */}
+        {groups.map((group, gi) => {
+          const lineNo = group.find((line) => !line.isBg)?.key || String(gi + 1);
+          return (
+            <motion.div
+              key={gi}
+              variants={listItem}
+              className="flex gap-3 rounded-lg px-3 py-1.5 transition-colors hover:bg-primary-tint/50 sm:gap-4 sm:px-4"
+            >
+              {/* 行号 */}
+              {showLineNumbers && (
                 <span
-                  className={`shrink-0 pt-0.5 font-mono text-xs font-semibold text-primary sm:text-sm ${
-                    line.isDuet ? 'text-right' : ''
-                  }`}
-                  style={{ minWidth: '72px' }}
+                  className="shrink-0 select-none pt-0.5 text-right font-mono text-xs tabular-nums text-ink-3 sm:text-sm"
+                  style={{ minWidth: '24px' }}
                 >
-                  {formatLyricTime(line.startTime)}
+                  {lineNo}
                 </span>
+              )}
 
-                {/* 歌词文本 */}
-                <div className="min-w-0 flex-1">
-                  {line.isBg ? (
-                    <BgLine line={line} />
-                  ) : (
-                    <>
-                      <WordCells line={line} />
+              <div className="min-w-0 flex-1 space-y-0.5">
+                {group.map((line, li) => (
+                  <div
+                    key={li}
+                    className={`flex gap-3 ${line.isDuet ? 'flex-row-reverse text-right' : ''}`}
+                  >
+                    {/* 时间轴 */}
+                    <span
+                      className={`shrink-0 pt-0.5 font-mono text-xs font-semibold text-primary sm:text-sm ${
+                        line.isDuet ? 'text-right' : ''
+                      }`}
+                      style={{ minWidth: '72px' }}
+                    >
+                      {formatLyricTime(line.startTime)}
+                    </span>
 
-                      {/* 翻译 */}
-                      {line.translatedLyric && (
-                        <div
-                          className={`mt-1 flex items-start gap-1.5 text-sm text-primary ${
-                            line.isDuet ? 'flex-row-reverse justify-start text-right' : 'pl-1'
-                          }`}
-                        >
-                          <Languages className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          <span>{line.translatedLyric}</span>
-                        </div>
+                    {/* 歌词文本 */}
+                    <div className="min-w-0 flex-1">
+                      {line.isBg ? (
+                        <BgLine line={line} />
+                      ) : (
+                        <>
+                          <WordCells line={line} />
+
+                          {/* 翻译 */}
+                          {line.translatedLyric && (
+                            <div
+                              className={`mt-1 flex items-start gap-1.5 text-sm text-primary ${
+                                line.isDuet ? 'flex-row-reverse justify-start text-right' : 'pl-1'
+                              }`}
+                            >
+                              <Languages className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                              <span>{line.translatedLyric}</span>
+                            </div>
+                          )}
+
+                          {/* 整行音译 */}
+                          {line.romanLyric && (
+                            <div
+                              className={`mt-1 flex items-start gap-1.5 text-xs text-purple-500 ${
+                                line.isDuet ? 'flex-row-reverse justify-start text-right' : 'pl-1'
+                              }`}
+                            >
+                              <TypeIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                              <span className="font-mono break-words">{line.romanLyric}</span>
+                            </div>
+                          )}
+                        </>
                       )}
-
-                      {/* 整行音译 */}
-                      {line.romanLyric && (
-                        <div
-                          className={`mt-1 flex items-start gap-1.5 text-xs text-purple-500 ${
-                            line.isDuet ? 'flex-row-reverse justify-start text-right' : 'pl-1'
-                          }`}
-                        >
-                          <TypeIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                          <span className="font-mono break-words">{line.romanLyric}</span>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </motion.div>
-        ))}
+            </motion.div>
+          );
+        })}
       </motion.div>
 
       {/* 操作按钮 */}

@@ -751,7 +751,12 @@ function SubmissionDetailContent({
 
               {fileView === 'effect' ? (
                 ttml ? (
-                  <LyricViewer ttml={ttml} showHeader={false} showActions={false} />
+                  <LyricViewer
+                    ttml={ttml}
+                    showHeader={false}
+                    showActions={false}
+                    showLineNumbers
+                  />
                 ) : (
                   <pre className="max-h-96 overflow-auto rounded bg-background p-3 text-xs leading-relaxed text-ink-2">
                     (空)

@@ -544,11 +544,7 @@ export const MetadataEditor = () => {
   const resolvedTheme = useAtomValue(resolvedThemeAtom);
   const accentStyle = useMemo(
     () => readBrandAccentStyle(),
-    // CSS 变量变化不触发 React 重渲染，靠主题值作为重算信号。
-    // readBrandAccentStyle() 内部不读 resolvedTheme，所以这里「用不到」
-    // 它是故意的 —— eslint-disable 是必要的，不是遗漏。
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 主题值仅作为重算信号
-    [resolvedTheme]
+    [resolvedTheme, metadataEditorDialog]
   );
 
   /**

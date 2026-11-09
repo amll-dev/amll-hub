@@ -35,6 +35,7 @@ export interface LyricViewLine {
   romanLyric?: string;
   isBg: boolean;
   isDuet: boolean;
+  key?: string;
   /** 逐字时间轴，仅 TTML 等带字级时间的数据源有 */
   words?: LyricViewWord[];
 }
