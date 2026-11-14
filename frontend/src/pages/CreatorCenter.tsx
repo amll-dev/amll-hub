@@ -22,6 +22,7 @@ import {
   ScrollText,
   Search,
   Upload,
+  UserRoundPlus,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
@@ -495,6 +496,7 @@ function SearchIpList() {
 
 export function CreatorCenter() {
   const { user, openLogin } = useAuth();
+  const canAccessRecruitment = Boolean(user?.isReviewer || user?.isAdmin);
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -508,6 +510,10 @@ export function CreatorCenter() {
 
   // 离开页面时复位
   useEffect(() => () => resetCreatorCenter(), []);
+
+  useEffect(() => {
+    if (view === 'reviewer-recruitment' && !canAccessRecruitment) setView('home');
+  }, [view, canAccessRecruitment, setView]);
 
   // 支持 ?tab=lyrics|daily|search-ip|requests|plugins 直达对应投稿表单
   useEffect(() => {
@@ -728,11 +734,39 @@ export function CreatorCenter() {
               />
             )}
           </nav>
+          {canAccessRecruitment && (
+            <nav className="mt-6 space-y-1" aria-label="审核招募">
+              <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-ink-3">
+                审核招募
+              </p>
+              <NavItem
+                icon={<UserRoundPlus className="h-4 w-4" />}
+                label="审核招募"
+                active={view === 'reviewer-recruitment'}
+                onClick={() => {
+                  if (onRequestsRoute || editingId || onPluginsRoute) navigate('/creator');
+                  setView('reviewer-recruitment');
+                }}
+              />
+            </nav>
+          )}
         </aside>
 
         {/* 主内容区：grid 重叠布局，新旧视图交叉淡入淡出 */}
         <main className="no-scrollbar grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-x-clip overflow-y-auto">
           <AnimatePresence>
+            {view === 'reviewer-recruitment' && canAccessRecruitment && (
+              <motion.div
+                key="reviewer-recruitment"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, pointerEvents: 'none' }}
+                transition={{ duration: 0.15 }}
+                className="col-start-1 row-start-1 min-w-0 rounded-lg border border-line bg-card p-6"
+              >
+                <h2 className="text-xl font-bold tracking-tight text-foreground">审核招募</h2>
+              </motion.div>
+            )}
             {/* 首页占位 */}
             {view === 'home' && (
               <motion.div
