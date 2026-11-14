@@ -3,7 +3,8 @@ import { atom, getDefaultStore } from 'jotai';
 // 创作中心页状态 atoms
 
 /** 页面主视图 */
-export type View = 'home' | 'content' | 'submit' | 'requests' | 'request-edit' | 'plugins';
+export type View =
+  'home' | 'content' | 'submit' | 'requests' | 'request-edit' | 'plugins' | 'reviewer-recruitment';
 
 /** 投稿 Tab */
 export type SubmitTab = 'lyrics' | 'daily' | 'search-ip' | 'requests' | 'plugins';
