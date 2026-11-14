@@ -68,10 +68,15 @@ export function SearchBoot() {
   }, [query, tab, setHasQuery, setPage, setCommitted]);
 
   // 监听 query 变化：在非首页输入搜索词时，导航回首页展示结果
-  const prevQuery = useRef('');
+  const prevQuery = useRef<string | null>(null);
   useEffect(() => {
     const trimmed = query.trim();
-    if (trimmed && trimmed !== prevQuery.current && location.pathname !== '/') {
+    if (
+      prevQuery.current !== null &&
+      trimmed &&
+      trimmed !== prevQuery.current &&
+      location.pathname !== '/'
+    ) {
       navigate('/');
     }
     prevQuery.current = trimmed;

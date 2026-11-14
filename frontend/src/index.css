@@ -742,7 +742,7 @@ html.dark .amll-skeleton::after {
 
 /* 编号条款里的加粗前缀（如「**投稿人承诺。**」）后跟正文，做成提示块 */
 .legal-prose blockquote {
-  padding: 0.9em 1.1em;
+  padding: 0.7em 1.1em;
   margin: 0 0 1.2em;
   font-style: normal;
   font-weight: 400;
@@ -758,6 +758,12 @@ html.dark .amll-skeleton::after {
 
 .legal-prose blockquote p:last-child {
   margin-bottom: 0;
+}
+
+/* blockquote 有 padding，子元素 margin 不会塌陷出去：
+ * 首段自带的 margin-top 会在框内留出一条与底部不对称的空白 */
+.legal-prose blockquote > :first-child {
+  margin-top: 0;
 }
 
 /* md 里用「- 」做的二级列表在渲染后是 li > ul，符号跟随父级即可 */
@@ -858,4 +864,261 @@ html.dark .amll-skeleton::after {
 * {
   scrollbar-width: thin;
   scrollbar-color: rgb(128 128 128 / 0.35) transparent;
+}
+
+/* 文档正文（/docs）在 legal-prose 基础上的增量样式：
+ * 图片自适应、代码高亮 token 走主题令牌（不引 github.css，避免明暗两套冲突）。
+ */
+.docs-prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--amll-radius-md);
+  border: 1px solid var(--amll-line);
+}
+
+.docs-prose pre {
+  overflow-x: auto;
+  background: var(--amll-surface-2);
+}
+
+.docs-prose pre code.hljs {
+  display: block;
+  padding: 1em;
+  background: transparent;
+}
+
+.docs-prose .hljs-comment,
+.docs-prose .hljs-quote {
+  color: var(--amll-ink-3);
+  font-style: italic;
+}
+
+.docs-prose .hljs-tag,
+.docs-prose .hljs-name,
+.docs-prose .hljs-selector-tag {
+  color: var(--amll-primary);
+}
+
+.docs-prose .hljs-attr,
+.docs-prose .hljs-attribute {
+  color: #b45309;
+}
+
+.docs-prose .hljs-string,
+.docs-prose .hljs-value {
+  color: #047857;
+}
+
+.docs-prose .hljs-number,
+.docs-prose .hljs-literal {
+  color: #7c3aed;
+}
+
+html.dark .docs-prose .hljs-attr,
+html.dark .docs-prose .hljs-attribute {
+  color: #fbbf24;
+}
+
+html.dark .docs-prose .hljs-string,
+html.dark .docs-prose .hljs-value {
+  color: #6ee7b7;
+}
+
+html.dark .docs-prose .hljs-number,
+html.dark .docs-prose .hljs-literal {
+  color: #c4b5fd;
+}
+
+/* 文档编辑器：把 @uiw/react-md-editor 的 GitHub 原生外观收敛到站点主题。
+ * 选择器里重复 .w-md-editor 是为了拿到 (0,3,0) 的权重，
+ * 稳压组件自带样式表中 [data-color-mode] .w-md-editor 的变量覆盖。
+ */
+.docs-editor .w-md-editor.w-md-editor {
+  border-radius: var(--amll-radius-md);
+  background-color: var(--amll-card);
+  color: var(--amll-ink);
+  box-shadow:
+    0 0 0 1px var(--amll-input),
+    0 1px 2px rgb(0 0 0 / 0.04);
+  overflow: hidden;
+  --md-editor-font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --md-editor-background-color: var(--amll-card);
+  --md-editor-box-shadow-color: var(--amll-line);
+  --color-fg-default: var(--amll-ink);
+  --color-canvas-default: var(--amll-card);
+  --color-border-default: var(--amll-line);
+}
+
+.docs-editor .w-md-editor-toolbar {
+  padding: 4px 6px;
+  background-color: var(--amll-surface-2);
+  border-bottom: 1px solid var(--amll-line);
+}
+
+.docs-editor .w-md-editor-toolbar li > button {
+  color: var(--amll-ink-2);
+  border-radius: 4px;
+}
+
+.docs-editor .w-md-editor-toolbar li > button:hover,
+.docs-editor .w-md-editor-toolbar li > button:focus {
+  color: var(--amll-primary);
+  background-color: var(--amll-primary-soft);
+}
+
+.docs-editor .w-md-editor-toolbar-divider {
+  background-color: var(--amll-line);
+}
+
+.docs-editor .w-md-editor-text {
+  padding: 12px 14px;
+  font-size: 13px !important;
+  line-height: 1.7 !important;
+}
+
+.docs-editor .w-md-editor-text-input {
+  caret-color: var(--amll-primary);
+}
+
+.docs-editor .w-md-editor-content {
+  border-radius: 0 0 var(--amll-radius-md) var(--amll-radius-md);
+}
+
+/* 深色下工具栏图标需要提亮一档，否则贴在 surface-2 上看不清 */
+html.dark .docs-editor .w-md-editor-toolbar li > button {
+  color: var(--amll-ink-2);
+}
+
+/* 聚焦时给编辑器一圈主色描边，和全站输入框的 focus 反馈保持一致 */
+.docs-editor .w-md-editor:focus-within {
+  box-shadow: 0 0 0 1px var(--amll-primary);
+}
+
+/* GitHub 风格告示块（marked-alert）：> [!NOTE] / [!TIP] / [!IMPORTANT] / [!WARNING] / [!CAUTION]
+ * 标题文案由 ::after 输出中文，组件自带的英文 title 用 font-size: 0 隐藏（图标是固定尺寸 svg，不受影响）。
+ */
+.docs-prose .markdown-alert {
+  margin: 1.2em 0;
+  padding: 0.8em 1em;
+  border-left: 3px solid var(--amll-line);
+  border-radius: 0 var(--amll-radius-md) var(--amll-radius-md) 0;
+  background: var(--amll-surface-2);
+}
+
+.docs-prose .markdown-alert > p {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.docs-prose .markdown-alert > p + p {
+  margin-top: 0.45em;
+}
+
+.docs-prose .markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 0.35em;
+  font-weight: 600;
+  font-size: 0;
+}
+
+.docs-prose .markdown-alert-title::after {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.docs-prose .markdown-alert-note .markdown-alert-title::after {
+  content: '提示';
+}
+
+.docs-prose .markdown-alert-tip .markdown-alert-title::after {
+  content: '建议';
+}
+
+.docs-prose .markdown-alert-important .markdown-alert-title::after {
+  content: '重要';
+}
+
+.docs-prose .markdown-alert-warning .markdown-alert-title::after {
+  content: '警告';
+}
+
+.docs-prose .markdown-alert-caution .markdown-alert-title::after {
+  content: '注意';
+}
+
+.docs-prose .markdown-alert svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  /* octicon 没有 fill 属性，默认黑色；跟随标题色 */
+  fill: currentColor;
+  /* 组件自带的 mr-2 会拉开和中文标题的距离 */
+  margin-right: 0;
+}
+
+.docs-prose .markdown-alert-note {
+  border-left-color: #3b82f6;
+  background: color-mix(in srgb, #3b82f6 8%, var(--amll-card));
+}
+
+.docs-prose .markdown-alert-note .markdown-alert-title {
+  color: #2563eb;
+}
+
+.docs-prose .markdown-alert-tip {
+  border-left-color: #10b981;
+  background: color-mix(in srgb, #10b981 8%, var(--amll-card));
+}
+
+.docs-prose .markdown-alert-tip .markdown-alert-title {
+  color: #059669;
+}
+
+.docs-prose .markdown-alert-important {
+  border-left-color: #8b5cf6;
+  background: color-mix(in srgb, #8b5cf6 8%, var(--amll-card));
+}
+
+.docs-prose .markdown-alert-important .markdown-alert-title {
+  color: #7c3aed;
+}
+
+.docs-prose .markdown-alert-warning {
+  border-left-color: #f59e0b;
+  background: color-mix(in srgb, #f59e0b 10%, var(--amll-card));
+}
+
+.docs-prose .markdown-alert-warning .markdown-alert-title {
+  color: #b45309;
+}
+
+.docs-prose .markdown-alert-caution {
+  border-left-color: #ef4444;
+  background: color-mix(in srgb, #ef4444 8%, var(--amll-card));
+}
+
+.docs-prose .markdown-alert-caution .markdown-alert-title {
+  color: #dc2626;
+}
+
+html.dark .docs-prose .markdown-alert-note .markdown-alert-title {
+  color: #93c5fd;
+}
+
+html.dark .docs-prose .markdown-alert-tip .markdown-alert-title {
+  color: #6ee7b7;
+}
+
+html.dark .docs-prose .markdown-alert-important .markdown-alert-title {
+  color: #c4b5fd;
+}
+
+html.dark .docs-prose .markdown-alert-warning .markdown-alert-title {
+  color: #fbbf24;
+}
+
+html.dark .docs-prose .markdown-alert-caution .markdown-alert-title {
+  color: #fca5a5;
 }

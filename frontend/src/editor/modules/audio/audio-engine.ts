@@ -291,6 +291,18 @@ class AudioEngineWrapper extends EventTarget {
     this.engine.pause();
   }
 
+  /** 强制停止 */
+  forceStop() {
+    try {
+      this.engine.pause();
+    } catch {
+      // 引擎已销毁等场景忽略
+    }
+    this.stopTick();
+    globalStore.set(audioPlayingAtom, false);
+    void this._ctx?.suspend().catch(() => {});
+  }
+
   /**
    * 试听一个音频片段
    *
@@ -324,6 +336,8 @@ class AudioEngineWrapper extends EventTarget {
     globalStore.set(audioEngineStateAtom, 'loading');
 
     globalStore.set(loadedAudioAtom, src);
+    // forceStop() 会挂起 AudioContext；重新加载音频时恢复，否则 worklet / 频谱起不来
+    if (this._ctx?.state === 'suspended') void this._ctx.resume().catch(() => {});
     await this.engine.loadFile(src);
     this.updateAudioTrackMetadata(src);
 

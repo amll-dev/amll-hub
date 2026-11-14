@@ -3,6 +3,8 @@ package service
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -259,6 +261,103 @@ func TestPluginValidator_ValidateFile(t *testing.T) {
 	if size <= 0 {
 		t.Fatal("expected non-zero size")
 	}
+}
+
+const testPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+func buildDescriptorZip(t *testing.T, descriptor map[string]any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(descriptor)
+	if err != nil {
+		t.Fatalf("marshal descriptor: %v", err)
+	}
+	return buildTestZip(t, map[string][]byte{
+		"manifest.json":   raw,
+		"assets/index.js": []byte("export function activate() {}"),
+	})
+}
+
+func TestPluginValidator_ManifestIcon(t *testing.T) {
+	icon := "data:image/png;base64," + testPNGBase64
+	decoded, err := base64.StdEncoding.DecodeString(testPNGBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := NewPluginValidator(testLimits())
+
+	t.Run("accepts and strips trusted-js icon", func(t *testing.T) {
+		manifest := trustedManifest()
+		manifest["icon"] = icon
+		result := v.Validate(buildDescriptorZip(t, map[string]any{
+			"packageVersion": 0,
+			"manifest":       manifest,
+		}))
+		if !result.OK {
+			t.Fatalf("expected ok, got issues: %+v", result.Issues)
+		}
+		if !result.IconDetected {
+			t.Fatal("expected iconDetected")
+		}
+		if !bytes.Equal(result.Icon, decoded) {
+			t.Fatal("decoded icon mismatch")
+		}
+		if _, exists := result.Manifest["icon"]; exists {
+			t.Fatal("manifest icon must be stripped before storage")
+		}
+	})
+
+	t.Run("accepts theme icon", func(t *testing.T) {
+		manifest := themeManifest()
+		manifest["icon"] = icon
+		descriptor := map[string]any{
+			"packageVersion": 0,
+			"manifest":       manifest,
+			"tokens":         map[string]any{"tokenVersion": 0},
+		}
+		raw, _ := json.Marshal(descriptor)
+		result := v.Validate(buildTestZip(t, map[string][]byte{"manifest.json": raw}))
+		if !result.OK {
+			t.Fatalf("expected ok, got issues: %+v", result.Issues)
+		}
+		if !result.IconDetected || len(result.Icon) == 0 {
+			t.Fatal("expected theme icon")
+		}
+	})
+
+	t.Run("rejects invalid icons", func(t *testing.T) {
+		huge := append([]byte(nil), decoded...)
+		binary.BigEndian.PutUint32(huge[16:20], pluginManifestIconMaxDimension+1)
+		cases := []struct {
+			name  string
+			value any
+		}{
+			{"non-string", 1},
+			{"empty", ""},
+			{"remote url", "https://example.com/icon.png"},
+			{"package path", "assets/icon.png"},
+			{"jpeg data url", "data:image/jpeg;base64," + testPNGBase64},
+			{"invalid base64", "data:image/png;base64,not base64"},
+			{"newline base64", "data:image/png;base64," + testPNGBase64[:16] + "\n" + testPNGBase64[16:]},
+			{"not png", "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("not a png"))},
+			{"oversized dimension", "data:image/png;base64," + base64.StdEncoding.EncodeToString(huge)},
+			{"too many chars", "data:image/png;base64," + strings.Repeat("A", pluginManifestIconMaxChars)},
+		}
+		for _, tc := range cases {
+			manifest := trustedManifest()
+			manifest["icon"] = tc.value
+			result := v.Validate(buildDescriptorZip(t, map[string]any{
+				"packageVersion": 0,
+				"manifest":       manifest,
+			}))
+			if result.OK {
+				t.Errorf("%s: expected rejection", tc.name)
+				continue
+			}
+			if len(result.Issues) != 1 || result.Issues[0].Path != "/manifest/icon" {
+				t.Errorf("%s: issues = %+v", tc.name, result.Issues)
+			}
+		}
+	})
 }
 
 func TestPluginValidator_SHAAndFormHelpers(t *testing.T) {

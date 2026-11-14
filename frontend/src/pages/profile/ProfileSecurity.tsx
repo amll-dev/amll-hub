@@ -30,6 +30,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { SectionCard } from '@/components/profile/SectionCard';
+import { MfaSection } from '@/components/profile/MfaSection';
 import { CaptchaProvider } from '@/components/profile/CaptchaProvider';
 import { useCaptcha } from '@/components/profile/captchaContext';
 import { IdentityVerifyPanel } from '@/components/profile/IdentityVerifyPanel';
@@ -459,6 +460,8 @@ function ProfileSecurityContent() {
           </Form>
         )}
       </SectionCard>
+
+      <MfaSection />
     </div>
   );
 }

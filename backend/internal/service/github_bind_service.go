@@ -161,6 +161,8 @@ func (s *GithubBindService) HandleCallback(ctx context.Context, code, state stri
 	if b, err := s.repo.GetByGithubID(ctx, ghUser.ID); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	} else if b != nil {
+		// 第三方登录不作为 MFA 门槛：账号开了 MFA 也直接放行，
+		// 改密 / 改绑邮箱手机号等敏感操作再现场做身份验证。
 		token, err := s.issueJWT(ctx, b.Username)
 		if err != nil {
 			return "", err
@@ -207,7 +209,8 @@ func (s *GithubBindService) BindLogin(ctx context.Context, req GithubBindLoginRe
 		return nil, err
 	}
 
-	result, err := s.auth.Login(ctx, req.Account, req.Password)
+	// 绑定即登录
+	result, err := s.auth.LoginSkippingMfa(ctx, req.Account, req.Password)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +239,7 @@ func (s *GithubBindService) BindRegister(ctx context.Context, req GithubBindRegi
 	if err := s.auth.Register(ctx, req.RegisterRequest); err != nil {
 		return nil, err
 	}
-	result, err := s.auth.Login(ctx, req.Username, req.Password)
+	result, err := s.auth.LoginSkippingMfa(ctx, req.Username, req.Password)
 	if err != nil {
 		return nil, err
 	}

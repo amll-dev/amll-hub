@@ -202,6 +202,7 @@ var publicServePrefixes = []string{
 	service.MusicPrefix,
 	service.CoverPrefix,
 	service.ProfileBannerPrefix,
+	service.DocsImagePrefix,
 }
 
 // isPublicServeKey 校验 key 是否落在公开前缀内且不含路径穿越
@@ -247,6 +248,11 @@ func (h *UploadHandler) ServeFile(c *gin.Context) {
 	c.Header("Content-Type", fileContentType(key))
 	c.Header("Cache-Control", "public, max-age=3600")
 	c.Header("Cross-Origin-Resource-Policy", "cross-origin")
+	// SVG 可能携带脚本，直接访问时按静态资源隔离
+	if strings.EqualFold(path.Ext(key), ".svg") {
+		c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+		c.Header("X-Content-Type-Options", "nosniff")
+	}
 	// http.ServeContent 支持 Range 请求，浏览器可流式播放与 seek
 	http.ServeContent(c.Writer, c.Request, path.Base(key), modTime, obj)
 	_ = size
@@ -276,6 +282,8 @@ func fileContentType(name string) string {
 		return "image/webp"
 	case ".gif":
 		return "image/gif"
+	case ".svg":
+		return "image/svg+xml"
 	default:
 		return "application/octet-stream"
 	}

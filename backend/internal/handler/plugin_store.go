@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -235,19 +236,14 @@ func (h *PluginStoreHandler) CreateSubmission(c *gin.Context) {
 		pkg.BadRequest(c, err.Error())
 		return
 	}
-	iconData, err := h.readOptionalIcon(c)
-	if err != nil {
-		writePluginErr(c, err)
-		return
-	}
-
 	created, err := h.svc.CreateSubmission(ctx, user, result, sha, size, tmpPath, in)
 	if err != nil {
 		writePluginErr(c, err)
 		return
 	}
-	if len(iconData) > 0 {
-		if _, err := h.svc.SetIconByKey(ctx, user.Name, created.PluginKey, iconData); err != nil {
+	// 图标只来自包内 manifest.icon
+	if len(result.Icon) > 0 {
+		if _, err := h.svc.SetIconByKey(ctx, user.Name, created.PluginKey, result.Icon); err != nil {
 			logrus.WithError(err).Warn("set plugin icon after submission failed")
 			created.IconUploadFailed = true
 		}
@@ -284,13 +280,19 @@ func (h *PluginStoreHandler) ValidateSubmission(c *gin.Context) {
 		writePluginErr(c, err)
 		return
 	}
-	pkg.OK(c, gin.H{
-		"ok":       true,
-		"kind":     result.Kind,
-		"manifest": result.Manifest,
-		"issues":   []service.PluginIssue{},
-		"entry":    result.Entry,
-	})
+	resp := gin.H{
+		"ok":           true,
+		"kind":         result.Kind,
+		"manifest":     result.Manifest,
+		"issues":       []service.PluginIssue{},
+		"entry":        result.Entry,
+		"iconDetected": result.IconDetected,
+	}
+	if result.IconDetected {
+		// 仅供投稿页预览，最长约 65 KB；不落库、不打日志
+		resp["iconPreview"] = "data:image/png;base64," + base64.StdEncoding.EncodeToString(result.Icon)
+	}
+	pkg.OK(c, resp)
 }
 
 // ListMyPlugins GET /api/v1/store/my/plugins
@@ -593,44 +595,6 @@ func (h *PluginStoreHandler) DownloadMineArtifact(c *gin.Context) {
 	_, _ = io.Copy(c.Writer, rc)
 }
 
-// UploadIcon POST /api/v1/store/plugins/:key/icon
-func (h *PluginStoreHandler) UploadIcon(c *gin.Context) {
-	user := pluginUser(c)
-	if user == nil {
-		pkg.Unauthorized(c)
-		return
-	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, h.cfg.PluginStore.MaxIconBytes+(1<<20))
-	if err := c.Request.ParseMultipartForm(1 << 20); err != nil {
-		pkg.BadRequest(c, "读取上传内容失败")
-		return
-	}
-	fh, err := c.FormFile("file")
-	if err != nil {
-		pkg.BadRequest(c, "file 字段必填")
-		return
-	}
-	f, err := fh.Open()
-	if err != nil {
-		pkg.BadRequest(c, "打开图标文件失败")
-		return
-	}
-	defer f.Close()
-	data, err := readLimited(f, h.cfg.PluginStore.MaxIconBytes)
-	if err != nil {
-		pkg.Fail(c, http.StatusRequestEntityTooLarge, http.StatusRequestEntityTooLarge, "图标超过大小限制")
-		return
-	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
-	defer cancel()
-	iconKey, err := h.svc.SetIconByKey(ctx, user.Name, c.Param("key"), data)
-	if err != nil {
-		writePluginErr(c, err)
-		return
-	}
-	pkg.OK(c, gin.H{"iconUrl": service.PluginIconURLVersioned(c.Param("key"), iconKey)})
-}
-
 // GetIcon GET /api/v1/store/plugins/:key/icon
 func (h *PluginStoreHandler) GetIcon(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
@@ -646,6 +610,7 @@ func (h *PluginStoreHandler) GetIcon(c *gin.Context) {
 		contentType = "application/octet-stream"
 	}
 	c.Header("Content-Type", contentType)
+	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("Content-Length", strconv.FormatInt(info.Size, 10))
 	c.Header("Cache-Control", "public, max-age=86400")
 	c.Header("ETag", info.ETag)
@@ -653,35 +618,9 @@ func (h *PluginStoreHandler) GetIcon(c *gin.Context) {
 	_, _ = io.Copy(c.Writer, rc)
 }
 
-func (h *PluginStoreHandler) readOptionalIcon(c *gin.Context) ([]byte, error) {
-	fh, err := c.FormFile("icon")
-	if err != nil {
-		if errors.Is(err, http.ErrMissingFile) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	if fh.Size > h.cfg.PluginStore.MaxIconBytes {
-		return nil, service.ErrPluginIconTooLarge
-	}
-	f, err := fh.Open()
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	data, err := readLimited(f, h.cfg.PluginStore.MaxIconBytes)
-	if err != nil {
-		return nil, err
-	}
-	if _, _, ok := service.DetectPluginIcon(data); !ok {
-		return nil, service.ErrPluginIconFormat
-	}
-	return data, nil
-}
-
 func (h *PluginStoreHandler) readUpload(c *gin.Context) (tmpPath, sha string, size int64, err error) {
 	max := h.cfg.PluginStore.MaxArtifactBytes
-	overhead := int64(1<<20) + h.cfg.PluginStore.MaxIconBytes
+	overhead := int64(1 << 20)
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, max+overhead)
 	if err := c.Request.ParseMultipartForm(8 << 20); err != nil {
 		var maxErr *http.MaxBytesError

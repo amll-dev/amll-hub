@@ -35,6 +35,7 @@ import {
   buildActivityEntries,
   extractPlatformIds,
   langListText,
+  mergePlatformIds,
   statusMeta,
 } from '@/components/submission/shared';
 import { formatDateTime } from '@/lib/format';
@@ -289,6 +290,15 @@ function SubmissionDetailContent({
 
   // 各平台全部 ID（支持多 ID），优先从 metadata.platform_ids 读取
   const platformIds = useMemo(() => extractPlatformIds(detail?.metadata), [detail?.metadata]);
+  // 歌曲区要逐个解析全部 ID：metadata 多值 ID + 投稿单值列合并去重
+  const ncmSongIds = useMemo(
+    () => mergePlatformIds(detail?.ncmId, platformIds.ncm),
+    [detail?.ncmId, platformIds.ncm]
+  );
+  const qmSongIds = useMemo(
+    () => mergePlatformIds(detail?.qqId, platformIds.qq),
+    [detail?.qqId, platformIds.qq]
+  );
 
   // 活动时间线条目
   const activityEntries = useMemo(() => (detail ? buildActivityEntries(detail) : []), [detail]);
@@ -325,9 +335,7 @@ function SubmissionDetailContent({
   const canUploadAudio = detail.status !== 'closed';
   const canClose = !['closed', 'approved', 'rejected'].includes(detail.status);
   const audios: SubmissionAudio[] = detail.audios ?? (detail.audio ? [detail.audio] : []);
-  const ncmSongId = platformIds.ncm[0] || detail.ncmId || '';
-  const qmSongId = platformIds.qq[0] || detail.qqId || '';
-  const hasAudioSource = audios.length > 0 || !!ncmSongId || !!qmSongId;
+  const hasAudioSource = audios.length > 0 || ncmSongIds.length > 0 || qmSongIds.length > 0;
   const isSubmitter = !!user && detail.submitter === user.name;
   const canEditAsSubmitter =
     isSubmitter &&
@@ -597,8 +605,8 @@ function SubmissionDetailContent({
                   )}
                   <MetaItem label="歌手" value={detail.artist} />
                   <MetaItem label="专辑" value={detail.album} />
-                  <MetaItem label="网易云 ID" value={platformIds.ncm.join(', ') || detail.ncmId} />
-                  <MetaItem label="QQ 音乐 ID" value={platformIds.qq.join(', ') || detail.qqId} />
+                  <MetaItem label="网易云 ID" value={ncmSongIds.join(', ')} />
+                  <MetaItem label="QQ 音乐 ID" value={qmSongIds.join(', ')} />
                   <MetaItem
                     label="Apple Music ID"
                     value={platformIds.am.join(', ') || detail.amId}
@@ -690,13 +698,15 @@ function SubmissionDetailContent({
                   />
                 ))}
                 {/* 网易云歌曲信息自动解析 */}
-                {ncmSongId && <NcmSongCard songId={ncmSongId} ttml={ttml} />}
+                {ncmSongIds.map((sid) => (
+                  <NcmSongCard key={`ncm-${sid}`} songId={sid} ttml={ttml} />
+                ))}
                 {/* QQ 音乐歌曲信息自动解析 */}
-                {qmSongId && <QmSongCard songId={qmSongId} ttml={ttml} />}
+                {qmSongIds.map((sid) => (
+                  <QmSongCard key={`qq-${sid}`} songId={sid} ttml={ttml} />
+                ))}
                 {/* 无音频也无平台 ID */}
-                {audios.length === 0 && !ncmSongId && !qmSongId && (
-                  <p className="text-sm text-ink-3">暂无歌曲信息</p>
-                )}
+                {!hasAudioSource && <p className="text-sm text-ink-3">暂无歌曲信息</p>}
               </div>
             </div>
           )}

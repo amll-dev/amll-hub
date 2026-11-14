@@ -117,7 +117,7 @@ func (h *AuthGithubHandler) BindLogin(c *gin.Context) {
 		writeGithubErr(c, err)
 		return
 	}
-	h.enrichReviewer(c, &result.User)
+	h.enrichReviewer(c, result.User)
 	pkg.OK(c, result)
 }
 
@@ -143,7 +143,7 @@ func (h *AuthGithubHandler) BindRegister(c *gin.Context) {
 		writeGithubErr(c, err)
 		return
 	}
-	h.enrichReviewer(c, &result.User)
+	h.enrichReviewer(c, result.User)
 	pkg.OK(c, result)
 }
 

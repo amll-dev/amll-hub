@@ -14,7 +14,6 @@ import { CommentSection } from '@/components/submission/CommentSection';
 import { buildPluginActivityEntries } from '@/components/plugin/shared';
 import { PluginManageActions } from './manage/PluginManageActions';
 import { PluginManageHeader } from './manage/PluginManageHeader';
-import { PluginManageIconUploader } from './manage/PluginManageIconUploader';
 import { PluginManageInfoSection } from './manage/PluginManageInfoSection';
 import { PluginManageSidebar } from './manage/PluginManageSidebar';
 import { PluginManageUpdatePanel } from './manage/PluginManageUpdatePanel';
@@ -50,7 +49,6 @@ export function PluginManageDetail({
     staleTime: 15_000,
   });
 
-  const [showCover, setShowCover] = useState(false);
   const [showSubmit, setShowSubmit] = useState(false);
   const [tab, setTab] = useState<'info' | 'versions'>('info');
 
@@ -71,7 +69,6 @@ export function PluginManageDetail({
 
   // 切换插件时收起上一次的编辑/更新面板
   useEffect(() => {
-    setShowCover(false);
     setShowSubmit(false);
     setTab('info');
   }, [pluginKey]);
@@ -162,7 +159,6 @@ export function PluginManageDetail({
     <PluginManageActions
       pluginKey={pluginKey}
       isOffline={isOffline}
-      onToggleIcon={() => setShowCover((v) => !v)}
       onToggleSubmit={() => setShowSubmit((v) => !v)}
       onChanged={invalidateAll}
     />
@@ -189,15 +185,6 @@ export function PluginManageDetail({
       <div className="flex gap-5">
         {/* 主体 */}
         <motion.div variants={fadeUp} className="min-w-0 flex-1 space-y-5">
-          <PluginManageIconUploader
-            open={showCover}
-            pluginKey={pluginKey}
-            pluginName={plugin.name}
-            iconUrl={item.iconUrl}
-            onClose={() => setShowCover(false)}
-            onChanged={invalidateAll}
-          />
-
           <PluginManageUpdatePanel
             open={showSubmit}
             plugin={plugin}

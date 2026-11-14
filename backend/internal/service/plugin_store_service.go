@@ -100,7 +100,7 @@ type PluginSubmissionResult struct {
 	ListingStatus string        `json:"listingStatus"`
 	SHA256        string        `json:"sha256"`
 	Issues        []PluginIssue `json:"issues"`
-	// IconUploadFailed 投稿成功但后续设置图标失败，前端可提示用户重试
+	// IconUploadFailed 投稿成功但写入包内图标失败
 	IconUploadFailed bool `json:"iconUploadFailed,omitempty"`
 }
 

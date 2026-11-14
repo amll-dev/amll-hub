@@ -56,6 +56,16 @@ export const queryClient = new QueryClient({
 export const queryKeys = {
   // 公开数据
   stats: ['stats'] as const,
+  /** 文档列表 */
+  docList: (params: { group?: string; q?: string; page?: number }) =>
+    ['docs', 'list', params] as const,
+  /** 文档详情 */
+  docDetail: (slug: string) => ['docs', 'detail', slug] as const,
+  /** 文档管理列表 */
+  docManage: (params: { status?: string; group?: string; q?: string; page?: number }) =>
+    ['docs', 'manage', params] as const,
+  docRevisions: (id: number, page: number) => ['docs', 'revisions', id, page] as const,
+  docRevision: (id: number, revId: number) => ['docs', 'revision', id, revId] as const,
   notFoundRanking: (params: { limit?: number | 'all'; days?: number; platform?: string }) =>
     ['not-found-ranking', params] as const,
   latestSongs: ['latest-songs'] as const,
@@ -86,6 +96,8 @@ export const queryKeys = {
   qrTicket: ['auth', 'qr-ticket'] as const,
   /** 身份验证状态（改联系方式 / 改密码前会查询） */
   identity: ['auth', 'identity'] as const,
+  /** 当前用户 MFA 状态（账号安全页） */
+  mfaStatus: ['auth', 'mfa-status'] as const,
 
   // 投稿（creator 模式用无限滚动，page 不进 key；review 模式按页查询，page 进 key）
   submissions: (params: {

@@ -14,9 +14,61 @@ export interface UserProfile {
 }
 
 // 后端 POST /api/v1/auth/login | /login-code 返回结构
-export interface LoginResult {
+export interface LoginSuccess {
   token: string;
   user: UserProfile;
+}
+
+/** MFA 因子 */
+export interface MfaMethod {
+  mfaType: 'app' | 'email' | 'sms' | string;
+  /** 邮箱/手机号的脱敏展示 */
+  maskedDest?: string;
+  isPreferred?: boolean;
+}
+
+/** 需要二次验证 */
+export interface LoginMfaRequired {
+  mfaRequired: true;
+  mfaChallengeId: string;
+  mfaMethods: MfaMethod[];
+}
+
+export type LoginResult = LoginSuccess | LoginMfaRequired;
+
+/** 判断登录结果是否需要二次验证 */
+export function isMfaRequired(result: LoginResult): result is LoginMfaRequired {
+  return 'mfaRequired' in result && result.mfaRequired === true;
+}
+
+/** MFA 管理：单个因子的状态 */
+export interface MfaStatusItem {
+  mfaType: 'app' | 'email' | 'sms' | string;
+  enabled: boolean;
+  isPreferred: boolean;
+}
+
+/** MFA 管理：总览 */
+export interface MfaStatus {
+  methods: MfaStatusItem[];
+  preferred?: string;
+}
+
+/** MFA 管理：开始绑定 */
+export interface MfaSetupStart {
+  challengeId: string;
+  mfaType: string;
+  /** TOTP 密钥（仅 app） */
+  secret?: string;
+  /** otpauth URL（仅 app） */
+  otpauthUrl?: string;
+  /** 脱敏后的收件地址（邮箱/短信） */
+  dest?: string;
+}
+
+/** MFA 管理：绑定完成 */
+export interface MfaSetupResult {
+  recoveryCode?: string;
 }
 
 // 后端 GET /api/v1/auth/captcha 透传的 Casdoor 验证码配置

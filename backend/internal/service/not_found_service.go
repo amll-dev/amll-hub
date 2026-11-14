@@ -178,7 +178,14 @@ func (s *NotFoundService) HandleNotFoundRequest(ctx context.Context, platform, p
 		set, err := s.redis.SetNX(ctx, dedupKey, "1", 25*time.Hour).Result()
 		if err == nil && !set {
 			// 今日同 IP 已记录过则不加
-			_, _, _ = s.repo.UpsertNotFound(ctx, platform, platformID, clientIP)
+			isNew, _, uerr := s.repo.UpsertNotFound(ctx, platform, platformID, clientIP)
+			if uerr != nil {
+				logrus.WithError(uerr).Error("[not_found] upsert failed")
+				return
+			}
+			if isNew {
+				s.publishParse(platform, platformID, clientIP)
+			}
 			return
 		}
 	}
@@ -191,14 +198,22 @@ func (s *NotFoundService) HandleNotFoundRequest(ctx context.Context, platform, p
 	}
 
 	// 5. 新记录发送 MQ 消息
-	if isNew && s.mq != nil {
-		if err := s.mq.PublishNotFoundParse(infrastructure.NotFoundParseMessage{
-			Platform:   platform,
-			PlatformID: platformID,
-			ClientIP:   clientIP,
-		}); err != nil {
-			logrus.WithError(err).Error("[not_found] publish mq failed")
-		}
+	if isNew {
+		s.publishParse(platform, platformID, clientIP)
+	}
+}
+
+// publishParse 投递一条无歌词解析任务（MQ 未初始化时静默跳过）
+func (s *NotFoundService) publishParse(platform, platformID, clientIP string) {
+	if s.mq == nil {
+		return
+	}
+	if err := s.mq.PublishNotFoundParse(infrastructure.NotFoundParseMessage{
+		Platform:   platform,
+		PlatformID: platformID,
+		ClientIP:   clientIP,
+	}); err != nil {
+		logrus.WithError(err).Error("[not_found] publish mq failed")
 	}
 }
 

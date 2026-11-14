@@ -22,7 +22,8 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { cn } from '@/lib/utils';
 import { buttonTap } from '@/lib/motion';
-import type { CaptchaConfig, LoginResult } from '@/lib/auth';
+import type { CaptchaConfig, LoginMfaRequired, LoginSuccess, MfaMethod } from '@/lib/auth';
+import { isMfaRequired } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import {
@@ -56,7 +57,20 @@ const makeCodeSchema = (codeType: 'phone' | 'email') =>
 type CodeFormValues = z.infer<ReturnType<typeof makeCodeSchema>>;
 
 /** 扫码登录面板：申请票据 → 渲染二维码 → 轮询状态 → 确认后写入登录态 */
-function QrLoginPanel({ onSuccess }: { onSuccess: (r: LoginResult) => void }) {
+function mfaMethodLabel(type: string): string {
+  switch (type) {
+    case 'app':
+      return '身份验证器';
+    case 'email':
+      return '邮箱验证码';
+    case 'sms':
+      return '短信验证码';
+    default:
+      return type;
+  }
+}
+
+function QrLoginPanel({ onSuccess }: { onSuccess: (r: LoginSuccess) => void }) {
   const [dataUrl, setDataUrl] = useState('');
 
   // 弹窗打开时申请票据；关闭后作废（refetchInterval 内会停）
@@ -191,7 +205,19 @@ export function AuthDialog() {
 
   // 验证码相关
   const [captchaModalOpen, setCaptchaModalOpen] = useAtom(loginCaptchaOpenAtom);
+  // 本次人机验证服务于哪个流程
+  const [captchaPurpose, setCaptchaPurpose] = useState<'code' | 'mfa'>('code');
   const countdown = useCountdown();
+
+  // MFA 二次验证
+  const [mfaChallenge, setMfaChallenge] = useState<{ id: string; methods: MfaMethod[] } | null>(
+    null
+  );
+  const [mfaType, setMfaType] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
+  const [mfaUseRecovery, setMfaUseRecovery] = useState(false);
+  const mfaCountdown = useCountdown();
+  const mfaCurrent = mfaChallenge?.methods.find((m) => m.mfaType === mfaType);
 
   // 两套登录表单
   const passwordForm = useForm<PasswordFormValues>({
@@ -207,7 +233,7 @@ export function AuthDialog() {
   const captchaQuery = useQuery({
     queryKey: queryKeys.captcha,
     queryFn: () => api.getCaptcha(),
-    enabled: loginOpen && tab === 'code',
+    enabled: loginOpen && (tab === 'code' || !!mfaChallenge),
     staleTime: 10 * 60_000,
     retry: false,
   });
@@ -238,10 +264,16 @@ export function AuthDialog() {
     setError('');
     setCaptchaModalOpen(false);
     countdown.reset();
+    setMfaChallenge(null);
+    setMfaType('');
+    setMfaCode('');
+    setMfaUseRecovery(false);
+    mfaCountdown.reset();
   }, [
     passwordForm,
     codeForm,
     countdown,
+    mfaCountdown,
     setTab,
     setForgotOpen,
     setCodeType,
@@ -296,7 +328,7 @@ export function AuthDialog() {
     },
     onError: (e: Error) => {
       const msg = e.message || '验证码发送失败';
-      if (msg.includes('认证服务') || msg.includes('不可用')) {
+      if (msg.includes('认证服务') || msg.includes('不可用') || msg.includes('人机验证')) {
         // 人机验证token被Casdoor拒绝，告诉 SDK 验证失败，SDK 自动重置供重试
         setError('人机验证失败，请重试');
         reportCaptchaResult(false);
@@ -322,6 +354,7 @@ export function AuthDialog() {
     onSuccess: () => {
       // 账号存在，打开人机验证弹窗
       if (needCaptcha) {
+        setCaptchaPurpose('code');
         setCaptchaModalOpen(true);
       } else {
         // 无需人机验证，直接发送
@@ -355,18 +388,24 @@ export function AuthDialog() {
     checkUserMutation.mutate();
   };
 
-  // 人机验证完成后自动发送验证码
-  useEffect(() => {
-    if (captchaVerifyParam && captchaModalOpen) {
-      sendCodeMutation.mutate(captchaVerifyParam);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [captchaVerifyParam, captchaModalOpen]);
+  // 进入 MFA 二次验证
+  const startMfa = (result: LoginMfaRequired) => {
+    setMfaChallenge({ id: result.mfaChallengeId, methods: result.mfaMethods });
+    const preferred = result.mfaMethods.find((m) => m.isPreferred) ?? result.mfaMethods[0];
+    setMfaType(preferred?.mfaType ?? '');
+    setMfaCode('');
+    setMfaUseRecovery(false);
+    setError('');
+  };
 
   // 密码登录
   const passwordLoginMutation = useMutation({
     mutationFn: (vars: PasswordFormValues) => api.login(vars.username, vars.password),
     onSuccess: (result) => {
+      if (isMfaRequired(result)) {
+        startMfa(result);
+        return;
+      }
       login(result.token, result.user);
       finishLogin();
     },
@@ -377,11 +416,104 @@ export function AuthDialog() {
   const codeLoginMutation = useMutation({
     mutationFn: (vars: CodeFormValues) => api.loginByCode(vars.dest, vars.code),
     onSuccess: (result) => {
+      if (isMfaRequired(result)) {
+        startMfa(result);
+        return;
+      }
       login(result.token, result.user);
       finishLogin();
     },
     onError: (e: Error) => setError(e.message || '登录失败'),
   });
+
+  // MFA 验证
+  const mfaLoginMutation = useMutation({
+    mutationFn: () => {
+      if (!mfaChallenge) throw new Error('验证会话已失效');
+      return api.verifyLoginMfa({
+        challengeId: mfaChallenge.id,
+        mfaType,
+        passcode: mfaUseRecovery ? '' : mfaCode.trim(),
+        recoveryCode: mfaUseRecovery ? mfaCode.trim() : '',
+      });
+    },
+    onSuccess: (result) => {
+      if (isMfaRequired(result)) {
+        startMfa(result);
+        return;
+      }
+      login(result.token, result.user);
+      finishLogin();
+    },
+    onError: (e: Error) => {
+      const msg = e.message || '验证失败';
+      setError(msg);
+      // 二次验证会话已失效（Casdoor session 丢失/过期），退回登录表单重新登录
+      if (msg.includes('已过期')) {
+        setMfaChallenge(null);
+        setMfaType('');
+        setMfaCode('');
+        setMfaUseRecovery(false);
+        mfaCountdown.reset();
+      }
+    },
+  });
+
+  // MFA 发送邮箱/短信验证码
+  const sendMfaCodeMutation = useMutation({
+    mutationFn: (token: string) => {
+      if (!mfaChallenge) throw new Error('验证会话已失效');
+      return api.sendLoginMfaCode({
+        challengeId: mfaChallenge.id,
+        mfaType,
+        captchaType: needCaptcha ? (captchaConfig?.type ?? '') : '',
+        captchaToken: token,
+      });
+    },
+    onSuccess: () => {
+      mfaCountdown.start(60);
+      setError('');
+      reportCaptchaResult(true);
+      setCaptchaModalOpen(false);
+    },
+    onError: (e: Error) => {
+      const msg = e.message || '验证码发送失败';
+      if (msg.includes('认证服务') || msg.includes('不可用') || msg.includes('人机验证')) {
+        setError('人机验证失败，请重试');
+        reportCaptchaResult(false);
+      } else {
+        setError(msg);
+        reportCaptchaResult(true);
+        setCaptchaModalOpen(false);
+      }
+    },
+  });
+
+  // 人机验证完成后自动发送验证码（按发起方分流）
+  useEffect(() => {
+    if (!captchaVerifyParam || !captchaModalOpen) return;
+    if (captchaPurpose === 'mfa') {
+      sendMfaCodeMutation.mutate(captchaVerifyParam);
+    } else {
+      sendCodeMutation.mutate(captchaVerifyParam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [captchaVerifyParam, captchaModalOpen]);
+
+  const handleMfaSendCode = () => {
+    if (mfaCountdown.running || sendMfaCodeMutation.isPending) return;
+    if (captchaLoading) {
+      setError('正在加载验证码配置，请稍候');
+      return;
+    }
+    setError('');
+    if (needCaptcha) {
+      setCaptchaPurpose('mfa');
+      setCaptchaModalOpen(true);
+    } else {
+      sendMfaCodeMutation.mutate('');
+    }
+  };
 
   /** 登录成功收尾：关闭弹窗；若带了跳转目标（点击需登录功能进入），自动前往 */
   const finishLogin = () => {
@@ -409,7 +541,7 @@ export function AuthDialog() {
   return (
     <>
       <Dialog open={loginOpen} onOpenChange={(open) => !open && handleClose()}>
-        <DialogContent className="flex max-w-[720px] gap-0 overflow-hidden rounded-xl border-line bg-card p-0 shadow-2xl">
+        <DialogContent className="flex h-auto max-w-[720px] gap-0 overflow-hidden rounded-xl border-line bg-card p-0 shadow-2xl md:h-[450px] md:max-h-[calc(100dvh-3rem)]">
           {/* 左侧：二维码登录 */}
           <div className="hidden w-[280px] flex-col items-center justify-center gap-4 border-r border-line bg-surface-2 p-6 md:flex">
             <h4 className="text-base font-semibold text-foreground">扫描二维码登录</h4>
@@ -430,316 +562,468 @@ export function AuthDialog() {
                 {loginNotice}
               </div>
             )}
-            {/* Tab 切换 */}
-            <div className="mb-6 flex items-center justify-center gap-8">
-              {tabItems.map((t) => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => {
-                    setTab(t.key);
-                    setError('');
-                    // 切到短信登录 tab 时默认 phone
-                    if (t.key === 'code') setCodeType('phone');
-                  }}
-                  className="py-1.5 text-base font-medium transition-colors"
-                >
-                  <span
-                    className={
-                      tab === t.key && !(t.key === 'code' && codeType === 'email')
-                        ? 'text-primary'
-                        : 'text-ink-3 hover:text-ink-2'
-                    }
+            {/* 主体：二次验证 / 登录表单 共用一层 AnimatePresence，切换时左右滑入滑出 */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+              <AnimatePresence mode="wait">
+                {mfaChallenge ? (
+                  <motion.div
+                    key="mfa"
+                    initial={{ opacity: 0, x: 24 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 24 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    className="flex flex-1 flex-col"
                   >
-                    {t.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {/* 表单内容：统一用 AnimatePresence 管理所有视图切换 */}
-            <AnimatePresence mode="wait">
-              {/* 忘记密码菜单 */}
-              {tab === 'password' && forgotOpen && (
-                <motion.div
-                  key="forgot-menu"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="flex flex-1 flex-col"
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setForgotOpen(false);
-                      setError('');
-                    }}
-                    className="mb-4 flex items-center gap-1 text-sm text-ink-3 transition-colors hover:text-foreground"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    返回登录
-                  </button>
-
-                  <div className="space-y-3">
                     <button
                       type="button"
-                      onClick={handleForgotOption1}
-                      className="w-full rounded-lg border border-line bg-card p-4 text-left transition-colors hover:border-primary hover:bg-primary-soft"
+                      onClick={() => {
+                        setMfaChallenge(null);
+                        setMfaType('');
+                        setMfaCode('');
+                        setMfaUseRecovery(false);
+                        setError('');
+                        mfaCountdown.reset();
+                      }}
+                      className="mb-4 flex items-center gap-1 text-sm text-ink-3 transition-colors hover:text-foreground"
                     >
-                      <p className="text-sm font-medium text-foreground">发送短信快速登录</p>
-                      <p className="mt-1 text-xs text-ink-3">使用绑定的手机号登陆账号</p>
+                      <ArrowLeft className="h-4 w-4" />
+                      返回登录
                     </button>
-                    <button
-                      type="button"
-                      onClick={handleForgotOption2}
-                      className="w-full rounded-lg border border-line bg-card p-4 text-left transition-colors hover:border-primary hover:bg-primary-soft"
-                    >
-                      <p className="text-sm font-medium text-foreground">去找回密码</p>
-                      <p className="mt-1 text-xs text-ink-3">通过绑定的手机号/邮箱重置密码</p>
-                    </button>
-                  </div>
-                </motion.div>
-              )}
 
-              {/* 密码登录表单 */}
-              {tab === 'password' && !forgotOpen && (
-                <motion.div
-                  key="password-form"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15, ease: 'easeOut' }}
-                  className="flex flex-1 flex-col"
-                >
-                  <Form {...passwordForm}>
-                    <form
-                      onSubmit={passwordForm.handleSubmit((v) => passwordLoginMutation.mutate(v))}
-                      className="flex flex-1 flex-col"
-                    >
-                      <FormField
-                        control={passwordForm.control}
-                        name="username"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="sr-only">账号</FormLabel>
-                            <FormControl>
-                              <label className="flex items-center gap-3 border-b border-line py-3">
-                                <span className="w-12 shrink-0 text-sm text-ink-2">账号</span>
-                                <Input
-                                  type="text"
-                                  placeholder="请输入用户名"
-                                  autoComplete="username"
-                                  className="h-auto flex-1 rounded-none border-none bg-transparent px-0 py-0 focus-visible:ring-0 focus-visible:border-none aria-invalid:ring-0 aria-invalid:border-none"
-                                  {...field}
-                                />
-                              </label>
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={passwordForm.control}
-                        name="password"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="sr-only">密码</FormLabel>
-                            <FormControl>
-                              <label className="flex items-center gap-3 border-b border-line py-3">
-                                <span className="w-12 shrink-0 text-sm text-ink-2">密码</span>
-                                <PasswordInput value={field.value} onChange={field.onChange} />
-                              </label>
-                            </FormControl>
-                            <div className="flex items-center justify-end">
-                              <button
-                                type="button"
-                                className="whitespace-nowrap text-xs text-primary hover:underline"
-                                onClick={() => setForgotOpen(true)}
-                              >
-                                忘记密码?
-                              </button>
-                            </div>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                    <h3 className="text-lg font-semibold text-foreground">二次验证</h3>
+                    <p className="mt-1 text-sm text-ink-3">
+                      请输入{mfaMethodLabel(mfaType)}完成验证
+                    </p>
 
-                      {error && <p className="mt-3 text-sm text-error">{error}</p>}
-
-                      <div className="mt-auto space-y-3 pt-6">
-                        <div className="flex gap-3">
-                          <Button
+                    {mfaChallenge.methods.length > 1 && (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {mfaChallenge.methods.map((m) => (
+                          <button
+                            key={m.mfaType}
                             type="button"
-                            variant="outline"
-                            {...buttonTap}
                             onClick={() => {
-                              handleClose();
-                              navigate('/register');
+                              setMfaType(m.mfaType);
+                              setMfaCode('');
+                              setMfaUseRecovery(false);
+                              setError('');
                             }}
-                            className="flex-1 text-foreground"
+                            className={`rounded-md border px-3 py-1.5 text-xs transition-colors ${
+                              m.mfaType === mfaType
+                                ? 'border-primary bg-primary-soft text-primary'
+                                : 'border-line text-ink-3 hover:border-ink-3'
+                            }`}
                           >
-                            注册
-                          </Button>
-                          <Button
-                            type="submit"
-                            disabled={submitting}
-                            {...buttonTap}
-                            className="flex-1"
-                          >
-                            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                            {submitting ? '登录中…' : '登录'}
-                          </Button>
-                        </div>
+                            {mfaMethodLabel(m.mfaType)}
+                          </button>
+                        ))}
                       </div>
-                    </form>
-                  </Form>
-                </motion.div>
-              )}
+                    )}
 
-              {/* 验证码登录表单*/}
-              {tab === 'code' && (
-                <motion.div
-                  key="code-form"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15, ease: 'easeOut' }}
-                  className="flex flex-1 flex-col"
-                >
-                  <Form {...codeForm}>
-                    <form
-                      onSubmit={codeForm.handleSubmit((v) => codeLoginMutation.mutate(v))}
-                      className="flex flex-1 flex-col"
-                    >
-                      <div>
-                        {/* {手机号|邮箱} + 获取验证码*/}
-                        <FormField
-                          control={codeForm.control}
-                          name="dest"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="sr-only">
-                                {codeType === 'phone' ? '手机号' : '邮箱'}
-                              </FormLabel>
-                              <FormControl>
-                                <label className="flex items-center gap-3 border-b border-line py-3">
-                                  <span className="w-12 shrink-0 text-sm text-ink-2">
-                                    {codeType === 'phone' ? '手机号' : '邮箱'}
-                                  </span>
-                                  <Input
-                                    type={codeType === 'phone' ? 'text' : 'email'}
-                                    placeholder={
-                                      codeType === 'phone' ? '请输入手机号' : '请输入邮箱'
-                                    }
-                                    autoComplete={codeType === 'phone' ? 'tel' : 'email'}
-                                    className="h-auto flex-1 rounded-none border-none bg-transparent px-0 py-0 focus-visible:ring-0 focus-visible:border-none aria-invalid:ring-0 aria-invalid:border-none"
-                                    {...field}
-                                  />
-                                  <button
+                    {mfaCurrent?.maskedDest && (
+                      <p className="mt-3 text-xs text-ink-3">发送至 {mfaCurrent.maskedDest}</p>
+                    )}
+
+                    <label className="mt-6 flex items-center gap-3 border-b border-line py-3">
+                      <span className="w-12 shrink-0 text-sm text-ink-2">
+                        {mfaUseRecovery ? '恢复码' : '验证码'}
+                      </span>
+                      <Input
+                        autoFocus
+                        type="text"
+                        value={mfaCode}
+                        onChange={(e) => setMfaCode(e.target.value)}
+                        placeholder={mfaUseRecovery ? '请输入恢复码' : '请输入 6 位验证码'}
+                        inputMode={mfaUseRecovery ? 'text' : 'numeric'}
+                        maxLength={mfaUseRecovery ? 64 : 6}
+                        className="h-auto flex-1 rounded-none border-none bg-transparent px-0 py-0 focus-visible:ring-0 focus-visible:border-none aria-invalid:ring-0 aria-invalid:border-none"
+                      />
+                      {(mfaType === 'email' || mfaType === 'sms') && !mfaUseRecovery && (
+                        <button
+                          type="button"
+                          disabled={mfaCountdown.running || sendMfaCodeMutation.isPending}
+                          onClick={handleMfaSendCode}
+                          className="shrink-0 whitespace-nowrap text-xs font-medium text-primary transition-colors hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {mfaCountdown.running
+                            ? `${mfaCountdown.count}s`
+                            : sendMfaCodeMutation.isPending
+                              ? '发送中…'
+                              : '获取验证码'}
+                        </button>
+                      )}
+                    </label>
+
+                    {mfaType === 'app' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMfaUseRecovery((v) => !v);
+                          setMfaCode('');
+                          setError('');
+                        }}
+                        className="mt-2 self-start text-xs text-primary hover:underline"
+                      >
+                        {mfaUseRecovery ? '使用验证器验证码' : '使用恢复码'}
+                      </button>
+                    )}
+
+                    {error && <p className="mt-3 text-sm text-error">{error}</p>}
+
+                    <div className="mt-auto space-y-3 pt-6">
+                      <Button
+                        type="button"
+                        disabled={!mfaCode.trim() || mfaLoginMutation.isPending}
+                        onClick={() => mfaLoginMutation.mutate()}
+                        className="w-full"
+                        {...buttonTap}
+                      >
+                        {mfaLoginMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {mfaLoginMutation.isPending ? '验证中…' : '验证'}
+                      </Button>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="login"
+                    initial={{ opacity: 0, x: -24 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -24 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    className="flex flex-1 flex-col"
+                  >
+                    {/* Tab 切换 */}
+                    <div className="mb-6 flex items-center justify-center gap-8">
+                      {tabItems.map((t) => (
+                        <button
+                          key={t.key}
+                          type="button"
+                          onClick={() => {
+                            setTab(t.key);
+                            setError('');
+                            // 切到短信登录 tab 时默认 phone
+                            if (t.key === 'code') setCodeType('phone');
+                          }}
+                          className="py-1.5 text-base font-medium transition-colors"
+                        >
+                          <span
+                            className={
+                              tab === t.key && !(t.key === 'code' && codeType === 'email')
+                                ? 'text-primary'
+                                : 'text-ink-3 hover:text-ink-2'
+                            }
+                          >
+                            {t.label}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* 表单内容：统一用 AnimatePresence 管理所有视图切换 */}
+                    <AnimatePresence mode="wait">
+                      {/* 忘记密码菜单 */}
+                      {tab === 'password' && forgotOpen && (
+                        <motion.div
+                          key="forgot-menu"
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -20 }}
+                          transition={{ duration: 0.2, ease: 'easeOut' }}
+                          className="flex flex-1 flex-col"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForgotOpen(false);
+                              setError('');
+                            }}
+                            className="mb-4 flex items-center gap-1 text-sm text-ink-3 transition-colors hover:text-foreground"
+                          >
+                            <ArrowLeft className="h-4 w-4" />
+                            返回登录
+                          </button>
+
+                          <div className="space-y-3">
+                            <button
+                              type="button"
+                              onClick={handleForgotOption1}
+                              className="w-full rounded-lg border border-line bg-card px-4 py-3 text-left transition-colors hover:border-primary hover:bg-primary-soft"
+                            >
+                              <p className="text-sm font-medium text-foreground">
+                                发送短信快速登录
+                              </p>
+                              <p className="mt-1 text-xs text-ink-3">使用绑定的手机号登陆账号</p>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleForgotOption2}
+                              className="w-full rounded-lg border border-line bg-card px-4 py-3 text-left transition-colors hover:border-primary hover:bg-primary-soft"
+                            >
+                              <p className="text-sm font-medium text-foreground">去找回密码</p>
+                              <p className="mt-1 text-xs text-ink-3">
+                                通过绑定的手机号/邮箱重置密码
+                              </p>
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {/* 密码登录表单 */}
+                      {tab === 'password' && !forgotOpen && (
+                        <motion.div
+                          key="password-form"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.15, ease: 'easeOut' }}
+                          className="flex flex-1 flex-col"
+                        >
+                          <Form {...passwordForm}>
+                            <form
+                              onSubmit={passwordForm.handleSubmit((v) =>
+                                passwordLoginMutation.mutate(v)
+                              )}
+                              className="flex flex-1 flex-col"
+                            >
+                              <FormField
+                                control={passwordForm.control}
+                                name="username"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel className="sr-only">账号</FormLabel>
+                                    <FormControl>
+                                      <label className="flex items-center gap-3 border-b border-line py-3">
+                                        <span className="w-12 shrink-0 text-sm text-ink-2">
+                                          账号
+                                        </span>
+                                        <Input
+                                          type="text"
+                                          placeholder="请输入用户名"
+                                          autoComplete="username"
+                                          className="h-auto flex-1 rounded-none border-none bg-transparent px-0 py-0 focus-visible:ring-0 focus-visible:border-none aria-invalid:ring-0 aria-invalid:border-none"
+                                          {...field}
+                                        />
+                                      </label>
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={passwordForm.control}
+                                name="password"
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel className="sr-only">密码</FormLabel>
+                                    <FormControl>
+                                      <label className="flex items-center gap-3 border-b border-line py-3">
+                                        <span className="w-12 shrink-0 text-sm text-ink-2">
+                                          密码
+                                        </span>
+                                        <PasswordInput
+                                          value={field.value}
+                                          onChange={field.onChange}
+                                        />
+                                      </label>
+                                    </FormControl>
+                                    <div className="flex items-center justify-end">
+                                      <button
+                                        type="button"
+                                        className="whitespace-nowrap text-xs text-primary hover:underline"
+                                        onClick={() => setForgotOpen(true)}
+                                      >
+                                        忘记密码?
+                                      </button>
+                                    </div>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              {error && <p className="mt-3 text-sm text-error">{error}</p>}
+
+                              <div className="mt-auto space-y-3 pt-6">
+                                <div className="flex gap-3">
+                                  <Button
                                     type="button"
-                                    disabled={countdown.running || sendingCode || !destValue.trim()}
-                                    onClick={handleSendCode}
-                                    className="shrink-0 whitespace-nowrap text-xs font-medium text-primary transition-colors hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                                    variant="outline"
+                                    {...buttonTap}
+                                    onClick={() => {
+                                      handleClose();
+                                      navigate('/register');
+                                    }}
+                                    className="flex-1 text-foreground"
                                   >
-                                    {sendBtnLabel}
-                                  </button>
-                                </label>
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+                                    注册
+                                  </Button>
+                                  <Button
+                                    type="submit"
+                                    disabled={submitting}
+                                    {...buttonTap}
+                                    className="flex-1"
+                                  >
+                                    {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                                    {submitting ? '登录中…' : '登录'}
+                                  </Button>
+                                </div>
+                              </div>
+                            </form>
+                          </Form>
+                        </motion.div>
+                      )}
 
-                        {/* 验证码 */}
-                        <FormField
-                          control={codeForm.control}
-                          name="code"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="sr-only">验证码</FormLabel>
-                              <FormControl>
-                                <label className="flex items-center gap-3 border-b border-line py-3">
-                                  <span className="w-12 shrink-0 text-sm text-ink-2">验证码</span>
-                                  <Input
-                                    type="text"
-                                    placeholder="请输入验证码"
-                                    inputMode="numeric"
-                                    className="h-auto flex-1 rounded-none border-none bg-transparent px-0 py-0 focus-visible:ring-0 focus-visible:border-none aria-invalid:ring-0 aria-invalid:border-none"
-                                    {...field}
-                                  />
-                                </label>
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+                      {/* 验证码登录表单*/}
+                      {tab === 'code' && (
+                        <motion.div
+                          key="code-form"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.15, ease: 'easeOut' }}
+                          className="flex flex-1 flex-col"
+                        >
+                          <Form {...codeForm}>
+                            <form
+                              onSubmit={codeForm.handleSubmit((v) => codeLoginMutation.mutate(v))}
+                              className="flex flex-1 flex-col"
+                            >
+                              <div>
+                                {/* {手机号|邮箱} + 获取验证码*/}
+                                <FormField
+                                  control={codeForm.control}
+                                  name="dest"
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel className="sr-only">
+                                        {codeType === 'phone' ? '手机号' : '邮箱'}
+                                      </FormLabel>
+                                      <FormControl>
+                                        <label className="flex items-center gap-3 border-b border-line py-3">
+                                          <span className="w-12 shrink-0 text-sm text-ink-2">
+                                            {codeType === 'phone' ? '手机号' : '邮箱'}
+                                          </span>
+                                          <Input
+                                            type={codeType === 'phone' ? 'text' : 'email'}
+                                            placeholder={
+                                              codeType === 'phone' ? '请输入手机号' : '请输入邮箱'
+                                            }
+                                            autoComplete={codeType === 'phone' ? 'tel' : 'email'}
+                                            className="h-auto flex-1 rounded-none border-none bg-transparent px-0 py-0 focus-visible:ring-0 focus-visible:border-none aria-invalid:ring-0 aria-invalid:border-none"
+                                            {...field}
+                                          />
+                                          <button
+                                            type="button"
+                                            disabled={
+                                              countdown.running || sendingCode || !destValue.trim()
+                                            }
+                                            onClick={handleSendCode}
+                                            className="shrink-0 whitespace-nowrap text-xs font-medium text-primary transition-colors hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                                          >
+                                            {sendBtnLabel}
+                                          </button>
+                                        </label>
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+
+                                {/* 验证码 */}
+                                <FormField
+                                  control={codeForm.control}
+                                  name="code"
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel className="sr-only">验证码</FormLabel>
+                                      <FormControl>
+                                        <label className="flex items-center gap-3 border-b border-line py-3">
+                                          <span className="w-12 shrink-0 text-sm text-ink-2">
+                                            验证码
+                                          </span>
+                                          <Input
+                                            type="text"
+                                            placeholder="请输入验证码"
+                                            inputMode="numeric"
+                                            className="h-auto flex-1 rounded-none border-none bg-transparent px-0 py-0 focus-visible:ring-0 focus-visible:border-none aria-invalid:ring-0 aria-invalid:border-none"
+                                            {...field}
+                                          />
+                                        </label>
+                                      </FormControl>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              </div>
+
+                              {error && <p className="mt-3 text-sm text-error">{error}</p>}
+
+                              <div className="mt-auto space-y-3 pt-6">
+                                <div className="flex gap-3">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    {...buttonTap}
+                                    onClick={() => {
+                                      handleClose();
+                                      navigate('/register');
+                                    }}
+                                    className="flex-1 text-foreground"
+                                  >
+                                    注册
+                                  </Button>
+                                  <Button
+                                    type="submit"
+                                    disabled={submitting}
+                                    {...buttonTap}
+                                    className="flex-1"
+                                  >
+                                    {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                                    {submitting ? '登录中…' : '登录'}
+                                  </Button>
+                                </div>
+                              </div>
+                            </form>
+                          </Form>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* 其他方式登录 */}
+                    <div className="mt-6">
+                      <div className="relative mb-4 flex items-center justify-center">
+                        <span className="absolute inset-x-0 top-1/2 h-px bg-line" />
+                        <span className="relative bg-card px-3 text-xs text-ink-3">
+                          其他方式登录
+                        </span>
                       </div>
-
-                      {error && <p className="mt-3 text-sm text-error">{error}</p>}
-
-                      <div className="mt-auto space-y-3 pt-6">
-                        <div className="flex gap-3">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            {...buttonTap}
-                            onClick={() => {
-                              handleClose();
-                              navigate('/register');
-                            }}
-                            className="flex-1 text-foreground"
-                          >
-                            注册
-                          </Button>
-                          <Button
-                            type="submit"
-                            disabled={submitting}
-                            {...buttonTap}
-                            className="flex-1"
-                          >
-                            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                            {submitting ? '登录中…' : '登录'}
-                          </Button>
-                        </div>
+                      <div className="flex items-center justify-center gap-6">
+                        {/* GitHub 登录：整页跳转到后端 OAuth 授权入口 */}
+                        <a
+                          href={api.githubLoginURL()}
+                          onClick={() => handleClose()}
+                          className="flex flex-col items-center gap-1 text-ink-3 transition-colors hover:text-primary"
+                        >
+                          <Github className="h-6 w-6" />
+                          <span className="text-[10px]">GitHub 登录</span>
+                        </a>
+                        <button
+                          type="button"
+                          className="flex flex-col items-center gap-1 text-ink-3 transition-colors hover:text-primary"
+                          onClick={() => {
+                            setTab('code');
+                            setCodeType('email');
+                            setError('');
+                            codeForm.reset({ dest: '', code: '' });
+                            countdown.reset();
+                          }}
+                        >
+                          <Mail className="h-6 w-6" />
+                          <span className="text-[10px]">邮箱登录</span>
+                        </button>
                       </div>
-                    </form>
-                  </Form>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* 其他方式登录 */}
-            <div className="mt-6">
-              <div className="relative mb-4 flex items-center justify-center">
-                <span className="absolute inset-x-0 top-1/2 h-px bg-line" />
-                <span className="relative bg-card px-3 text-xs text-ink-3">其他方式登录</span>
-              </div>
-              <div className="flex items-center justify-center gap-6">
-                {/* GitHub 登录：整页跳转到后端 OAuth 授权入口 */}
-                <a
-                  href={api.githubLoginURL()}
-                  onClick={() => handleClose()}
-                  className="flex flex-col items-center gap-1 text-ink-3 transition-colors hover:text-primary"
-                >
-                  <Github className="h-6 w-6" />
-                  <span className="text-[10px]">GitHub 登录</span>
-                </a>
-                <button
-                  type="button"
-                  className="flex flex-col items-center gap-1 text-ink-3 transition-colors hover:text-primary"
-                  onClick={() => {
-                    setTab('code');
-                    setCodeType('email');
-                    setError('');
-                    codeForm.reset({ dest: '', code: '' });
-                    countdown.reset();
-                  }}
-                >
-                  <Mail className="h-6 w-6" />
-                  <span className="text-[10px]">邮箱登录</span>
-                </button>
-              </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* 协议 */}

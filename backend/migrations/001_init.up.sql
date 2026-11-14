@@ -837,3 +837,47 @@ CREATE TRIGGER trg_plugin_ratings_updated_at
     BEFORE UPDATE ON plugin_ratings
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+    
+CREATE TABLE documents (
+    id              BIGSERIAL PRIMARY KEY,
+    slug            VARCHAR(100) NOT NULL UNIQUE,
+    title           VARCHAR(200) NOT NULL,
+    group_name      VARCHAR(20)  NOT NULL DEFAULT 'lyrics',
+    status          VARCHAR(20)  NOT NULL DEFAULT 'draft',
+    sort_order      INT          NOT NULL DEFAULT 0,
+    content         TEXT         NOT NULL DEFAULT '',
+    created_by      VARCHAR(100) NOT NULL DEFAULT '',
+    updated_by      VARCHAR(100) NOT NULL DEFAULT '',
+    created_by_info JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    updated_by_info JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    published_at    TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_documents_group_status ON documents(group_name, status, sort_order, id);
+
+CREATE TRIGGER trg_documents_updated_at
+    BEFORE UPDATE ON documents
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+COMMENT ON TABLE documents IS 'Markdown 文档';
+COMMENT ON COLUMN documents.group_name IS '分组：lyrics（歌词库）/ api（AMLL Hub API）';
+COMMENT ON COLUMN documents.status IS '状态：draft/published';
+
+-- 版本快照：只保存标题与正文，组织字段不回滚
+CREATE TABLE document_revisions (
+    id          BIGSERIAL PRIMARY KEY,
+    document_id BIGINT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    title       VARCHAR(200) NOT NULL,
+    content     TEXT NOT NULL,
+    note        VARCHAR(300) NOT NULL DEFAULT '',
+    author      VARCHAR(100) NOT NULL DEFAULT '',
+    author_info JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_document_revisions_doc ON document_revisions(document_id, id DESC);
+
+COMMENT ON TABLE document_revisions IS '文档版本快照';

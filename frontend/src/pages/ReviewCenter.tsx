@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAtom } from 'jotai';
 import {
+  docEditorTargetAtom,
   resetReviewCenterState,
   reviewSearchAtom,
   reviewTabAtom,
@@ -15,6 +16,7 @@ import {
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
+  BookOpen,
   ChevronRight,
   FolderOpen,
   Home,
@@ -38,6 +40,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ListPagination } from '@/components/ui/list-pagination';
 import { SearchIpDetail } from '@/components/creator/SearchIpDetail';
 import { AnnouncementPanel } from '@/components/review/AnnouncementPanel';
+import { DocManagePanel } from '@/components/docs/DocManagePanel';
+import { DocEditorPanel } from '@/components/docs/DocEditorPanel';
 import { ReviewerManagePanel } from '@/components/review/ReviewerManagePanel';
 import { PluginReviewPanel } from '@/components/plugin/PluginReviewPanel';
 import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
@@ -591,6 +595,7 @@ export function ReviewCenter() {
   const { user, openLogin } = useAuth();
   // 页面状态存全局 atoms（卸载时复位，语义同原 useState）
   const [viewState, setView] = useAtom(reviewViewAtom);
+  const [editorTarget, setEditorTarget] = useAtom(docEditorTargetAtom);
   const view = user && !user.isReviewer && viewState === 'home' ? 'announcement' : viewState;
   // 页面卸载时复位全部审核中心状态
   useEffect(() => () => resetReviewCenterState(), []);
@@ -725,6 +730,15 @@ export function ReviewCenter() {
               </>
             )}
             <NavItem
+              icon={<BookOpen className="h-4 w-4" />}
+              label="文档管理"
+              active={view === 'docs'}
+              onClick={() => {
+                setView('docs');
+                setEditorTarget(null);
+              }}
+            />
+            <NavItem
               icon={<Megaphone className="h-4 w-4" />}
               label="发布公告"
               active={view === 'announcement'}
@@ -802,6 +816,50 @@ export function ReviewCenter() {
               >
                 <h2 className="mb-4 text-xl font-bold tracking-tight text-foreground">插件审核</h2>
                 <PluginReviewPanel />
+              </motion.div>
+            )}
+
+            {/* 文档管理 / 文档编辑 */}
+            {view === 'docs' && (
+              <motion.div
+                key="docs"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, pointerEvents: 'none' }}
+                transition={{ duration: 0.15 }}
+                className="col-start-1 row-start-1 self-start rounded-lg border border-line bg-card p-6"
+              >
+                <AnimatePresence mode="wait" initial={false}>
+                  {editorTarget ? (
+                    <motion.div
+                      key={`editor-${editorTarget.mode === 'edit' ? editorTarget.slug : 'new'}`}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.16 }}
+                    >
+                      <DocEditorPanel
+                        slug={editorTarget.mode === 'edit' ? editorTarget.slug : undefined}
+                        onSaved={() => setEditorTarget(null)}
+                        onCancel={() => setEditorTarget(null)}
+                        onDeleted={() => setEditorTarget(null)}
+                      />
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="docs-list"
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.16 }}
+                    >
+                      <DocManagePanel
+                        onCreate={() => setEditorTarget({ mode: 'new' })}
+                        onEdit={(slug) => setEditorTarget({ mode: 'edit', slug })}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             )}
 

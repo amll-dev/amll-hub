@@ -1,12 +1,23 @@
 package service
 
 import (
+	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"regexp"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
+)
+
+const (
+	// pluginManifestIconPrefix manifest.icon 必须是 PNG data URL
+	pluginManifestIconPrefix = "data:image/png;base64,"
+	// pluginManifestIconMaxChars 与上游契约一致，整串最多 65536 字符
+	pluginManifestIconMaxChars = 65536
+	// pluginManifestIconMaxDimension 商店侧额外的尺寸上限，防止超大图片
+	pluginManifestIconMaxDimension = 2048
 )
 
 var pluginIDPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$`)
@@ -266,6 +277,55 @@ func validatePluginManifest(manifest map[string]any) []PluginIssue {
 	}
 
 	return issues
+}
+
+// extractManifestIcon 校验并提取 manifest.icon，成功后从 manifest 中移除该字段，
+// 避免 base64 进入数据库副本和接口响应。失败时同样移除，只返回问题。
+func extractManifestIcon(manifest map[string]any) ([]byte, []PluginIssue) {
+	raw, exists := manifest["icon"]
+	if !exists {
+		return nil, nil
+	}
+	delete(manifest, "icon")
+
+	value, ok := raw.(string)
+	if !ok {
+		return nil, []PluginIssue{{Path: "/manifest/icon", Message: "must be a string"}}
+	}
+	if !strings.HasPrefix(value, pluginManifestIconPrefix) {
+		return nil, []PluginIssue{{Path: "/manifest/icon", Message: "must be a data:image/png;base64 URL"}}
+	}
+	if len(value) > pluginManifestIconMaxChars {
+		return nil, []PluginIssue{{Path: "/manifest/icon", Message: "must contain at most 65536 characters"}}
+	}
+	payload := value[len(pluginManifestIconPrefix):]
+	// StdEncoding 会忽略换行符，这里显式拒绝，保证只接受严格 base64
+	if payload == "" || strings.ContainsAny(payload, "\r\n") {
+		return nil, []PluginIssue{{Path: "/manifest/icon", Message: "must be valid base64"}}
+	}
+	data, err := base64.StdEncoding.Strict().DecodeString(payload)
+	if err != nil {
+		return nil, []PluginIssue{{Path: "/manifest/icon", Message: "must be valid base64"}}
+	}
+	ext, _, ok := DetectPluginIcon(data)
+	if !ok || ext != ".png" {
+		return nil, []PluginIssue{{Path: "/manifest/icon", Message: "must be a PNG image"}}
+	}
+	if !validPluginIconDimensions(data) {
+		return nil, []PluginIssue{{Path: "/manifest/icon", Message: "must be a valid PNG image"}}
+	}
+	return data, nil
+}
+
+// validPluginIconDimensions 读取 PNG IHDR 宽高并限制尺寸
+func validPluginIconDimensions(data []byte) bool {
+	if len(data) < 24 || string(data[12:16]) != "IHDR" {
+		return false
+	}
+	width := binary.BigEndian.Uint32(data[16:20])
+	height := binary.BigEndian.Uint32(data[20:24])
+	return width > 0 && height > 0 &&
+		width <= pluginManifestIconMaxDimension && height <= pluginManifestIconMaxDimension
 }
 
 // relativePackagePath

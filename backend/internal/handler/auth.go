@@ -61,8 +61,58 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		writeAuthErr(c, err)
 		return
 	}
-	h.enrichReviewer(c, &result.User)
+	h.enrichReviewer(c, result.User)
 	pkg.OK(c, result)
+}
+
+// LoginMfa POST /api/v1/auth/login/mfa
+// 完成密码登录后的二次验证
+func (h *AuthHandler) LoginMfa(c *gin.Context) {
+	var req struct {
+		ChallengeID  string `json:"challengeId" binding:"required"`
+		MfaType      string `json:"mfaType" binding:"required"`
+		Passcode     string `json:"passcode"`
+		RecoveryCode string `json:"recoveryCode"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.BadRequest(c, "challengeId 和 mfaType 必填")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	result, err := h.svc.VerifyMfaLogin(ctx, req.ChallengeID, req.MfaType, req.Passcode, req.RecoveryCode)
+	if err != nil {
+		writeAuthErr(c, err)
+		return
+	}
+	h.enrichReviewer(c, result.User)
+	pkg.OK(c, result)
+}
+
+// SendLoginMfaCode POST /api/v1/auth/login/mfa/send-code
+// 给 MFA 会话发送邮箱/短信验证码
+func (h *AuthHandler) SendLoginMfaCode(c *gin.Context) {
+	var req struct {
+		ChallengeID  string `json:"challengeId" binding:"required"`
+		MfaType      string `json:"mfaType" binding:"required"`
+		CaptchaType  string `json:"captchaType"`
+		CaptchaToken string `json:"captchaToken"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.BadRequest(c, "challengeId 和 mfaType 必填")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
+	defer cancel()
+
+	if err := h.svc.SendMfaCode(ctx, req.ChallengeID, req.MfaType, req.CaptchaType, req.CaptchaToken); err != nil {
+		writeAuthErr(c, err)
+		return
+	}
+	pkg.OKWithMsg(c, nil, "验证码已发送")
 }
 
 // LoginByCode POST /api/v1/auth/login-code
@@ -85,7 +135,7 @@ func (h *AuthHandler) LoginByCode(c *gin.Context) {
 		writeAuthErr(c, err)
 		return
 	}
-	h.enrichReviewer(c, &result.User)
+	h.enrichReviewer(c, result.User)
 	pkg.OK(c, result)
 }
 
@@ -400,6 +450,22 @@ func writeAuthErr(c *gin.Context, err error) {
 		pkg.Fail(c, http.StatusUnauthorized, http.StatusUnauthorized, "用户名或密码错误")
 	case errors.Is(err, service.ErrInvalidCode):
 		pkg.Fail(c, http.StatusBadRequest, http.StatusBadRequest, "验证码错误")
+	case errors.Is(err, service.ErrMfaChallengeExpired):
+		pkg.Fail(c, http.StatusGone, http.StatusGone, "二次验证已过期，请重新登录")
+	case errors.Is(err, service.ErrMfaTooManyAttempts):
+		pkg.Fail(c, http.StatusTooManyRequests, http.StatusTooManyRequests, "验证失败次数过多，请重新登录")
+	case errors.Is(err, service.ErrMfaMethodUnavailable):
+		pkg.BadRequest(c, "该验证方式不可用")
+	case errors.Is(err, service.ErrMfaSetupRequired):
+		pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "请先完成多因素认证设置")
+	case errors.Is(err, service.ErrMfaOperationFailed):
+		detail := err.Error()
+		if idx := strings.Index(detail, ": "); idx >= 0 {
+			detail = detail[idx+2:]
+		}
+		pkg.Fail(c, http.StatusBadGateway, http.StatusBadGateway, detail)
+	case errors.Is(err, service.ErrPasswordUpdateRequired):
+		pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "密码已过期，请先重置密码")
 	case errors.Is(err, service.ErrCodeExpired):
 		pkg.Fail(c, http.StatusBadRequest, http.StatusBadRequest, "验证码已失效，请重新获取")
 	case errors.Is(err, service.ErrUserNotFound):

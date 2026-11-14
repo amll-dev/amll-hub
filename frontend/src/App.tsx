@@ -9,7 +9,6 @@ import { Footer } from '@/components/Footer';
 import { Player } from '@/components/Player';
 import { AuthBoot } from '@/boot/AuthBoot';
 import { SearchBoot } from '@/boot/SearchBoot';
-import { PlayerBoot } from '@/boot/PlayerBoot';
 import { ThemeBoot } from '@/boot/ThemeBoot';
 import { NotificationBoot } from '@/boot/NotificationBoot';
 import { Toaster } from '@/components/ui/sonner';
@@ -40,8 +39,8 @@ function AnimatedOutlet() {
     </Suspense>
   );
 
-  // 个人中心自己管动画：ProfileLayout 只让右侧内容区淡入
-  if (location.pathname.startsWith('/profile')) return outlet;
+  if (location.pathname.startsWith('/profile') || location.pathname.startsWith('/docs'))
+    return outlet;
 
   return (
     <motion.div
@@ -74,7 +73,7 @@ function LazyAuthDialog() {
   );
 }
 
-/** 全局布局：Provider 层 + Header/Footer + 全局播放器 + 登录弹窗 */
+/** 全局布局：Provider 层 + Header/Footer + 播放器 UI + 登录弹窗 */
 export function Layout() {
   const location = useLocation();
   const useCustomHeader =
@@ -84,7 +83,6 @@ export function Layout() {
       {/* 全局状态引导：atoms 副作用宿主（渲染 null，各挂一次） */}
       <AuthBoot />
       <SearchBoot />
-      <PlayerBoot />
       <ThemeBoot />
       <NotificationBoot />
       <OfflineBanner />

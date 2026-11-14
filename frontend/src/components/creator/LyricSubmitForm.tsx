@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -1010,7 +1010,15 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
             />
             <span>
               我确认歌词为本人制作或已获授权，并同意
-              <span className="font-medium text-foreground">《投稿规范》</span>
+              <Link
+                to="/docs/upload-guide"
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="font-medium text-primary underline-offset-2 hover:underline"
+              >
+                《投稿规范》
+              </Link>
             </span>
           </label>
 

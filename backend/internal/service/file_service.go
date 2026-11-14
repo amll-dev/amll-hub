@@ -24,6 +24,8 @@ const (
 	RevisionLyricsPrefix = "tg-lyrics-review/"
 	// ProfileBannerPrefix 用户主页背景图，需在 handler 的匿名可读白名单里
 	ProfileBannerPrefix = "profile-banner/"
+	// DocsImagePrefix 文档图片，需在 handler 的匿名可读白名单里
+	DocsImagePrefix = "docs/"
 )
 
 // MaxProfileBannerSize 主页背景图大小上限（前端压缩后远小于此值）
@@ -154,6 +156,69 @@ func (s *FileService) UploadProfileBanner(ctx context.Context, username string, 
 		return "", err
 	}
 	return key, nil
+}
+
+// UploadDocImage 上传文档图片，返回对象 key
+func (s *FileService) UploadDocImage(ctx context.Context, relPath string, content []byte) (string, error) {
+	if len(content) == 0 {
+		return "", invalidInput("图片内容为空")
+	}
+	if len(content) > MaxDocImageSize {
+		return "", invalidInput("图片大小超过 %d 字节", MaxDocImageSize)
+	}
+	clean, ext, err := sanitizeDocImagePath(relPath)
+	if err != nil {
+		return "", err
+	}
+	if err := validateDocImage(ext, content); err != nil {
+		return "", err
+	}
+	key := DocsImagePrefix + clean
+	if _, err := s.minio.PutObject(ctx, s.bucket, key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
+		ContentType: imageContentType(ext),
+	}); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
+// sanitizeDocImagePath 逐段清洗文档图片的相对路径，拒绝路径穿越与空段
+func sanitizeDocImagePath(relPath string) (string, string, error) {
+	relPath = strings.ReplaceAll(strings.TrimSpace(relPath), "\\", "/")
+	relPath = strings.TrimPrefix(relPath, "/")
+	parts := strings.Split(relPath, "/")
+	if len(parts) == 0 || len(parts) > 3 {
+		return "", "", invalidInput("图片路径非法")
+	}
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p == "" || p == "." || p == ".." {
+			return "", "", invalidInput("图片路径非法")
+		}
+		out = append(out, sanitizeObjectNameSegment(p))
+	}
+	ext := strings.ToLower(path.Ext(out[len(out)-1]))
+	if ext == "" {
+		return "", "", invalidInput("缺少文件扩展名")
+	}
+	return strings.Join(out, "/"), ext, nil
+}
+
+// validateDocImage 文档图片校验：SVG 单独判断（魔数嗅探不适用），其余走图片嗅探
+func validateDocImage(ext string, content []byte) error {
+	if ext == ".svg" {
+		if !looksLikeSVG(content) {
+			return invalidInput("SVG 内容无法识别")
+		}
+		return nil
+	}
+	return validateImageUpload("image"+ext, content)
+}
+
+// looksLikeSVG 粗筛 SVG：必须含 <svg 且不含 <script>（响应侧还会加 CSP sandbox）
+func looksLikeSVG(content []byte) bool {
+	text := strings.ToLower(string(content))
+	return strings.Contains(text, "<svg") && !strings.Contains(text, "<script")
 }
 
 // sanitizeObjectNameSegment 把用户名收敛成安全的 key 片段，
@@ -388,6 +453,8 @@ func imageContentType(ext string) string {
 		return "image/gif"
 	case ".bmp":
 		return "image/bmp"
+	case ".svg":
+		return "image/svg+xml"
 	}
 	return "application/octet-stream"
 }

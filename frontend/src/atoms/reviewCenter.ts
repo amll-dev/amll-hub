@@ -18,7 +18,7 @@ export type ReviewTab =
 export type SearchIpTab = 'all' | 'pending' | 'approved' | 'rejected';
 
 /** 审核中心主视图 */
-type View = 'home' | 'content' | 'search-ip' | 'plugins' | 'announcement' | 'reviewers';
+type View = 'home' | 'content' | 'search-ip' | 'plugins' | 'docs' | 'announcement' | 'reviewers';
 
 /** 审核中心当前视图 */
 export const reviewViewAtom = atom<View>('home');
@@ -31,6 +31,10 @@ export const searchIpTabAtom = atom<SearchIpTab>('all');
 /** 搜索IP投稿当前打开的详情 ID（null 表示停留在列表） */
 export const searchIpDetailIdAtom = atom<number | null>(null);
 
+/** 文档管理里正在编辑的目标（null 表示停留在列表） */
+export type DocEditorTarget = { mode: 'new' } | { mode: 'edit'; slug: string };
+export const docEditorTargetAtom = atom<DocEditorTarget | null>(null);
+
 /** 复位审核中心页面状态（页面卸载时调用，保持与原 useState 卸载即重置一致的语义） */
 export function resetReviewCenterState() {
   const store = getDefaultStore();
@@ -39,4 +43,5 @@ export function resetReviewCenterState() {
   store.set(reviewSearchAtom, '');
   store.set(searchIpTabAtom, 'all');
   store.set(searchIpDetailIdAtom, null);
+  store.set(docEditorTargetAtom, null);
 }

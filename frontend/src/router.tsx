@@ -6,6 +6,9 @@ import {
   BindAccount,
   CreatorCenter,
   DailyRecommend,
+  DocDetailPage,
+  DocsHome,
+  DocsLayout,
   GithubCallback,
   Home,
   LyricEditorPage,
@@ -76,7 +79,14 @@ export const router = createBrowserRouter([
       { path: '/lyric/:filename/versions', element: <LyricVersionsPage /> },
       { path: '/online-lyric/:platform/:songId', element: <OnlineViewLyricPage /> },
       { path: '/stats', element: <Placeholder title="统计" /> },
-      { path: '/docs', element: <Placeholder title="文档" /> },
+      {
+        path: '/docs',
+        element: <DocsLayout />,
+        children: [
+          { index: true, element: <DocsHome /> },
+          { path: ':slug', element: <DocDetailPage /> },
+        ],
+      },
       {
         path: '/profile',
         element: <ProfileLayout />,

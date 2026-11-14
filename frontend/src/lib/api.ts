@@ -76,11 +76,20 @@ import type {
   PluginValidateResult,
   PluginChannel,
   PluginStatus,
+  DocDetailResult,
+  DocListResult,
+  DocPayload,
+  DocRevisionDetail,
+  DocRevisionListResult,
 } from './types';
 import type {
   CaptchaConfig,
   GithubBindInfo,
   LoginResult,
+  LoginSuccess,
+  MfaSetupResult,
+  MfaSetupStart,
+  MfaStatus,
   QrTicket,
   QrTicketStatus,
   UserProfile,
@@ -460,6 +469,78 @@ export const api = {
     });
   },
 
+  /** 完成登录二次验证 POST /api/v1/auth/login/mfa */
+  verifyLoginMfa(params: {
+    challengeId: string;
+    mfaType: string;
+    passcode?: string;
+    recoveryCode?: string;
+  }): Promise<LoginResult> {
+    return request<LoginResult>('/api/v1/auth/login/mfa', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  /** 发送登录二次验证码 POST /api/v1/auth/login/mfa/send-code */
+  sendLoginMfaCode(params: {
+    challengeId: string;
+    mfaType: string;
+    captchaType?: string;
+    captchaToken?: string;
+  }): Promise<void> {
+    return request<void>('/api/v1/auth/login/mfa/send-code', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  /** 查询 MFA 状态 GET /api/v1/auth/mfa */
+  getMfaStatus(): Promise<MfaStatus> {
+    return request<MfaStatus>('/api/v1/auth/mfa');
+  },
+
+  /** 开始绑定 MFA POST /api/v1/auth/mfa/setup/start */
+  startMfaSetup(mfaType: string): Promise<MfaSetupStart> {
+    return request<MfaSetupStart>('/api/v1/auth/mfa/setup/start', {
+      method: 'POST',
+      body: JSON.stringify({ mfaType }),
+    });
+  },
+
+  /** 发送 MFA 绑定验证码 POST /api/v1/auth/mfa/setup/send-code */
+  sendMfaSetupCode(params: {
+    challengeId: string;
+    captchaType?: string;
+    captchaToken?: string;
+  }): Promise<void> {
+    return request<void>('/api/v1/auth/mfa/setup/send-code', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  /** 完成 MFA 绑定 POST /api/v1/auth/mfa/setup/complete */
+  completeMfaSetup(params: { challengeId: string; passcode: string }): Promise<MfaSetupResult> {
+    return request<MfaSetupResult>('/api/v1/auth/mfa/setup/complete', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  /** 关闭全部 MFA POST /api/v1/auth/mfa/disable */
+  disableMfa(): Promise<void> {
+    return request<void>('/api/v1/auth/mfa/disable', { method: 'POST' });
+  },
+
+  /** 设置首选 MFA POST /api/v1/auth/mfa/preferred */
+  setPreferredMfa(mfaType: string): Promise<void> {
+    return request<void>('/api/v1/auth/mfa/preferred', {
+      method: 'POST',
+      body: JSON.stringify({ mfaType }),
+    });
+  },
+
   /** 注册 POST /api/v1/auth/register */
   register(params: {
     username: string;
@@ -757,6 +838,61 @@ export const api = {
   uploadFileUrl(key: string): string {
     if (!key) return '';
     return `${API_BASE}/api/v1/uploads/file/${key}`;
+  },
+
+  /** 文档系统 */
+  docs: {
+    list(params: { group?: string; q?: string; page?: number; pageSize?: number } = {}) {
+      return request<DocListResult>(`/api/v1/docs${buildQuery(params)}`);
+    },
+    detail(slug: string) {
+      return request<DocDetailResult>(`/api/v1/docs/${encodeURIComponent(slug)}`);
+    },
+    manageList(
+      params: { status?: string; group?: string; q?: string; page?: number; pageSize?: number } = {}
+    ) {
+      return request<DocListResult>(`/api/v1/manage/docs${buildQuery(params)}`);
+    },
+    create(payload: DocPayload) {
+      return request<{ id: number; slug: string }>('/api/v1/manage/docs', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    },
+    update(id: number, payload: DocPayload) {
+      return request<{ id: number; slug: string }>(`/api/v1/manage/docs/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+    },
+    remove(id: number) {
+      return request<{ id: number }>(`/api/v1/manage/docs/${id}`, { method: 'DELETE' });
+    },
+    uploadMarkdown(form: FormData) {
+      return requestForm<{ id: number; slug: string }>('/api/v1/manage/docs/upload', form, {
+        timeoutMs: 120_000,
+      });
+    },
+    uploadImage(file: File, slug?: string) {
+      const form = new FormData();
+      form.append('file', file);
+      if (slug) form.append('slug', slug);
+      return requestForm<{ key: string }>('/api/v1/manage/docs/images', form);
+    },
+    revisions(id: number, params: { page?: number; pageSize?: number } = {}) {
+      return request<DocRevisionListResult>(
+        `/api/v1/manage/docs/${id}/revisions${buildQuery(params)}`
+      );
+    },
+    revision(id: number, revId: number) {
+      return request<DocRevisionDetail>(`/api/v1/manage/docs/${id}/revisions/${revId}`);
+    },
+    rollback(id: number, revId: number) {
+      return request<{ id: number; slug: string }>(
+        `/api/v1/manage/docs/${id}/revisions/${revId}/rollback`,
+        { method: 'POST' }
+      );
+    },
   },
   /**
    * TTML 校验 POST /api/v1/submissions/validate
@@ -1316,8 +1452,8 @@ export const api = {
     token: string;
     account: string;
     password: string;
-  }): Promise<LoginResult> {
-    return request<LoginResult>('/api/v1/auth/github/bind/login', {
+  }): Promise<LoginSuccess> {
+    return request<LoginSuccess>('/api/v1/auth/github/bind/login', {
       method: 'POST',
       body: JSON.stringify(params),
     });
@@ -1333,8 +1469,8 @@ export const api = {
     email: string;
     emailCode: string;
     displayName: string;
-  }): Promise<LoginResult> {
-    return request<LoginResult>('/api/v1/auth/github/bind/register', {
+  }): Promise<LoginSuccess> {
+    return request<LoginSuccess>('/api/v1/auth/github/bind/register', {
       method: 'POST',
       body: JSON.stringify(params),
     });
@@ -1615,14 +1751,6 @@ export const api = {
         throw new Error(message);
       }
       triggerDownload(await res.blob(), filename);
-    },
-
-    /** 上传插件图标 POST /api/v1/store/plugins/:key/icon */
-    uploadIcon(key: string, form: FormData): Promise<{ iconUrl: string }> {
-      return requestForm<{ iconUrl: string }>(
-        `/api/v1/store/plugins/${encodeURIComponent(key)}/icon`,
-        form
-      );
     },
 
     /** 插件评论列表 GET /api/v1/store/plugins/:key/comments */

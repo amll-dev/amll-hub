@@ -24,15 +24,31 @@ export const useWaveformAnalyzer = ({
   const rendererWorkerRef = useRef<Worker | null>(null);
   const offscreenTransferred = useRef(false);
   const analyzedSamplesRef = useRef<Float32Array | null>(null);
+  /** 延迟销毁句柄 */
+  const destroyTimerRef = useRef<number | null>(null);
+
   useEffect(() => {
-    rendererWorkerRef.current = new RendererWorker();
+    if (destroyTimerRef.current !== null) {
+      window.clearTimeout(destroyTimerRef.current);
+      destroyTimerRef.current = null;
+    }
+    // 复用上一轮（StrictMode 假卸载）创建的 worker，避免 canvas 已经 transfer 过去却没有接收方
+    if (!rendererWorkerRef.current) {
+      rendererWorkerRef.current = new RendererWorker();
+    }
 
     return () => {
-      analyzerWorkerRef.current?.terminate();
-      analyzerWorkerRef.current = null;
-      rendererWorkerRef.current?.terminate();
-      rendererWorkerRef.current = null;
-      offscreenTransferred.current = false;
+      destroyTimerRef.current = window.setTimeout(() => {
+        destroyTimerRef.current = null;
+        analyzerWorkerRef.current?.terminate();
+        analyzerWorkerRef.current = null;
+        rendererWorkerRef.current?.terminate();
+        rendererWorkerRef.current = null;
+        // 只有真正卸载（canvas 随之销毁）才允许下次挂载重新 transfer
+        offscreenTransferred.current = false;
+        // pcm 存在全局 atom 里，重挂载会命中缓存；不清掉会导致波形不重绘
+        analyzedSamplesRef.current = null;
+      }, 0);
     };
   }, []);
 
@@ -59,7 +75,14 @@ export const useWaveformAnalyzer = ({
     setBpmState({ status: 'analyzing' });
 
     if (!offscreenTransferred.current) {
-      const offscreen = canvasRef.current.transferControlToOffscreen();
+      let offscreen: OffscreenCanvas;
+      try {
+        offscreen = canvasRef.current.transferControlToOffscreen();
+      } catch {
+        // HMR 等极端时序下 canvas 已被转移过：跳过波形初始化，但不要打断播放与打轴
+        offscreenTransferred.current = true;
+        return;
+      }
       const styles = getComputedStyle(wsContainerRef.current);
       const waveColor = styles.getPropertyValue('--accent-a4').trim() || '#00ffa21e';
 

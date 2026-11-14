@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   CloudUpload,
   FileArchive,
-  ImagePlus,
   Loader2,
   Upload,
   X,
@@ -23,7 +22,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { PluginChannel, PluginIssue } from '@/lib/types';
 
 const MAX_ARTIFACT_BYTES = 48 * 1024 * 1024;
-const MAX_ICON_BYTES = 256 * 1024;
 
 interface FormState {
   summary: string;
@@ -70,11 +68,9 @@ export function PluginSubmitForm({
 }) {
   const versionOnly = Boolean(existingPlugin);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const iconInputRef = useRef<HTMLInputElement>(null);
   const { restored: draft, set: setDraft, clearDraft } = useFormDraft<DraftState>('plugin-submit');
 
   const [file, setFile] = useState<File | null>(null);
-  const [iconFile, setIconFile] = useState<File | null>(null);
   const [form, setForm] = useState<FormState>({
     summary: existingPlugin?.summary ?? draft?.summary ?? '',
     descriptionMd: existingPlugin?.descriptionMd ?? draft?.descriptionMd ?? '',
@@ -86,16 +82,11 @@ export function PluginSubmitForm({
   const [issues, setIssues] = useState<PluginIssue[]>([]);
   const [manifest, setManifest] = useState<Record<string, unknown> | null>(null);
   const [kind, setKind] = useState<PluginChannel | ''>('');
+  const [iconDetected, setIconDetected] = useState(false);
+  const [iconPreview, setIconPreview] = useState('');
   const [submitMsg, setSubmitMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
   );
-
-  const iconPreview = useMemo(() => (iconFile ? URL.createObjectURL(iconFile) : ''), [iconFile]);
-  useEffect(() => {
-    return () => {
-      if (iconPreview) URL.revokeObjectURL(iconPreview);
-    };
-  }, [iconPreview]);
 
   const updateForm = (patch: Partial<FormState>) => {
     const next = { ...form, ...patch };
@@ -115,11 +106,10 @@ export function PluginSubmitForm({
     setDraft({ ...form, tags: next });
   };
 
-  const buildForm = (targetFile?: File | null, includeIcon = false) => {
+  const buildForm = (targetFile?: File | null) => {
     const fd = new FormData();
     const upload = targetFile === undefined ? file : targetFile;
     if (upload) fd.append('file', upload);
-    if (includeIcon && iconFile) fd.append('icon', iconFile);
     if (existingPlugin) fd.append('target_plugin_key', existingPlugin.pluginKey);
     fd.append('summary', form.summary);
     fd.append('description_md', form.descriptionMd);
@@ -137,6 +127,8 @@ export function PluginSubmitForm({
       setIssues(result.issues ?? []);
       setManifest(result.manifest);
       setKind(result.kind);
+      setIconDetected(Boolean(result.iconDetected));
+      setIconPreview(result.iconPreview ?? '');
       if (result.ok) {
         setSubmitMsg({
           type: 'success',
@@ -153,7 +145,7 @@ export function PluginSubmitForm({
   });
 
   const submitMutation = useMutation({
-    mutationFn: () => api.pluginStore.createSubmission(buildForm(undefined, true)),
+    mutationFn: () => api.pluginStore.createSubmission(buildForm()),
     onMutate: () => setSubmitMsg(null),
     onSuccess: (result) => {
       // 更新已有插件时不清除「新投稿」草稿
@@ -164,14 +156,15 @@ export function PluginSubmitForm({
       setSubmitMsg({
         type: result.iconUploadFailed ? 'error' : 'success',
         text: result.iconUploadFailed
-          ? `${baseText}，但图标上传失败，请稍后在管理页重新上传`
+          ? `${baseText}，但包内图标写入失败，请检查图标后重新提交`
           : baseText,
       });
       setFile(null);
-      setIconFile(null);
       setIssues([]);
       setManifest(null);
       setKind('');
+      setIconDetected(false);
+      setIconPreview('');
       window.setTimeout(onSuccess, result.iconUploadFailed ? 3000 : 600);
     },
     onError: (err) => {
@@ -190,30 +183,23 @@ export function PluginSubmitForm({
     setIssues([]);
     setManifest(null);
     setKind('');
+    setIconDetected(false);
+    setIconPreview('');
     setSubmitMsg(null);
     validateMutation.reset();
     // 与歌词投稿一致：选包后自动校验，通过后才展开展示信息
     validateMutation.mutate(picked);
   };
 
-  const pickIcon = (picked: File | null | undefined) => {
-    if (!picked) return;
-    if (picked.size > MAX_ICON_BYTES) {
-      setSubmitMsg({ type: 'error', text: `图标超过 ${formatBytes(MAX_ICON_BYTES)}` });
-      return;
-    }
-    setIconFile(picked);
-    setSubmitMsg(null);
-  };
-
   const reset = () => {
     setFile(null);
-    setIconFile(null);
     setForm(emptyForm);
     setTags([]);
     setIssues([]);
     setManifest(null);
     setKind('');
+    setIconDetected(false);
+    setIconPreview('');
     setSubmitMsg(null);
     validateMutation.reset();
     clearDraft();
@@ -291,6 +277,7 @@ export function PluginSubmitForm({
                   setIssues([]);
                   setManifest(null);
                   setKind('');
+                  setIconDetected(false);
                   setSubmitMsg(null);
                 }}
                 className="shrink-0 rounded p-1 text-ink-3 hover:bg-surface-2 hover:text-foreground"
@@ -326,6 +313,18 @@ export function PluginSubmitForm({
                     <span className="font-mono">{manifestText('channel') || kind || '—'}</span>
                   </p>
                 </div>
+                {iconDetected && (
+                  <div className="mt-2 flex items-center gap-3 border-t border-line pt-3">
+                    {iconPreview && (
+                      <img
+                        src={iconPreview}
+                        alt="插件图标"
+                        className="h-12 w-12 shrink-0 rounded-md border border-line object-cover"
+                      />
+                    )}
+                    <p className="text-sm text-ink-2">已检测到包内图标，将作为插件图标。</p>
+                  </div>
+                )}
               </>
             )}
 
@@ -356,49 +355,6 @@ export function PluginSubmitForm({
 
       {formReady && (
         <>
-          {/* 图标（仅新投稿） */}
-          {!versionOnly && (
-            <motion.div variants={fadeUp}>
-              <label className="mb-1.5 block text-sm font-medium text-ink-2">图标（可选）</label>
-              <div className="flex items-center gap-4">
-                <button
-                  type="button"
-                  onClick={() => iconInputRef.current?.click()}
-                  className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md border-2 border-dashed border-line bg-surface-2 transition-colors hover:border-primary/50"
-                  aria-label="选择插件图标"
-                >
-                  {iconPreview ? (
-                    <img src={iconPreview} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <ImagePlus className="h-6 w-6 text-ink-3" />
-                  )}
-                </button>
-                <input
-                  ref={iconInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  className="hidden"
-                  onChange={(e) => pickIcon(e.target.files?.[0])}
-                />
-                <div className="min-w-0 text-sm text-ink-3">
-                  <p>支持 PNG / JPEG / WebP，最大 {formatBytes(MAX_ICON_BYTES)}</p>
-                  <p className="mt-1 truncate text-ink-2">
-                    {iconFile ? iconFile.name : '未选择图标，可稍后在插件详情中更换'}
-                  </p>
-                  {iconFile && (
-                    <button
-                      type="button"
-                      onClick={() => setIconFile(null)}
-                      className="mt-1 text-xs text-primary hover:underline"
-                    >
-                      移除图标
-                    </button>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
           {/* 展示信息 */}
           {!versionOnly && (
             <>
