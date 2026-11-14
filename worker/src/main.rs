@@ -92,6 +92,13 @@ async fn main() -> Result<()> {
         }
     });
 
+    // 启动空记录回填任务：兜住丢失/未消费的解析任务，补全无歌名记录
+    let bf_app = app.clone();
+    let bf_shutdown = shutdown.clone();
+    let bf_handle = tokio::spawn(async move {
+        not_found::backfill::run_loop(bf_app, bf_shutdown).await;
+    });
+
     // 启动迁移消费者（GitHub App 未配置时不启动，不影响既有同步功能）
     let mut mig_handles = Vec::new();
     match build_github_app(&cfg) {
@@ -155,6 +162,7 @@ async fn main() -> Result<()> {
 
     // 等待 not_found 消费者退出
     let _ = nf_handle.await;
+    let _ = bf_handle.await;
     for handle in mig_handles {
         let _ = handle.await;
     }

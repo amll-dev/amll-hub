@@ -23,6 +23,7 @@ import { compressAvatar } from '@/lib/image';
 import { queryKeys } from '@/lib/query';
 import { buttonTap } from '@/lib/motion';
 import type { CaptchaConfig } from '@/lib/auth';
+import { isMfaRequired } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -316,6 +317,10 @@ export function Register() {
     },
     onMutate: () => setError(''),
     onSuccess: async (result) => {
+      if (isMfaRequired(result)) {
+        setError('注册成功，请手动登录');
+        return;
+      }
       login(result.token, result.user);
       if (avatarFile) {
         try {

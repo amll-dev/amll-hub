@@ -96,6 +96,7 @@ func Run() {
 	adminRepo := repository.NewAdminRepo(db)
 	notifRepo := repository.NewNotificationRepo(db)
 	announcementRepo := repository.NewAnnouncementRepo(db)
+	documentRepo := repository.NewDocumentRepo(db)
 
 	// GitHub 登录/迁移 repository
 	githubBindingRepo := repository.NewGithubBindingRepo(db)
@@ -188,6 +189,9 @@ func Run() {
 	announcementSvc := service.NewAnnouncementService(
 		announcementRepo, notifRepo, notifSvc, mailSender, mailResolver, cfg.Email.SiteURL,
 	)
+
+	// 文档系统
+	documentSvc := service.NewDocumentService(db, documentRepo, fileSvc)
 
 	// 搜索IP投稿
 	searchIpSvc := service.NewSearchIPService(searchIpRepo, minioClient, cfg.MinIO.Bucket)
@@ -335,6 +339,7 @@ func Run() {
 	adminH := handler.NewAdminHandler(reviewerRepo, reviewerCache, userSearchSvc)
 	notifH := handler.NewNotificationHandler(notifSvc)
 	announcementH := handler.NewAnnouncementHandler(announcementSvc)
+	documentH := handler.NewDocumentHandler(documentSvc, reviewerCache, adminCache)
 	userActivityH := handler.NewUserActivityHandler(userActivitySvc)
 	userProfileH := handler.NewUserProfileHandler(userProfileSvc)
 	userSearchH := handler.NewUserSearchHandler(userSearchSvc)
@@ -381,6 +386,7 @@ func Run() {
 		PluginStore:  pluginStoreH,
 		PluginReview: pluginReviewH,
 		PluginAdmin:  pluginAdminH,
+		Document:     documentH,
 
 		ReviewerCache: reviewerCache,
 		AdminCache:    adminCache,

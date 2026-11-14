@@ -50,6 +50,8 @@ export interface PlayerContextValue {
   error: string | null;
   /** 播放/暂停 */
   toggle: () => void;
+  /** 仅暂停（不改变曲目与进度） */
+  pause: () => void;
   /** 跳转到指定秒 */
   seek: (sec: number) => void;
   /** 播放一首搜索命中 */

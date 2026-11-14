@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { ImagePlus, PackageX, Upload } from 'lucide-react';
+import { PackageX, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import {
@@ -18,13 +18,11 @@ import {
 export function PluginManageActions({
   pluginKey,
   isOffline,
-  onToggleIcon,
   onToggleSubmit,
   onChanged,
 }: {
   pluginKey: string;
   isOffline: boolean;
-  onToggleIcon: () => void;
   onToggleSubmit: () => void;
   onChanged: () => void;
 }) {
@@ -39,14 +37,6 @@ export function PluginManageActions({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={onToggleIcon}
-        className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-3 py-1.5 text-xs text-white hover:bg-purple-700"
-      >
-        <ImagePlus className="h-3.5 w-3.5" />
-        上传图标
-      </button>
       <button
         type="button"
         onClick={onToggleSubmit}

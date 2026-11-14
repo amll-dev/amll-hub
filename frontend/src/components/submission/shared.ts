@@ -37,6 +37,20 @@ export function extractPlatformIds(metadata?: Record<string, unknown>): {
   };
 }
 
+/** 合并投稿单值列 ID 与 metadata 多值 ID，去重并保留顺序 */
+export function mergePlatformIds(single?: string, ids: string[] = []): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const id of [single ?? '', ...ids]) {
+    const v = id.trim();
+    if (v && !seen.has(v)) {
+      seen.add(v);
+      out.push(v);
+    }
+  }
+  return out;
+}
+
 /** 活动时间线条目类型 */
 export interface ActivityEntry {
   id: string;

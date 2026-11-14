@@ -14,6 +14,8 @@ import (
 	"path"
 	"strings"
 
+	_ "golang.org/x/image/webp" // 注册 WebP 解码器
+
 	"github.com/minio/minio-go/v7"
 	"github.com/sirupsen/logrus"
 )
@@ -102,7 +104,8 @@ func (s *DailyRecommendationService) buildThumb(ctx context.Context, srcKey, thu
 		return fmt.Errorf("读取原图内容失败: %w", err)
 	}
 
-	// 标准库解不了 webp / bmp（只注册了 jpeg / png / gif），这种情况直接放弃缩略图
+	// 标准库只带 jpeg / png / gif；webp 由 golang.org/x/image/webp 注册，
+	// bmp 等仍不支持，解码失败就放弃缩略图回落到原图
 	src, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
 		return fmt.Errorf("解码原图失败（该格式可能不支持缩略图）: %w", err)

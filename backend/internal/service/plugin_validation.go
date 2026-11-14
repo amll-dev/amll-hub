@@ -33,6 +33,10 @@ type PluginValidationResult struct {
 	Entry string `json:"entry"`
 	// ResourceEntries 包内声明的资源文件（resources/<entry>）
 	ResourceEntries []string `json:"resourceEntries"`
+	// Icon 从 manifest.icon 解码出的 PNG 字节，不参与接口序列化
+	Icon []byte `json:"-"`
+	// IconDetected 是否在包内检测到合法图标
+	IconDetected bool `json:"iconDetected"`
 }
 
 // PluginContainerLimits 容器上限
@@ -264,13 +268,25 @@ func (v *PluginValidator) validateZipReader(r io.ReaderAt, size int64) *PluginVa
 		return pluginFail(issues...)
 	}
 
+	icon, iconIssues := extractManifestIcon(manifest)
+	if len(iconIssues) > 0 {
+		return pluginFail(iconIssues...)
+	}
+
+	var result *PluginValidationResult
 	if kind == "function" {
 		if runtime, _ := manifest["runtime"].(string); runtime != "trusted-js" {
 			return pluginFailMsg("function packages must use the trusted-js runtime")
 		}
-		return v.assembleTrustedJS(descriptor, manifest, files)
+		result = v.assembleTrustedJS(descriptor, manifest, files)
+	} else {
+		result = v.assembleTheme(descriptor, manifest, files)
 	}
-	return v.assembleTheme(descriptor, manifest, files)
+	if result.OK && len(icon) > 0 {
+		result.Icon = icon
+		result.IconDetected = true
+	}
+	return result
 }
 
 func readZipEntry(f *zip.File, maxEntry, maxTotal int64) ([]byte, error) {

@@ -8,6 +8,7 @@ const resourceLinks = [
   { label: '音乐解析', to: '/ncm' },
   { label: '排行榜', to: '/ranking' },
   { label: '投稿', to: '/creator' },
+  { label: '文档', to: '/docs' },
 ];
 
 const ecosystemLinks = [{ label: 'GitHub 仓库', href: 'https://github.com/amll-dev/amll-hub' }];

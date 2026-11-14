@@ -59,6 +59,11 @@ const loadPlaceholder = () =>
 const loadNotFound = () => import('@/pages/NotFound').then((m) => ({ default: m.NotFound }));
 const loadTerms = () => import('@/pages/Terms').then((m) => ({ default: m.Terms }));
 const loadPrivacy = () => import('@/pages/Privacy').then((m) => ({ default: m.Privacy }));
+const loadDocsLayout = () =>
+  import('@/pages/docs/DocsLayout').then((m) => ({ default: m.DocsLayout }));
+const loadDocsHome = () => import('@/pages/docs/DocsHome').then((m) => ({ default: m.DocsHome }));
+const loadDocDetailPage = () =>
+  import('@/pages/docs/DocDetailPage').then((m) => ({ default: m.DocDetailPage }));
 
 export const Home = lazy(loadHome);
 export const NcmParse = lazy(loadNcmParse);
@@ -92,6 +97,9 @@ export const Placeholder = lazy(loadPlaceholder);
 export const NotFound = lazy(loadNotFound);
 export const Terms = lazy(loadTerms);
 export const Privacy = lazy(loadPrivacy);
+export const DocsLayout = lazy(loadDocsLayout);
+export const DocsHome = lazy(loadDocsHome);
+export const DocDetailPage = lazy(loadDocDetailPage);
 
 /** path → 页面 chunk 加载器，供导航链接 hover/focus 时预取（Vite 对重复 import 幂等） */
 export const pagePreloads: Record<string, () => Promise<unknown>> = {
@@ -104,7 +112,8 @@ export const pagePreloads: Record<string, () => Promise<unknown>> = {
   '/lyric/:filename/versions': loadLyricVersionsPage,
   '/online-lyric/:platform/:songId': loadOnlineViewLyricPage,
   '/stats': loadPlaceholder,
-  '/docs': loadPlaceholder,
+  '/docs': loadDocsHome,
+  '/docs/:slug': loadDocDetailPage,
   '/profile': loadProfileLayout,
   '/profile/info': loadProfileInfo,
   '/profile/security': loadProfileSecurity,
@@ -147,6 +156,8 @@ export function preloadRoute(path: string): void {
       loader = pagePreloads['/creator/requests/:id'];
     } else if (path.startsWith('/plugins/')) {
       loader = pagePreloads['/plugins/:key'];
+    } else if (path.startsWith('/docs/')) {
+      loader = pagePreloads['/docs/:slug'];
     }
   }
   loader?.().catch(() => {});

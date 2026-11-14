@@ -12,19 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// SetIcon 上传插件图标
-func (s *PluginStoreService) SetIcon(ctx context.Context, username string, pluginID int64, data []byte) (string, error) {
-	plugin, err := s.plugins.GetByID(ctx, pluginID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", ErrPluginNotFound
-		}
-		return "", err
-	}
-	return s.setIcon(ctx, username, plugin, data)
-}
-
-// SetIconByKey 按 plugin_key 上传插件图标
+// SetIconByKey 按 plugin_key 写入包内图标
 func (s *PluginStoreService) SetIconByKey(ctx context.Context, username, pluginKey string, data []byte) (string, error) {
 	plugin, err := s.plugins.GetByKey(ctx, pluginKey)
 	if err != nil {

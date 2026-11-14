@@ -1255,6 +1255,9 @@ export interface PluginValidateResult {
   manifest: Record<string, unknown> | null;
   issues: PluginIssue[];
   entry?: string;
+  iconDetected?: boolean;
+  /** 包内图标的 data URL，仅用于投稿页预览 */
+  iconPreview?: string;
 }
 
 export interface PluginSubmissionPayload {
@@ -1364,4 +1367,81 @@ export interface PluginManagementUpdatePayload {
   repoUrl: string;
   license: string;
   tags: string[];
+}
+
+// 文档
+
+export type DocGroup = 'lyrics' | 'api';
+export type DocStatus = 'draft' | 'published';
+
+/** 文档列表项 */
+export interface DocListItem {
+  id: number;
+  slug: string;
+  title: string;
+  group: DocGroup;
+  status: DocStatus;
+  sortOrder: number;
+  sizeBytes: number;
+  updatedBy: string;
+  updatedAt: string;
+  publishedAt?: string;
+}
+
+export interface DocListResult {
+  items: DocListItem[];
+  total: number;
+}
+
+export interface DocDetail {
+  id: number;
+  slug: string;
+  title: string;
+  group: DocGroup;
+  status: DocStatus;
+  sortOrder: number;
+  content: string;
+  createdBy: string;
+  updatedBy: string;
+  createdByInfo: UserInfo;
+  updatedByInfo: UserInfo;
+  publishedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DocDetailResult {
+  document: DocDetail;
+  canEdit: boolean;
+  revisionCount: number;
+}
+
+export interface DocPayload {
+  slug?: string;
+  title?: string;
+  group?: DocGroup;
+  status?: DocStatus;
+  sortOrder?: number;
+  content?: string;
+  note?: string;
+}
+
+export interface DocRevisionItem {
+  id: number;
+  documentId: number;
+  title: string;
+  note: string;
+  author: string;
+  authorInfo: UserInfo;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface DocRevisionListResult {
+  items: DocRevisionItem[];
+  total: number;
+}
+
+export interface DocRevisionDetail extends DocRevisionItem {
+  content: string;
 }

@@ -5,7 +5,9 @@ import { useAtomValue, useSetAtom } from 'jotai';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { playerActions } from '@/boot/PlayerBoot';
 import { audioEngine } from '@/editor/modules/audio/audio-engine';
+import { audioPlayingAtom } from '@/editor/modules/audio/states';
 import {
   isDirtyAtom,
   lyricLinesAtom,
@@ -254,6 +256,18 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
     });
     setToolMode(isCreator ? ToolMode.Edit : ToolMode.Sync);
   }, [ctx?.ttml, ctx?.fileName, isCreator, loadTtmlContent, setToolMode, submissionId]);
+
+  useEffect(() => {
+    playerActions.pause?.();
+    return () => {
+      audioEngine.forceStop();
+    };
+  }, []);
+
+  const editorAudioPlaying = useAtomValue(audioPlayingAtom);
+  useEffect(() => {
+    if (editorAudioPlaying) playerActions.pause?.();
+  }, [editorAudioPlaying]);
 
   // 加载参考音频：频谱、波形、打轴都依赖 audioEngine
   useEffect(() => {

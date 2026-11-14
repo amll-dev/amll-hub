@@ -174,6 +174,8 @@ interface PreloadedNext {
 /** 播放器命令式动作集合（由 PlayerBoot 每次渲染同步填充，usePlayer 展开给消费方） */
 export interface PlayerActions {
   toggle: () => void;
+  /** 仅暂停 */
+  pause: () => void;
   seek: (sec: number) => void;
   playHit: (hit: SearchHit) => Promise<void>;
   playNcmSong: (
@@ -509,6 +511,14 @@ export function PlayerBoot() {
       if (transitionRef.current) standbyElRef.current?.pause();
     }
   }, [track, ensureAudioContext, setPlaying]);
+
+  // 静音式暂停
+  const pause = useCallback(() => {
+    const audio = activeElRef.current;
+    if (audio && !audio.paused) audio.pause();
+    // 淡变中 standby 也在出声，一并暂停
+    if (transitionRef.current) standbyElRef.current?.pause();
+  }, []);
 
   // 预解析并预加载预定下一首到 standby 元素
   const preloadNext = useCallback(async () => {
@@ -1523,6 +1533,7 @@ export function PlayerBoot() {
   // 渲染期间同步赋值（先于同级消费组件的渲染），始终写入最新闭包
   Object.assign(playerActions, {
     toggle,
+    pause,
     seek,
     playHit,
     playNcmSong,

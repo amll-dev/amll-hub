@@ -18,12 +18,12 @@ use super::whitelist::{add_cloud_music, add_pure_music, is_in_whitelist};
 
 /// 无歌词解析消息体
 #[derive(Debug, Deserialize)]
-struct NotFoundMessage {
-    platform: String,
+pub struct NotFoundMessage {
+    pub platform: String,
     #[serde(rename = "platformId")]
-    platform_id: String,
+    pub platform_id: String,
     #[serde(rename = "clientIp", default)]
-    client_ip: Option<String>,
+    pub client_ip: Option<String>,
 }
 
 /// 启动无歌词解析消费循环（有界并发，QoS 已在 init_rabbitmq 中设为 NF_CONCURRENCY）
@@ -163,11 +163,20 @@ async fn handle_message(
 
 /// 单次处理
 async fn process_once(msg: &NotFoundMessage, app: &Arc<AppState>) -> Result<()> {
+    process_with_mode(msg, app, false).await.map(|_| ())
+}
+
+/// 单次处理，返回是否写入了有效元数据
+pub async fn process_with_mode(
+    msg: &NotFoundMessage,
+    app: &Arc<AppState>,
+    best_effort: bool,
+) -> Result<bool> {
     // 1. 检查白名单（Redis）
     let mut redis_conn = app.redis.clone();
     if is_in_whitelist(&mut redis_conn, &msg.platform, &msg.platform_id).await? {
         info!(platform = %msg.platform, platform_id = %msg.platform_id, "already in whitelist, skip");
-        return Ok(());
+        return Ok(true);
     }
 
     // 2. 调用 API 解析分类
@@ -233,6 +242,9 @@ async fn process_once(msg: &NotFoundMessage, app: &Arc<AppState>) -> Result<()> 
         }
         ParseCategory::NotFound => "not_found",
         ParseCategory::ApiFailed => {
+            if best_effort {
+                return Ok(false);
+            }
             // API 瞬时故障不是最终状态：返回 Err 触发应用层重试，
             // 重试耗尽后消息进 DLQ 等待人工处理，而不是被 ack 静默丢弃
             anyhow::bail!(
@@ -246,9 +258,10 @@ async fn process_once(msg: &NotFoundMessage, app: &Arc<AppState>) -> Result<()> 
     // 4. 更新 not_found_requests 表的 category 及元数据
     if let Err(e) = update_category_pg(&app.db, msg, category_str, &result).await {
         warn!(error = %e, "update not_found category failed");
+        return Ok(false);
     }
 
-    Ok(())
+    Ok(!result.song_name.is_empty())
 }
 
 /// 更新 not_found_requests 的 category 及歌曲元数据

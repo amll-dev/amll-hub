@@ -49,6 +49,7 @@ type RouterDeps struct {
 	PluginStore  *handler.PluginStoreHandler
 	PluginReview *handler.PluginReviewHandler
 	PluginAdmin  *handler.PluginAdminHandler
+	Document     *handler.DocumentHandler
 
 	ReviewerCache *middleware.ReviewerCache
 	AdminCache    *middleware.AdminCache
@@ -92,6 +93,7 @@ func New(deps RouterDeps) *gin.Engine {
 	pluginStoreH := deps.PluginStore
 	pluginReviewH := deps.PluginReview
 	pluginAdminH := deps.PluginAdmin
+	docH := deps.Document
 	reviewerCache := deps.ReviewerCache
 	adminCache := deps.AdminCache
 	jwtSecret := deps.JWTSecret
@@ -213,6 +215,8 @@ func New(deps RouterDeps) *gin.Engine {
 		{
 			auth.POST("/login", authH.Login)
 			auth.POST("/login-code", authH.LoginByCode)
+			auth.POST("/login/mfa", authH.LoginMfa)
+			auth.POST("/login/mfa/send-code", authH.SendLoginMfaCode)
 			auth.POST("/register", authH.Register)
 			auth.POST("/send-code", authH.SendCode)
 			auth.POST("/check-user", authH.CheckUser)
@@ -240,6 +244,13 @@ func New(deps RouterDeps) *gin.Engine {
 			protected.POST("/identity/code", authH.SendIdentityCode)
 			protected.POST("/identity/verify", authH.VerifyIdentity)
 			protected.POST("/avatar", authH.UploadAvatar)
+			// MFA 管理
+			protected.GET("/mfa", authH.GetMfaStatus)
+			protected.POST("/mfa/setup/start", authH.StartMfaSetup)
+			protected.POST("/mfa/setup/send-code", authH.SendMfaSetupCode)
+			protected.POST("/mfa/setup/complete", authH.CompleteMfaSetup)
+			protected.POST("/mfa/disable", authH.DisableMfa)
+			protected.POST("/mfa/preferred", authH.SetPreferredMfa)
 			// 扫码登录：App 侧确认 / 取消
 			protected.POST("/qrcode/scanned", authH.MarkQRCodeScanned)
 			protected.POST("/qrcode/confirm", authH.ConfirmQRCode)
@@ -270,7 +281,6 @@ func New(deps RouterDeps) *gin.Engine {
 			storeAuth.GET("/submissions/:id", pluginStoreH.GetMine)
 			storeAuth.PUT("/submissions/:id", pluginStoreH.UpdateMine)
 			storeAuth.GET("/submissions/:id/artifact", pluginStoreH.DownloadMineArtifact)
-			storeAuth.POST("/plugins/:key/icon", pluginStoreH.UploadIcon)
 			storeAuth.POST("/plugins/:key/comments", pluginStoreH.CreateComment)
 			storeAuth.POST("/plugins/:key/ratings", pluginStoreH.RatePlugin)
 			// 发布者插件管理（创作中心）
@@ -303,6 +313,14 @@ func New(deps RouterDeps) *gin.Engine {
 			storeAdmin.POST("/plugins/:id/status", pluginAdminH.Status)
 			storeAdmin.GET("/audit", pluginAdminH.Audit)
 			storeAdmin.GET("/stats", pluginAdminH.Stats)
+		}
+
+		// 文档：公开只读（OptionalAuth 用于回传 canEdit）
+		docsPub := api.Group("/docs")
+		docsPub.Use(middleware.OptionalAuth(jwtSecret))
+		{
+			docsPub.GET("", docH.ListPublic)
+			docsPub.GET("/:slug", docH.GetPublic)
 		}
 
 		// 投稿模块
@@ -428,6 +446,17 @@ func New(deps RouterDeps) *gin.Engine {
 				manageGrp.GET("/announcements", announcementH.List)
 				manageGrp.POST("/announcements", announcementH.Publish)
 				manageGrp.GET("/announcements/:id", announcementH.Status)
+
+				// 文档管理：静态段 /upload、/images 必须先于 /:id 注册
+				manageGrp.GET("/docs", docH.ListManage)
+				manageGrp.POST("/docs", docH.Create)
+				manageGrp.POST("/docs/upload", docH.UploadMarkdown)
+				manageGrp.POST("/docs/images", docH.UploadImage)
+				manageGrp.PUT("/docs/:id", docH.Update)
+				manageGrp.DELETE("/docs/:id", docH.Delete)
+				manageGrp.GET("/docs/:id/revisions", docH.ListRevisions)
+				manageGrp.GET("/docs/:id/revisions/:revId", docH.GetRevision)
+				manageGrp.POST("/docs/:id/revisions/:revId/rollback", docH.Rollback)
 			}
 
 			// 消息中心（静态段优先于 :id 注册）

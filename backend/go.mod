@@ -1,6 +1,6 @@
 module github.com/amll-dev/amll-hub/backend
 
-go 1.25.1
+go 1.26.0
 
 require (
 	github.com/gin-contrib/cors v1.7.2
@@ -20,16 +20,17 @@ require (
 require github.com/cybaka520/AMLLHub-Music-API v0.0.0-20261101074547-e28507b69fc7
 
 require (
+	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/gin-contrib/gzip v1.2.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/xiaowumin-mark/amll-ttml v0.0.0-20260531031314-ba3d96f45513
 	github.com/yuin/goldmark v1.8.7
+	golang.org/x/image v0.48.0
 )
 
 require (
-	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
@@ -94,9 +95,9 @@ require (
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20240222234643-814bf88cf225 // indirect
 	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

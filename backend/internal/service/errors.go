@@ -13,6 +13,24 @@ var ErrInvalidCredentials = errors.New("invalid credentials")
 // ErrInvalidCode 验证码错误
 var ErrInvalidCode = errors.New("invalid verification code")
 
+// ErrMfaChallengeExpired MFA 验证会话已过期，需要重新登录
+var ErrMfaChallengeExpired = errors.New("mfa challenge expired")
+
+// ErrMfaTooManyAttempts MFA 验证失败次数过多
+var ErrMfaTooManyAttempts = errors.New("too many mfa attempts")
+
+// ErrMfaMethodUnavailable 请求的 MFA 因子不可用
+var ErrMfaMethodUnavailable = errors.New("mfa method unavailable")
+
+// ErrMfaSetupRequired 组织要求先绑定 MFA
+var ErrMfaSetupRequired = errors.New("mfa setup required")
+
+// ErrMfaOperationFailed MFA 管理操作被 Casdoor 拒绝
+var ErrMfaOperationFailed = errors.New("mfa operation failed")
+
+// ErrPasswordUpdateRequired 登录前需要先修改密码
+var ErrPasswordUpdateRequired = errors.New("password update required")
+
 // ErrCodeExpired 验证码已失效（已被使用或已过期，需重新获取）
 var ErrCodeExpired = errors.New("verification code expired")
 
@@ -137,6 +155,17 @@ var ErrNotificationNotFound = errors.New("notification not found")
 
 // ErrAnnouncementNotFound 公告不存在
 var ErrAnnouncementNotFound = errors.New("announcement not found")
+
+// 文档模块
+
+// ErrDocumentNotFound 文档不存在（草稿对无权限者同样返回该错误，避免泄露存在性）
+var ErrDocumentNotFound = errors.New("document not found")
+
+// ErrDocumentRevisionNotFound 文档版本不存在
+var ErrDocumentRevisionNotFound = errors.New("document revision not found")
+
+// ErrDocumentSlugTaken 文档 slug 已被占用
+var ErrDocumentSlugTaken = errors.New("document slug taken")
 
 // GitHub 登录/绑定模块
 

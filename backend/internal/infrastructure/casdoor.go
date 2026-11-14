@@ -10,7 +10,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"sync"
@@ -58,7 +57,17 @@ type CasdoorUser struct {
 	Avatar      string `json:"avatar"`
 	Email       string `json:"email"`
 	Phone       string `json:"phone"`
+	CountryCode string `json:"countryCode"`
 	Password    string `json:"password,omitempty"`
+
+	// MFA 状态
+	PreferredMfaType string     `json:"preferredMfaType"`
+	TotpSecret       string     `json:"totpSecret"`
+	MfaPhoneEnabled  bool       `json:"mfaPhoneEnabled"`
+	MfaEmailEnabled  bool       `json:"mfaEmailEnabled"`
+	MfaRadiusEnabled bool       `json:"mfaRadiusEnabled"`
+	MfaPushEnabled   bool       `json:"mfaPushEnabled"`
+	MultiFactorAuths []MfaProps `json:"multiFactorAuths"`
 }
 
 // casdoorResponse Casdoor 通用响应
@@ -67,6 +76,75 @@ type casdoorResponse struct {
 	Msg    string          `json:"msg"`
 	Sub    string          `json:"sub"`
 	Data   json.RawMessage `json:"data"`
+	Data2  json.RawMessage `json:"data2"`
+}
+
+// MfaProps Casdoor 多因素认证因子
+type MfaProps struct {
+	Enabled            bool     `json:"enabled"`
+	IsPreferred        bool     `json:"isPreferred"`
+	MfaType            string   `json:"mfaType"`
+	Secret             string   `json:"secret"`
+	CountryCode        string   `json:"countryCode"`
+	URL                string   `json:"url"`
+	RecoveryCodes      []string `json:"recoveryCodes"`
+	MfaRememberInHours int      `json:"mfaRememberInHours"`
+}
+
+// CasdoorLoginState /api/login 的登录状态
+type CasdoorLoginState int
+
+const (
+	// CasdoorLoginSuccess 登录成功，UserID 为 org/name
+	CasdoorLoginSuccess CasdoorLoginState = iota
+	// CasdoorLoginMfaRequired 需要二次验证
+	CasdoorLoginMfaRequired
+	// CasdoorLoginMfaSetupRequired 组织要求先绑定 MFA
+	CasdoorLoginMfaSetupRequired
+	// CasdoorLoginUpdatePassword 需要先修改密码
+	CasdoorLoginUpdatePassword
+)
+
+// CasdoorLoginResult /api/login 的解析结果
+type CasdoorLoginResult struct {
+	State      CasdoorLoginState
+	UserID     string
+	MfaMethods []MfaProps
+	Cookies    []*http.Cookie
+}
+
+// parseLoginResult 解析 /api/login 响应，data 可能是 userId / NextMfa / RequiredMfa / RequiredUpdatePassword
+func parseLoginResult(cr *casdoorResponse, cookies []*http.Cookie) (*CasdoorLoginResult, error) {
+	result := &CasdoorLoginResult{Cookies: cookies}
+
+	var data string
+	if len(cr.Data) > 0 {
+		if err := json.Unmarshal(cr.Data, &data); err != nil {
+			return nil, fmt.Errorf("decode login data: %w", err)
+		}
+	}
+
+	switch data {
+	case "NextMfa":
+		result.State = CasdoorLoginMfaRequired
+		if len(cr.Data2) > 0 {
+			if err := json.Unmarshal(cr.Data2, &result.MfaMethods); err != nil {
+				return nil, fmt.Errorf("decode mfa methods: %w", err)
+			}
+		}
+	case "RequiredMfa":
+		result.State = CasdoorLoginMfaSetupRequired
+		if len(cr.Data2) > 0 {
+			_ = json.Unmarshal(cr.Data2, &result.MfaMethods)
+		}
+	case "RequiredUpdatePassword":
+		result.State = CasdoorLoginUpdatePassword
+	default:
+		result.State = CasdoorLoginSuccess
+		result.UserID = data
+	}
+
+	return result, nil
 }
 
 // basicAuthHeader 生成 Basic Auth header
@@ -89,15 +167,6 @@ func (c *CasdoorClient) doWithBasicAuth(ctx context.Context, method, path string
 
 // doWithBasicAuthAndCookies 发请求并返回响应中设置的 Cookie（用于 send-verification-code 等需要保持会话的场景）
 func (c *CasdoorClient) doWithBasicAuthAndCookies(ctx context.Context, method, path string, body io.Reader, contentType string) (*casdoorResponse, []*http.Cookie, error) {
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-		Jar:     jar,
-	}
-
 	req, err := http.NewRequestWithContext(ctx, method, c.cfg.Endpoint+path, body)
 	if err != nil {
 		return nil, nil, err
@@ -107,7 +176,8 @@ func (c *CasdoorClient) doWithBasicAuthAndCookies(ctx context.Context, method, p
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	resp, err := client.Do(req)
+	// 复用 c.http 的连接池，尽量让登录与随后的 MFA 校验走同一条 keep-alive 连接
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("casdoor request failed: %w", err)
 	}
@@ -122,7 +192,15 @@ func (c *CasdoorClient) doWithBasicAuthAndCookies(ctx context.Context, method, p
 	if err := json.Unmarshal(raw, &cr); err != nil {
 		return nil, nil, fmt.Errorf("decode casdoor response: %w, body: %s", err, string(raw))
 	}
-	return &cr, resp.Cookies(), nil
+	respCookies := resp.Cookies()
+	if strings.HasPrefix(path, "/api/login") {
+		logrus.WithFields(logrus.Fields{
+			"path":              path,
+			"resp_cookie_count": len(respCookies),
+			"resp_cookie_names": cookieNames(respCookies),
+		}).Info("casdoor login response cookies")
+	}
+	return &cr, respCookies, nil
 }
 
 // doWithBasicAuthWithCookie 带 Cookie 发请求（用于 set-password 等需要会话的场景）
@@ -143,30 +221,35 @@ func (c *CasdoorClient) doWithBasicAuthWithCookie(ctx context.Context, method, p
 
 // 带 Cookie 发请求并捕获响应中更新的 Cookie
 func (c *CasdoorClient) doWithBasicAuthWithCookieJar(ctx context.Context, method, path string, body io.Reader, contentType string, cookies []*http.Cookie) (*casdoorResponse, []*http.Cookie, error) {
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-		Jar:     jar,
-	}
+	return c.doWithCookieHeaderCore(ctx, method, path, body, contentType, cookies, true)
+}
 
+// doWithCookieHeaderCore 带 Cookie 发请求，basicAuth 控制是否附加应用凭据。
+// 统一按 Cookie 头发送，不做 cookie jar 的域名/路径过滤；并复用 c.http 的连接池。
+func (c *CasdoorClient) doWithCookieHeaderCore(ctx context.Context, method, path string, body io.Reader, contentType string, cookies []*http.Cookie, basicAuth bool) (*casdoorResponse, []*http.Cookie, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.cfg.Endpoint+path, body)
 	if err != nil {
 		return nil, nil, err
 	}
-	req.Header.Set("Authorization", c.basicAuthHeader())
+	if basicAuth {
+		req.Header.Set("Authorization", c.basicAuthHeader())
+	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-
-	// 将输入 cookies 注入 jar
-	if len(cookies) > 0 {
-		jar.SetCookies(req.URL, cookies)
+	for _, ck := range cookies {
+		req.AddCookie(ck)
+	}
+	if strings.HasPrefix(path, "/api/login") || strings.HasPrefix(path, "/api/mfa/") {
+		logrus.WithFields(logrus.Fields{
+			"path":         path,
+			"basic_auth":   basicAuth,
+			"cookie_count": len(cookies),
+			"cookie_names": cookieNames(cookies),
+		}).Info("casdoor request cookies")
 	}
 
-	resp, err := client.Do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("casdoor request failed: %w", err)
 	}
@@ -178,7 +261,17 @@ func (c *CasdoorClient) doWithBasicAuthWithCookieJar(ctx context.Context, method
 	}
 
 	// 合并 cookies
-	merged := mergeCookies(cookies, resp.Cookies())
+	respCookies := resp.Cookies()
+	merged := mergeCookies(cookies, respCookies)
+	if strings.HasPrefix(path, "/api/login") || strings.HasPrefix(path, "/api/mfa/") {
+		logrus.WithFields(logrus.Fields{
+			"path":                path,
+			"resp_cookie_count":   len(respCookies),
+			"resp_cookie_names":   cookieNames(respCookies),
+			"merged_cookie_count": len(merged),
+			"merged_cookie_names": cookieNames(merged),
+		}).Info("casdoor response cookies")
+	}
 
 	var cr casdoorResponse
 	if err := json.Unmarshal(raw, &cr); err != nil {
@@ -194,6 +287,21 @@ func (c *CasdoorClient) doWithBasicAuthWithCookieJar(ctx context.Context, method
 	}
 
 	return &cr, merged, nil
+}
+
+// doWithCookieHeader 直接按 Cookie 头发送会话（不带 Basic Auth）。
+// Casdoor 的 /api/login 二次验证、mfaAuth 发码、MFA 绑定 verify/enable 都依赖这份会话。
+func (c *CasdoorClient) doWithCookieHeader(ctx context.Context, method, path string, body io.Reader, contentType string, cookies []*http.Cookie) (*casdoorResponse, []*http.Cookie, error) {
+	return c.doWithCookieHeaderCore(ctx, method, path, body, contentType, cookies, false)
+}
+
+// cookieNames 只返回 Cookie 名，避免把会话值写进日志
+func cookieNames(cookies []*http.Cookie) []string {
+	names := make([]string, 0, len(cookies))
+	for _, ck := range cookies {
+		names = append(names, ck.Name)
+	}
+	return names
 }
 
 // 合并两组 cookies
@@ -311,111 +419,47 @@ func (c *CasdoorClient) appOwner() string {
 	return c.cfg.Organization
 }
 
-// Login 用用户凭据登录（OAuth 2.0 密码模式），返回用户信息和 access_token
-func (c *CasdoorClient) Login(ctx context.Context, username, password string) (*CasdoorUser, string, error) {
-	// 使用 OAuth 2.0 Resource Owner Password Credentials Grant
-	// 需要在 Casdoor 应用中启用 "Password Credentials Grant"
+// LoginWithPassword 用用户名/密码登录（Casdoor /api/login）
+//
+// 与 OAuth 密码模式不同，这个接口会走 Casdoor 的 MFA 流程：
+// 返回 NextMfa 时说明密码已通过，但还需要二次验证。
+func (c *CasdoorClient) LoginWithPassword(ctx context.Context, username, password string) (*CasdoorLoginResult, error) {
 	payload := map[string]any{
-		"grant_type":    "password",
-		"client_id":     c.cfg.ClientID,
-		"client_secret": c.cfg.ClientSecret,
-		"username":      username,
-		"password":      password,
+		"organization": c.cfg.Organization,
+		"application":  c.cfg.Application,
+		"type":         "login",
+		"username":     username,
+		"password":     password,
+		"autoSignin":   true,
 	}
+
 	jsonBody, err := json.Marshal(payload)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.cfg.Endpoint+"/api/login/oauth/access_token", bytes.NewReader(jsonBody))
-	if err != nil {
-		return nil, "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
+	logrus.WithField("username", username).Info("casdoor /api/login (password) request")
 
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, "", fmt.Errorf("casdoor login request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxCasdoorResponseBytes))
-	if err != nil {
-		return nil, "", fmt.Errorf("read casdoor login response: %w", err)
-	}
-	body := strings.TrimSpace(string(raw))
-
-	logrus.WithFields(logrus.Fields{
-		"status_code":      resp.StatusCode,
-		"body_len":         len(body),
-		"has_access_token": strings.Contains(body, "access_token"),
-	}).Info("casdoor /api/login/oauth/access_token response")
-
-	// OAuth token 响应：{"access_token":"...","token_type":"Bearer","expires_in":10080,...}
-	// 错误响应：{"error":"...","error_description":"..."} 或 Casdoor 标准格式
-	var tokenResp struct {
-		AccessToken      string `json:"access_token"`
-		TokenType        string `json:"token_type"`
-		ExpiresIn        int    `json:"expires_in"`
-		RefreshToken     string `json:"refresh_token"`
-		Scope            string `json:"scope"`
-		Error            string `json:"error"`
-		ErrorDescription string `json:"error_description"`
-		// Casdoor 标准错误格式
-		Status string `json:"status"`
-		Msg    string `json:"msg"`
-	}
-	if err := json.Unmarshal(raw, &tokenResp); err != nil {
-		return nil, "", fmt.Errorf("decode token response: %w, body: %s", err, body)
-	}
-
-	if tokenResp.Error != "" {
-		msg := tokenResp.ErrorDescription
-		if msg == "" {
-			msg = tokenResp.Error
-		}
-		return nil, "", errors.New(msg)
-	}
-	if tokenResp.Status == "error" {
-		msg := tokenResp.Msg
-		if msg == "" {
-			msg = "casdoor login failed"
-		}
-		return nil, "", errors.New(msg)
-	}
-	if tokenResp.AccessToken == "" {
-		return nil, "", fmt.Errorf("casdoor login ok but no access_token, body: %s", body)
-	}
-
-	// 用 access_token 获取完整用户信息
-	user, err := c.getAccount(ctx, tokenResp.AccessToken)
-	if err != nil {
-		return nil, "", err
-	}
-	return user, tokenResp.AccessToken, nil
-}
-
-// getAccount 用 access_token 获取当前登录用户信息
-func (c *CasdoorClient) getAccount(ctx context.Context, accessToken string) (*CasdoorUser, error) {
-	cr, err := c.doWithBearer(ctx, "GET", "/api/get-account", nil, "", accessToken)
+	cr, cookies, err := c.doWithBasicAuthAndCookies(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json")
 	if err != nil {
 		return nil, err
 	}
 	if err := checkStatus(cr); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error":       err,
+			"casdoor_msg": cr.Msg,
+		}).Warn("casdoor login (password) failed")
 		return nil, err
 	}
-	var user CasdoorUser
-	if err := json.Unmarshal(cr.Data, &user); err != nil {
-		return nil, fmt.Errorf("decode user: %w", err)
-	}
-	return &user, nil
+
+	return parseLoginResult(cr, cookies)
 }
 
 // LoginByCode 用验证码登录（Casdoor /api/login 接口）。
 //
 // 该接口不返回 OAuth token，而是通过 Set-Cookie 下发会话，因此这里用 cookie jar 捕获，
 // 让「以登录用户身份」的接口（如 /api/reset-email-or-phone）也能复用这份会话。
-func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string) (*CasdoorUser, []*http.Cookie, error) {
+func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string) (*CasdoorLoginResult, error) {
 	isEmail := strings.Contains(dest, "@")
 
 	payload := map[string]any{
@@ -429,7 +473,7 @@ func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string) (*Ca
 
 	jsonBody, err := json.Marshal(payload)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -440,23 +484,234 @@ func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string) (*Ca
 
 	cr, cookies, err := c.doWithBasicAuthAndCookies(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := checkStatus(cr); err != nil {
 		logrus.WithFields(logrus.Fields{
 			"error":       err,
 			"casdoor_msg": cr.Msg,
 		}).Warn("casdoor login (code) failed")
+		return nil, err
+	}
+
+	return parseLoginResult(cr, cookies)
+}
+
+// VerifyMfaLogin 用 MFA 验证码继续完成登录
+func (c *CasdoorClient) VerifyMfaLogin(ctx context.Context, cookies []*http.Cookie, mfaType, passcode, recoveryCode string) (*CasdoorLoginResult, error) {
+	payload := map[string]any{
+		"organization": c.cfg.Organization,
+		"application":  c.cfg.Application,
+		"type":         "login",
+		"mfaType":      mfaType,
+		"passcode":     passcode,
+		"recoveryCode": recoveryCode,
+		"autoSignin":   true,
+	}
+
+	jsonBody, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"mfa_type":     mfaType,
+		"has_passcode": passcode != "",
+		"has_recovery": recoveryCode != "",
+	}).Info("casdoor /api/login (mfa) request")
+
+	// 二次验证只依赖第一次登录返回的会话 cookie
+	cr, merged, err := c.doWithCookieHeader(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json", cookies)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkStatus(cr); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error":       err,
+			"casdoor_msg": cr.Msg,
+		}).Warn("casdoor login (mfa) failed")
+		return nil, err
+	}
+
+	return parseLoginResult(cr, merged)
+}
+
+// SendMfaCode 向 MFA 会话对应的邮箱/手机发送验证码
+func (c *CasdoorClient) SendMfaCode(ctx context.Context, cookies []*http.Cookie, checkType, dest, captchaType, captchaToken string) ([]*http.Cookie, error) {
+	// Casdoor 要求 captchaType 必填；应用未配置人机验证时传 none
+	if captchaType == "" {
+		captchaType = "none"
+	}
+
+	form := url.Values{}
+	form.Set("type", checkType)
+	form.Set("dest", dest)
+	form.Set("applicationId", c.appID())
+	form.Set("method", "mfaAuth")
+	form.Set("captchaType", captchaType)
+	form.Set("clientSecret", c.cfg.ClientSecret)
+	form.Set("captchaToken", captchaToken)
+
+	logrus.WithFields(logrus.Fields{
+		"type":            checkType,
+		"dest":            dest,
+		"captchaType":     captchaType,
+		"captchaTokenLen": len(captchaToken),
+	}).Info("casdoor send-verification-code (mfa) request")
+
+	cr, merged, err := c.doWithCookieHeader(ctx, "POST", "/api/send-verification-code", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", cookies)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkStatus(cr); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error":       err,
+			"casdoor_msg": cr.Msg,
+		}).Warn("casdoor send-verification-code (mfa) failed")
+		return nil, err
+	}
+	return merged, nil
+}
+
+// SendMfaSetupCode 向用户已绑定的邮箱/手机发送 MFA 绑定验证码
+func (c *CasdoorClient) SendMfaSetupCode(ctx context.Context, checkUser, checkType, dest, countryCode, captchaType, captchaToken string) ([]*http.Cookie, error) {
+	if captchaType == "" {
+		captchaType = "none"
+	}
+
+	clientSecret := c.cfg.ClientSecret
+	token := captchaToken
+	if captchaType == "Default" {
+		// 与登录发码一致：Default 类型把 "captchaId:answer" 拆成 clientSecret 和 token
+		if idx := strings.Index(captchaToken, ":"); idx > 0 {
+			clientSecret = captchaToken[:idx]
+			token = captchaToken[idx+1:]
+		}
+	}
+
+	form := url.Values{}
+	form.Set("type", checkType)
+	form.Set("dest", dest)
+	form.Set("countryCode", countryCode)
+	form.Set("applicationId", c.appID())
+	form.Set("method", "mfaSetup")
+	form.Set("checkUser", checkUser)
+	form.Set("captchaType", captchaType)
+	form.Set("clientSecret", clientSecret)
+	form.Set("captchaToken", token)
+
+	logrus.WithFields(logrus.Fields{
+		"type":        checkType,
+		"dest":        dest,
+		"checkUser":   checkUser,
+		"captchaType": captchaType,
+	}).Info("casdoor send-verification-code (mfaSetup) request")
+
+	cr, cookies, err := c.doWithBasicAuthAndCookies(ctx, "POST", "/api/send-verification-code", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return nil, err
+	}
+	if err := checkStatus(cr); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error":       err,
+			"casdoor_msg": cr.Msg,
+		}).Warn("casdoor send-verification-code (mfaSetup) failed")
+		return nil, err
+	}
+	return cookies, nil
+}
+
+// MfaSetupInitiate 初始化 MFA 绑定，返回 secret / otpauth URL / 恢复码。
+func (c *CasdoorClient) MfaSetupInitiate(ctx context.Context, owner, name, mfaType string) (*MfaProps, []*http.Cookie, error) {
+	form := url.Values{}
+	form.Set("owner", owner)
+	form.Set("name", name)
+	form.Set("mfaType", mfaType)
+
+	cr, cookies, err := c.doWithBasicAuthWithCookieJar(ctx, "POST", "/api/mfa/setup/initiate", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := checkStatus(cr); err != nil {
 		return nil, nil, err
 	}
 
-	// 验证码校验通过，根据邮箱/手机查询用户
-	if isEmail {
-		user, err := c.GetUserByEmail(ctx, dest)
-		return user, cookies, err
+	var props MfaProps
+	if len(cr.Data) > 0 {
+		if err := json.Unmarshal(cr.Data, &props); err != nil {
+			return nil, nil, fmt.Errorf("decode mfa setup props: %w", err)
+		}
 	}
-	user, err := c.GetUserByPhone(ctx, dest)
-	return user, cookies, err
+	return &props, cookies, nil
+}
+
+// MfaSetupVerify 校验 MFA 绑定验证码；返回的 cookie 需要传给 MfaSetupEnable。
+func (c *CasdoorClient) MfaSetupVerify(ctx context.Context, cookies []*http.Cookie, owner, name, mfaType, passcode, secret, dest, countryCode string) ([]*http.Cookie, error) {
+	form := url.Values{}
+	form.Set("owner", owner)
+	form.Set("name", name)
+	form.Set("mfaType", mfaType)
+	form.Set("passcode", passcode)
+	form.Set("secret", secret)
+	form.Set("dest", dest)
+	form.Set("countryCode", countryCode)
+
+	cr, merged, err := c.doWithCookieHeader(ctx, "POST", "/api/mfa/setup/verify", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", cookies)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkStatus(cr); err != nil {
+		return nil, err
+	}
+	return merged, nil
+}
+
+// MfaSetupEnable 启用 MFA 因子。
+func (c *CasdoorClient) MfaSetupEnable(ctx context.Context, cookies []*http.Cookie, owner, name, mfaType, secret, dest, countryCode, recoveryCode string) ([]*http.Cookie, error) {
+	form := url.Values{}
+	form.Set("owner", owner)
+	form.Set("name", name)
+	form.Set("mfaType", mfaType)
+	form.Set("secret", secret)
+	form.Set("dest", dest)
+	form.Set("countryCode", countryCode)
+	form.Set("recoveryCodes", recoveryCode)
+
+	cr, merged, err := c.doWithCookieHeader(ctx, "POST", "/api/mfa/setup/enable", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", cookies)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkStatus(cr); err != nil {
+		return nil, err
+	}
+	return merged, nil
+}
+
+// DeleteMfa 关闭用户全部 MFA 因子
+func (c *CasdoorClient) DeleteMfa(ctx context.Context, owner, name string) error {
+	form := url.Values{}
+	form.Set("owner", owner)
+	form.Set("name", name)
+
+	cr, err := c.doWithBasicAuth(ctx, "POST", "/api/delete-mfa", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return err
+	}
+	return checkStatus(cr)
+}
+
+// SetPreferredMfa 设置首选 MFA 因子。
+func (c *CasdoorClient) SetPreferredMfa(ctx context.Context, owner, name, mfaType string) error {
+	form := url.Values{}
+	form.Set("owner", owner)
+	form.Set("name", name)
+	form.Set("mfaType", mfaType)
+
+	cr, err := c.doWithBasicAuth(ctx, "POST", "/api/set-preferred-mfa", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return err
+	}
+	return checkStatus(cr)
 }
 
 // 根据手机号查询用户
