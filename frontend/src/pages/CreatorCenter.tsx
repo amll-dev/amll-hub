@@ -31,6 +31,7 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { parseMarkupText } from '@/lib/markup';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
+import { ReviewerRecruitmentPanel } from '@/components/recruitment/ReviewerRecruitmentPanel';
 import { NavItem } from '@/components/NavItem';
 import { PageContainer } from '@/components/PageContainer';
 import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
@@ -764,7 +765,7 @@ export function CreatorCenter() {
                 transition={{ duration: 0.15 }}
                 className="col-start-1 row-start-1 min-w-0 rounded-lg border border-line bg-card p-6"
               >
-                <h2 className="text-xl font-bold tracking-tight text-foreground">审核招募</h2>
+                <ReviewerRecruitmentPanel />
               </motion.div>
             )}
             {/* 首页占位 */}
