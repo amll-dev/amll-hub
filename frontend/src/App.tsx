@@ -73,9 +73,42 @@ function LazyAuthDialog() {
   );
 }
 
+/** 按路径生成文档标题（多标签页可区分；详情页用通用标题） */
+function titleForPath(pathname: string): string {
+  if (pathname === '/') return 'AMLL Hub';
+  if (pathname.startsWith('/lyrics-search')) return '在线歌词搜索 · AMLL Hub';
+  if (pathname.startsWith('/ranking')) return '排行榜 · AMLL Hub';
+  if (pathname.startsWith('/daily')) return '每日推荐 · AMLL Hub';
+  if (pathname.startsWith('/ncm')) return '歌单解析 · AMLL Hub';
+  if (pathname.startsWith('/online-lyric')) return '在线歌词 · AMLL Hub';
+  if (pathname.startsWith('/lyric/')) return '歌词详情 · AMLL Hub';
+  if (pathname.startsWith('/docs')) return '文档 · AMLL Hub';
+  if (pathname.startsWith('/plugins')) return '插件 · AMLL Hub';
+  if (pathname.startsWith('/creator')) return '创作中心 · AMLL Hub';
+  if (pathname.startsWith('/review')) return '审核中心 · AMLL Hub';
+  if (pathname.startsWith('/profile')) return '个人中心 · AMLL Hub';
+  if (pathname.startsWith('/user/')) return '用户主页 · AMLL Hub';
+  if (pathname.startsWith('/messages')) return '消息 · AMLL Hub';
+  if (pathname.startsWith('/bind-account')) return '绑定账号 · AMLL Hub';
+  if (pathname.startsWith('/register')) return '注册 · AMLL Hub';
+  if (pathname.startsWith('/reset-password')) return '重置密码 · AMLL Hub';
+  if (pathname.startsWith('/terms')) return '服务条款 · AMLL Hub';
+  if (pathname.startsWith('/privacy')) return '隐私政策 · AMLL Hub';
+  if (pathname.startsWith('/stats')) return '统计 · AMLL Hub';
+  return 'AMLL Hub';
+}
+
+function useDocumentTitle() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    document.title = titleForPath(pathname);
+  }, [pathname]);
+}
+
 /** 全局布局：Provider 层 + Header/Footer + 播放器 UI + 登录弹窗 */
 export function Layout() {
   const location = useLocation();
+  useDocumentTitle();
   const useCustomHeader =
     location.pathname.startsWith('/creator') || location.pathname.startsWith('/review');
   return (

@@ -3,14 +3,8 @@ import { Cake, Pencil, UserRound } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/format';
-import type { Gender, PublicUserProfile } from '@/lib/types';
-
-const GENDER_LABEL: Record<Gender, string> = {
-  male: '男',
-  female: '女',
-  other: '其他',
-  unknown: '保密',
-};
+import { GENDER_LABEL } from '@/lib/profile';
+import type { PublicUserProfile } from '@/lib/types';
 
 /** 主页头部：头像叠在 banner 上 + 昵称 / 用户名 / 签名 / 元信息 */
 export function UserHeader({ profile }: { profile: PublicUserProfile }) {

@@ -44,6 +44,8 @@ export interface SelectRequest {
 
 /** 播放列表项 */
 export interface PlaylistItem {
+  /** 列表内稳定唯一键（允许同一首歌重复加入），由 playAll 补齐 */
+  uid?: string;
   songId: string;
   name: string;
   artists: string;

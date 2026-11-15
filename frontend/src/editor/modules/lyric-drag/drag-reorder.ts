@@ -1,16 +1,18 @@
 import { uid } from 'uid';
 import type { LyricLine } from '$/types/ttml.ts';
 
+/**
+ * 深拷贝一行歌词（含新 id）。
+ *
+ * 不能只做浅拷贝：`endTimeLink`、`vocal`、`translatedLyricByLang`、
+ * `romanLyricByLang`、`wordRomanizationByLang` 都是引用类型，共享的话
+ * 改副本会同时改到原行（典型表现：取消时间链接时两行一起变）。
+ */
 const cloneLyricLine = (line: LyricLine): LyricLine => {
-  return {
-    ...line,
-    id: uid(),
-    words: line.words.map((w) => ({
-      ...w,
-      id: uid(),
-      ruby: w.ruby ? w.ruby.map((r) => ({ ...r })) : undefined,
-    })),
-  };
+  const cloned = structuredClone(line);
+  cloned.id = uid();
+  cloned.words = cloned.words.map((w) => ({ ...w, id: uid() }));
+  return cloned;
 };
 
 /**

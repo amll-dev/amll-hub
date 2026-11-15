@@ -455,6 +455,14 @@ export interface PluginComment extends CommentBase {
   pluginKey: string;
 }
 
+// 插件评论分页结果
+export interface PluginCommentListResult {
+  items: PluginComment[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 // 音频附件
 export interface SubmissionAudio {
   id: number;
@@ -659,6 +667,9 @@ export interface NotFoundRankingResult {
   total: number;
   returned: number;
   requestedLimit: string;
+  /** 服务端分页：本页偏移量与实际 limit（后端新增字段，可选以兼容旧缓存） */
+  offset?: number;
+  limit?: number;
   days: number;
   items: NotFoundRankingItem[];
 }
@@ -1273,8 +1284,31 @@ export interface PluginSubmissionPayload {
   minAppVersion: string;
 }
 
+/** 审核队列只返回版本摘要，不含 manifest / README / changelog */
+export interface PluginReviewVersionSummary {
+  id: number;
+  pluginId: number;
+  version: string;
+  channel: PluginChannel;
+  apiVersion: number;
+  platforms: PluginPlatform[];
+  sha256: string;
+  sizeBytes: number;
+  reviewStatus: PluginReviewStatus;
+  listingStatus: PluginListingStatus;
+  reviewComment: string;
+  downloadCount: number;
+  submittedBy: string;
+  submitterInfo: UserInfo;
+  reviewer: string;
+  reviewerInfo: UserInfo;
+  submittedAt: string;
+  reviewedAt?: string;
+  listedAt?: string;
+}
+
 export interface PluginReviewQueueItem {
-  version: PluginVersionFull;
+  version: PluginReviewVersionSummary;
   pluginKey: string;
   pluginName: string;
   pluginSummary: string;
@@ -1391,6 +1425,20 @@ export interface DocListItem {
 export interface DocListResult {
   items: DocListItem[];
   total: number;
+}
+
+/** GET /api/v1/docs/nav：首页 / 侧栏 / 上一篇下一篇用的精简导航项（不分页，上限 1000） */
+export interface DocNavItem {
+  id: number;
+  slug: string;
+  title: string;
+  group: DocGroup;
+  updatedBy: string;
+  updatedAt: string;
+}
+
+export interface DocNavResult {
+  items: DocNavItem[];
 }
 
 export interface DocDetail {

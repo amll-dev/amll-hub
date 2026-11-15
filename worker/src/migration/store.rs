@@ -21,6 +21,9 @@ pub struct TaskRow {
 pub struct MigratedPrRow {
     pub number: i64,
     pub file_name: Option<String>,
+    /// 迁移时记录的 PR 状态（github_migrated_prs.state）：关闭阶段据此过滤，
+    /// 避免逐条拉完整 PR 详情。历史行可能没有该值。
+    pub state: Option<String>,
 }
 
 /// GitHub 绑定记录（github_login → 站点 username）
@@ -210,6 +213,16 @@ impl MigrationStore {
         .await
     }
 
+    /// 关闭成功后回写 PR 状态：否则 007 加的 state 列永远停在默认
+    /// 'open'，关闭阶段的 state 过滤形同虚设，每轮仍会对全部 PR 发 PATCH。
+    pub async fn mark_pr_closed(&self, pr_number: i64) -> Result<()> {
+        self.exec(
+            "UPDATE github_migrated_prs SET state = 'closed' WHERE pr_number = $1",
+            vec![pr_number.into()],
+        )
+        .await
+    }
+
     // ===== 已迁移 PR =====
 
     pub async fn has_migrated_pr(&self, pr_number: i64) -> Result<bool> {
@@ -222,7 +235,7 @@ impl MigrationStore {
 
     /// 查询该用户已迁移的 PR（附带稿件文件名，用于关闭 PR 时的迁移地址评论）
     pub async fn list_migrated_prs(&self, username: &str, since: i64) -> Result<Vec<MigratedPrRow>> {
-        let sql = r#"SELECT g.pr_number AS number, s.file_name AS file_name
+        let sql = r#"SELECT g.pr_number AS number, s.file_name AS file_name, g.state AS state
                      FROM github_migrated_prs g
                      LEFT JOIN submissions s ON s.id = g.submission_id
                      WHERE g.username = $1 AND g.pr_number >= $2

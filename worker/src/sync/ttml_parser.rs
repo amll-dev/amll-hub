@@ -1,5 +1,9 @@
+use anyhow::Context;
 use pinyin::ToPinyin;
 use ttml_processor::model::TTMLResult;
+
+/// sync 路径 TTML 大小上限（与 migration/mapper.rs 保持一致）
+const MAX_TTML_BYTES: usize = 16 * 1024 * 1024;
 
 /// TTML 解析结果
 #[derive(Debug, Default)]
@@ -15,8 +19,19 @@ pub struct ParsedTtml {
 /// 解析 TTML 字节流。
 /// 与 /validate 端点共用 ttml_processor 的解析逻辑，保证校验与入库统计口径一致
 pub fn parse_ttml(content: &[u8]) -> anyhow::Result<ParsedTtml> {
-    let text = String::from_utf8_lossy(content);
-    let parsed = ttml_processor::parse_ttml(&text)?;
+    if content.len() > MAX_TTML_BYTES {
+        anyhow::bail!(
+            "TTML 超过 {} MB（实际 {} KB）",
+            MAX_TTML_BYTES / 1024 / 1024,
+            content.len() / 1024
+        );
+    }
+    // 非法编码（GBK / UTF-16 等）必须报错，不能用 from_utf8_lossy 静默替换成 U+FFFD，
+    // 否则标题、艺术家、lyricText 会以乱码入库且全程零报错。
+    let text = std::str::from_utf8(content).context(
+        "TTML 不是合法的 UTF-8，请确认文件编码（常见原因：Windows 下保存为 GBK/UTF-16）",
+    )?;
+    let parsed = ttml_processor::parse_ttml(text)?;
 
     let lyric_text = extract_lyric_text(&parsed);
     let line_count = parsed
@@ -53,6 +68,12 @@ fn count_meaningful_chars(s: &str) -> i32 {
         .count() as i32
 }
 
+/// 标点字符（不计入字数）
+///
+/// 列表需覆盖中日文歌词里实际会出现的符号：日文引号 `「」『』` 以往漏掉，
+/// 会被算进 word_count 让字数虚高（这个值会展示在投稿详情、也会进排行榜口径）。
+/// 除常见的 ASCII / 中文全角标点外，这里补上日文引号、省略号、间隔号与波浪线
+/// （`～` U+FF5E 与 `〜` U+301C 是不同码位，日文输入法两种都会产出）。
 fn is_punctuation(c: char) -> bool {
     matches!(
         c,
@@ -62,6 +83,20 @@ fn is_punctuation(c: char) -> bool {
             | '、'
             | '；'
             | '：'
+            | '「'
+            | '」'
+            | '『'
+            | '』'
+            | '“'
+            | '”'
+            | '‘'
+            | '…'
+            | '·'
+            // 日文间隔号：全角中点 U+30FB / 半角 U+FF65，与中文的 U+00B7 '·' 是不同码位
+            | '・'
+            | '･'
+            | '～'
+            | '〜'
             | '"'
             | '\''
             | '’'
@@ -162,6 +197,19 @@ mod tests {
         assert_eq!(parsed.line_count, 2);
         assert_eq!(parsed.word_count, 6);
         assert_eq!(parsed.lyric_text, "晴天雨天\n你好\n");
+    }
+
+    #[test]
+    fn skips_japanese_punctuation() {
+        // 日文歌词常见「」『』…·～，历史上会被算进 word_count 让字数虚高
+        let ttml = concat!(
+            r#"<tt xmlns="http://www.w3.org/ns/ttml"><body><div>"#,
+            r#"<p begin="00:01.000" end="00:02.000">"#,
+            r#"<span begin="00:01.000" end="00:02.000">「晴天」…雨・～</span></p>"#,
+            "</div></body></tt>"
+        );
+        let parsed = parse_ttml(ttml.as_bytes()).unwrap();
+        assert_eq!(parsed.word_count, 3);
     }
 
     #[test]

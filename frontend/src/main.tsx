@@ -9,7 +9,9 @@ import { GlobalErrorBoundary } from './components/ErrorBoundary';
 import { PlayerBoot } from '@/boot/PlayerBoot';
 import './index.css';
 
-// Web Vitals 采集：DEV 打到控制台；PROD sendBeacon 上报（后端端点接入前静默失败，无害）
+// Web Vitals 采集：DEV 打到控制台；PROD 仅在显式开启 VITE_ENABLE_VITALS 时上报。
+const vitalsEnabled = import.meta.env.DEV || import.meta.env.VITE_ENABLE_VITALS === 'true';
+
 function reportVitals(metric: Metric) {
   if (import.meta.env.DEV) {
     console.debug(`[web-vitals] ${metric.name}: ${metric.value.toFixed(2)} (${metric.rating})`);
@@ -18,10 +20,12 @@ function reportVitals(metric: Metric) {
   navigator.sendBeacon?.('/api/v1/web-vitals', JSON.stringify(metric));
 }
 
-onCLS(reportVitals);
-onINP(reportVitals);
-onLCP(reportVitals);
-onTTFB(reportVitals);
+if (vitalsEnabled) {
+  onCLS(reportVitals);
+  onINP(reportVitals);
+  onLCP(reportVitals);
+  onTTFB(reportVitals);
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -85,14 +85,14 @@ function DropdownMenuSubTrigger({
       className={cn(
         'relative flex cursor-default select-none items-center gap-2 rounded-sm px-3 py-2 text-sm text-ink-2 outline-none transition-colors',
         'focus:bg-surface-2 focus:text-primary data-[state=open]:bg-surface-2 data-[state=open]:text-primary',
-        '[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-current',
+        'group [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-current',
         className
       )}
       {...props}
     >
       {children}
       {/* 右箭头指示器 */}
-      <ChevronRight className="ml-auto h-4 w-4 transition-transform duration-200 data-[state=open]:rotate-90" />
+      <ChevronRight className="ml-auto h-4 w-4 transition-transform duration-200 group-data-[state=open]:rotate-90" />
     </DropdownMenuPrimitive.SubTrigger>
   );
 }

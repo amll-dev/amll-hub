@@ -16,7 +16,10 @@ import { useReviewSpectrogramTimingOverlay } from '$/modules/review/services/rev
 import { useScrubbing } from '$/modules/spectrogram/hooks/useScrubbing';
 import { useSpectrogramInteraction } from '$/modules/spectrogram/hooks/useSpectrogramInteraction.ts';
 import { useSpectrogramResize } from '$/modules/spectrogram/hooks/useSpectrogramResize.ts';
-import { useSpectrogramWorker } from '$/modules/spectrogram/hooks/useSpectrogramWorker.ts';
+import {
+  tileCacheKey,
+  useSpectrogramWorker,
+} from '$/modules/spectrogram/hooks/useSpectrogramWorker.ts';
 import { useTimelineEditing } from '$/modules/spectrogram/hooks/useTimelineEditing.ts';
 import {
   currentPaletteAtom,
@@ -53,6 +56,87 @@ const ReviewLyricTimelineOverlay: FC<{
       hiddenLineIds={hiddenLineIds}
       renderLineOverlay={renderLineOverlay}
     />
+  );
+};
+
+/**
+ * hover 提示层：只订阅 hoverPx / hoverTimeMs，鼠标移动时仅这个轻量组件重渲染，
+ * 不再让整棵频谱（瓦片、各 overlay、Provider value）跟着 60Hz 重渲染
+ */
+const HoverTooltipOverlay: FC<{
+  isHovering: boolean;
+  tooltipBgColor?: string;
+  isSpectrogramTapMode: boolean;
+  isInvalidEndTime: boolean;
+  editingTimeField: { isWord: boolean; field: 'startTime' | 'endTime' } | null;
+  totalTapCount: number;
+}> = ({
+  isHovering,
+  tooltipBgColor,
+  isSpectrogramTapMode,
+  isInvalidEndTime,
+  editingTimeField,
+  totalTapCount,
+}) => {
+  const hoverPx = useAtomValue(spectrogramHoverPxAtom);
+  const hoverTimeMs = useAtomValue(spectrogramHoverTimeMsAtom);
+
+  let hoverTimeFormatted = msToTimestamp(hoverTimeMs);
+  if (isSpectrogramTapMode) {
+    hoverTimeFormatted = `点击校准第 ${totalTapCount + 1} 拍: ${hoverTimeFormatted}`;
+  } else if (isInvalidEndTime) {
+    hoverTimeFormatted = '不能选择此结束时间';
+  } else if (editingTimeField && !editingTimeField.isWord) {
+    const fieldName = editingTimeField.field === 'startTime' ? '起始时间' : '结束时间';
+    hoverTimeFormatted = `点击设置${fieldName}: ${hoverTimeFormatted}`;
+  }
+
+  return (
+    <>
+      <div
+        className={styles.hoverTimeTooltip}
+        style={{
+          left: `${hoverPx}px`,
+          opacity: isHovering ? 1 : 0,
+          backgroundColor: tooltipBgColor,
+        }}
+      >
+        {hoverTimeFormatted}
+      </div>
+      <div
+        className={`${styles.rulerHoverFade} ${styles.rulerHoverFadeLeft}`}
+        style={{
+          width: `${hoverPx}px`,
+          height: `${DEFAULT_RULER_HEIGHT}px`,
+          opacity: isHovering ? 1 : 0,
+        }}
+      />
+      <div
+        className={`${styles.rulerHoverFade} ${styles.rulerHoverFadeRight}`}
+        style={{
+          left: `${hoverPx}px`,
+          height: `${DEFAULT_RULER_HEIGHT}px`,
+          opacity: isHovering ? 1 : 0,
+        }}
+      />
+    </>
+  );
+};
+
+/** 滚动内容里的 hover 竖线：单独订阅 hoverPx，避免 hover 波及频谱主树 */
+const HoverCursor: FC<{
+  isHovering: boolean;
+  hoverLineColor?: string;
+  scrollLeft: number;
+}> = ({ isHovering, hoverLineColor, scrollLeft }) => {
+  const hoverPx = useAtomValue(spectrogramHoverPxAtom);
+  return (
+    <div
+      className={styles.hoverCursorContainer}
+      style={{ left: `${scrollLeft + hoverPx}px`, opacity: isHovering ? 1 : 0 }}
+    >
+      <div className={styles.hoverCursorLine} style={{ backgroundColor: hoverLineColor }} />
+    </div>
   );
 };
 
@@ -141,9 +225,9 @@ export const AudioSpectrogram: FC = () => {
   }, [zoom, scrollLeft, containerWidth, syncCursorsToDOM]);
 
   const [isHovering, setIsHovering] = useState(false);
-  const hoverPx = useAtomValue(spectrogramHoverPxAtom);
+  // 不在这里订阅 hoverPx / hoverTimeMs：鼠标移动只应让轻量的 Hover* 子组件重渲染，
+  // 而不是整棵频谱（瓦片、overlay、Provider value）。
   const setHoverPx = useSetAtom(spectrogramHoverPxAtom);
-  const hoverTimeMs = useAtomValue(spectrogramHoverTimeMsAtom);
   const isDragging = useAtomValue(isDraggingAtom);
 
   const rulerRef = useRef<TimelineRulerHandle>(null);
@@ -176,6 +260,8 @@ export const AudioSpectrogram: FC = () => {
 
   const updateVisibleTiles = useCallback(() => {
     if (!pcmDataReady || currentDurationMs <= 0 || !scrollContainerRef.current) return;
+    // 频谱被 display:none 隐藏时容器宽度为 0，不再请求瓦片、空跑 STFT
+    if (containerWidth <= 0) return;
     const durationS = currentDurationMs / 1000;
     const pixelsPerSecond = zoom;
     const tileDisplayWidthPx = TILE_DURATION_S * pixelsPerSecond;
@@ -196,8 +282,7 @@ export const AudioSpectrogram: FC = () => {
 
       const cacheId = `tile-${i}`;
       const targetLodWidth = LOD_WIDTHS.find((w) => w >= tileDisplayWidthPx) ?? MAX_LOD_WIDTH;
-
-      requestTileIfNeeded({
+      const params = {
         tileIndex: i,
         startTime: i * TILE_DURATION_S,
         endTime: i * TILE_DURATION_S + TILE_DURATION_S,
@@ -205,9 +290,11 @@ export const AudioSpectrogram: FC = () => {
         height: dataHeight,
         tileWidthPx: targetLodWidth,
         paletteId: currentPaletteId,
-      });
+      };
 
-      const cacheEntry = tileCache.current.get(cacheId);
+      requestTileIfNeeded(params);
+
+      const cacheEntry = tileCache.current.get(tileCacheKey(params));
       const currentBitmap = cacheEntry?.bitmap;
 
       newVisibleTiles.push({
@@ -247,14 +334,8 @@ export const AudioSpectrogram: FC = () => {
     audioEngine.seekMusic(timeInSeconds);
   };
 
-  useLayoutEffect(() => {
-    if (lastTileTimestamp === 0) {
-      return;
-    }
-    rulerRef.current?.draw(scrollLeft);
-    updateVisibleTilesRef.current();
-  }, [scrollLeft, lastTileTimestamp]);
-
+  // 滚动 / 首块瓦片到达 / PCM 就绪 / 时长变化都在这里重绘标尺与可见瓦片。
+  // 原来的另一个 layout effect 只依赖前两项，是本 effect 的子集，已合并。
   useLayoutEffect(() => {
     if (lastTileTimestamp === 0 && !pcmDataReady && !currentDurationMs) {
       return;
@@ -293,28 +374,20 @@ export const AudioSpectrogram: FC = () => {
 
   const totalWidth = currentDurationMs > 0 ? (currentDurationMs / 1000) * zoom : 0;
 
-  let hoverTimeFormatted = msToTimestamp(hoverTimeMs);
   let tooltipBgColor: string | undefined;
   let hoverLineColor: string | undefined;
 
   if (isSpectrogramTapMode) {
-    const nextBeatIndex = totalTapCount + 1;
-    hoverTimeFormatted = `点击校准第 ${nextBeatIndex} 拍: ${hoverTimeFormatted}`;
     tooltipBgColor = 'var(--green-9)';
     hoverLineColor = 'var(--green-9)';
   } else if (isInvalidEndTime) {
-    hoverTimeFormatted = '不能选择此结束时间';
     tooltipBgColor = 'var(--red-9)';
     hoverLineColor = 'var(--red-9)';
   } else if (editingTimeField && !editingTimeField.isWord) {
-    const fieldName = editingTimeField.field === 'startTime' ? '起始时间' : '结束时间';
-    hoverTimeFormatted = `${'点击设置'}${fieldName}: ${hoverTimeFormatted}`;
     tooltipBgColor = 'var(--accent-9)';
   }
 
   const transformX = isZooming ? scrollLeft : Math.round(scrollLeft);
-
-  const hoverX = scrollLeft + hoverPx;
   const reviewTimingOverlayEnabled = reviewSession !== null && reviewSession.source !== 'update';
 
   const minGain = 0.5;
@@ -399,36 +472,14 @@ export const AudioSpectrogram: FC = () => {
               />
 
               {!isDragging && (
-                <>
-                  <div
-                    className={styles.hoverTimeTooltip}
-                    style={{
-                      left: `${hoverPx}px`,
-                      opacity: isHovering ? 1 : 0,
-                      backgroundColor: tooltipBgColor,
-                    }}
-                  >
-                    {hoverTimeFormatted}
-                  </div>
-
-                  <div
-                    className={`${styles.rulerHoverFade} ${styles.rulerHoverFadeLeft}`}
-                    style={{
-                      width: `${hoverPx}px`,
-                      height: `${DEFAULT_RULER_HEIGHT}px`,
-                      opacity: isHovering ? 1 : 0,
-                    }}
-                  />
-
-                  <div
-                    className={`${styles.rulerHoverFade} ${styles.rulerHoverFadeRight}`}
-                    style={{
-                      left: `${hoverPx}px`,
-                      height: `${DEFAULT_RULER_HEIGHT}px`,
-                      opacity: isHovering ? 1 : 0,
-                    }}
-                  />
-                </>
+                <HoverTooltipOverlay
+                  isHovering={isHovering}
+                  tooltipBgColor={tooltipBgColor}
+                  isSpectrogramTapMode={isSpectrogramTapMode}
+                  isInvalidEndTime={isInvalidEndTime}
+                  editingTimeField={editingTimeField}
+                  totalTapCount={totalTapCount}
+                />
               )}
 
               <div
@@ -492,18 +543,11 @@ export const AudioSpectrogram: FC = () => {
                         />
                       )}
                       {!isDragging && (
-                        <div
-                          className={styles.hoverCursorContainer}
-                          style={{
-                            left: `${hoverX}px`,
-                            opacity: isHovering ? 1 : 0,
-                          }}
-                        >
-                          <div
-                            className={styles.hoverCursorLine}
-                            style={{ backgroundColor: hoverLineColor }}
-                          />
-                        </div>
+                        <HoverCursor
+                          isHovering={isHovering}
+                          hoverLineColor={hoverLineColor}
+                          scrollLeft={scrollLeft}
+                        />
                       )}
                     </div>
                   </SpectrogramContext.Provider>

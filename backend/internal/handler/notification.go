@@ -29,7 +29,7 @@ func (h *NotificationHandler) List(c *gin.Context) {
 		return
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	limit := pkg.Clamp(pkg.ParseInt(c.Query("limit"), 20), 1, 200)
 	typ := c.Query("type")
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)

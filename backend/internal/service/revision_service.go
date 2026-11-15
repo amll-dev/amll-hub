@@ -169,34 +169,26 @@ func (s *RevisionService) saveWithRevision(
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		ok, err := s.subRepo.UpdateStatusWhere(ctx, tx, sub, fromStatuses)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return ErrInvalidStatus
-		}
-		if err := s.historyRepo.Insert(ctx, tx, &model.ReviewHistory{
+		return claimAndRecord(ctx, tx, s.subRepo, s.historyRepo, sub, fromStatuses, &model.ReviewHistory{
 			SubmissionID: sub.ID,
 			Reviewer:     reviewerInfo.Username,
 			ReviewerInfo: reviewerInfo,
 			Status:       model.StatusRevised,
 			Comment:      comment,
-		}); err != nil {
-			return err
-		}
-		if err := s.reportRepo.Insert(ctx, tx, &model.ReviewReport{
-			SubmissionID: sub.ID,
-			Reviewer:     reviewerInfo.Username,
-			ReviewerInfo: reviewerInfo,
-			Action:       ActionRevision,
-			HasRevision:  true,
-			ReportMD:     reportMD,
-			Structured:   toJSONObject(in.Structured),
-		}); err != nil {
-			return err
-		}
-		return s.postReportToComments(ctx, sub.ID, reviewerInfo, reportMD, comment)
+		}, func(tx *gorm.DB) error {
+			if err := s.reportRepo.Insert(ctx, tx, &model.ReviewReport{
+				SubmissionID: sub.ID,
+				Reviewer:     reviewerInfo.Username,
+				ReviewerInfo: reviewerInfo,
+				Action:       ActionRevision,
+				HasRevision:  true,
+				ReportMD:     reportMD,
+				Structured:   toJSONObject(in.Structured),
+			}); err != nil {
+				return err
+			}
+			return s.postReportToComments(ctx, sub.ID, reviewerInfo, reportMD, comment)
+		})
 	})
 	if err != nil {
 		return err
@@ -244,36 +236,28 @@ func (s *RevisionService) saveWithoutRevision(
 	}
 
 	// 结论涉及的外部副作用（GitHub 上传 / 对象存储移动）复用 ReviewService 的实现，
-	// 这里只负责额外把报告与评论写进同一个事务。
+	// 这里只负责额外把报告与评论写进同一个事务；抢占与回滚见 claim.go。
 	claim := func(tx *gorm.DB) error {
-		ok, err := s.subRepo.UpdateStatusWhere(ctx, tx, sub, fromStatuses)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return ErrInvalidStatus
-		}
-		if err := s.historyRepo.Insert(ctx, tx, &model.ReviewHistory{
+		return claimAndRecord(ctx, tx, s.subRepo, s.historyRepo, sub, fromStatuses, &model.ReviewHistory{
 			SubmissionID: sub.ID,
 			Reviewer:     reviewerInfo.Username,
 			ReviewerInfo: reviewerInfo,
 			Status:       sub.Status,
 			Comment:      comment,
-		}); err != nil {
-			return err
-		}
-		if err := s.reportRepo.Insert(ctx, tx, &model.ReviewReport{
-			SubmissionID: sub.ID,
-			Reviewer:     reviewerInfo.Username,
-			ReviewerInfo: reviewerInfo,
-			Action:       action,
-			HasRevision:  false,
-			ReportMD:     reportMD,
-			Structured:   toJSONObject(in.Structured),
-		}); err != nil {
-			return err
-		}
-		return s.postReportToComments(ctx, sub.ID, reviewerInfo, reportMD, comment)
+		}, func(tx *gorm.DB) error {
+			if err := s.reportRepo.Insert(ctx, tx, &model.ReviewReport{
+				SubmissionID: sub.ID,
+				Reviewer:     reviewerInfo.Username,
+				ReviewerInfo: reviewerInfo,
+				Action:       action,
+				HasRevision:  false,
+				ReportMD:     reportMD,
+				Structured:   toJSONObject(in.Structured),
+			}); err != nil {
+				return err
+			}
+			return s.postReportToComments(ctx, sub.ID, reviewerInfo, reportMD, comment)
+		})
 	}
 
 	switch action {
@@ -323,24 +307,9 @@ func conclusionStatus(action string) string {
 	}
 }
 
-// revertConclusion 外部副作用失败时回滚审核结论状态。
-// 使用脱离请求取消的 context，避免客户端断开后补偿无法执行。
+// revertConclusion 外部副作用失败时回滚审核结论状态（实现见 claim.go）。
 func (s *RevisionService) revertConclusion(ctx context.Context, sub *model.Submission, fromStatus string) {
-	sub.Status = fromStatus
-	sub.Reviewer = ""
-	sub.ReviewerInfo = nil
-	sub.ReviewedAt = nil
-	sub.ReviewComment = ""
-	c, cancel := pkg.DetachedTimeout(ctx, 5*time.Second)
-	defer cancel()
-	ok, err := s.subRepo.UpdateStatusWhere(c, nil, sub, []string{model.StatusApproved, model.StatusRejected})
-	if err != nil || !ok {
-		logrus.WithFields(logrus.Fields{
-			"submission_id": sub.ID,
-			"target_status": fromStatus,
-			"err":           err,
-		}).Error("revert revision conclusion failed, manual fix required")
-	}
+	revertClaim(ctx, s.subRepo, sub, fromStatus, "revert revision conclusion failed, manual fix required")
 }
 
 // applyConclusionSideEffects 完成 approve/reject 的外部副作用

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/sirupsen/logrus"
 
@@ -24,7 +25,7 @@ const (
 	loginLockTTL     = 15 * time.Minute
 	maxLoginFails    = 10
 	loginFailTTL     = 15 * time.Minute
-	maxAvatarSize    = 50 * 1024 * 1024 // 50MB
+	maxAvatarSize    = 5 * 1024 * 1024  // 5MB：2048x2048 webp 约 300KB，留 15 倍余量
 	cookieCacheTTL   = 10 * time.Minute // Casdoor session cookie 缓存时间
 	// casdoorTokenTTL Casdoor access token 缓存时间
 	casdoorTokenTTL = 24 * time.Minute * 60
@@ -47,6 +48,8 @@ func casdoorSessionKey(userID string) string {
 // imageExtByContentType http.DetectContentType 的结果 → 规范扩展名
 //
 // 只覆盖 Go 能嗅探出来的类型；tiff / avif 嗅探不到，单独在 sniffImageExt 里补魔数。
+// 注意这是多个上传路径（头像 / 封面 / 背景图）共用的嗅探表，别在这里收窄格式，
+// 各业务自己的白名单放在各自的服务里（见 avatarAllowedExt）。
 var imageExtByContentType = map[string]string{
 	"image/jpeg":   ".jpg",
 	"image/png":    ".png",
@@ -54,6 +57,17 @@ var imageExtByContentType = map[string]string{
 	"image/webp":   ".webp",
 	"image/bmp":    ".bmp",
 	"image/x-icon": ".ico",
+}
+
+// avatarAllowedExt 头像允许的扩展名。
+//
+// 刻意比嗅探表窄：SVG 是同源下的脚本载体（内嵌 <script> 即存储型 XSS），
+// gif/bmp/ico/tiff 对头像没有意义，一并排除。
+var avatarAllowedExt = map[string]struct{}{
+	".jpg":  {},
+	".png":  {},
+	".webp": {},
+	".avif": {},
 }
 
 // sniffImageExt 按**文件内容**判定图片格式，返回规范扩展名；识别不出返回空串。
@@ -83,6 +97,9 @@ func sniffImageExt(data []byte) string {
 }
 
 // isSVG 判断是否为 SVG：Go 的嗅探器把 XML 报成 text/xml，需要看内容里有没有 <svg
+//
+// 保留为上传拒绝时的判定依据：命中就明确告诉用户「不支持 SVG 头像」，
+// 而不是笼统的「格式不支持」。
 func isSVG(data []byte) bool {
 	head := data
 	if len(head) > 512 {
@@ -93,11 +110,12 @@ func isSVG(data []byte) bool {
 
 // AuthService 认证业务逻辑
 type AuthService struct {
-	casdoor   *infrastructure.CasdoorClient
-	rdb       *redis.Client
-	jwtSecret string
-	jwtTTL    time.Duration
-	org       string
+	casdoor         *infrastructure.CasdoorClient
+	rdb             *redis.Client
+	jwtSecret       string
+	jwtTTL          time.Duration
+	org             string
+	mfaSetupEnabled bool
 }
 
 // NewAuthService 创建 AuthService
@@ -107,13 +125,15 @@ func NewAuthService(
 	jwtSecret string,
 	jwtTTL time.Duration,
 	org string,
+	mfaSetupEnabled bool,
 ) *AuthService {
 	return &AuthService{
-		casdoor:   casdoor,
-		rdb:       rdb,
-		jwtSecret: jwtSecret,
-		jwtTTL:    jwtTTL,
-		org:       org,
+		casdoor:         casdoor,
+		rdb:             rdb,
+		jwtSecret:       jwtSecret,
+		jwtTTL:          jwtTTL,
+		org:             org,
+		mfaSetupEnabled: mfaSetupEnabled,
 	}
 }
 
@@ -417,14 +437,13 @@ func (s *AuthService) completeLogin(ctx context.Context, userID string, cookies 
 		s.saveCasdoorSession(ctx, fullID, cookies)
 	}
 
-	claims := &pkg.Claims{
+	token, err := pkg.SignUserToken(pkg.UserTokenInput{
 		Sub:         fullID,
 		Name:        user.Name,
 		DisplayName: user.DisplayName,
 		Email:       user.Email,
 		Avatar:      user.Avatar,
-	}
-	token, err := pkg.SignJWT(claims, s.jwtSecret, s.jwtTTL)
+	}, s.jwtSecret, s.jwtTTL)
 	if err != nil {
 		return nil, fmt.Errorf("签发 token 失败: %w", err)
 	}
@@ -508,24 +527,14 @@ func methodAllowed(methods []infrastructure.MfaProps, mfaType string) bool {
 
 // isMfaSessionErr 判断 Casdoor 的失败是否来自 MFA 会话丢失/鉴权问题
 func isMfaSessionErr(err error) bool {
-	msg := strings.ToLower(err.Error())
-	for _, kw := range []string{
-		"unauthorized operation",
-		"unknown authentication type",
-		"expired user session",
-		"please sign in first",
-	} {
-		if strings.Contains(msg, kw) {
-			return true
-		}
-	}
-	return false
+	norm := normalizeCasdoorErr(err)
+	return errors.Is(norm, errCasdoorMfaSession) || errors.Is(norm, errCasdoorUnauthorized)
 }
 
 // verifyTotp 按 Casdoor 的默认参数校验 TOTP：30 秒、6 位、SHA1、前后 1 个窗口
 // mapMfaSendErr 把 Casdoor 的发码失败翻译成可识别的错误
 func mapMfaSendErr(err error) error {
-	if strings.Contains(err.Error(), "Turing test failed") {
+	if errors.Is(normalizeCasdoorErr(err), errCasdoorCaptcha) {
 		return ErrCaptchaFailed
 	}
 	return fmt.Errorf("发送验证码失败: %w", err)
@@ -741,8 +750,31 @@ type RegisterRequest struct {
 	DisplayName string `json:"displayName"`
 }
 
+// validatePassword 本地密码强度校验（保守规则）：长度 8~128，且至少含一个字母和一个数字。
+// 只用于注册 / 改密 / 重置密码，登录路径不校验，避免影响使用旧密码的存量账号。
+func validatePassword(password string) error {
+	n := 0
+	hasLetter, hasDigit := false, false
+	for _, r := range password {
+		n++
+		switch {
+		case unicode.IsLetter(r):
+			hasLetter = true
+		case unicode.IsDigit(r):
+			hasDigit = true
+		}
+	}
+	if n < 8 || n > 128 || !hasLetter || !hasDigit {
+		return ErrWeakPassword
+	}
+	return nil
+}
+
 // Register 注册
 func (s *AuthService) Register(ctx context.Context, req RegisterRequest) error {
+	if err := validatePassword(req.Password); err != nil {
+		return err
+	}
 	phone := toE164(req.Phone)
 	if err := s.casdoor.Signup(ctx, infrastructure.SignupRequest{
 		Username:    req.Username,
@@ -754,20 +786,13 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) error {
 		DisplayName: req.DisplayName,
 	}); err != nil {
 		logrus.WithFields(logrus.Fields{"username": req.Username, "error": err}).Warn("casdoor signup failed")
-		errMsg := err.Error()
-		lowerMsg := strings.ToLower(errMsg)
+		norm := normalizeCasdoorErr(err)
 		switch {
-		case strings.Contains(lowerMsg, "username") && strings.Contains(lowerMsg, "exist"):
+		case errors.Is(norm, errCasdoorAlreadyExists):
 			return ErrUserAlreadyExists
-		case strings.Contains(lowerMsg, "phone") && strings.Contains(lowerMsg, "exist"):
-			return ErrUserAlreadyExists
-		case strings.Contains(lowerMsg, "email") && strings.Contains(lowerMsg, "exist"):
-			return ErrUserAlreadyExists
-		case strings.Contains(lowerMsg, "already") && strings.Contains(lowerMsg, "exist"):
-			return ErrUserAlreadyExists
-		case strings.Contains(lowerMsg, "verification") || strings.Contains(lowerMsg, "code"):
+		case errors.Is(norm, errCasdoorInvalidCode):
 			return ErrInvalidCode
-		case strings.Contains(lowerMsg, "phone") && (strings.Contains(lowerMsg, "invalid") || strings.Contains(lowerMsg, "format")):
+		case errors.Is(norm, errCasdoorInvalidInput):
 			return ErrInvalidInput
 		default:
 			return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
@@ -793,8 +818,7 @@ func (s *AuthService) CheckUserExists(ctx context.Context, checkType, dest, meth
 	}
 	if method == "login" {
 		if err != nil {
-			errMsg := err.Error()
-			if strings.Contains(errMsg, "未注册") {
+			if errors.Is(normalizeCasdoorErr(err), errCasdoorNotFound) {
 				return ErrUserNotFound
 			}
 			return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
@@ -898,28 +922,26 @@ func (s *AuthService) destExists(ctx context.Context, checkType, dest string) bo
 // mapSendCodeErr 把 Casdoor 的发码失败原因翻译成用户能看懂 / 能处理的提示。
 // Casdoor 侧常见失败：未配置短信 provider、用户不存在、人机验证失败、区号缺失。
 func mapSendCodeErr(err error) error {
-	msg := err.Error()
+	norm := normalizeCasdoorErr(err)
 	switch {
-	case strings.Contains(msg, "please add a SMS provider"),
-		strings.Contains(msg, "SMS provider"):
+	case errors.Is(norm, errCasdoorProviderSMS):
 		return fmt.Errorf("%w: Casdoor 应用尚未配置短信服务，手机验证码暂不可用，请改用邮箱验证", ErrProviderNotConfigured)
-	case strings.Contains(msg, "please add an Email provider"),
-		strings.Contains(msg, "Email provider"):
+	case errors.Is(norm, errCasdoorProviderEmail):
 		return fmt.Errorf("%w: Casdoor 应用尚未配置邮件服务，邮箱验证码暂不可用", ErrProviderNotConfigured)
-	case strings.Contains(msg, "the user does not exist"),
-		strings.Contains(msg, "doesn't exist"):
+	case errors.Is(norm, errCasdoorNotFound):
 		return ErrUserNotFound
-	case strings.Contains(msg, "Turing test failed"),
-		strings.Contains(msg, "captcha"):
+	case errors.Is(norm, errCasdoorCaptcha):
 		return ErrCaptchaFailed
-	case strings.Contains(msg, "Phone number is invalid"),
-		strings.Contains(msg, "invalid in your region"):
+	case errors.Is(norm, errCasdoorInvalidPhone):
 		return ErrInvalidPhone
 	}
 	return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 }
 
 func (s *AuthService) ForgotPassword(ctx context.Context, dest, code, newPassword string) error {
+	if err := validatePassword(newPassword); err != nil {
+		return err
+	}
 
 	var user *infrastructure.CasdoorUser
 	var err error
@@ -933,8 +955,7 @@ func (s *AuthService) ForgotPassword(ctx context.Context, dest, code, newPasswor
 		user, err = s.casdoor.GetUserByPhone(ctx, dest)
 	}
 	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "未注册") {
+		if errors.Is(normalizeCasdoorErr(err), errCasdoorNotFound) {
 			logrus.WithField("dest", dest).Warn("forgot password: user not found")
 			return ErrUserNotFound
 		}
@@ -949,8 +970,7 @@ func (s *AuthService) ForgotPassword(ctx context.Context, dest, code, newPasswor
 	updatedCookies, err := s.casdoor.VerifyCode(ctx, checkType, dest, user.Name, code, cookies)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"dest": dest, "error": err}).Warn("casdoor verify code failed")
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "already been used") || strings.Contains(errMsg, "expired") || strings.Contains(errMsg, "已失效") {
+		if errors.Is(normalizeCasdoorErr(err), errCasdoorCodeExpired) {
 			return ErrCodeExpired
 		}
 		return ErrInvalidCode
@@ -1092,13 +1112,13 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID string, req Upda
 
 // mapResetContactErr 把 Casdoor 的错误映射成对用户友好的类型
 func mapResetContactErr(err error) error {
-	msg := err.Error()
+	norm := normalizeCasdoorErr(err)
 	switch {
-	case strings.Contains(msg, "already exists"):
+	case errors.Is(norm, errCasdoorAlreadyExists):
 		return ErrUserAlreadyExists
-	case strings.Contains(msg, "already been used"), strings.Contains(msg, "expired"), strings.Contains(msg, "已失效"):
+	case errors.Is(norm, errCasdoorCodeExpired):
 		return ErrCodeExpired
-	case strings.Contains(msg, "Invalid Email"), strings.Contains(msg, "Phone number is invalid"), strings.Contains(msg, "is invalid"):
+	case errors.Is(norm, errCasdoorInvalidInput):
 		return ErrInvalidInput
 	}
 	return ErrInvalidCode
@@ -1110,8 +1130,8 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, oldPassword, n
 	if err != nil {
 		return ErrInvalidInput
 	}
-	if newPassword == "" {
-		return ErrInvalidInput
+	if err := validatePassword(newPassword); err != nil {
+		return err
 	}
 
 	if oldPassword != "" {
@@ -1147,24 +1167,23 @@ func (s *AuthService) UploadAvatar(ctx context.Context, userID string, fileBytes
 		return "", ErrInvalidInput
 	}
 
-	// 校验文件大小（上限 50MB）
+	// 校验文件大小（上限 5MB）
 	if int64(len(fileBytes)) > maxAvatarSize {
-		return "", ErrInvalidInput
+		return "", ErrAvatarTooLarge
 	}
 
-	// 按内容魔数判定格式。
+	// 按内容魔数判定格式，再套头像专属白名单（不含 SVG：内嵌脚本 = 存储型 XSS）
 	ext := sniffImageExt(fileBytes)
-	if ext == "" && isSVG(fileBytes) {
-		ext = ".svg"
-	}
-	if ext == "" {
+	if _, ok := avatarAllowedExt[ext]; !ok {
 		logrus.WithFields(logrus.Fields{
 			"user_id":      userID,
 			"filename":     filename,
 			"content_type": http.DetectContentType(fileBytes),
 			"size":         len(fileBytes),
-		}).Warn("avatar upload rejected: unrecognized image format")
-		return "", ErrInvalidInput
+			"ext":          ext,
+			"is_svg":       isSVG(fileBytes),
+		}).Warn("avatar upload rejected: format not in avatar allowlist")
+		return "", ErrAvatarFormatUnsupported
 	}
 
 	// 同一用户固定对象名：换头像是覆盖，不会堆积垃圾对象
@@ -1186,8 +1205,7 @@ func (s *AuthService) UploadAvatar(ctx context.Context, userID string, fileBytes
 
 // mapUploadAvatarErr 把 Casdoor 的上传失败翻译成可操作的提示。
 func mapUploadAvatarErr(err error) error {
-	msg := err.Error()
-	if strings.Contains(msg, "Unauthorized operation") {
+	if errors.Is(normalizeCasdoorErr(err), errCasdoorUnauthorized) {
 		logrus.Warn("casdoor rejected avatar upload: the application is not treated as a privileged subject " +
 			"(move the Casdoor app to the built-in organization or enable its admin permission)")
 		return fmt.Errorf("%w: Casdoor 拒绝了应用身份的头像上传（Unauthorized operation），"+

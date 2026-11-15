@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -211,7 +212,7 @@ func (s *PluginStoreService) CreateSubmission(
 	}
 	// 同一插件包只允许出现一次；更新已有插件时允许复用同版本包
 	if in.TargetPluginKey == "" {
-		if count, err := s.versions.CountBySHA(ctx, sha); err != nil {
+		if count, err := s.versions.CountBySHA(ctx, nil, sha); err != nil {
 			return nil, err
 		} else if count > 0 {
 			return nil, ErrPluginDuplicateSHA
@@ -220,6 +221,17 @@ func (s *PluginStoreService) CreateSubmission(
 
 	if pkg.UTF16Len(in.License) > 128 {
 		return nil, fmt.Errorf("%w: license 最多 128 个字符", ErrPluginInvalidInput)
+	}
+
+	// 主页来自包内 manifest、仓库地址来自表单，统一在入库前过协议白名单，
+	// 避免 javascript: 等伪协议只依赖客户端框架兜底
+	homepage, urlErr := validateExternalURL(manifestString(manifest, "homepage"))
+	if urlErr != nil {
+		return nil, urlErr
+	}
+	repoURL, urlErr := validateExternalURL(in.RepoURL)
+	if urlErr != nil {
+		return nil, urlErr
 	}
 
 	platforms := normalizePlatforms(in.Platforms)
@@ -282,8 +294,8 @@ func (s *PluginStoreService) CreateSubmission(
 				Summary:       truncateRunes(in.Summary, 512),
 				DescriptionMD: in.DescriptionMD,
 				Author:        manifestString(manifest, "author"),
-				Homepage:      manifestString(manifest, "homepage"),
-				RepoURL:       in.RepoURL,
+				Homepage:      homepage,
+				RepoURL:       repoURL,
 				License:       in.License,
 				Tags:          model.JSONStringArray(normalizePluginTags(in.Tags)),
 				OwnerUsername: user.Name,
@@ -402,4 +414,32 @@ func normalizePluginTags(in []string) []string {
 func IsValidPluginVersion(raw string) bool {
 	_, err := semver.StrictNewVersion(raw)
 	return err == nil
+}
+
+// validateExternalURL 校验插件主页/仓库地址：仅允许 http/https 协议。
+// 无协议时补 https://（与表单填写习惯一致），返回规范化后的 URL；空值表示未填写。
+// 所有写入 homepage / repo_url 的路径都应先过这里，避免 javascript: 等伪协议
+// 只依赖客户端框架（React sanitizeURL）兜底。
+func validateExternalURL(raw string) (string, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return "", nil
+	}
+	u, err := url.Parse(v)
+	if err != nil {
+		return "", fmt.Errorf("%w: 无效的 URL: %s", ErrPluginInvalidInput, clipURL(v))
+	}
+	if u.Scheme == "" {
+		u, err = url.Parse("https://" + v)
+		if err != nil {
+			return "", fmt.Errorf("%w: 无效的 URL: %s", ErrPluginInvalidInput, clipURL(v))
+		}
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("%w: 主页/仓库地址仅支持 http/https: %s", ErrPluginInvalidInput, clipURL(v))
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf("%w: URL 缺少主机名: %s", ErrPluginInvalidInput, clipURL(v))
+	}
+	return u.String(), nil
 }

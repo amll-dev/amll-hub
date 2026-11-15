@@ -78,6 +78,17 @@ export function useScrubbing(
     [handleScrubMove, handleScrubEnd, zoom, scrollContainerRef]
   );
 
+  // 组件卸载（切布局 / 关闭编辑器）时摘掉 window 监听并复位拖拽标记，
+  // 否则之后的任何 mousemove 还会继续 seekMusic
+  useEffect(
+    () => () => {
+      isScrubbingRef.current = false;
+      window.removeEventListener('mousemove', handleScrubMove);
+      window.removeEventListener('mouseup', handleScrubEnd);
+    },
+    [handleScrubMove, handleScrubEnd]
+  );
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: 用 scrollLeft 作为 Trigger 以避免将 scrollLeft 加入 useCallback 导致频繁解绑事件
   useEffect(() => {
     if (isScrubbingRef.current) {

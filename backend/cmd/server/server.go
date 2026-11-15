@@ -126,7 +126,7 @@ func Run() {
 	syncSvc := service.NewSyncService(cfg, syncRepo, progressRepo, mq)
 	lyricsSvc := service.NewLyricsService(cfg, songRepo, minioClient, redisClient)
 	searchSvc := service.NewSearchService(cfg, meiliClient, redisClient)
-	statsSvc := service.NewStatsService(songRepo, artistRepo, syncRepo)
+	statsSvc := service.NewStatsService(songRepo, artistRepo, syncRepo, redisClient)
 	indexSvc := service.NewIndexService(cfg, minioClient)
 	notFoundSvc := service.NewNotFoundService(notFoundRepo, redisClient, mq)
 	onlineSearchSvc := service.NewOnlineSearchService(cfg)
@@ -138,6 +138,7 @@ func Run() {
 		cfg.Casdoor.JWTSecret,
 		cfg.Casdoor.JWTTTL,
 		cfg.Casdoor.Organization,
+		cfg.MFA.SetupEnabled,
 	)
 
 	// GitHub OAuth 登录/绑定 + 投稿数据迁移
@@ -305,6 +306,12 @@ func Run() {
 	)
 	pkg.GoSafe("review-lease-job", func() { reviewLeaseJob.Run(appCtx) })
 
+	// 4.3.2 启动临时 TTML 对象清理任务（投稿保存失败/中断留下的 tg-lyrics/.tmp-* 孤儿）
+	tempCleanupJob := job.NewTempObjectCleanupJob(
+		fileSvc, job.DefaultTempObjectTTL, job.DefaultTempCleanupInterval,
+	)
+	pkg.GoSafe("temp-object-cleanup-job", func() { tempCleanupJob.Run(appCtx) })
+
 	// 4.4 审核员/超级管理员缓存
 	reviewerCache := middleware.NewReviewerCache(reviewerRepo, cfg.Submission.ReviewerCacheTTL)
 	adminCache := middleware.NewAdminCache(adminRepo, cfg.Submission.ReviewerCacheTTL)
@@ -392,6 +399,7 @@ func Run() {
 		AdminCache:    adminCache,
 		JWTSecret:     cfg.Casdoor.JWTSecret,
 		ServiceToken:  cfg.ServiceToken,
+		Redis:         redisClient,
 	})
 
 	srv := &http.Server{

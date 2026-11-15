@@ -25,6 +25,8 @@ type MfaStatusItem struct {
 type MfaStatus struct {
 	Methods   []MfaStatusItem `json:"methods"`
 	Preferred string          `json:"preferred,omitempty"`
+	// SetupEnabled 是否允许新开启二次认证（维护期间为 false）
+	SetupEnabled bool `json:"setupEnabled"`
 }
 
 // MfaSetupStart 开始绑定 MFA 后返回给前端的信息
@@ -98,13 +100,29 @@ func (s *AuthService) GetMfaStatus(ctx context.Context, userID string) (*MfaStat
 		{MfaType: "email", Enabled: enabled["email"], IsPreferred: preferred == "email"},
 		{MfaType: "sms", Enabled: enabled["sms"], IsPreferred: preferred == "sms"},
 	}
-	return &MfaStatus{Methods: methods, Preferred: preferred}, nil
+	return &MfaStatus{Methods: methods, Preferred: preferred, SetupEnabled: s.mfaSetupEnabled}, nil
 }
 
 // StartMfaSetup 初始化 MFA 绑定
 func (s *AuthService) StartMfaSetup(ctx context.Context, userID, mfaType string) (*MfaSetupStart, error) {
+	if !s.mfaSetupEnabled {
+		return nil, ErrMfaSetupDisabled
+	}
 	if mfaType != "app" && mfaType != "email" && mfaType != "sms" {
 		return nil, ErrMfaMethodUnavailable
+	}
+
+	// 已启用的因子不允许直接重走 setup：/api/mfa/setup/initiate 只校验应用凭据，
+	// 会签发全新 secret，旧验证器被静默替换而用户毫无感知。
+	// 换绑应先关闭该因子，或另开要求旧 TOTP / 恢复码的 rebind 流程。
+	status, err := s.GetMfaStatus(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range status.Methods {
+		if m.MfaType == mfaType && m.Enabled {
+			return nil, ErrMfaMethodEnabled
+		}
 	}
 
 	owner, name, err := splitUserID(userID)
@@ -137,9 +155,19 @@ func (s *AuthService) StartMfaSetup(ctx context.Context, userID, mfaType string)
 		return nil, fmt.Errorf("%w: %v", ErrMfaOperationFailed, err)
 	}
 
+	// Casdoor 的 /api/mfa/setup/initiate 目前只下发一个恢复码，/api/mfa/setup/enable
+	// 也只接受单个 recoveryCodes 值并落库为单元素数组，所以站点侧只能登记并展示一个。
+	// 若上游某天真的返回多个，不能静默丢弃：其余码在 Casdoor 侧根本没登记，
+	// 展示出去只会让用户拿着「无效的码」去尝试。
 	recoveryCode := ""
 	if len(props.RecoveryCodes) > 0 {
 		recoveryCode = props.RecoveryCodes[0]
+		if len(props.RecoveryCodes) > 1 {
+			logrus.WithFields(logrus.Fields{
+				"user_id": s.org + "/" + name,
+				"count":   len(props.RecoveryCodes),
+			}).Warn("Casdoor 返回了多个恢复码，但 setup/enable 只登记第一个")
+		}
 	}
 
 	id, err := newChallengeID()
@@ -208,6 +236,9 @@ func (s *AuthService) saveMfaSetupChallenge(ctx context.Context, id string, ch *
 
 // SendMfaSetupCode 给当前绑定会话发送邮箱/短信验证码
 func (s *AuthService) SendMfaSetupCode(ctx context.Context, userID, challengeID, captchaType, captchaToken string) error {
+	if !s.mfaSetupEnabled {
+		return ErrMfaSetupDisabled
+	}
 	ch, err := s.loadMfaSetupChallenge(ctx, challengeID)
 	if err != nil {
 		return err
@@ -261,6 +292,9 @@ func (s *AuthService) SendMfaSetupCode(ctx context.Context, userID, challengeID,
 
 // CompleteMfaSetup 校验验证码并启用 MFA 因子
 func (s *AuthService) CompleteMfaSetup(ctx context.Context, userID, challengeID, passcode string) (*MfaSetupResult, error) {
+	if !s.mfaSetupEnabled {
+		return nil, ErrMfaSetupDisabled
+	}
 	ch, err := s.loadMfaSetupChallenge(ctx, challengeID)
 	if err != nil {
 		return nil, err

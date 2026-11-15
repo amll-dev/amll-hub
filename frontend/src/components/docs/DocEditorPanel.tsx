@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ArrowLeft, Save, Shield, Trash2, Upload } from 'lucide-react';
@@ -70,8 +70,14 @@ export function DocEditorPanel({
   const canEdit = data?.canEdit ?? Boolean(user?.isReviewer || user?.isAdmin);
 
   const [form, setForm] = useState<DocForm>(emptyForm);
+  // `queryKeys.docDetail` 是 ['docs','detail',slug]，`invalidateQueries(['docs'])`
+  // 会前缀匹配到它；网络抖动触发 refetchOnReconnect 时，用服务端旧内容覆盖
+  // 表单会让用户刚敲的几百字消失且没有任何提示。只在首次加载 / 换文档时灌入。
+  const initializedSlugRef = useRef<string | null>(null);
   useEffect(() => {
     if (!doc) return;
+    if (initializedSlugRef.current === doc.slug) return;
+    initializedSlugRef.current = doc.slug;
     setForm({
       slug: doc.slug,
       title: doc.title,
@@ -208,7 +214,7 @@ export function DocEditorPanel({
                 <AlertDialogHeader>
                   <AlertDialogTitle>删除这篇文档？</AlertDialogTitle>
                   <AlertDialogDescription>
-                    «{doc?.title}» 及其全部历史版本都会被删除，无法恢复。
+                    «{doc?.title}» 将从列表与站点中移除，历史版本仍保留在数据库中。
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -278,8 +284,14 @@ export function DocEditorPanel({
             <Input
               id="doc-order"
               type="number"
+              min={0}
               value={form.sortOrder}
-              onChange={(e) => setForm((f) => ({ ...f, sortOrder: Number(e.target.value) || 0 }))}
+              onChange={(e) => {
+                // 0 是合法排序值：不能用 `Number(v) || 0`，那样「清空输入框」和
+                // 「输入 0」变成同一件事，用户从 20 改小的时候会先被填成 0。
+                const n = Number.parseInt(e.target.value, 10);
+                setForm((f) => ({ ...f, sortOrder: Number.isNaN(n) ? 0 : n }));
+              }}
             />
           </div>
         </div>
@@ -291,6 +303,11 @@ export function DocEditorPanel({
             onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
             placeholder="例如：补充逐字音译说明"
           />
+          {/* 版本快照只存标题与正文（见 001_init.up.sql），回滚不会改动
+              组织字段，这里先把边界说清楚，避免用户以为回滚会连带恢复分组/状态。 */}
+          <p className="text-xs text-ink-3">
+            历史版本只保存标题与正文，回滚也仅恢复这两项；分组、状态、排序保持不变。
+          </p>
         </div>
       </div>
 

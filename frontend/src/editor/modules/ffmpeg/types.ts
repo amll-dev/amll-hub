@@ -42,6 +42,8 @@ export const EngineErrorCode = {
   Network: 2,
   Decode: 3,
   SrcNotSupported: 4,
+  /** 运行环境不支持（如未启用跨源隔离导致 SharedArrayBuffer 不可用）。 */
+  Unsupported: 5,
 } as const;
 
 export type EngineErrorCodeValue = (typeof EngineErrorCode)[keyof typeof EngineErrorCode];

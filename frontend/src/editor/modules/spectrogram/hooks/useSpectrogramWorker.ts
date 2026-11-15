@@ -106,6 +106,20 @@ class SpectrogramWorkerClient {
   }
 }
 
+/**
+ * 瓦片缓存 key：必须包含所有影响像素的参数。
+ * 生产侧（requestTileIfNeeded）与消费侧（计算当前 bitmap）共用这一份，
+ * 否则改 gain / 尺寸后两边对不上，缓存永远命不中。
+ */
+export const tileCacheKey = (params: {
+  tileIndex: number;
+  tileWidthPx: number;
+  height: number;
+  gain: number;
+  paletteId: string;
+}) =>
+  `${params.tileIndex}-w${params.tileWidthPx}-h${params.height}-g${params.gain}-p${params.paletteId}`;
+
 export const useSpectrogramWorker = (
   pcmDataReady: boolean,
   durationInMs: number,
@@ -119,6 +133,8 @@ export const useSpectrogramWorker = (
     })
   );
   const activeRequests = useRef<Set<string>>(new Set());
+  // 记住上次 warn 的就绪状态：worker 未就绪时每次滚动只在「状态切换」时打一次，不再刷屏
+  const warnedStateRef = useRef<string | null>(null);
   const [lastTileTimestamp, setLastTileTimestamp] = useState(0);
 
   const paletteDataRef = useRef(paletteData);
@@ -167,16 +183,24 @@ export const useSpectrogramWorker = (
       // 每帧都会进来然后直接 return，控制台一个字都没有，
       // 表现就是「频谱区一片灰、没有任何报错」。
       if (!clientRef.current) {
-        console.warn('requestTileIfNeeded: worker 尚未创建');
+        if (warnedStateRef.current !== 'no-client') {
+          console.warn('requestTileIfNeeded: worker 尚未创建');
+          warnedStateRef.current = 'no-client';
+        }
         return;
       }
       if (!isWorkerReady) {
-        console.warn('requestTileIfNeeded: worker 未就绪，跳过');
+        if (warnedStateRef.current !== 'not-ready') {
+          console.warn('requestTileIfNeeded: worker 未就绪，跳过');
+          warnedStateRef.current = 'not-ready';
+        }
         return;
       }
+      // 恢复正常，下次再出错时重新提示一次
+      warnedStateRef.current = null;
 
-      const cacheKey = `tile-${params.tileIndex}`;
-      const requestFingerprint = `${params.tileIndex}-w${params.tileWidthPx}-h${params.height}-g${params.gain}-p${params.paletteId}`;
+      const cacheKey = tileCacheKey(params);
+      const requestFingerprint = cacheKey;
 
       const cacheEntry = tileCache.current.get(cacheKey);
 

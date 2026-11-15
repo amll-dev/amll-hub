@@ -1,5 +1,5 @@
 import type { TTMLLyric } from '$/types/ttml';
-import { buildLineMap, buildWordMap, computeDisplayNumbers, getLineNumber } from './lyric-utils';
+import { alignLyricLines, buildWordMap, computeDisplayNumbers } from './lyric-utils';
 import { createReviewReport, createReviewReportBlockId } from './normalize-service';
 import type {
   LineTimingChangeCandidate,
@@ -81,24 +81,18 @@ const buildSyncReportBlocks = (
 };
 
 export const buildSyncChanges = (freeze: TTMLLyric, staged: TTMLLyric) => {
-  const stagedLineMap = buildLineMap(staged.lyricLines);
-  const freezeDisplayMap = computeDisplayNumbers(freeze.lyricLines);
-  const stagedDisplayMap = computeDisplayNumbers(staged.lyricLines);
+  const displayMaps = {
+    freeze: computeDisplayNumbers(freeze.lyricLines),
+    staged: computeDisplayNumbers(staged.lyricLines),
+  };
   const reportLines: SyncChangeCandidate[] = [];
-  const matchedStagedLines = new Set<(typeof staged.lyricLines)[number]>();
 
-  freeze.lyricLines.forEach((freezeLine, index) => {
-    const foundStagedById = stagedLineMap.get(freezeLine.id);
-    const stagedById =
-      foundStagedById && !matchedStagedLines.has(foundStagedById) ? foundStagedById : undefined;
-    const fallbackLine = staged.lyricLines[index];
-    const stagedLine =
-      stagedById ??
-      (fallbackLine && !matchedStagedLines.has(fallbackLine) ? fallbackLine : undefined);
-    if (!stagedLine) return;
-    matchedStagedLines.add(stagedLine);
-    const lineNumber = getLineNumber(freezeLine, index, freezeDisplayMap, stagedDisplayMap);
-    const isBG = freezeLine.isBG ?? stagedLine.isBG ?? false;
+  for (const { freezeLine, stagedLine, lineNumber, isBG } of alignLyricLines(
+    freeze,
+    staged,
+    displayMaps
+  )) {
+    if (!stagedLine) continue;
     const stagedWordMap = buildWordMap(stagedLine.words);
     const matchedStagedWordIndexes = new Set<number>();
     const matchedStagedWords = new Set<(typeof stagedLine.words)[number]>();
@@ -144,45 +138,41 @@ export const buildSyncChanges = (freeze: TTMLLyric, staged: TTMLLyric) => {
         newEnd,
       });
     });
-  });
+  }
 
   return reportLines;
 };
 
 export const buildLineTimingChanges = (freeze: TTMLLyric, staged: TTMLLyric) => {
-  const stagedLineMap = buildLineMap(staged.lyricLines);
-  const freezeDisplayMap = computeDisplayNumbers(freeze.lyricLines);
-  const stagedDisplayMap = computeDisplayNumbers(staged.lyricLines);
+  const displayMaps = {
+    freeze: computeDisplayNumbers(freeze.lyricLines),
+    staged: computeDisplayNumbers(staged.lyricLines),
+  };
   const reportLines: LineTimingChangeCandidate[] = [];
-  const matchedStagedLines = new Set<(typeof staged.lyricLines)[number]>();
 
-  freeze.lyricLines.forEach((freezeLine, index) => {
-    const foundStagedById = stagedLineMap.get(freezeLine.id);
-    const stagedById =
-      foundStagedById && !matchedStagedLines.has(foundStagedById) ? foundStagedById : undefined;
-    const fallbackLine = staged.lyricLines[index];
-    const stagedLine =
-      stagedById ??
-      (fallbackLine && !matchedStagedLines.has(fallbackLine) ? fallbackLine : undefined);
-    if (!stagedLine) return;
-    matchedStagedLines.add(stagedLine);
+  for (const { freezeLine, stagedLine, lineNumber, isBG } of alignLyricLines(
+    freeze,
+    staged,
+    displayMaps
+  )) {
+    if (!stagedLine) continue;
 
     const oldStart = Math.round(freezeLine.startTime);
     const newStart = Math.round(stagedLine.startTime);
     const oldEnd = Math.round(freezeLine.endTime);
     const newEnd = Math.round(stagedLine.endTime);
-    if (oldStart === newStart && oldEnd === newEnd) return;
+    if (oldStart === newStart && oldEnd === newEnd) continue;
 
     reportLines.push({
       lineId: freezeLine.id,
-      lineNumber: getLineNumber(freezeLine, index, freezeDisplayMap, stagedDisplayMap),
-      isBG: freezeLine.isBG ?? stagedLine.isBG ?? false,
+      lineNumber,
+      isBG,
       oldStart,
       newStart,
       oldEnd,
       newEnd,
     });
-  });
+  }
 
   return reportLines;
 };

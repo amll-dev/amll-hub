@@ -43,7 +43,7 @@ export function Footer() {
             <div className="flex items-center gap-2">
               <img src="/logo.png" alt="AMLL-Hub" className="h-8 w-8 rounded-md object-contain" />
               <span className="text-lg font-bold">AMLL Hub</span>
-              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-500">
                 测试版
               </span>
             </div>

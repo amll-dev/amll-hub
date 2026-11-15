@@ -25,6 +25,9 @@ func NewPluginReviewHandler(svc *service.PluginReviewService) *PluginReviewHandl
 func (h *PluginReviewHandler) Queue(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	// 回显实际生效的分页参数：仓库层会把 size 钳到 50，原样回显请求值会让
+	// 前端按 total/pageSize 算页数时少算，翻到后面直接空白。
+	page, pageSize = repository.NormalizePage(page, pageSize)
 	q := repository.PluginReviewQueueQuery{
 		Page:     page,
 		PageSize: pageSize,

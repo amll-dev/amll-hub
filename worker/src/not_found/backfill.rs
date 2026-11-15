@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
-use tokio::sync::Notify;
+use tokio::sync::watch;
 use tracing::{error, info, warn};
 
 use crate::app::AppState;
@@ -27,19 +27,25 @@ struct EmptyRecord {
 }
 
 /// 回填循环：定期扫描无歌名的记录，重新解析并写回元数据
-pub async fn run_loop(app: Arc<AppState>, shutdown: Arc<Notify>) {
+pub async fn run_loop(app: Arc<AppState>, mut shutdown: watch::Receiver<bool>) {
     tokio::select! {
         _ = tokio::time::sleep(BACKFILL_STARTUP_DELAY) => {}
-        _ = shutdown.notified() => return,
+        _ = shutdown.changed() => return,
     }
 
     loop {
+        // 每轮循环开头主动检查：backfill_once 可能耗时较长，期间到达的信号
+        // 不会丢（watch 保留最新值），下一轮到这里就能看到并退出。
+        if *shutdown.borrow() {
+            info!("backfill task stopped");
+            return;
+        }
         if let Err(e) = backfill_once(&app).await {
             error!(error = %e, "backfill round failed");
         }
         tokio::select! {
             _ = tokio::time::sleep(BACKFILL_INTERVAL) => {}
-            _ = shutdown.notified() => {
+            _ = shutdown.changed() => {
                 info!("backfill task stopped");
                 return;
             }
@@ -48,15 +54,16 @@ pub async fn run_loop(app: Arc<AppState>, shutdown: Arc<Notify>) {
 }
 
 async fn backfill_once(app: &Arc<AppState>) -> Result<()> {
-    if !acquire_lock(app).await? {
+    // 抢锁时生成 owner token，全程带着它续期 / 释放，避免超时后 DEL 掉别人的锁
+    let Some(token) = acquire_lock(app).await? else {
         return Ok(());
-    }
-    let result = run_batch(app).await;
-    release_lock(app).await;
+    };
+    let result = run_batch(app, &token).await;
+    release_lock(app, &token).await;
     result
 }
 
-async fn run_batch(app: &Arc<AppState>) -> Result<()> {
+async fn run_batch(app: &Arc<AppState>, lock_token: &str) -> Result<()> {
     let rows = load_empty_records(app).await?;
     if rows.is_empty() {
         return Ok(());
@@ -67,13 +74,18 @@ async fn run_batch(app: &Arc<AppState>) -> Result<()> {
     let mut resolved = 0usize;
     let mut skipped = 0usize;
 
-    for r in &rows {
+    for (i, r) in rows.iter().enumerate() {
+        // 一批 200 条串行调用外部 API 可能跑过锁 TTL，每 20 条续期一次
+        if i > 0 && i % 20 == 0 {
+            renew_lock(app, lock_token).await;
+        }
         let msg = NotFoundMessage {
             platform: r.platform.clone(),
             platform_id: r.platform_id.clone(),
             client_ip: None,
         };
         match process_with_mode(&msg, app, true).await {
+            // 白名单命中已在 process_with_mode 内把 category 写库，本轮起不再重复占配额
             Ok(true) => resolved += 1,
             Ok(false) => {
                 skipped += 1;
@@ -147,24 +159,52 @@ async fn touch_record(app: &Arc<AppState>, r: &EmptyRecord) {
     }
 }
 
-async fn acquire_lock(app: &Arc<AppState>) -> Result<bool> {
+/// 抢锁成功时返回 owner token，供续期 / 释放时校验
+async fn acquire_lock(app: &Arc<AppState>) -> Result<Option<String>> {
     let mut conn = app.redis.clone();
+    let token = uuid::Uuid::new_v4().to_string();
     let ok: Option<String> = redis::cmd("SET")
         .arg(BACKFILL_LOCK_KEY)
-        .arg("1")
+        .arg(&token)
         .arg("NX")
         .arg("EX")
-        .arg((BACKFILL_INTERVAL.as_secs() + 120) as u64)
+        .arg(BACKFILL_INTERVAL.as_secs() + 120)
         .query_async(&mut conn)
         .await
         .context("acquire backfill lock")?;
-    Ok(ok.is_some())
+    Ok(ok.map(|_| token))
 }
 
-async fn release_lock(app: &Arc<AppState>) {
+/// 校验 owner 后给锁续期，避免一批记录串行跑过 TTL 后锁被别人抢走
+async fn renew_lock(app: &Arc<AppState>, token: &str) {
     let mut conn = app.redis.clone();
-    let _: redis::RedisResult<i64> = redis::cmd("DEL")
+    let script = "if redis.call(\"get\", KEYS[1]) == ARGV[1] then return redis.call(\"pexpire\", KEYS[1], ARGV[2]) else return 0 end";
+    let ttl_ms = (BACKFILL_INTERVAL.as_secs() + 120) * 1000;
+    let res: redis::RedisResult<i64> = redis::cmd("EVAL")
+        .arg(script)
+        .arg(1)
         .arg(BACKFILL_LOCK_KEY)
+        .arg(token)
+        .arg(ttl_ms)
         .query_async(&mut conn)
         .await;
+    if let Err(e) = res {
+        warn!(error = %e, "backfill: renew lock failed");
+    }
+}
+
+/// 只有 value 仍等于本实例的 token 才删，避免超时后 DEL 掉别人的锁
+async fn release_lock(app: &Arc<AppState>, token: &str) {
+    let mut conn = app.redis.clone();
+    let script = "if redis.call(\"get\", KEYS[1]) == ARGV[1] then return redis.call(\"del\", KEYS[1]) else return 0 end";
+    let res: redis::RedisResult<i64> = redis::cmd("EVAL")
+        .arg(script)
+        .arg(1)
+        .arg(BACKFILL_LOCK_KEY)
+        .arg(token)
+        .query_async(&mut conn)
+        .await;
+    if let Err(e) = res {
+        warn!(error = %e, "backfill: release lock failed");
+    }
 }

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
@@ -41,6 +42,9 @@ type Message struct {
 	SubmissionID int64  `json:"submissionId,omitempty"`
 	Username     string `json:"username,omitempty"` // 通知频道：消息归属用户，broadcastLocal 按此路由
 	Data         any    `json:"data,omitempty"`
+	// StaffData 只下发给「审核员 / 该投稿的投稿者本人」：broadcastLocal 会把它合并进 Data 再发，
+	// 其余人收到的仍是脱敏后的 Data（reviewer / reviewerInfo 不出现在里面）。
+	StaffData any `json:"staffData,omitempty"`
 }
 
 // Client WebSocket 客户端
@@ -52,9 +56,12 @@ type Client struct {
 	username     string
 	displayName  string
 	avatar       string
-	send         chan []byte
-	hub          *Hub
-	onClose      func() // 连接断开后回调（用于通知观众列表更新）
+	// canViewInternal 决定是否下发 StaffData 里的内部字段（reviewer / reviewerInfo）。
+	// 为真的两种情况：审核员，或该投稿的投稿者本人。
+	canViewInternal bool
+	send            chan []byte
+	hub             *Hub
+	onClose         func() // 连接断开后回调（用于通知观众列表更新）
 }
 
 // Viewer 观众信息
@@ -85,17 +92,26 @@ type Hub struct {
 
 	// 客户端注册/注销后的回调，通过 SetViewerNotifier 注入
 	viewerNotifier func(room string)
+
+	// 观众列表通知去抖：room -> 待触发的 timer
+	debounceMu     sync.Mutex
+	debounceTimers map[string]*time.Timer
 }
+
+// viewerNotifyDebounce 同一房间观众变动通知的去抖窗口：
+// 短时间内大量进出只触发一次 Redis Publish，避免惊群。
+const viewerNotifyDebounce = 200 * time.Millisecond
 
 // NewHub 创建 Hub
 func NewHub(rdb *redis.Client) *Hub {
 	return &Hub{
-		rdb:           rdb,
-		clientsByRoom: make(map[string]map[*Client]struct{}),
-		listClients:   make(map[*Client]struct{}),
-		clientsByUser: make(map[string]map[*Client]struct{}),
-		register:      make(chan *Client, 64),
-		unregister:    make(chan *Client, 64),
+		rdb:            rdb,
+		clientsByRoom:  make(map[string]map[*Client]struct{}),
+		listClients:    make(map[*Client]struct{}),
+		clientsByUser:  make(map[string]map[*Client]struct{}),
+		debounceTimers: make(map[string]*time.Timer),
+		register:       make(chan *Client, 1024),
+		unregister:     make(chan *Client, 1024),
 	}
 }
 
@@ -123,6 +139,12 @@ func (h *Hub) Unregister(c *Client) {
 	select {
 	case h.unregister <- c:
 	default:
+		// 与 Register 对称：通道满时不能静默丢弃，否则该客户端会永远留在
+		// clientsByRoom / clientsByUser 里（观众列表与内存双泄漏）
+		logrus.WithFields(logrus.Fields{
+			"submission_id": c.submissionID,
+			"username":      c.username,
+		}).Warn("ws hub unregister channel full, client may linger")
 	}
 }
 
@@ -175,8 +197,9 @@ func (h *Hub) registerClient(c *Client) {
 	}
 	h.mu.Unlock()
 	// 注册成功后触发观众列表广播（此时客户端已在 map 中，不会漏算）
-	if c.mode != ModeNotifications && c.room != "" && h.viewerNotifier != nil {
-		h.viewerNotifier(c.room)
+	// 异步 + 去抖，避免 Redis RTT 卡住 Hub 主循环
+	if c.mode != ModeNotifications && c.room != "" {
+		h.scheduleViewerNotify(c.room)
 	}
 }
 
@@ -209,10 +232,37 @@ func (h *Hub) unregisterClient(c *Client) {
 	safeClose(c.send)
 	room := c.room
 	h.mu.Unlock()
-	// 注销后触发观众列表广播
-	if room != "" && h.viewerNotifier != nil {
-		h.viewerNotifier(room)
+	// 注销后触发观众列表广播（异步 + 去抖，与注册路径一致）
+	if room != "" {
+		h.scheduleViewerNotify(room)
 	}
+}
+
+// scheduleViewerNotify 异步、去抖地触发观众列表广播。
+//
+// viewerNotifier → ViewerService.NotifyRoom → Hub.PublishViewers 会做一次 Redis
+// Publish（网络往返）。若在 Hub.Run 的 select 循环里同步调用，主循环的注册/注销/
+// 全部广播都会被这一个 RTT 卡住。这里把通知挪到 time.AfterFunc 自带的 goroutine，
+// 并按 room 做 200ms 尾部去抖：窗口内多次进出只发一次，触发时重新 CollectViewers，
+// 拿到的是最新状态。
+func (h *Hub) scheduleViewerNotify(room string) {
+	if room == "" || h.viewerNotifier == nil {
+		return
+	}
+	h.debounceMu.Lock()
+	defer h.debounceMu.Unlock()
+	if t, ok := h.debounceTimers[room]; ok {
+		// 窗口内已有待触发通知：重置计时，最终只发一次
+		t.Reset(viewerNotifyDebounce)
+		return
+	}
+	h.debounceTimers[room] = time.AfterFunc(viewerNotifyDebounce, func() {
+		h.debounceMu.Lock()
+		delete(h.debounceTimers, room)
+		h.debounceMu.Unlock()
+		// AfterFunc 已提供独立 goroutine，这里只需 panic 兜底（复用项目统一的 stack 日志）
+		pkg.RunSafe("ws-viewer-notify", func() { h.viewerNotifier(room) })
+	})
 }
 
 // broadcastLocal 在本实例内广播消息
@@ -236,15 +286,32 @@ func (h *Hub) broadcastLocal(channel string, payload []byte) {
 			}
 		}
 	case ChannelChanged:
-		// 推给所有列表页客户端
-		for c := range h.listClients {
+		// 审核员与投稿者本人拿完整负载（含 reviewer / reviewerInfo），其余人拿脱敏负载。
+		// 列表页连接的准入条件只有「有效 JWT」，不区分角色就等于把审核动态推给全站。
+		staffPayload := payload
+		if msg.StaffData != nil {
+			if merged, err := mergeStaffData(&msg); err == nil {
+				staffPayload = merged
+			} else {
+				logrus.WithError(err).Warn("ws merge staff payload failed, fallback to public payload")
+			}
+		}
+		sendChanged := func(c *Client) {
+			if c.canViewInternal {
+				safeSend(c.send, staffPayload)
+				return
+			}
 			safeSend(c.send, payload)
 		}
-		// 同时推给该投稿详情页客户端
+		// 推给所有列表页客户端
+		for c := range h.listClients {
+			sendChanged(c)
+		}
+		// 同时推给该投稿详情页客户端（房间准入不校验归属，同样按角色分发）
 		if msg.SubmissionID > 0 {
 			if set, ok := h.clientsByRoom[SubmissionRoom(msg.SubmissionID)]; ok {
 				for c := range set {
-					safeSend(c.send, payload)
+					sendChanged(c)
 				}
 			}
 		}
@@ -258,6 +325,28 @@ func (h *Hub) broadcastLocal(channel string, payload []byte) {
 			}
 		}
 	}
+}
+
+// mergeStaffData 把 StaffData 合并进 Data，生成审核员可见的完整负载
+func mergeStaffData(msg *Message) ([]byte, error) {
+	data, ok := msg.Data.(map[string]any)
+	if !ok {
+		// 非 map 负载无法合并，原样下发（只有审核员会收到，不含额外泄露）
+		return json.Marshal(msg)
+	}
+	merged := make(map[string]any, len(data)+4)
+	for k, v := range data {
+		merged[k] = v
+	}
+	if extra, ok := msg.StaffData.(map[string]any); ok {
+		for k, v := range extra {
+			merged[k] = v
+		}
+	}
+	out := *msg
+	out.Data = merged
+	out.StaffData = nil
+	return json.Marshal(out)
 }
 
 // safeSend 非阻塞发送，recover 防止向已关闭 channel 发送时 panic 导致 Hub 崩溃
@@ -292,11 +381,15 @@ func (h *Hub) PublishViewers(ctx context.Context, room string, submissionID int6
 }
 
 // PublishChanged 发布投稿状态变更到 Redis
-func (h *Hub) PublishChanged(ctx context.Context, submissionID int64, data any) error {
+//
+// data 是所有登录用户可见的脱敏负载，staffData 只下发给审核员连接；
+// 分发在 broadcastLocal 里按客户端角色完成。
+func (h *Hub) PublishChanged(ctx context.Context, submissionID int64, data, staffData any) error {
 	dataBytes, err := json.Marshal(Message{
 		Type:         TypeSubmissionChg,
 		SubmissionID: submissionID,
 		Data:         data,
+		StaffData:    staffData,
 	})
 	if err != nil {
 		return err
@@ -366,27 +459,28 @@ func RequestRoom(id int64) string { return "req:" + strconv.FormatInt(id, 10) }
 func PluginRoom(key string) string { return "plugin:" + key }
 
 // NewClient 创建客户端（观众/列表页连接；room 为空表示列表页）
-func NewClient(conn *websocket.Conn, hub *Hub, room string, submissionID int64, username, displayName, avatar string, onClose func()) *Client {
-	return newClient(conn, hub, ModeViewers, room, submissionID, username, displayName, avatar, onClose)
+func NewClient(conn *websocket.Conn, hub *Hub, room string, submissionID int64, username, displayName, avatar string, canViewInternal bool, onClose func()) *Client {
+	return newClient(conn, hub, ModeViewers, room, submissionID, username, displayName, avatar, canViewInternal, onClose)
 }
 
 // NewNotificationClient 创建站内消息客户端（按 username 分组路由）
 func NewNotificationClient(conn *websocket.Conn, hub *Hub, username string) *Client {
-	return newClient(conn, hub, ModeNotifications, "", 0, username, "", "", nil)
+	return newClient(conn, hub, ModeNotifications, "", 0, username, "", "", false, nil)
 }
 
-func newClient(conn *websocket.Conn, hub *Hub, mode, room string, submissionID int64, username, displayName, avatar string, onClose func()) *Client {
+func newClient(conn *websocket.Conn, hub *Hub, mode, room string, submissionID int64, username, displayName, avatar string, canViewInternal bool, onClose func()) *Client {
 	return &Client{
-		conn:         conn,
-		mode:         mode,
-		room:         room,
-		submissionID: submissionID,
-		username:     username,
-		displayName:  displayName,
-		avatar:       avatar,
-		send:         make(chan []byte, 32),
-		hub:          hub,
-		onClose:      onClose,
+		conn:            conn,
+		mode:            mode,
+		room:            room,
+		submissionID:    submissionID,
+		username:        username,
+		displayName:     displayName,
+		avatar:          avatar,
+		canViewInternal: canViewInternal,
+		send:            make(chan []byte, 32),
+		hub:             hub,
+		onClose:         onClose,
 	}
 }
 

@@ -44,6 +44,16 @@ Worker 层 Rust (Tokio) —— RabbitMQ 消费者 / 自动同步 / 索引更新
 | **RabbitMQ** | 消息队列：解耦 API 与 Worker，支持死信队列（DLX/DLQ）；独立队列：无歌词解析任务 |
 | **MeiliSearch** | 全文搜索：歌曲名、艺术家、专辑、歌词文本，支持拼音搜索 |
 
+### 反向代理与客户端 IP
+
+后端通过 `TRUSTED_PROXIES`（逗号分隔的 IP / CIDR）决定是否信任代理的 `X-Forwarded-For` / `X-Real-IP` 头：
+
+- **留空（默认）**：不信任任何代理头，`ClientIP` 取直连地址，直连部署时最安全。
+- **前面挂了 nginx / CDN / 网关时必须配置**成代理的出口 IP，否则所有请求的 `ClientIP` 都会变成代理的内网 IP，导致无歌词上报按 IP 去重、排行榜防刷、请求日志 `client_ip` 和全站限流全部失真。
+- 只填写确实可信的代理地址；配得过宽会让客户端用伪造的转发头绕过 IP 维度限制。
+
+完整环境变量清单与逐项说明见仓库根目录 `.env.example`。
+
 ## 鸣谢
 
 -   [xiaowumin-mark/AMLX-MUSIC-API](https://github.com/xiaowumin-mark/AMLX-MUSIC-API)

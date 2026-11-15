@@ -18,6 +18,7 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { downloadBlobFile, downloadText, sanitizeFileName } from '@/lib/download';
 import { listItem, staggerContainer } from '@/lib/motion';
+import { contentFingerprint } from '@/lib/hash';
 import { formatLyricTime } from '@/lib/format';
 import type { LyricViewLine, LyricViewResponse, OnlinePlatform } from '@/lib/types';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -152,7 +153,7 @@ function BgLine({ line }: { line: LyricViewLine }) {
       )}
       {roman && (
         <div
-          className={`mt-0.5 flex items-start gap-1.5 text-xs text-purple-500 ${
+          className={`mt-0.5 flex items-start gap-1.5 text-xs text-roman ${
             line.isDuet ? 'flex-row-reverse justify-start text-right' : ''
           }`}
         >
@@ -196,7 +197,7 @@ function WordCells({ line }: { line: LyricViewLine }) {
             )}ms）`}
           >
             {/* 起止时间 */}
-            <span className="rounded bg-primary/10 px-1 font-mono text-[10px] leading-4 tabular-nums text-primary">
+            <span className="rounded bg-primary/10 px-1 font-mono text-[11px] leading-4 tabular-nums text-primary">
               {formatLyricTime(w.startTime)}
             </span>
             {/* 中间区域 */}
@@ -208,11 +209,11 @@ function WordCells({ line }: { line: LyricViewLine }) {
               >
                 {w.word}
               </span>
-              <span className="absolute inset-x-0 bottom-0 text-center text-[11px] italic leading-none text-purple-500">
+              <span className="absolute inset-x-0 bottom-0 text-center text-[11px] italic leading-none text-roman">
                 {w.romanWord ?? ''}
               </span>
             </span>
-            <span className="mt-1 rounded bg-primary/10 px-1 font-mono text-[10px] leading-4 tabular-nums text-primary/80">
+            <span className="mt-1 rounded bg-primary/10 px-1 font-mono text-[11px] leading-4 tabular-nums text-primary/80">
               {formatLyricTime(w.endTime)}
             </span>
           </span>
@@ -230,13 +231,6 @@ function MetaChip({ icon: Icon, children }: { icon: LucideIcon; children: ReactN
       <span className="min-w-0 break-words">{children}</span>
     </span>
   );
-}
-
-/** TTML 文本不做 queryKey 原文存储，用 djb2 + 长度生成短指纹（仅用于缓存定位） */
-function hashString(s: string): string {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  return `${(h >>> 0).toString(36)}:${s.length.toString(36)}`;
 }
 
 export function LyricViewer({
@@ -262,7 +256,7 @@ export function LyricViewer({
         ? queryKeys.viewLyric(filename!)
         : mode === 'online'
           ? queryKeys.onlineViewLyric(onlinePlatform!, onlineSongId!)
-          : queryKeys.parseLyric(ttml ? hashString(ttml) : ''),
+          : queryKeys.parseLyric(ttml ? contentFingerprint(ttml) : ''),
     queryFn: () => {
       if (mode === 'file') return api.viewLyric(filename!);
       if (mode === 'online') return fetchOnlineView(onlinePlatform!, onlineSongId!);
@@ -425,7 +419,7 @@ export function LyricViewer({
                           {/* 整行音译 */}
                           {line.romanLyric && (
                             <div
-                              className={`mt-1 flex items-start gap-1.5 text-xs text-purple-500 ${
+                              className={`mt-1 flex items-start gap-1.5 text-xs text-roman ${
                                 line.isDuet ? 'flex-row-reverse justify-start text-right' : 'pl-1'
                               }`}
                             >

@@ -415,8 +415,8 @@ func (h *AuthHandler) UploadAvatar(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// 限制头像大小为 50MB
-	const maxAvatarUpload = 50 * 1024 * 1024
+	// 限制头像大小为 5MB（与 service.maxAvatarSize 保持一致）
+	const maxAvatarUpload = 5 * 1024 * 1024
 	fileBytes, err := readLimited(file, maxAvatarUpload)
 	if err != nil {
 		logrus.WithError(err).Warn("read avatar file failed")
@@ -456,14 +456,16 @@ func writeAuthErr(c *gin.Context, err error) {
 		pkg.Fail(c, http.StatusTooManyRequests, http.StatusTooManyRequests, "验证失败次数过多，请重新登录")
 	case errors.Is(err, service.ErrMfaMethodUnavailable):
 		pkg.BadRequest(c, "该验证方式不可用")
+	case errors.Is(err, service.ErrMfaMethodEnabled):
+		pkg.Fail(c, http.StatusConflict, http.StatusConflict, "该验证方式已启用，如需更换请先关闭后重新绑定")
+	case errors.Is(err, service.ErrMfaSetupDisabled):
+		pkg.Fail(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "二次认证功能维护中，暂不可开启")
 	case errors.Is(err, service.ErrMfaSetupRequired):
 		pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "请先完成多因素认证设置")
 	case errors.Is(err, service.ErrMfaOperationFailed):
-		detail := err.Error()
-		if idx := strings.Index(detail, ": "); idx >= 0 {
-			detail = detail[idx+2:]
-		}
-		pkg.Fail(c, http.StatusBadGateway, http.StatusBadGateway, detail)
+		// Casdoor 的原始 msg 可能带组织名、应用名和内部端点，只记日志不外传
+		logrus.WithError(err).Warn("mfa operation failed")
+		pkg.Fail(c, http.StatusBadGateway, http.StatusBadGateway, "操作失败，请稍后重试")
 	case errors.Is(err, service.ErrPasswordUpdateRequired):
 		pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "密码已过期，请先重置密码")
 	case errors.Is(err, service.ErrCodeExpired):
@@ -476,6 +478,12 @@ func writeAuthErr(c *gin.Context, err error) {
 		pkg.Fail(c, http.StatusTooManyRequests, http.StatusTooManyRequests, "验证码发送过于频繁，请稍后再试")
 	case errors.Is(err, service.ErrInvalidInput):
 		pkg.BadRequest(c, "请求参数非法")
+	case errors.Is(err, service.ErrWeakPassword):
+		pkg.BadRequest(c, "密码需为 8~128 位，且至少包含字母和数字")
+	case errors.Is(err, service.ErrAvatarTooLarge):
+		pkg.BadRequest(c, "头像不能超过 5MB")
+	case errors.Is(err, service.ErrAvatarFormatUnsupported):
+		pkg.BadRequest(c, "头像格式不支持，仅接受 JPEG / PNG / WebP / AVIF")
 	case errors.Is(err, service.ErrIdentityNotVerified):
 		pkg.Fail(c, http.StatusForbidden, http.StatusForbidden, "请先完成身份验证")
 	case errors.Is(err, service.ErrIdentityLocked):
@@ -491,7 +499,8 @@ func writeAuthErr(c *gin.Context, err error) {
 	case errors.Is(err, service.ErrCasdoorCredentialMissing):
 		pkg.Fail(c, http.StatusUnauthorized, http.StatusUnauthorized, "登录状态已过期，请重新登录后再试")
 	case errors.Is(err, service.ErrCaptchaFailed):
-		pkg.BadRequest(c, "人机验证未通过，请重试")
+		// 带稳定业务码：前端靠它决定「保留验证码弹窗重试」还是「关闭弹窗」
+		pkg.Fail(c, http.StatusBadRequest, pkg.CodeCaptchaFailed, "人机验证未通过，请重试")
 	case errors.Is(err, service.ErrDestLookupFailed):
 		pkg.Fail(c, http.StatusBadGateway, http.StatusBadGateway, "认证服务无法定位该账号的联系方式，请联系管理员检查认证服务配置")
 	case errors.Is(err, service.ErrInvalidPhone):

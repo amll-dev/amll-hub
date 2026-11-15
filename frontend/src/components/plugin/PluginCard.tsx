@@ -165,7 +165,7 @@ export function PluginRowCard({ item }: { item: PluginStoreListItem }) {
             {plugin.name}
           </h3>
           {version.channel === 'theme' && (
-            <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-3">
+            <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-ink-3">
               主题
             </span>
           )}

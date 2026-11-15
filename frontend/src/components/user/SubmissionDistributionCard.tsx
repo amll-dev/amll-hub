@@ -11,7 +11,7 @@ const ORDER: { key: SubmissionStatus; bar: string }[] = [
   { key: 'reviewing', bar: 'bg-info' },
   { key: 'revised', bar: 'bg-purple-500' },
   { key: 'need_revision', bar: 'bg-orange-500' },
-  { key: 'missing_audio', bar: 'bg-orange-500' },
+  { key: 'missing_audio', bar: 'bg-info' },
   { key: 'rejected', bar: 'bg-error' },
   { key: 'draft', bar: 'bg-ink-3/40' },
   { key: 'closed', bar: 'bg-ink-3/40' },

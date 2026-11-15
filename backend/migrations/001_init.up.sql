@@ -64,8 +64,13 @@ CREATE TABLE platform_mappings (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_pm_song_platform ON platform_mappings(song_id, platform);
-CREATE INDEX idx_pm_platform_id   ON platform_mappings(platform, platform_id);
+-- 同一首歌内不允许重复映射；不同歌曲（历史版本）可以共享同一个平台 ID
+CREATE UNIQUE INDEX uq_platform_mappings_song_platform_id
+    ON platform_mappings(song_id, platform, platform_id);
+COMMENT ON INDEX uq_platform_mappings_song_platform_id IS '同一歌曲内平台 ID 唯一；不同版本可共享（历史版本关联依赖）';
+
+-- 反向查找：按平台 ID 找歌曲（历史版本 BFS / 批量接口）
+CREATE INDEX idx_pm_platform_id ON platform_mappings(platform, platform_id);
 
 --  同步状态表
 CREATE TABLE sync_state (
@@ -134,7 +139,7 @@ COMMENT ON COLUMN not_found_requests.artists IS '歌手名';
 COMMENT ON COLUMN not_found_requests.cover IS '封面 URL';
 COMMENT ON COLUMN not_found_requests.album IS '专辑名';
 
-CREATE INDEX idx_not_found_platform_id ON not_found_requests(platform, platform_id);
+-- 009：UNIQUE(platform, platform_id) 已自带索引，不再建重复的单列组合索引
 CREATE INDEX idx_not_found_count       ON not_found_requests(request_count DESC);
 CREATE INDEX idx_not_found_category    ON not_found_requests(category);
 CREATE INDEX idx_not_found_last_seen   ON not_found_requests(last_seen_at DESC);
@@ -157,7 +162,7 @@ CREATE TABLE pure_music_whitelist (
     UNIQUE(platform, platform_id)
 );
 
-CREATE INDEX idx_pure_music_platform_id ON pure_music_whitelist(platform, platform_id);
+-- 009：UNIQUE(platform, platform_id) 已自带索引，无需重复创建
 
 --  云盘音乐白名单表
 CREATE TABLE cloud_music_whitelist (
@@ -172,7 +177,7 @@ CREATE TABLE cloud_music_whitelist (
     UNIQUE(platform, platform_id)
 );
 
-CREATE INDEX idx_cloud_music_platform_id ON cloud_music_whitelist(platform, platform_id);
+-- 009：UNIQUE(platform, platform_id) 已自带索引，无需重复创建
 
 --  投稿主表
 CREATE TABLE submissions (
@@ -316,7 +321,8 @@ CREATE INDEX idx_review_history_submission ON submission_review_history(submissi
 
 CREATE TABLE review_reports (
     id             BIGSERIAL PRIMARY KEY,
-    submission_id  BIGINT       NOT NULL,
+    submission_id  BIGINT       NOT NULL CONSTRAINT fk_review_reports_submission
+                   REFERENCES submissions(id) ON DELETE CASCADE,
     reviewer       VARCHAR(100) NOT NULL,
     reviewer_info  JSONB        NOT NULL DEFAULT '{}'::jsonb,
     action         VARCHAR(20)  NOT NULL,
@@ -447,6 +453,8 @@ CREATE TABLE lyric_requests (
     -- 合并的请愿提交次数（同一首歌被重复发起时累加）
     request_count    INT          NOT NULL DEFAULT 1,
     completed_at     TIMESTAMPTZ,
+    merged_into_id   BIGINT CONSTRAINT fk_lyric_requests_merged_into
+                     REFERENCES lyric_requests(id) ON DELETE SET NULL,
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
@@ -455,6 +463,11 @@ COMMENT ON TABLE  lyric_requests                IS '歌词请愿';
 COMMENT ON COLUMN lyric_requests.status         IS 'pending 待处理 / completed 已完成';
 COMMENT ON COLUMN lyric_requests.support_count  IS '支持数，发起人自动算一次';
 COMMENT ON COLUMN lyric_requests.request_count  IS '被发起请愿的次数（平台 ID 命中时合并累加）';
+COMMENT ON COLUMN lyric_requests.merged_into_id IS '被合并到的目标请愿 ID；非空表示本条已隐藏';
+
+CREATE INDEX idx_lyric_requests_merged_into
+    ON lyric_requests(merged_into_id)
+    WHERE merged_into_id IS NOT NULL;
 
 -- 平台 ID 去重查询（只索引有效 ID，'0' 不参与）
 CREATE INDEX idx_lyric_requests_ncm
@@ -669,12 +682,17 @@ CREATE TABLE github_migrated_prs (
     pr_number     INT          NOT NULL,
     username      VARCHAR(100) NOT NULL,
     submission_id BIGINT,
+    -- 迁移写入时记录 PR 状态，关闭阶段据此过滤，不必再逐条 get_pr
+    state         VARCHAR(20)  NOT NULL DEFAULT 'open',
     migrated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 -- 全局唯一：同一 PR 只迁移一次
 CREATE UNIQUE INDEX uq_github_migrated_prs_number ON github_migrated_prs(pr_number);
 CREATE INDEX idx_github_migrated_prs_username ON github_migrated_prs(username);
+CREATE INDEX idx_github_migrated_prs_state ON github_migrated_prs(state);
+
+COMMENT ON COLUMN github_migrated_prs.state IS 'PR 状态 open/closed：迁移写入时记录，关闭阶段据此过滤';
 
 --  迁移任务与进度表
 CREATE TABLE github_migration_tasks (
@@ -702,6 +720,15 @@ COMMENT ON COLUMN github_migration_tasks.cursor IS '断点游标（GraphQL endCu
 
 CREATE INDEX idx_github_migration_tasks_user ON github_migration_tasks(username, created_at DESC);
 CREATE INDEX idx_github_migration_tasks_status ON github_migration_tasks(status);
+
+-- 把「同一用户只能有一个进行中任务」落到数据库，Go 侧捕获 23505
+-- 返回 ErrMigrationInProgress，比先 SELECT 再 INSERT 的乐观判断可靠。
+CREATE UNIQUE INDEX uq_migration_active_per_user
+    ON github_migration_tasks(username)
+    WHERE status IN ('pending', 'running');
+
+COMMENT ON INDEX uq_migration_active_per_user
+    IS '同一用户同时只允许一个 pending/running 迁移任务';
 
 CREATE TRIGGER trg_github_migration_tasks_updated_at
     BEFORE UPDATE ON github_migration_tasks
@@ -740,7 +767,9 @@ CREATE TRIGGER trg_plugins_updated_at
 --  因此 (plugin_id, version) 与 sha256 均不建唯一约束。
 CREATE TABLE plugin_versions (
     id              BIGSERIAL PRIMARY KEY,
-    plugin_id       BIGINT NOT NULL REFERENCES plugins(id),
+    -- 版本是插件的从属数据，删插件时级联删除，避免「有版本就永远删不掉」
+    plugin_id       BIGINT NOT NULL CONSTRAINT fk_plugin_versions_plugin
+                    REFERENCES plugins(id) ON DELETE CASCADE,
     version         VARCHAR(64) NOT NULL,
     channel         VARCHAR(20) NOT NULL,
     api_version     INT NOT NULL DEFAULT 0,
@@ -768,6 +797,9 @@ CREATE TABLE plugin_versions (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+COMMENT ON CONSTRAINT fk_plugin_versions_plugin ON plugin_versions
+    IS '版本随插件删除';
 
 CREATE INDEX idx_plugin_versions_sha ON plugin_versions(sha256);
 CREATE INDEX idx_plugin_versions_plugin ON plugin_versions(plugin_id, version);
@@ -840,7 +872,8 @@ CREATE TRIGGER trg_plugin_ratings_updated_at
     
 CREATE TABLE documents (
     id              BIGSERIAL PRIMARY KEY,
-    slug            VARCHAR(100) NOT NULL UNIQUE,
+    -- slug 唯一性由下面的部分唯一索引表达；软删掉的行不再占用 slug
+    slug            VARCHAR(100) NOT NULL,
     title           VARCHAR(200) NOT NULL,
     group_name      VARCHAR(20)  NOT NULL DEFAULT 'lyrics',
     status          VARCHAR(20)  NOT NULL DEFAULT 'draft',
@@ -851,11 +884,24 @@ CREATE TABLE documents (
     created_by_info JSONB        NOT NULL DEFAULT '{}'::jsonb,
     updated_by_info JSONB        NOT NULL DEFAULT '{}'::jsonb,
     published_at    TIMESTAMPTZ,
+    -- 软删除 + 操作人，所有读路径统一带 deleted_at IS NULL
+    deleted_at      TIMESTAMPTZ,
+    deleted_by      VARCHAR(100) NOT NULL DEFAULT '',
     created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_documents_group_status ON documents(group_name, status, sort_order, id);
+-- 只对未删除行约束 slug 与列表查询
+CREATE UNIQUE INDEX ux_documents_slug_active
+    ON documents(slug)
+    WHERE deleted_at IS NULL;
+
+CREATE INDEX idx_documents_active_group_status
+    ON documents(group_name, status, sort_order, id)
+    WHERE deleted_at IS NULL;
+
+COMMENT ON COLUMN documents.deleted_at IS '软删除时间；非空表示已从列表与站点移除，历史版本仍保留';
+COMMENT ON COLUMN documents.deleted_by IS '删除操作人的 Casdoor 用户名（系统无数值用户主键）';
 
 CREATE TRIGGER trg_documents_updated_at
     BEFORE UPDATE ON documents
@@ -881,3 +927,18 @@ CREATE TABLE document_revisions (
 CREATE INDEX idx_document_revisions_doc ON document_revisions(document_id, id DESC);
 
 COMMENT ON TABLE document_revisions IS '文档版本快照';
+CREATE TABLE song_groups (
+    song_id     BIGINT PRIMARY KEY REFERENCES songs(id) ON DELETE CASCADE,
+    group_id    BIGINT      NOT NULL,
+    is_head     BOOLEAN     NOT NULL DEFAULT FALSE,
+    computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_song_groups_group ON song_groups(group_id);
+-- 部分索引：查「每组代表版本」时只扫 head 行
+CREATE INDEX idx_song_groups_head ON song_groups(group_id) WHERE is_head;
+
+COMMENT ON TABLE  song_groups             IS '歌曲文件的分组合并结果，由 Worker 同步后全量重算';
+COMMENT ON COLUMN song_groups.group_id    IS '组内最小 song_id，作为规范组 ID，稳定不变';
+COMMENT ON COLUMN song_groups.is_head     IS '是否为组内代表版本（commit_timestamp 最大）';
+COMMENT ON COLUMN song_groups.computed_at IS '该行最近一次被分组重算写入的时间';

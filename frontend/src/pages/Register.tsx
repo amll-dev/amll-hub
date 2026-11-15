@@ -15,6 +15,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, Camera, Eye, EyeOff, Loader2, X } from 'lucide-react';
 import { z } from 'zod';
+import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { useAliyunCaptcha } from '@/hooks/useAliyunCaptcha';
 import { useCountdown } from '@/hooks/useCountdown';
@@ -65,7 +66,7 @@ const codeLabelClass = 'mb-2 block text-sm font-normal text-ink-2';
 
 export function Register() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, openLogin } = useAuth();
   // 来自 GitHub 绑定流程的凭证（/register#token=<uuid>，放在 fragment 中避免入日志）
   const bindToken = useMemo(() => {
     const hash = window.location.hash.replace(/^#/, '');
@@ -76,6 +77,9 @@ export function Register() {
   const [avatarFile, setAvatarFile] = useAtom(avatarFileAtom);
   const [avatarPreview, setAvatarPreview] = useAtom(avatarPreviewAtom);
   const [error, setError] = useAtom(registerErrorAtom);
+  // 账号已创建但自动登录失败：用中性提示引导手动登录，不再走红色错误框
+  // （走错误框会让用户以为注册失败，再点一次注册必然撞「用户名已存在」）
+  const [manualLogin, setManualLogin] = useState(false);
 
   // 验证码相关
   const [captchaModalOpen, setCaptchaModalOpen] = useAtom(registerCaptchaOpenAtom);
@@ -200,6 +204,11 @@ export function Register() {
       setAvatarFile(compressed);
       setAvatarPreview(URL.createObjectURL(compressed));
       closeAvatarDialog();
+    } catch (err) {
+      // compressAvatar 会拒绝 SVG 与超高分辨率图；错误必须显示出来，
+      // 同时收起裁切弹窗，否则提示被遮罩挡住，用户只看到弹窗没反应
+      closeAvatarDialog();
+      setError(err instanceof Error ? err.message : '图片处理失败');
     } finally {
       setAvatarProcessing(false);
     }
@@ -312,13 +321,22 @@ export function Register() {
       try {
         return await api.login(vars.username, vars.password);
       } catch {
-        throw new Error('注册成功，请手动登录');
+        // 账号已经建好了，只是自动登录失败：返回标记让 onSuccess 走「请手动登录」分支
+        return { loginFailed: true } as const;
       }
     },
-    onMutate: () => setError(''),
+    onMutate: () => {
+      setError('');
+      setManualLogin(false);
+    },
     onSuccess: async (result) => {
+      if ('loginFailed' in result) {
+        setManualLogin(true);
+        return;
+      }
       if (isMfaRequired(result)) {
-        setError('注册成功，请手动登录');
+        // 注册同样成功了，只是登录被二次验证打断，也需要走手动登录提示
+        setManualLogin(true);
         return;
       }
       login(result.token, result.user);
@@ -329,7 +347,21 @@ export function Register() {
           // 头像上传失败不阻塞
         }
       }
-      navigate(bindToken ? '/profile/migration' : '/profile');
+      if (bindToken) {
+        // 必须 await 完再跳转：落地页会立刻读绑定状态，
+        // 先跳会看到「尚未绑定 GitHub」，用户以为绑定丢了
+        try {
+          await api.completeGithubBind(bindToken);
+          navigate('/profile/migration?githubBound=1');
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : '绑定失败';
+          // 此时账号已注册并登录，只是 GitHub 没绑上，必须把原因说清楚
+          toast.error(`GitHub 绑定未完成：${msg}`);
+          navigate('/profile/migration');
+        }
+        return;
+      }
+      navigate('/profile');
     },
     onError: (e: Error) => setError(e.message || '注册失败'),
   });
@@ -391,7 +423,7 @@ export function Register() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp,image/avif"
                 onChange={handleAvatarChange}
                 className="hidden"
               />
@@ -531,7 +563,27 @@ export function Register() {
 
             {error && <p className="text-sm text-error">{error}</p>}
 
-            <Button type="submit" disabled={submitting} {...buttonTap} className="w-full">
+            {manualLogin && (
+              <div className="rounded-lg border border-line bg-surface-2 p-3 text-sm text-ink-2">
+                <p>账号已注册成功，但自动登录没有完成。请使用刚才的用户名和密码手动登录。</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => openLogin()}
+                >
+                  去登录
+                </Button>
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              disabled={submitting || manualLogin}
+              {...buttonTap}
+              className="w-full"
+            >
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
               {submitting ? '注册中…' : '注册'}
             </Button>

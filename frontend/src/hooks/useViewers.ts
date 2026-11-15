@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getToken } from '@/lib/auth';
-import { wsUrl } from '@/lib/ws';
+import { connectWithRetry, wsUrl } from '@/lib/ws';
 
 export interface Viewer {
   username: string;
@@ -35,65 +35,32 @@ function useViewerSocket(
   useEffect(() => {
     if (!value) return;
     const token = getToken();
-    const url = wsUrl(
-      `/ws/viewers?${param}=${encodeURIComponent(String(value))}${token ? `&token=${encodeURIComponent(token)}` : ''}`
-    );
+    // token 走 Sec-WebSocket-Protocol，不进 URL：URL 会落进访问日志 / 网关日志 / 浏览器历史
+    const url = wsUrl(`/ws/viewers?${param}=${encodeURIComponent(String(value))}`);
 
-    // 用局部变量跟踪本 effect 周期的取消状态，
-    // 避免 React StrictMode/重挂载时跨周期污染导致重连产生第二个连接。
-    let cancelled = false;
-    let ws: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let retries = 0;
-
-    const connect = () => {
-      if (cancelled) return;
-      try {
-        ws = new WebSocket(url);
-        ws.onopen = () => {
-          retries = 0;
-        };
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data) as WsMessage;
-            if (
-              data.type === 'viewers' ||
-              data.type === 'viewers_update' ||
-              data.type === 'viewers_list'
-            ) {
-              const payload = (data.data ?? data) as ViewerPayload;
-              const list = payload.viewers || [];
-              setCount(payload.count ?? list.length);
-              setViewers(list);
-              return;
-            }
-            handlerRef.current?.(data);
-          } catch {
-            // 忽略解析失败
+    return connectWithRetry({
+      url,
+      protocols: token ? [token] : undefined,
+      onMessage: (event) => {
+        try {
+          const data = JSON.parse(event.data) as WsMessage;
+          if (
+            data.type === 'viewers' ||
+            data.type === 'viewers_update' ||
+            data.type === 'viewers_list'
+          ) {
+            const payload = (data.data ?? data) as ViewerPayload;
+            const list = payload.viewers || [];
+            setCount(payload.count ?? list.length);
+            setViewers(list);
+            return;
           }
-        };
-        ws.onclose = () => {
-          // 卸载后不再重连，避免创建多个连接
-          if (!cancelled && retries < 5) {
-            retries += 1;
-            reconnectTimer = setTimeout(connect, 3000 * retries);
-          }
-        };
-        ws.onerror = () => {
-          // 连接错误交由 onclose 的重连逻辑处理
-        };
-      } catch {
-        // WebSocket 构造失败（如 URL 非法），静默放弃
-      }
-    };
-    connect();
-
-    return () => {
-      cancelled = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      ws?.close();
-      ws = null;
-    };
+          handlerRef.current?.(data);
+        } catch {
+          // 忽略解析失败
+        }
+      },
+    });
   }, [param, value, handlerRef]);
 
   return { count, viewers, showModal, setShowModal };

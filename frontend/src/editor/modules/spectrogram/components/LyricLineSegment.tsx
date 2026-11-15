@@ -72,6 +72,8 @@ export const LyricLineSegment: FC<LyricLineSegmentProps> = ({
   );
 
   const boundaries = useMemo(() => generateBoundaries(displayLine), [displayLine]);
+  // roving tabindex 的当前焦点位置（行内下标）
+  const [activeBoundaryIndex, setActiveBoundaryIndex] = useState(0);
 
   if (!displayLine) return null;
 
@@ -137,16 +139,24 @@ export const LyricLineSegment: FC<LyricLineSegmentProps> = ({
         </div>
       </div>
 
+      {/*
+       * roving tabindex：一行 30 个词就是 31 条边界，全部 tabIndex=0 时
+       * 键盘用户要按几百次 Tab 才能穿过频谱。只让「最近一次聚焦的边界」
+       * 进 Tab 序列，其余 -1。
+       */}
       <div className={styles.boundaryLayer}>
-        {boundaries.map((boundary) => (
+        {boundaries.map((boundary, boundaryIndex) => (
           <DividerSegment
             key={boundary.id}
             lineId={displayLine.id}
             segmentIndex={boundary.segmentIndex}
             timeMs={boundary.timeMs}
             lineStartTime={startTime}
+            lineEndTime={endTime}
             kind={boundary.kind}
             isShared={sharedBoundaryTimes.has(boundary.timeMs)}
+            tabIndex={boundaryIndex === activeBoundaryIndex ? 0 : -1}
+            onFocus={() => setActiveBoundaryIndex(boundaryIndex)}
             visualState={resolveBoundaryVisualState(boundary, {
               selectedWordId,
               hoveredWordId,

@@ -96,7 +96,7 @@ export function UserMenu() {
             <Link
               to={`/user/${encodeURIComponent(user.name)}`}
               onClick={nav}
-              onMouseEnter={() => preloadRoute(`/user/${user.name}`)}
+              onMouseEnter={() => preloadRoute(`/user/${encodeURIComponent(user.name)}`)}
               className="cursor-pointer"
             >
               <SquareUser className="h-4 w-4" />

@@ -63,7 +63,7 @@ import type {
   PluginAdminDetailResult,
   PluginAdminListResult,
   PluginAuditListResult,
-  PluginComment,
+  PluginCommentListResult,
   PluginDetailResult,
   PluginManagementItem,
   PluginManagementListResult,
@@ -78,6 +78,7 @@ import type {
   PluginStatus,
   DocDetailResult,
   DocListResult,
+  DocNavResult,
   DocPayload,
   DocRevisionDetail,
   DocRevisionListResult,
@@ -263,11 +264,13 @@ export const api = {
   /** 无歌词排行榜 */
   getNotFoundRanking(params: {
     limit?: number | 'all';
+    offset?: number;
     days?: number;
     platform?: string;
   }): Promise<NotFoundRankingResult> {
     const qs = buildQuery({
       limit: params.limit ?? 'all',
+      offset: params.offset,
       days: params.days ?? 7,
       platform: params.platform,
     });
@@ -847,6 +850,10 @@ export const api = {
     },
     detail(slug: string) {
       return request<DocDetailResult>(`/api/v1/docs/${encodeURIComponent(slug)}`);
+    },
+    /** 精简导航：首页 / 侧栏 / 上一篇下一篇（不分页，上限 1000） */
+    nav() {
+      return request<DocNavResult>('/api/v1/docs/nav');
     },
     manageList(
       params: { status?: string; group?: string; q?: string; page?: number; pageSize?: number } = {}
@@ -1447,15 +1454,23 @@ export const api = {
     });
   },
 
-  /** 登录已有账号并绑定 GitHub POST /api/v1/auth/github/bind/login */
+  /** 登录已有账号（可能返回 mfaRequired）POST /api/v1/auth/github/bind/login */
   githubBindLogin(params: {
     token: string;
     account: string;
     password: string;
-  }): Promise<LoginSuccess> {
-    return request<LoginSuccess>('/api/v1/auth/github/bind/login', {
+  }): Promise<LoginResult> {
+    return request<LoginResult>('/api/v1/auth/github/bind/login', {
       method: 'POST',
       body: JSON.stringify(params),
+    });
+  },
+
+  /** 用绑定票据完成 GitHub 关联（需已登录）POST /api/v1/user/github/binding */
+  completeGithubBind(token: string): Promise<void> {
+    return request<void>('/api/v1/user/github/binding', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
     });
   },
 
@@ -1754,8 +1769,16 @@ export const api = {
     },
 
     /** 插件评论列表 GET /api/v1/store/plugins/:key/comments */
-    pluginComments(key: string): Promise<PluginComment[]> {
-      return request<PluginComment[]>(`/api/v1/store/plugins/${encodeURIComponent(key)}/comments`);
+    pluginComments(
+      key: string,
+      params?: { page?: number; pageSize?: number }
+    ): Promise<PluginCommentListResult> {
+      return request<PluginCommentListResult>(
+        `/api/v1/store/plugins/${encodeURIComponent(key)}/comments${buildQuery({
+          page: params?.page,
+          page_size: params?.pageSize,
+        })}`
+      );
     },
 
     /** 发表插件评论 POST /api/v1/store/plugins/:key/comments */

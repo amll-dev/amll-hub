@@ -1,4 +1,4 @@
-import { type DBSchema, type IDBPDatabase, type IDBPObjectStore, openDB } from 'idb';
+import { type DBSchema, type IDBPDatabase, openDB } from 'idb';
 import type { ReviewSession } from '$/states/main';
 import type { StructuredReviewReport } from '$/types/structured-review-report';
 import type { TTMLLyric } from '$/types/ttml';
@@ -44,12 +44,15 @@ type LegacySnapshot = {
 /**
  * 就地把 v2 及更早记录的 structure 收窄到 v3 形状，丢掉 elements/documentId/elementIds。
  * 仅回收空间，不影响任何读取路径；出错即放弃。
+ *
+ * 必须在 DB 打开完成后的独立 readwrite 事务里跑：upgrade 回调一返回，
+ * 升级事务的 active flag 就被清除，async 迭代里的 cursor.update / continue
+ * 会在 microtask 中抛 TransactionInactiveError，整段迁移必然静默失败。
  */
-const pruneLegacySnapshots = async (
-  store: IDBPObjectStore<ReviewHistoryDBSchema, ArrayLike<'sessions'>, 'sessions', 'versionchange'>
-) => {
+const pruneLegacySnapshots = async (db: IDBPDatabase<ReviewHistoryDBSchema>) => {
   try {
-    for await (const cursor of store.iterate()) {
+    const tx = db.transaction('sessions', 'readwrite');
+    for await (const cursor of tx.store.iterate()) {
       const record = cursor.value;
       const legacy = record.structure as LegacySnapshot | undefined;
       await cursor.update({
@@ -64,6 +67,7 @@ const pruneLegacySnapshots = async (
         },
       });
     }
+    await tx.done;
   } catch {
     // 历史记录保持原样即可，元素图字段只是被忽略。
   }
@@ -71,6 +75,8 @@ const pruneLegacySnapshots = async (
 
 const getDB = () => {
   if (!dbPromise) {
+    // upgrade 回调里只能做同步 schema 变更；数据迁移标记在这里带出去。
+    let shouldPruneLegacy = false;
     dbPromise = openDB<ReviewHistoryDBSchema>(DB_NAME, DB_VERSION, {
       upgrade(db, oldVersion, _newVersion, transaction) {
         const store =
@@ -85,13 +91,17 @@ const getDB = () => {
         if (oldVersion < 2) {
           store.createIndex('by-content-hash', 'contentHash');
         }
+        // v3 起 structure 不再持久化元素图（ID 改为按 contentHash + path 按需派生）。
         if (oldVersion >= 1 && oldVersion < 3) {
-          // v3 起 structure 不再持久化元素图（ID 改为按 contentHash + path 按需派生）。
-          // 纯粹是回收空间：没有任何读取路径再碰 elements/documentId，
-          // 因此这一步失败也不影响功能，不让它拖垮整个 upgrade。
-          void pruneLegacySnapshots(store);
+          shouldPruneLegacy = true;
         }
       },
+    }).then(async (db) => {
+      if (shouldPruneLegacy) {
+        shouldPruneLegacy = false;
+        await pruneLegacySnapshots(db);
+      }
+      return db;
     });
   }
   return dbPromise;
@@ -100,12 +110,6 @@ const getDB = () => {
 export const saveReviewHistory = async (record: ReviewHistoryRecord): Promise<void> => {
   const db = await getDB();
   await db.put('sessions', record);
-};
-
-export const getReviewHistory = async (): Promise<ReviewHistoryRecord[]> => {
-  const db = await getDB();
-  const records = await db.getAllFromIndex('sessions', 'by-created-at');
-  return records.reverse();
 };
 
 export const getReviewHistoryByPr = async (prNumber: number): Promise<ReviewHistoryRecord[]> => {

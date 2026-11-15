@@ -119,7 +119,7 @@ export function AnnouncementPanel() {
   // 邮件发完后刷新一次历史列表
   useEffect(() => {
     if (active?.mailStatus === 'done') {
-      void queryClient.invalidateQueries({ queryKey: ['announcements', 'list'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.announcementsRoot });
     }
   }, [active?.mailStatus, queryClient]);
 
@@ -140,7 +140,7 @@ export function AnnouncementPanel() {
       setSendMail(false);
       setMsg('公告已发布');
       setActiveId(a.id);
-      void queryClient.invalidateQueries({ queryKey: ['announcements', 'list'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.announcementsRoot });
       void queryClient.invalidateQueries({ queryKey: queryKeys.announcementAudience });
     },
     onError: (e) => setMsg(e instanceof Error ? e.message : '发布失败'),
@@ -299,7 +299,7 @@ export function AnnouncementPanel() {
                   />
                   <span className="text-sm font-bold text-neutral-900">AMLL Hub</span>
                 </span>
-                <span className="text-[10px] tracking-[1px] text-neutral-400">系统公告</span>
+                <span className="text-[11px] tracking-[1px] text-neutral-400">系统公告</span>
               </div>
               <div className="mt-4">
                 <span className="inline-block rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600">

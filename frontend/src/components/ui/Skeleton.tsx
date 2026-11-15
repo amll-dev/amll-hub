@@ -27,6 +27,28 @@ export function ListSkeleton({ rows = 5 }: { rows?: number }) {
   );
 }
 
+/**
+ * 行式列表骨架屏：rows 个等高占位块。
+ * 各搜索/榜单页原本各写一份，统一到这里，行高由 `rowClassName` 覆盖。
+ */
+export function RowSkeleton({
+  rows = 5,
+  rowClassName = 'h-20',
+  className,
+}: {
+  rows?: number;
+  rowClassName?: string;
+  className?: string;
+}) {
+  return (
+    <div role="status" aria-label="加载中" className={cn('space-y-2', className)}>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className={cn('amll-skeleton', rowClassName)} />
+      ))}
+    </div>
+  );
+}
+
 /** 卡片式详情骨架屏 */
 export function CardDetailSkeleton() {
   return (

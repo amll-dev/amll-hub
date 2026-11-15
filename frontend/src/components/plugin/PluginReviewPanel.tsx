@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { Clock, Package, Search } from 'lucide-react';
 import { api } from '@/lib/api';
+import { openExternal } from '@/lib/navigation';
 import { fadeUp, staggerContainer } from '@/lib/motion';
 import { queryKeys } from '@/lib/query';
 import { formatBytes, formatDateTime } from '@/lib/format';
@@ -27,6 +28,14 @@ export function PluginReviewPanel() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('pending');
   const [page, setPage] = useState(1);
+
+  // 输入即时反馈、300ms 后才写查询 key（与审核中心的歌词列表同一策略）：
+  // 原来只能按回车触发，手机 / 内嵌 WebView 没有回车键就完全搜不了；
+  // 也不能每敲一个字符打一次接口（队列查询带 count，代价不低）。
+  useEffect(() => {
+    const timer = window.setTimeout(() => setQ(qInput.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [qInput]);
 
   const queueQuery = useQuery({
     queryKey: queryKeys.pluginReviewQueue({ page, pageSize: QUEUE_PAGE_SIZE, q, status }),
@@ -81,6 +90,7 @@ export function PluginReviewPanel() {
           value={qInput}
           onChange={(e) => setQInput(e.target.value)}
           onKeyDown={(e) => {
+            // 回车立即生效，不必等防抖
             if (e.key === 'Enter') setQ(qInput.trim());
           }}
           placeholder="搜索插件名称或 ID"
@@ -114,10 +124,7 @@ export function PluginReviewPanel() {
                     <button
                       type="button"
                       onClick={() => {
-                        window.open(
-                          `/review/plugin?key=${encodeURIComponent(item.pluginKey)}`,
-                          '_blank'
-                        );
+                        openExternal(`/review/plugin?key=${encodeURIComponent(item.pluginKey)}`);
                       }}
                       className="flex w-full items-center justify-between gap-3 rounded-md border border-line bg-background px-4 py-3 text-left transition-colors hover:bg-surface-2"
                     >

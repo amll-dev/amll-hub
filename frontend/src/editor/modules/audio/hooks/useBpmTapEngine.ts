@@ -1,4 +1,4 @@
-import { useAtom, useAtomValue, useSetAtom } from 'jotai';
+import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai';
 import { useCallback, useState } from 'react';
 import { audioEngine } from '$/modules/audio/audio-engine';
 import {
@@ -52,6 +52,7 @@ export function useBpmTapEngine() {
   const setScale = useSetAtom(bpmScaleAtom);
   const syncJudgeMode = useAtomValue(syncJudgeModeAtom);
 
+  const store = useStore();
   const [isHighlighted, setIsHighlighted] = useState(false);
 
   const isKeyTapMode = tapMode === 'key';
@@ -69,7 +70,8 @@ export function useBpmTapEngine() {
     (customTimeSeconds?: number, downTimeOffset = 0) => {
       triggerHighlight();
 
-      let hitTime = 0;
+      // 两个分支都会赋值，不设初值（no-useless-assignment）
+      let hitTime: number;
       if (typeof customTimeSeconds === 'number') {
         hitTime = customTimeSeconds;
       } else {
@@ -90,55 +92,56 @@ export function useBpmTapEngine() {
         }
       }
 
-      setTapTimes((prev) => {
-        const now = hitTime;
-        let nextTapTimes: number[];
-        if (prev.length > 0) {
-          const last = prev[prev.length - 1]!;
-          if (now - last > 2.5) {
-            nextTapTimes = [now];
-            setTotalTapCount(1);
-          } else {
-            nextTapTimes = [...prev, now];
-            setTotalTapCount((c) => c + 1);
-          }
+      const prev = store.get(tapTimesAtom);
+      const prevCount = store.get(totalTapCountAtom);
+      let nextTapTimes: number[];
+      let nextCount: number;
+      if (prev.length > 0) {
+        const last = prev[prev.length - 1]!;
+        if (hitTime - last > 2.5) {
+          nextTapTimes = [hitTime];
+          nextCount = 1;
         } else {
-          nextTapTimes = [now];
-          setTotalTapCount(1);
+          nextTapTimes = [...prev, hitTime];
+          nextCount = prevCount + 1;
         }
+      } else {
+        nextTapTimes = [hitTime];
+        nextCount = 1;
+      }
 
-        const MAX_TAP_HISTORY = 10;
-        if (nextTapTimes.length > MAX_TAP_HISTORY) {
-          nextTapTimes = nextTapTimes.slice(-MAX_TAP_HISTORY);
-        }
+      const MAX_TAP_HISTORY = 10;
+      if (nextTapTimes.length > MAX_TAP_HISTORY) {
+        nextTapTimes = nextTapTimes.slice(-MAX_TAP_HISTORY);
+      }
 
-        if (nextTapTimes.length >= 2) {
-          const interval =
-            (nextTapTimes[nextTapTimes.length - 1]! - nextTapTimes[0]!) / (nextTapTimes.length - 1);
-          if (interval > 0) {
-            const bpm = Math.round(60 / interval);
-            if (bpm >= 20 && bpm <= 400) {
-              const optimalAnchor = computeOptimalAnchorTick(nextTapTimes, bpm);
-              setBpmState({
-                status: 'completed',
-                result: {
-                  bpm,
-                  baseBpm: bpm,
-                  anchorTick: optimalAnchor,
-                  confidence: 1,
-                  ticks: [],
-                },
-                calculationTime: 0,
-              });
-              setScale(1);
-            }
+      setTapTimes(nextTapTimes);
+      setTotalTapCount(nextCount);
+
+      if (nextTapTimes.length >= 2) {
+        const interval =
+          (nextTapTimes[nextTapTimes.length - 1]! - nextTapTimes[0]!) / (nextTapTimes.length - 1);
+        if (interval > 0) {
+          const bpm = Math.round(60 / interval);
+          if (bpm >= 20 && bpm <= 400) {
+            const optimalAnchor = computeOptimalAnchorTick(nextTapTimes, bpm);
+            setBpmState({
+              status: 'completed',
+              result: {
+                bpm,
+                baseBpm: bpm,
+                anchorTick: optimalAnchor,
+                confidence: 1,
+                ticks: [],
+              },
+              calculationTime: 0,
+            });
+            setScale(1);
           }
         }
-
-        return nextTapTimes;
-      });
+      }
     },
-    [syncJudgeMode, setBpmState, setScale, setTapTimes, setTotalTapCount, triggerHighlight]
+    [syncJudgeMode, store, setBpmState, setScale, setTapTimes, setTotalTapCount, triggerHighlight]
   );
 
   const resetTapTimes = useCallback(() => {

@@ -127,7 +127,6 @@ const LyricWordViewEditSpan = ({
     [wordAtom]
   );
   const isWordSelected = useAtomValue(isWordSelectedAtom);
-  const selectedWords = useAtomValue(selectedWordsAtom);
   const setSelectedWords = useSetImmerAtom(selectedWordsAtom);
   const toolMode = useAtomValue(toolModeAtom);
   const blockDragRef = useRef(false);
@@ -242,6 +241,10 @@ const LyricWordViewEditSpan = ({
             evt.currentTarget.classList.remove(styles.dropRight!);
             if (!store.get(isDraggingAtom)) return;
             if (isWordSelected) return;
+
+            // 只在拖拽发生时读一次选中集，不为此订阅整个 selectedWordsAtom：
+            // 逐字组件数量与歌词字数成正比，全量订阅会让每次选词都重渲染所有字。
+            const selectedWords = store.get(selectedWordsAtom);
 
             const rect = evt.currentTarget.getBoundingClientRect();
             const innerX = evt.clientX - rect.left;

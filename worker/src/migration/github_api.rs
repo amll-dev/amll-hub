@@ -21,6 +21,19 @@ const SEARCH_RATE_LIMIT_FLOOR: i64 = 1;
 /// 搜索每页条数（GraphQL / REST 上限均为 100）
 const SEARCH_PAGE_SIZE: usize = 100;
 
+/// 断点续传的「连续越界」阈值。
+///
+/// 搜索结果按 created-desc 排序，PR 号与创建时间基本同序但**不严格**同序
+/// （转移仓库、删除重建都会让旧 PR 拿到新号）。命中一条 `number < since`
+/// 就 break 会漏掉后面号更大的 PR，所以改为过滤 + 连续计数：只有连续
+/// 50 条都小于 since 才认定确实翻过了时间窗口，既能容忍乱序，也不会为了
+/// 个别漏网 PR 把所有历史页翻一遍。
+const CUTOFF_STREAK: usize = 50;
+/// REST 列表翻页硬上限（100 × 50 = 5000 条），防跑飞
+const MAX_LIST_PAGES: usize = 50;
+/// 下载 TTML 的大小上限（与 mapper.rs / sync/ttml_parser.rs 保持一致）
+const MAX_TTML_BYTES: usize = 16 * 1024 * 1024;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RestUser {
     #[serde(default)]
@@ -341,6 +354,23 @@ impl GithubApi {
         self.get_json_with(Auth::App, path, accept).await
     }
 
+    /// 通用 REST 翻页：GitHub 单页上限 100，必须翻页才能拿全。
+    /// 硬上限 MAX_LIST_PAGES 页，避免异常响应导致无限翻页。
+    async fn get_paginated<T: DeserializeOwned>(&self, base: &str) -> Result<Vec<T>> {
+        let mut out = Vec::new();
+        for page in 1..=MAX_LIST_PAGES {
+            let sep = if base.contains('?') { '&' } else { '?' };
+            let path = format!("{}{}per_page={}&page={}", base, sep, SEARCH_PAGE_SIZE, page);
+            let rows: Vec<T> = self.get_json(&path, None).await?;
+            let n = rows.len();
+            out.extend(rows);
+            if n < SEARCH_PAGE_SIZE {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
     async fn get_json_with<T: DeserializeOwned>(
         &self,
         auth: Auth,
@@ -404,6 +434,8 @@ impl GithubApi {
         let mut numbers = Vec::new();
         let mut after: Option<String> = None;
         let mut truncated = false;
+        // 连续「小于 since」的条数，跨页累计（见 CUTOFF_STREAK）
+        let mut below_cutoff = 0usize;
 
         loop {
             let variables = json!({ "q": q, "after": after });
@@ -427,9 +459,16 @@ impl GithubApi {
             for node in search.nodes {
                 let Some(number) = node.number else { continue };
                 if number < since {
-                    reached_cutoff = true;
-                    break;
+                    // 只过滤、不 break：PR 号与时间序不完全一致，break 会漏掉
+                    // 后面号更大的 PR。连续越界达到阈值才认为窗口已过。
+                    below_cutoff += 1;
+                    if below_cutoff >= CUTOFF_STREAK {
+                        reached_cutoff = true;
+                        break;
+                    }
+                    continue;
                 }
+                below_cutoff = 0;
                 numbers.push(number);
             }
 
@@ -468,6 +507,8 @@ impl GithubApi {
         );
         let mut numbers = Vec::new();
         let mut page: u32 = 1;
+        // 与 GraphQL 版本同口径：连续越界阈值计数，跨页累计
+        let mut below_cutoff = 0usize;
         loop {
             let path = format!(
                 "/search/issues?q={}&sort=created&order=desc&per_page={}&page={}",
@@ -486,9 +527,16 @@ impl GithubApi {
             let mut reached_cutoff = false;
             for item in resp.items {
                 if item.number < since {
-                    reached_cutoff = true;
-                    break;
+                    // 同 search_pr_numbers_by_author：过滤而非立即 break，避免
+                    // PR 号乱序时漏迁（连续 CUTOFF_STREAK 条越界才收尾）
+                    below_cutoff += 1;
+                    if below_cutoff >= CUTOFF_STREAK {
+                        reached_cutoff = true;
+                        break;
+                    }
+                    continue;
                 }
+                below_cutoff = 0;
                 // 精确校验：正文必须含「歌词作者 @本用户」标注
                 let body = item.body.unwrap_or_default();
                 if body_mentions_author(&body, login) {
@@ -527,35 +575,23 @@ impl GithubApi {
     }
 
     pub async fn list_pr_files(&self, number: i64) -> Result<Vec<PrFile>> {
-        let path = format!(
-            "/repos/{}/pulls/{}/files?per_page={}",
-            self.repo, number, SEARCH_PAGE_SIZE
-        );
-        self.get_json(&path, None).await
+        let base = format!("/repos/{}/pulls/{}/files", self.repo, number);
+        self.get_paginated(&base).await
     }
 
     pub async fn list_pr_reviews(&self, number: i64) -> Result<Vec<PrReview>> {
-        let path = format!(
-            "/repos/{}/pulls/{}/reviews?per_page={}",
-            self.repo, number, SEARCH_PAGE_SIZE
-        );
-        self.get_json(&path, None).await
+        let base = format!("/repos/{}/pulls/{}/reviews", self.repo, number);
+        self.get_paginated(&base).await
     }
 
     pub async fn list_issue_comments(&self, number: i64) -> Result<Vec<IssueComment>> {
-        let path = format!(
-            "/repos/{}/issues/{}/comments?per_page={}",
-            self.repo, number, SEARCH_PAGE_SIZE
-        );
-        self.get_json(&path, None).await
+        let base = format!("/repos/{}/issues/{}/comments", self.repo, number);
+        self.get_paginated(&base).await
     }
 
     pub async fn list_timeline(&self, number: i64) -> Result<Vec<TimelineEvent>> {
-        let path = format!(
-            "/repos/{}/issues/{}/timeline?per_page={}",
-            self.repo, number, SEARCH_PAGE_SIZE
-        );
-        self.get_json(&path, None).await
+        let base = format!("/repos/{}/issues/{}/timeline", self.repo, number);
+        self.get_paginated(&base).await
     }
 
     /// 下载仓库中指定路径、指定 ref 的文件原始内容
@@ -576,7 +612,24 @@ impl GithubApi {
                 Auth::App,
             )
             .await?;
+        // 先看 content-length，超限直接拒绝，别把超大 TTML 全量读进内存
+        if let Some(len) = resp.content_length()
+            && len > MAX_TTML_BYTES as u64
+        {
+            anyhow::bail!(
+                "TTML 超过 {} MB（content-length={} 字节）",
+                MAX_TTML_BYTES / 1024 / 1024,
+                len
+            );
+        }
         let bytes = resp.bytes().await.context("读取 GitHub 文件内容失败")?;
+        if bytes.len() > MAX_TTML_BYTES {
+            anyhow::bail!(
+                "TTML 超过 {} MB（实际 {} KB）",
+                MAX_TTML_BYTES / 1024 / 1024,
+                bytes.len() / 1024
+            );
+        }
         Ok(bytes.to_vec())
     }
 

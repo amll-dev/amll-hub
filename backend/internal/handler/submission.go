@@ -53,15 +53,24 @@ func (h *SubmissionHandler) Create(c *gin.Context) {
 	}
 	// 关联歌词请愿
 	petitionLinkFailed := false
+	// ignoredPetitions 超出单投稿关联上限、被忽略的请愿数；前端未对接时也不影响其它字段
+	ignoredPetitions := 0
 	if len(req.PetitionIDs) > 0 && req.Status != "draft" && h.petitions != nil {
-		if err := h.petitions.Bind(ctx, id, req.PetitionIDs, user.Name); err != nil {
+		ignored, err := h.petitions.Bind(ctx, id, req.PetitionIDs, user.Name)
+		if err != nil {
 			logrus.WithError(err).WithField("submission_id", id).Error("bind petitions failed")
 			petitionLinkFailed = true
+		} else {
+			ignoredPetitions = ignored
 		}
 	}
 	resp := gin.H{"id": id}
 	if petitionLinkFailed {
 		resp["petitionLinkFailed"] = true
+	}
+	if ignoredPetitions > 0 {
+		// 明确回传「超出部分已忽略」，避免用户以为全部关联成功
+		resp["ignored"] = ignoredPetitions
 	}
 	pkg.OK(c, resp)
 }
@@ -75,7 +84,7 @@ func (h *SubmissionHandler) List(c *gin.Context) {
 	}
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	limit := pkg.Clamp(pkg.ParseInt(c.Query("limit"), 50), 1, 200)
 	q := service.SubmissionListQuery{
 		Mode:     c.DefaultQuery("mode", "creator"),
 		Status:   c.DefaultQuery("status", "all"),

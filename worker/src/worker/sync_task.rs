@@ -1,7 +1,8 @@
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
@@ -13,10 +14,21 @@ use crate::search::meilisearch::{self, MeiliDocument};
 use crate::storage::redis::SyncLock;
 use crate::sync::{
     diff::{self, Diff},
-    downloader, github, index_parser, ttml_parser,
+    downloader, github, grouping, index_parser, ttml_parser,
 };
 
 use super::latest_song_recorder;
+
+/// 索引条目数下限：本地已有数据时，远程索引低于这个数只可能是上游故障
+const MIN_INDEX_ENTRIES: usize = 100;
+/// 删除阶段的并发上限：2 万文件不必 4 万次串行往返
+const DELETE_CONCURRENCY: usize = 16;
+/// MeiliSearch 删除文档的最大尝试次数
+const DELETE_MEILI_MAX_ATTEMPTS: u32 = 3;
+
+/// 平台映射重建标记：旧库升级后需要从远端索引恢复「多版本共享平台 ID」
+const PLATFORM_MAPPINGS_REBUILD_KEY: &str = "platform_mappings_rebuild";
+const PLATFORM_MAPPINGS_REBUILD_VERSION: &str = "v2";
 
 /// 取 commit sha 前 7 位（不足 7 位时取全部）
 fn short_sha(s: &str) -> &str {
@@ -60,8 +72,13 @@ impl SyncTaskRunner {
         if !local_state.last_synced_commit.is_empty()
             && local_state.last_synced_commit == remote_commit
         {
+            let rebuild_done = repo
+                .get_sync_state(PLATFORM_MAPPINGS_REBUILD_KEY)
+                .await?
+                .as_deref()
+                == Some(PLATFORM_MAPPINGS_REBUILD_VERSION);
             let local_count = repo.count_songs().await.unwrap_or(0);
-            if local_count > 0 {
+            if local_count > 0 && rebuild_done {
                 info!(
                     commit = short_sha(&remote_commit),
                     songs = local_count,
@@ -69,7 +86,11 @@ impl SyncTaskRunner {
                 );
                 return Ok(true);
             }
-            warn!("commit 一致但本地歌曲数为 0，可能数据丢失，强制同步");
+            if local_count == 0 {
+                warn!("commit 一致但本地歌曲数为 0，可能数据丢失，强制同步");
+            } else {
+                info!("检测到待执行的 platform_mappings 重建，强制同步一次");
+            }
         }
         let is_first_sync = local_state.last_synced_commit.is_empty();
         info!(
@@ -109,6 +130,20 @@ impl SyncTaskRunner {
             .execute_sync(&http, &repo, history_id, &remote_commit, is_first_sync)
             .await;
 
+        // 5.5 无论同步成功或失败，都把分组与 songs 表对齐
+        //
+        // 为什么放在这里（而不是 execute_sync 内部）：
+        //   - 覆盖 execute_sync 的全部出口，包括 total == 0 的提前 return
+        //   - 中途失败时，已入库的那部分文件同样需要正确的 is_head
+        //   - 幂等、全量重算 < 300ms，重复执行无副作用
+        //
+        // 为什么不参与错误传播：
+        //   分组失败只会让搜索退化为「同组多版本并列」或「个别组缺失」，
+        //   不应把一次成功的同步标记为失败（那会触发整次重试，代价更大）。
+        if let Err(e) = self.refresh_song_groups().await {
+            warn!(request_id, error = %e, "分组重算失败，搜索可能出现同组重复或整组缺失");
+        }
+
         match result {
             Ok(summary) => {
                 // 更新 sync_state
@@ -136,6 +171,41 @@ impl SyncTaskRunner {
         }
     }
 
+    /// 全量重算分组并增量 patch 索引，返回 (总行数, 变更行数)
+    ///
+    /// pub(crate)：main.rs 的启动自愈也要调用（song_groups 为空时回填）。
+    pub(crate) async fn refresh_song_groups(&self) -> Result<(usize, usize)> {
+        let repo = Repository::new(self.app.db.clone());
+
+        let inputs = repo.load_group_inputs().await?;
+        let total = inputs.len();
+        let groups = grouping::compute_groups(inputs);
+
+        let old = repo.load_song_groups().await?;
+        let changed = grouping::diff_groups(&old, &groups);
+
+        repo.delete_orphan_song_groups().await?;
+        repo.upsert_song_groups(&changed).await?;
+
+        let patches: Vec<meilisearch::GroupPatch> = changed
+            .iter()
+            .map(|g| meilisearch::GroupPatch {
+                id: format!("song_{}", g.song_id),
+                song_group_id: g.group_id,
+                is_group_head: g.is_head,
+            })
+            .collect();
+
+        meilisearch::patch_group_fields(
+            &self.app.meili,
+            &self.app.cfg.meilisearch.index,
+            &patches,
+        )
+        .await?;
+
+        Ok((total, patches.len()))
+    }
+
     /// 实际同步流程：下载索引 -> diff -> 下载文件 -> 入库 -> 索引
     async fn execute_sync(
         &self,
@@ -145,18 +215,126 @@ impl SyncTaskRunner {
         _target_commit: &str,
         is_first_sync: bool,
     ) -> Result<SyncSummary> {
+        // 补偿上一轮 Meili 删除失败的文档：这些文件的 DB 记录已软删，
+        // 下次 diff 不会再产生 to_delete，缺口只能靠持久化的待删队列补回来。
+        if let Some(pending) = repo.get_sync_state("pending_meili_deletes").await?
+            && !pending.trim().is_empty()
+        {
+            let pending_ids: Vec<String> = pending
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if !pending_ids.is_empty() {
+                info!(count = pending_ids.len(), "重试上一轮遗留的 Meili 文档删除");
+                meilisearch::delete_documents(
+                    &self.app.meili,
+                    &self.app.cfg.meilisearch.index,
+                    &pending_ids,
+                )
+                .await
+                .context("重试遗留 Meili 文档删除失败")?;
+                repo.set_sync_state("pending_meili_deletes", "").await?;
+            }
+        }
+
         // 1. 下载 raw-lyrics-index.jsonl
         let index_url = self.app.cfg.github.raw_url("metadata/raw-lyrics-index.jsonl");
         let text = github::download_raw_text(http, &index_url, &self.app.cfg.github).await?;
+        // 空 body 也是 200：上游被清空、CDN 缓存了空响应时，放行会一路走到「删光本地」
+        if text.trim().is_empty() {
+            bail!("索引文件为空，拒绝执行以保护存量数据");
+        }
         let entries = index_parser::parse_index(&text)?;
-        info!("索引解析完成，共 {} 个条目", entries.len());
+        if entries.is_empty() {
+            bail!("索引解析后无有效条目，拒绝执行以保护存量数据");
+        }
+        let remote_count = entries.len();
+        info!("索引解析完成，共 {} 个条目", remote_count);
 
         // 2. 本地已有 raw 列表
-        let local = repo.list_raw_lyric_files().await?;
-        debug!("本地已有 {} 个文件", local.len());
+        //
+        // 上一轮 Meili 分批提交中途失败会打上 force_full_reindex。此时 diff 以本地 DB
+        // 为准不会重发已入库文档，必须把本地列表视作空，让全部远程条目重新走
+        // 「下载 → 入库 → 索引」，补齐缺口。
+        let force_full_reindex = repo
+            .get_sync_state("force_full_reindex")
+            .await?
+            .as_deref()
+            == Some("1");
+        let local = if force_full_reindex {
+            warn!("检测到上一轮 Meili 索引缺口，本轮强制全量重建索引");
+            HashSet::new()
+        } else {
+            repo.list_raw_lyric_files().await?
+        };
+        let local_count = local.len();
+        debug!("本地已有 {} 个文件", local_count);
+
+        // 2.5 条目数下限校验
+        //
+        // 没有这层保护，一次「200 + 空/残缺 body」就会让 compute_diff 把所有本地文件
+        // 算成 to_delete，接着软删整库 + 物理删除 MinIO 对象。
+        // 只在本地规模本身够大时才用绝对阈值，避免小站（比如自建 80 个文件）被永久拦住；
+        // 小站的保护由下面的比例校验负责。
+        if local_count >= MIN_INDEX_ENTRIES && remote_count < MIN_INDEX_ENTRIES {
+            bail!(
+                "索引条目数异常（远程 {} 条，本地 {} 个文件），疑似上游故障，拒绝执行",
+                remote_count,
+                local_count
+            );
+        }
+
+        // 2.6 一次性重建平台映射（历史版本关联修复）
+        //
+        // 旧库在 UNIQUE(platform, platform_id) 下会把多个版本共享的平台 ID
+        // 收敛到一首歌上，导致「查看历史版本」只能查到一首；这里以远端索引
+        // 为权威来源恢复每首歌自己的映射，成功后打标记，后续同步不再重复执行。
+        // 前置条件：已执行 001_init.up.sql。
+        let rebuild_done = repo
+            .get_sync_state(PLATFORM_MAPPINGS_REBUILD_KEY)
+            .await?
+            .as_deref()
+            == Some(PLATFORM_MAPPINGS_REBUILD_VERSION);
+        if !rebuild_done {
+            let rows = repo.rebuild_platform_mappings(&entries).await.context(
+                "重建 platform_mappings 失败；请确认已执行 001_init.up.sql",
+            )?;
+            repo.set_sync_state(
+                PLATFORM_MAPPINGS_REBUILD_KEY,
+                PLATFORM_MAPPINGS_REBUILD_VERSION,
+            )
+            .await?;
+            info!(rows, "已从远端索引重建 platform_mappings");
+        }
 
         // 3. 计算差异
-        let Diff { to_add, to_delete } = diff::compute_diff(entries, local);
+        let Diff {
+            to_add,
+            mut to_delete,
+        } = diff::compute_diff(entries, local);
+
+        // 3.1 删除比例保护
+        //
+        // 远程条目不足本地 1/10：上游多半被清空或结构性改坏，本次不删任何东西，
+        // 等下一次同步自愈；删超过一半则放行但显式告警，便于排查。
+        if local_count > 0 && remote_count * 10 < local_count {
+            warn!(
+                local = local_count,
+                remote = remote_count,
+                skipping = to_delete.len(),
+                "索引条目数骤降，本次跳过删除阶段"
+            );
+            to_delete.clear();
+        } else if local_count > 0 && to_delete.len() * 2 > local_count {
+            warn!(
+                local = local_count,
+                remote = remote_count,
+                deleting = to_delete.len(),
+                "本次将删除超过半数的本地文件，请确认上游是否真的移除了这些文件"
+            );
+        }
+
         info!(
             "差异计算完成：新增 {}，删除 {}",
             to_add.len(),
@@ -169,9 +347,10 @@ impl SyncTaskRunner {
         // 但仍需处理删除（本地有、远程已移除的文件）
         if total == 0 {
             info!("无新增文件，跳过下载和处理阶段");
-            let (deleted_count, deleted_meili_ids) = self.process_deletions(repo, &to_delete).await;
+            let (deleted_count, deleted_meili_ids) =
+                self.process_deletions(repo, &to_delete).await?;
             if !deleted_meili_ids.is_empty() {
-                self.delete_meili_docs(deleted_meili_ids).await;
+                self.delete_meili_docs(repo, deleted_meili_ids).await?;
             }
             // 仍同步索引文件到 MinIO（jsonl 可能含 metadata 变更）
             // 索引/zip 同步为关键流程，失败则本次同步失败，由上层重试机制重新触发
@@ -333,20 +512,34 @@ impl SyncTaskRunner {
         // 7. 写入 MeiliSearch
         if !meili_docs.is_empty() {
             let doc_count = meili_docs.len();
-            meilisearch::add_documents_in_batches(
+            if let Err(e) = meilisearch::add_documents_in_batches(
                 &self.app.meili,
                 &self.app.cfg.meilisearch.index,
                 meili_docs,
                 self.app.cfg.worker.batch_size,
             )
-            .await?;
+            .await
+            {
+                // 前 k-1 批已入库、第 k 批失败会留下永久缺口：打标志让下一轮全量重建，
+                // 否则 sync_state 不推进 + diff 以 DB 为准，缺口永远补不回来。
+                if let Err(se) = repo.set_sync_state("force_full_reindex", "1").await {
+                    warn!(error = %se, "标记 force_full_reindex 失败");
+                }
+                return Err(e);
+            }
+            // 本轮索引已完整写入，清除补偿标志
+            if force_full_reindex
+                && let Err(e) = repo.set_sync_state("force_full_reindex", "0").await
+            {
+                warn!(error = %e, "清除 force_full_reindex 失败");
+            }
             info!(count = doc_count, "MeiliSearch 写入完成");
         }
 
         // 7.1 处理删除：本地有但远程索引已移除的文件
-        let (deleted_count, deleted_meili_ids) = self.process_deletions(repo, &to_delete).await;
+        let (deleted_count, deleted_meili_ids) = self.process_deletions(repo, &to_delete).await?;
         if !deleted_meili_ids.is_empty() {
-            self.delete_meili_docs(deleted_meili_ids).await;
+            self.delete_meili_docs(repo, deleted_meili_ids).await?;
         }
         summary.deleted = deleted_count;
 
@@ -357,59 +550,121 @@ impl SyncTaskRunner {
     }
 
     /// 处理删除路径：远程索引中已不存在的本地文件。
-    /// DB 软删除 + 删除 MinIO 对象，返回 (删除数量, 待删除的 MeiliSearch 文档 ID)
+    /// 有界并发执行 DB 软删除 + 删除 MinIO 对象，任一失败上抛（不再被 warn! 吞掉），
+    /// 返回 (实际删除数量, 待删除的 MeiliSearch 文档 ID)。
     async fn process_deletions(
         &self,
         repo: &Repository,
         to_delete: &[String],
-    ) -> (usize, Vec<String>) {
+    ) -> Result<(usize, Vec<String>)> {
         if to_delete.is_empty() {
-            return (0, Vec::new());
+            return Ok((0, Vec::new()));
         }
-        info!("处理删除文件, 数量={}", to_delete.len());
-        let mut meili_ids = Vec::with_capacity(to_delete.len());
+        info!(count = to_delete.len(), "处理删除文件");
+
+        let semaphore = Arc::new(Semaphore::new(DELETE_CONCURRENCY));
+        let mut join_set = JoinSet::new();
         for raw in to_delete {
-            match repo.soft_delete_song_by_raw(raw).await {
-                Ok(Some(song_id)) => {
-                    meili_ids.push(format!("song_{}", song_id));
-                    // 删除 MinIO 对象（best-effort，失败仅记录，不影响主流程）
-                    if let Err(e) = self
-                        .app
-                        .s3
-                        .delete_object()
-                        .bucket(&self.app.cfg.minio.bucket)
-                        .key(format!("raw-lyrics/{}", raw))
-                        .send()
-                        .await
-                    {
-                        warn!(raw, error = %e, "删除 MinIO 对象失败");
-                    }
-                }
-                Ok(None) => {
-                    // 已软删除或不存在，幂等跳过
-                }
+            let permit = semaphore.clone().acquire_owned().await?;
+            let repo = repo.clone();
+            let app = self.app.clone();
+            let raw = raw.clone();
+            join_set.spawn(async move {
+                let _permit = permit;
+                let outcome = delete_one(&app, &repo, &raw).await;
+                (raw, outcome)
+            });
+        }
+
+        let mut meili_ids = Vec::with_capacity(to_delete.len());
+        let mut failed: Vec<(String, String)> = Vec::new();
+        while let Some(joined) = join_set.join_next().await {
+            let (raw, outcome) = joined.context("删除任务 panic")?;
+            match outcome {
+                Ok(Some(id)) => meili_ids.push(id),
+                Ok(None) => {} // 已软删除或不存在，幂等跳过
                 Err(e) => {
-                    warn!(raw, error = %e, "软删除歌曲失败");
+                    warn!(raw, error = %e, "删除文件失败");
+                    failed.push((raw, format!("{:#}", e)));
                 }
             }
         }
+
         let count = meili_ids.len();
-        (count, meili_ids)
+        if !failed.is_empty() {
+            anyhow::bail!(
+                "{} 个文件删除失败，本次同步标记失败以待重试: {:?}",
+                failed.len(),
+                failed
+            );
+        }
+        Ok((count, meili_ids))
     }
 
-    /// 从 MeiliSearch 删除文档（失败仅告警，下次同步会重试）
-    async fn delete_meili_docs(&self, ids: Vec<String>) {
-        info!("从 MeiliSearch 删除文档, 数量={}", ids.len());
-        if let Err(e) = meilisearch::delete_documents(
-            &self.app.meili,
-            &self.app.cfg.meilisearch.index,
-            &ids,
-        )
-        .await
-        {
-            warn!(error = %e, count = ids.len(), "MeiliSearch 删除文档失败");
+    /// 从 MeiliSearch 删除文档：失败做有限重试，仍失败则上抛（不再只告警），
+    /// 并把 id 持久化到待删队列供下一轮补偿，避免搜索结果里永久残留已删除文档。
+    async fn delete_meili_docs(&self, repo: &Repository, ids: Vec<String>) -> Result<()> {
+        if ids.is_empty() {
+            return Ok(());
         }
+        info!(count = ids.len(), "从 MeiliSearch 删除文档");
+        let mut last_err: Option<anyhow::Error> = None;
+        for attempt in 1..=DELETE_MEILI_MAX_ATTEMPTS {
+            match meilisearch::delete_documents(
+                &self.app.meili,
+                &self.app.cfg.meilisearch.index,
+                &ids,
+            )
+            .await
+            {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    last_err = Some(e);
+                    if attempt < DELETE_MEILI_MAX_ATTEMPTS {
+                        warn!(
+                            attempt,
+                            count = ids.len(),
+                            error = %last_err.as_ref().unwrap(),
+                            "MeiliSearch 删除文档失败，准备重试"
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs(attempt as u64)).await;
+                    }
+                }
+            }
+        }
+
+        let err = last_err.expect("at least one attempt");
+        // DB 记录已软删，下次 diff 不会再算 to_delete，缺口必须持久化才能补回来。
+        if let Err(se) = repo
+            .set_sync_state("pending_meili_deletes", &ids.join(","))
+            .await
+        {
+            warn!(error = %se, "持久化待删 Meili 文档失败");
+        }
+        Err(err.context(format!(
+            "MeiliSearch 删除 {} 个文档最终失败，搜索索引存在已删除文档",
+            ids.len()
+        )))
     }
+}
+
+/// 删除单个文件：DB 软删 + MinIO 对象删除，任一失败都返回 Err（不再静默吞掉）
+async fn delete_one(
+    app: &Arc<AppState>,
+    repo: &Repository,
+    raw: &str,
+) -> Result<Option<String>> {
+    let Some(song_id) = repo.soft_delete_song_by_raw(raw).await? else {
+        return Ok(None);
+    };
+    app.s3
+        .delete_object()
+        .bucket(&app.cfg.minio.bucket)
+        .key(format!("raw-lyrics/{}", raw))
+        .send()
+        .await
+        .with_context(|| format!("删除 MinIO 对象失败: {}", raw))?;
+    Ok(Some(format!("song_{}", song_id)))
 }
 
 /// 处理单个文件
@@ -546,6 +801,10 @@ async fn process_one(
         word_count: parsed.word_count as i64,
         line_count: parsed.line_count as i64,
         commit_timestamp,
+        // 新增文档先按「自成一组」写入，随后的分组重算会用 patch 修正；
+        // 即使分组步骤失败，新文件也仍然可搜索（可接受的降级）。
+        song_group_id: 0,
+        is_group_head: true,
     };
 
     Ok((!existed, doc))

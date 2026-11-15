@@ -137,43 +137,56 @@ func (r *SubmissionRepo) RefreshReviewLease(ctx context.Context, id int64, revie
 	return res.RowsAffected == 1, nil
 }
 
-// ReleaseStaleReviewing 释放超时未心跳的审核占用（reviewing → pending）
-// cutoff 之前（或从未写入租约时间）的记录视为审核员已离开
+// ReleaseStaleReviewing 释放超时未心跳的审核占用（reviewing → pending）。
+// cutoff 之前（或从未写入租约时间）的记录视为审核员已离开。
+//
+// 与 AutoReject 一致：在同一事务内先用 FOR UPDATE SKIP LOCKED 锁定候选批次，
+// 多实例并发时各自处理不同批次；再用 UPDATE ... RETURNING id 只返回真正被
+// 释放的行，避免对「两次查询之间已被心跳刷新」的候选误发状态变更广播。
 func (r *SubmissionRepo) ReleaseStaleReviewing(ctx context.Context, cutoff time.Time) ([]model.Submission, error) {
 	const batch = 200
 
-	var candidates []model.Submission
-	if err := r.db.WithContext(ctx).
-		Select("id").
-		Where("status = ? AND (review_lease_at IS NULL OR review_lease_at < ?)", model.StatusReviewing, cutoff).
-		Order("id").
-		Limit(batch).
-		Find(&candidates).Error; err != nil {
-		return nil, err
-	}
-	if len(candidates) == 0 {
-		return nil, nil
-	}
+	var releasedIDs []int64
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var candidates []model.Submission
+		if err := tx.Model(&model.Submission{}).
+			Select("id").
+			Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			Where("status = ? AND (review_lease_at IS NULL OR review_lease_at < ?)", model.StatusReviewing, cutoff).
+			Order("id").
+			Limit(batch).
+			Find(&candidates).Error; err != nil {
+			return err
+		}
+		if len(candidates) == 0 {
+			return nil
+		}
 
-	ids := make([]int64, 0, len(candidates))
-	for i := range candidates {
-		ids = append(ids, candidates[i].ID)
-	}
+		ids := make([]int64, 0, len(candidates))
+		for i := range candidates {
+			ids = append(ids, candidates[i].ID)
+		}
 
-	// 条件更新：仅释放此刻仍然超时的行，避免误释放刚刷新过心跳的占用
-	err := r.db.WithContext(ctx).Model(&model.Submission{}).
-		Where("id IN ?", ids).
-		Where("status = ? AND (review_lease_at IS NULL OR review_lease_at < ?)", model.StatusReviewing, cutoff).
-		Updates(map[string]any{
-			"status":          model.StatusPending,
-			"reviewer":        "",
-			"reviewer_info":   nil,
-			"review_lease_at": nil,
-		}).Error
+		// 条件更新 + RETURNING id：外层复核超时条件，保持原「条件更新」的防御语义，
+		// 而返回值只包含此刻真正被 UPDATE 命中的行。
+		return tx.Raw(`
+			UPDATE submissions
+			SET status = ?, reviewer = '', reviewer_info = NULL, review_lease_at = NULL
+			WHERE id IN ?
+			  AND status = ? AND (review_lease_at IS NULL OR review_lease_at < ?)
+			RETURNING id`,
+			model.StatusPending, ids, model.StatusReviewing, cutoff,
+		).Scan(&releasedIDs).Error
+	})
 	if err != nil {
 		return nil, err
 	}
-	return candidates, nil
+
+	released := make([]model.Submission, 0, len(releasedIDs))
+	for _, id := range releasedIDs {
+		released = append(released, model.Submission{ID: id})
+	}
+	return released, nil
 }
 
 // UpdateFile 更新投稿文件

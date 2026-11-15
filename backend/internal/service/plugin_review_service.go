@@ -57,10 +57,11 @@ func (s *PluginReviewService) SetHub(hub *ws.Hub) { s.hub = hub }
 
 // PluginReviewQueueItem 审核队列项
 type PluginReviewQueueItem struct {
-	Version       model.PluginVersion `json:"version"`
-	PluginKey     string              `json:"pluginKey"`
-	PluginName    string              `json:"pluginName"`
-	PluginSummary string              `json:"pluginSummary"`
+	// 只带列表展示需要的摘要列，审核详情接口才返回完整版本
+	Version       repository.PluginVersionSummaryRow `json:"version"`
+	PluginKey     string                             `json:"pluginKey"`
+	PluginName    string                             `json:"pluginName"`
+	PluginSummary string                             `json:"pluginSummary"`
 }
 
 // PluginReviewDetail 审核详情

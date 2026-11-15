@@ -35,6 +35,9 @@ pub struct DatabaseConfig {
     pub max_open_conns: u32,
     #[serde(default = "default_max_idle_conns")]
     pub max_idle_conns: u32,
+    /// 连接池最小常驻连接数（独立于 max_idle_conns，默认 0 = 不维持常驻空闲连接）
+    #[serde(default = "default_min_connections")]
+    pub min_connections: u32,
 }
 
 fn default_sslmode() -> String {
@@ -45,6 +48,9 @@ fn default_max_open_conns() -> u32 {
 }
 fn default_max_idle_conns() -> u32 {
     10
+}
+fn default_min_connections() -> u32 {
+    0
 }
 
 impl DatabaseConfig {
@@ -368,6 +374,12 @@ pub fn load() -> anyhow::Result<Config> {
                 .parse::<u32>()
                 .unwrap_or(10),
         )?
+        .set_override(
+            "database.min_connections",
+            env_or("MIN_CONNECTIONS", "0")
+                .parse::<u32>()
+                .unwrap_or(0),
+        )?
         .set_override("redis.host", env_or("REDIS_HOST", "localhost"))?
         .set_override(
             "redis.port",
@@ -514,6 +526,25 @@ pub fn load() -> anyhow::Result<Config> {
 
     let cfg = builder.build()?;
     let result: Config = cfg.try_deserialize()?;
+
+    // 连接池参数交叉校验：不合法组合必须在启动阶段返回错误，
+    // 不能留给 sqlx 建池时的 min <= max 断言直接 panic。
+    let db = &result.database;
+    if db.min_connections > db.max_open_conns {
+        anyhow::bail!(
+            "MIN_CONNECTIONS ({}) 不能大于 DB_MAX_OPEN_CONNS ({})",
+            db.min_connections,
+            db.max_open_conns
+        );
+    }
+    if db.max_idle_conns > db.max_open_conns {
+        anyhow::bail!(
+            "DB_MAX_IDLE_CONNS ({}) 不能大于 DB_MAX_OPEN_CONNS ({})",
+            db.max_idle_conns,
+            db.max_open_conns
+        );
+    }
+
     tracing::info!(url = %mask_url_credentials(&result.rabbitmq.url), "RabbitMQ URL");
     Ok(result)
 }
@@ -554,6 +585,7 @@ mod tests {
             sslmode: "disable".to_string(),
             max_open_conns: 50,
             max_idle_conns: 10,
+            min_connections: 0,
         }
     }
 

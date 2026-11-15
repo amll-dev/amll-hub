@@ -61,85 +61,6 @@ export const normalizeReviewReportFormat = (
   };
 };
 
-type ReviewReportFormatRecord =
-  | {
-      kind: ReviewReportBlockKind;
-      template?: string;
-      listItem?: boolean;
-    }
-  | {
-      emptyText?: string;
-    };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
-const isBlockKind = (value: unknown): value is ReviewReportBlockKind =>
-  typeof value === 'string' &&
-  reviewReportFormatBlockDefinitions.some((item) => item.kind === value);
-
-const normalizeFormatRecords = (records: ReviewReportFormatRecord[]): ReviewReportFormat => {
-  const next = cloneFormat(DEFAULT_REVIEW_REPORT_FORMAT);
-  for (const record of records) {
-    if ('emptyText' in record && typeof record.emptyText === 'string') {
-      next.emptyText = record.emptyText;
-      continue;
-    }
-    if (!('kind' in record) || !isBlockKind(record.kind)) continue;
-    next.blocks[record.kind] = {
-      template:
-        typeof record.template === 'string' ? record.template : next.blocks[record.kind].template,
-      listItem:
-        typeof record.listItem === 'boolean' ? record.listItem : next.blocks[record.kind].listItem,
-    };
-  }
-  return normalizeReviewReportFormat(next);
-};
-
-export const serializeReviewReportFormat = (format: ReviewReportFormat) =>
-  JSON.stringify(normalizeReviewReportFormat(format), null, '\t');
-
-export const serializeReviewReportFormatJsonl = (format: ReviewReportFormat) => {
-  const normalized = normalizeReviewReportFormat(format);
-  const records: ReviewReportFormatRecord[] = [
-    { emptyText: normalized.emptyText },
-    ...reviewReportFormatBlockDefinitions.map((definition) => ({
-      kind: definition.kind,
-      ...normalized.blocks[definition.kind],
-    })),
-  ];
-  return records.map((record) => JSON.stringify(record)).join('\n');
-};
-
-export const parseReviewReportFormatText = (text: string) => {
-  const trimmed = text.trim();
-  if (!trimmed) throw new Error('模板文件为空');
-  try {
-    const value = JSON.parse(trimmed);
-    if (Array.isArray(value)) {
-      return normalizeFormatRecords(value.filter(isRecord) as ReviewReportFormatRecord[]);
-    }
-    if (isRecord(value)) {
-      if ('kind' in value || 'emptyText' in value) {
-        return normalizeFormatRecords([value as ReviewReportFormatRecord]);
-      }
-      return normalizeReviewReportFormat(value as Partial<ReviewReportFormat>);
-    }
-  } catch (error) {
-    if (trimmed.includes('\n')) {
-      const records = trimmed
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => JSON.parse(line))
-        .filter(isRecord) as ReviewReportFormatRecord[];
-      return normalizeFormatRecords(records);
-    }
-    throw error;
-  }
-  throw new Error('模板文件格式不正确');
-};
-
 const createReportFormatAtom = (storageKey: string, defaultFormat: ReviewReportFormat) => {
   const storageAtom = atomWithStorage<ReviewReportFormat>(storageKey, defaultFormat);
   return atom(
@@ -343,10 +264,42 @@ export const createReviewReportBlockVariables = (
   }
 };
 
+/**
+ * 模板里的换行转义：只有**孤立的** `\n` / `\r\n` 才当换行。
+ *
+ * 单行输入框里用户会写 `\n` 表示换行（格式编辑器的「插入换行符」按钮插的是
+ * 真换行，两条路径都要支持），但无条件替换会把 `C:\repo\data` 拆成三行、
+ * 把 LaTeX 的 `\rho` 变成换行 + `ho`。要求前后都不是字母再替换。
+ */
+const ESCAPED_NEWLINE = /(?<![A-Za-z])\\(?:r\\n|n|r)(?![A-Za-z])/g;
+const TEMPLATE_VARIABLE = /\{\{\s*([\w.]+)\s*\}\}/g;
+
 export const renderReviewReportTemplate = (template: string, variables: Record<string, string>) =>
   template
-    .replace(/\\r\\n|\\n|\\r/g, '\n')
-    .replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_match, name: string) => variables[name] ?? '');
+    .replace(ESCAPED_NEWLINE, '\n')
+    .replace(TEMPLATE_VARIABLE, (_match, name: string) => variables[name] ?? '');
+
+/**
+ * 模板里写了但当前 block 不支持的变量名。
+ *
+ * `renderReviewReportTemplate` 对未知变量是静默替换成空串，用户把 `{{lineLable}}`
+ * 拼错时只会看到「行号消失」。变量声明在 `reviewReportFormatBlockDefinitions`
+ * 里本来是给按钮列表用的，这里把它变成约束。
+ */
+export function findUnknownTemplateVariables(
+  kind: ReviewReportBlockKind,
+  template: string
+): string[] {
+  const definition = reviewReportFormatBlockDefinitions.find((item) => item.kind === kind);
+  if (!definition) return [];
+  const allowed = new Set(definition.variables.map((variable) => variable.name));
+  const unknown = new Set<string>();
+  for (const match of template.matchAll(TEMPLATE_VARIABLE)) {
+    const name = match[1];
+    if (name && !allowed.has(name)) unknown.add(name);
+  }
+  return [...unknown];
+}
 
 const renderMarkdownListItem = (text: string) => {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');

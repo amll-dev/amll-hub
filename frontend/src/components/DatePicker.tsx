@@ -405,7 +405,7 @@ export function DatePicker({
                             className={cn(
                               'flex h-10 items-center justify-center rounded-md text-xs transition-colors',
                               isCurrent
-                                ? '!bg-[#fef3c7] !text-[#92400e] font-semibold ring-1 ring-[#f59e0b]'
+                                ? '!bg-warning/15 !text-foreground font-semibold ring-1 ring-warning/60'
                                 : 'text-foreground hover:bg-surface-2',
                               disabled && 'cursor-not-allowed opacity-25'
                             )}

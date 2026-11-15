@@ -2,6 +2,7 @@ package model
 
 import (
 	"database/sql/driver"
+	"fmt"
 	"time"
 )
 
@@ -18,10 +19,14 @@ func (d DateOnly) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON 解析 YYYY-MM-DD 格式
+//
+// 非字符串输入必须报错：静默返回 nil 会把 `{"date": 123}` / `null` 变成
+// 零值 0001-01-01，再经 Value() 写进 not null 的 date 列，
+// 造出一条谁也搜不到、还会占用唯一索引的脏记录。
 func (d *DateOnly) UnmarshalJSON(data []byte) error {
 	s := string(data)
 	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
-		return nil
+		return fmt.Errorf("DateOnly 需要 YYYY-MM-DD 字符串，收到 %s", s)
 	}
 	t, err := time.Parse(`"2006-01-02"`, s)
 	if err != nil {

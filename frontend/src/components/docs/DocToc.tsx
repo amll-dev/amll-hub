@@ -53,7 +53,7 @@ export function DocToc({
       { rootMargin: '-80px 0px -70% 0px', threshold: [0, 1] }
     );
     for (const item of items) {
-      const el = document.getElementById(item.id);
+      const el = root.querySelector<HTMLElement>(`#${CSS.escape(item.id)}`);
       if (el) observer.observe(el);
     }
     return () => observer.disconnect();
@@ -72,8 +72,8 @@ export function DocToc({
                 href={`#${item.id}`}
                 onClick={(e) => {
                   e.preventDefault();
-                  document
-                    .getElementById(item.id)
+                  containerRef.current
+                    ?.querySelector<HTMLElement>(`#${CSS.escape(item.id)}`)
                     ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   setActiveId(item.id);
                   history.replaceState(null, '', `#${item.id}`);

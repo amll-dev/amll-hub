@@ -61,8 +61,8 @@ export function PluginManageDetail({
     void queryClient.invalidateQueries({ queryKey: queryKeys.myPluginDetail(pluginKey) });
     void queryClient.invalidateQueries({ queryKey: ['plugins', 'review-plugin', pluginKey] });
     void queryClient.invalidateQueries({ queryKey: ['plugins', 'review-queue'] });
-    void queryClient.invalidateQueries({ queryKey: ['plugins', 'mine-plugins'] });
-    void queryClient.invalidateQueries({ queryKey: ['plugins', 'mine'] });
+    // 用 queryKeys 的前缀 key，避免手写字面量与 myPlugins 的实现脱钩
+    void queryClient.invalidateQueries({ queryKey: queryKeys.myPluginsRoot });
     void queryClient.invalidateQueries({ queryKey: ['plugins', 'list'] });
     void queryClient.invalidateQueries({ queryKey: queryKeys.pluginDetail(pluginKey) });
   };

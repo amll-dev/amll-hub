@@ -124,10 +124,11 @@ export function RequestForm({
 
       {/* 歌曲名称 */}
       <motion.div variants={fadeUp}>
-        <label className="mb-1.5 block text-sm font-medium text-ink-2">
+        <label htmlFor="request-song-name" className="mb-1.5 block text-sm font-medium text-ink-2">
           歌曲名称 <span className="text-error">*</span>
         </label>
         <motion.input
+          id="request-song-name"
           key={`songName-${flashKey}`}
           type="text"
           value={form.songName}
@@ -143,10 +144,11 @@ export function RequestForm({
 
       {/* 歌手 */}
       <motion.div variants={fadeUp}>
-        <label className="mb-1.5 block text-sm font-medium text-ink-2">
+        <label htmlFor="request-artist" className="mb-1.5 block text-sm font-medium text-ink-2">
           歌手 <span className="text-error">*</span>
         </label>
         <motion.input
+          id="request-artist"
           key={`artist-${flashKey}`}
           type="text"
           value={form.artist}
@@ -162,10 +164,11 @@ export function RequestForm({
 
       {/* 专辑 */}
       <motion.div variants={fadeUp}>
-        <label className="mb-1.5 block text-sm font-medium text-ink-2">
+        <label htmlFor="request-album" className="mb-1.5 block text-sm font-medium text-ink-2">
           专辑 <span className="text-error">*</span>
         </label>
         <motion.input
+          id="request-album"
           key={`album-${flashKey}`}
           type="text"
           value={form.album}
@@ -179,10 +182,19 @@ export function RequestForm({
         />
       </motion.div>
 
+      {/* 平台 ID：至少填写一个即可，不再逐项标红星 */}
+      <motion.div variants={fadeUp} className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-sm font-medium text-ink-2">平台歌曲 ID</span>
+        <span className="text-xs text-ink-3">至少填写一个；找不到的填 0</span>
+      </motion.div>
+
       {platforms.map((p) => (
         <motion.div key={p.key} variants={fadeUp}>
-          <label className="mb-1.5 block text-sm font-medium text-ink-2">
-            {p.fieldLabel} <span className="text-error">*</span>
+          <label
+            htmlFor={`request-${p.key}`}
+            className="mb-1.5 block text-sm font-medium text-ink-2"
+          >
+            {p.fieldLabel}
           </label>
           <p className="mb-2 text-xs text-ink-3">
             具体获取方式请在
@@ -192,6 +204,7 @@ export function RequestForm({
             查看。如果找不到或者没有请写“0”。
           </p>
           <motion.input
+            id={`request-${p.key}`}
             key={`${p.key}-${flashKey}`}
             type="text"
             value={form[p.key]}
@@ -207,9 +220,12 @@ export function RequestForm({
 
       {/* 其他备注 */}
       <motion.div variants={fadeUp}>
-        <label className="mb-1.5 block text-sm font-medium text-ink-2">其他备注</label>
+        <label htmlFor="request-note" className="mb-1.5 block text-sm font-medium text-ink-2">
+          其他备注
+        </label>
         <p className="mb-2 text-xs text-ink-3">如果可以确认其他信息的话也会对歌词制作有所帮助哦</p>
         <Textarea
+          id="request-note"
           value={form.note}
           onChange={(e) => setField('note', e.target.value)}
           maxLength={1000}

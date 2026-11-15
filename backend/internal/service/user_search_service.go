@@ -160,6 +160,19 @@ func (s *UserSearchService) GetInfos(
 	return out
 }
 
+// Exists 判断用户名在 Casdoor 中是否真实存在。
+// 与 GetInfos 的区别：这里把「查不到」和「上游不可用」分开返回，
+// 调用方（如添加审核员）需要据此给出完全不同的提示。
+func (s *UserSearchService) Exists(ctx context.Context, username string) (bool, error) {
+	if _, err := s.casdoor.GetUserProfile(ctx, username); err != nil {
+		if errors.Is(err, infrastructure.ErrCasdoorUserNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
+	}
+	return true, nil
+}
+
 // Count 返回可枚举的匹配数（达到 cap 即认为「更多」，与前端 N+ 的展示约定一致）
 func (s *UserSearchService) Count(ctx context.Context, keyword string, cap int) (int, bool, error) {
 	keyword = strings.TrimSpace(keyword)

@@ -1,3 +1,4 @@
+// 当前无人引用，保留待接入
 import * as wanakana from 'wanakana';
 import type { LyricWord } from '$/types/ttml';
 import { getDictionaryRomaji, isPunctuationChar, isPunctuationOnly } from './TransliterationUtils';

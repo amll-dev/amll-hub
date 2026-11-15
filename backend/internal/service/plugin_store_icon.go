@@ -9,6 +9,7 @@ import (
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
 	"github.com/minio/minio-go/v7"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -41,6 +42,10 @@ func (s *PluginStoreService) setIcon(ctx context.Context, username string, plugi
 	}
 	oldKey := plugin.IconKey
 	if err := s.plugins.UpdateIcon(ctx, nil, plugin.ID, key); err != nil {
+		// 落库失败时删掉刚上传的对象，避免留下没人引用的孤儿图标
+		if delErr := s.files.DeleteIcon(ctx, key); delErr != nil {
+			logrus.WithError(delErr).Warn("cleanup plugin icon after db failure failed")
+		}
 		return "", err
 	}
 	if oldKey != "" && oldKey != key {

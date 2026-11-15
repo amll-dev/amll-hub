@@ -1,6 +1,6 @@
-import { type DBSchema, type IDBPDatabase, openDB } from 'idb';
+import { type DBSchema, type IDBPDatabase, openDB, unwrap } from 'idb';
 import { identifyProject } from '$/modules/project/logic/project-info';
-import type { TTMLLyric } from '$/types/ttml';
+import type { TTMLMetadata, TTMLLyric } from '$/types/ttml';
 
 const DB_NAME = 'amll-autosave-db';
 const DB_VERSION = 2;
@@ -103,7 +103,7 @@ let dbPromise: Promise<IDBPDatabase<AutosaveDBSchema>> | null = null;
 function getDB() {
   if (!dbPromise) {
     dbPromise = openDB<AutosaveDBSchema>(DB_NAME, DB_VERSION, {
-      async upgrade(db, oldVersion, _newVersion, transaction) {
+      upgrade(db, oldVersion, _newVersion, transaction) {
         if (!db.objectStoreNames.contains('projects')) {
           const projectStore = db.createObjectStore('projects', {
             keyPath: 'id',
@@ -125,33 +125,45 @@ function getDB() {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 旧版本的快照
           db.objectStoreNames.contains('snapshots' as any)
         ) {
-          const legacyProjectId = 'legacy_autosave_archive';
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 旧版本的快照，应该存在
-          const oldStore = transaction.objectStore('snapshots' as any);
-          const oldSnapshots = (await oldStore.getAll()) as LegacySnapshot[];
+          // 升级事务的 active flag 在 upgrade 回调返回后就会清除，跨 await 再入队
+          // 请求会抛 TransactionInactiveError。改用原生 IDB 请求回调链：在同一个
+          // success 事件里同步排完所有写入，事务一直保持活跃。
+          const nativeTx = unwrap(transaction);
+          const nativeDb = unwrap(db);
+          const oldStore = nativeTx.objectStore('snapshots');
+          const request = oldStore.getAll() as IDBRequest<LegacySnapshot[]>;
 
-          if (oldSnapshots && oldSnapshots.length > 0) {
-            oldSnapshots.sort((a, b) => a.timestamp - b.timestamp);
-            const latestSnapshot = oldSnapshots[oldSnapshots.length - 1]!;
-            const projectStore = transaction.objectStore('projects');
-            await projectStore.put({
-              id: legacyProjectId,
-              name: 'Legacy Snapshots Archive',
-              lastModified: latestSnapshot.timestamp,
-              latestState: latestSnapshot.lyrics,
-              preview: '(来自旧版自动保存的历史数据)',
-            });
-            const versionStore = transaction.objectStore('versions');
-            for (const snap of oldSnapshots) {
-              await versionStore.add({
-                projectId: legacyProjectId,
-                timestamp: snap.timestamp,
-                data: snap.lyrics,
-              });
+          request.onsuccess = () => {
+            const legacyProjectId = 'legacy_autosave_archive';
+            const oldSnapshots = request.result;
+            const projectStore = nativeTx.objectStore('projects');
+            const versionStore = nativeTx.objectStore('versions');
+
+            try {
+              if (oldSnapshots && oldSnapshots.length > 0) {
+                oldSnapshots.sort((a, b) => a.timestamp - b.timestamp);
+                const latestSnapshot = oldSnapshots[oldSnapshots.length - 1]!;
+                projectStore.put({
+                  id: legacyProjectId,
+                  name: 'Legacy Snapshots Archive',
+                  lastModified: latestSnapshot.timestamp,
+                  latestState: latestSnapshot.lyrics,
+                  preview: '(来自旧版自动保存的历史数据)',
+                });
+                for (const snap of oldSnapshots) {
+                  versionStore.add({
+                    projectId: legacyProjectId,
+                    timestamp: snap.timestamp,
+                    data: snap.lyrics,
+                  });
+                }
+              }
+              // 删除旧 store 只能发生在 versionchange 事务活跃期间，即本回调内。
+              nativeDb.deleteObjectStore('snapshots');
+            } catch {
+              // 迁移失败时保留旧快照，不让升级整体失败、旧数据也不会丢。
             }
-          }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 旧版本的快照，应该存在
-          db.deleteObjectStore('snapshots' as any);
+          };
         }
       },
     });
@@ -234,13 +246,35 @@ export async function autoSaveProject(
 }
 
 /**
- * @description 获取所有项目列表
- * @returns 项目列表，最新的在前
+ * @description 项目摘要：只保留「打开文件时判断是不是同一个项目」需要的字段
  */
-export async function getProjectList(): Promise<ProjectInfo[]> {
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  metadata: TTMLMetadata[];
+}
+
+/**
+ * @description 获取所有项目摘要（不含完整歌词状态），最新的在前
+ *
+ * 用游标逐条投影而不是 `getAllFromIndex`：`ProjectInfo.latestState` 是整份
+ * 歌词，几百个项目一次性读进内存就是几十 MB。游标里读完一条只留下
+ * metadata，其余交给 GC。
+ */
+export async function getProjectSummaries(): Promise<ProjectSummary[]> {
   const db = await getDB();
-  const projects = await db.getAllFromIndex('projects', 'by-last-modified');
-  return projects.reverse();
+  const result: ProjectSummary[] = [];
+  const index = db.transaction('projects').store.index('by-last-modified');
+  let cursor = await index.openCursor(null, 'prev');
+  while (cursor) {
+    result.push({
+      id: cursor.value.id,
+      name: cursor.value.name,
+      metadata: cursor.value.latestState?.metadata ?? [],
+    });
+    cursor = await cursor.continue();
+  }
+  return result;
 }
 
 /**

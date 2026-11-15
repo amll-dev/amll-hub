@@ -1,5 +1,10 @@
 package repository
 
+// NormalizePage 供 handler 回显与仓库层实际查询一致的分页参数
+func NormalizePage(page, size int) (int, int) {
+	return normalizePage(page, size)
+}
+
 // normalizePage 规范化分页参数：页码最小 1，每页默认 20、最大 50
 func normalizePage(page, size int) (int, int) {
 	if page < 1 {

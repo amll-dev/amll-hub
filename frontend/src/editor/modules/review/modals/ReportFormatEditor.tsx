@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import {
   DEFAULT_REVIEW_REPORT_FORMAT,
+  findUnknownTemplateVariables,
   resetReviewReportBlockFormat,
   reviewReportFormatBlockDefinitions,
   updateReviewReportBlockFormat,
@@ -53,6 +54,11 @@ export const ReportFormatEditor = ({
   const selectedFormat = value.blocks[selectedDefinition.kind];
 
   const renderedPreview = useMemo(() => renderReviewReport(report, value), [report, value]);
+  // 未知变量会被渲染成空串，静默消失；这里提前把拼错的变量名指出来
+  const unknownVariables = useMemo(
+    () => findUnknownTemplateVariables(selectedKind, value.blocks[selectedKind].template),
+    [selectedKind, value]
+  );
 
   const updateSelectedFormat = (patch: Partial<(typeof value.blocks)[ReviewReportBlockKind]>) => {
     onChange(updateReviewReportBlockFormat(value, selectedDefinition.kind, patch));
@@ -164,7 +170,7 @@ export const ReportFormatEditor = ({
                    * 星号太弱，用户会以为是标点符号而不是状态。
                    */}
                   {changed && (
-                    <span className="shrink-0 rounded-full bg-primary px-1.5 text-[10px] leading-[1.4] font-medium text-primary-foreground">
+                    <span className="shrink-0 rounded-full bg-primary px-1.5 text-[11px] leading-[1.4] font-medium text-primary-foreground">
                       已改
                     </span>
                   )}
@@ -203,6 +209,18 @@ export const ReportFormatEditor = ({
             placeholder="报告条目模板"
             className="min-h-[88px] font-mono"
           />
+
+          {unknownVariables.length > 0 && (
+            <p className="text-xs text-destructive">
+              本 block 不支持变量
+              {unknownVariables.map((name) => (
+                <code key={name} className="mx-0.5 rounded bg-destructive/10 px-1">
+                  {`{{${name}}}`}
+                </code>
+              ))}
+              ，渲染时会被替换成空内容。
+            </p>
+          )}
 
           {/* 工具栏：加粗 / 倾斜 / 大纲 / 换行 */}
           <div className="flex flex-wrap items-center gap-1">

@@ -48,7 +48,8 @@ export const useSegmentationConfig = () => {
 
   const config = useMemo((): SegmentationConfig => {
     const weight = parseFloat(punctuationWeightStr);
-    const finalPunctuationWeight = Number.isNaN(weight) ? 0.2 : weight;
+    // 权重必须非负且有上限：负数会让时间分配产出倒退的时间戳
+    const finalPunctuationWeight = Number.isNaN(weight) ? 0.2 : Math.min(10, Math.max(0, weight));
 
     const ignoreList = new Set(ignoreListText.split('\n').filter((line) => line.trim() !== ''));
 

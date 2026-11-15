@@ -42,7 +42,6 @@ const EXCLUDED_KANA_COMBOS = new Set([
   'りゃ',
   'りゅ',
   'りょ',
-  'じょ',
 ]);
 
 const buildRubyEntries = (word: LyricWord, tokens: string[]): LyricWordBase[] =>

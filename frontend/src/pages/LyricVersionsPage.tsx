@@ -134,7 +134,7 @@ export function LyricVersionsPage() {
                       {version.musicNames.length > 0 ? version.musicNames.join(' / ') : '未知歌曲'}
                     </span>
                     {version.isLatest && (
-                      <span className="rounded border border-line bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-3">
+                      <span className="rounded border border-line bg-surface-2 px-1.5 py-0.5 text-[11px] text-ink-3">
                         最新
                       </span>
                     )}
@@ -182,7 +182,7 @@ export function LyricVersionsPage() {
                     {platforms.map((p, idx) => (
                       <span
                         key={`${p.platform}-${p.id}-${idx}`}
-                        className="inline-flex items-center gap-0.5 rounded border border-line bg-surface-2 px-1.5 py-0.5 text-[10px]"
+                        className="inline-flex items-center gap-0.5 rounded border border-line bg-surface-2 px-1.5 py-0.5 text-[11px]"
                       >
                         <Hash className="h-2.5 w-2.5" />
                         {p.platform}:{p.id}
@@ -216,8 +216,8 @@ export function LyricVersionsPage() {
                   <button
                     type="button"
                     onClick={() => void handleDownload(version)}
-                    disabled={downloading === version.rawLyricFile}
-                    title="下载 TTML 歌词"
+                    disabled={!!downloading}
+                    title={downloading ? '正在下载' : '下载 TTML 歌词'}
                     className={`${btnBase} ${btnIdle}`}
                   >
                     {downloading === version.rawLyricFile ? (

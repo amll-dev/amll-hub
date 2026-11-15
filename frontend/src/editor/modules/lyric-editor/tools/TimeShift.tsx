@@ -21,7 +21,10 @@ import {
   selectedLinesAtom,
   undoableLyricLinesAtom,
 } from '$/states/main.ts';
-import { createReviewTimeShiftOperation } from '$/modules/review/services/operation-log-service';
+import {
+  applyReviewTimeShiftOperation,
+  createReviewTimeShiftOperation,
+} from '$/modules/review/services/operation-log-service';
 import type { TTMLLyric } from '$/types/ttml';
 
 type ShiftDirection = 'delay' | 'advance';
@@ -73,7 +76,6 @@ export const TimeShiftDialog = () => {
 
     const finalOffset = direction === 'delay' ? amount : -amount;
 
-    const targetLineIndices = new Set<number>();
     const targetLineIds: string[] = [];
 
     /** 把 [from, to) 闭开区间的行加入目标集合。 */
@@ -81,7 +83,6 @@ export const TimeShiftDialog = () => {
       for (let i = Math.max(0, from); i < Math.min(totalLines, to); i++) {
         const line = lyricLines.lyricLines[i];
         if (!line) continue;
-        targetLineIndices.add(i);
         targetLineIds.push(line.id);
       }
     };
@@ -89,9 +90,8 @@ export const TimeShiftDialog = () => {
     if (scope === 'all') {
       addRange(0, totalLines);
     } else if (scope === 'selected') {
-      lyricLines.lyricLines.forEach((line, index) => {
+      lyricLines.lyricLines.forEach((line) => {
         if (selectedLines.has(line.id)) {
-          targetLineIndices.add(index);
           targetLineIds.push(line.id);
         }
       });
@@ -115,35 +115,19 @@ export const TimeShiftDialog = () => {
       }
     }
 
+    const operation = createReviewTimeShiftOperation({
+      offsetMs: finalOffset,
+      targetLineIds,
+    });
     if (targetLineIds.length > 0) {
-      pushReviewOperation(
-        createReviewTimeShiftOperation({
-          offsetMs: finalOffset,
-          targetLineIds,
-        })
-      );
+      pushReviewOperation(operation);
     }
 
+    // 直接复用审核回放用的平移实现，避免同一份逻辑漂移成两份；
+    // 用行 id 选行也与回放结果保持一致。
     setLyricLines((current: TTMLLyric) => {
       const draft = JSON.parse(JSON.stringify(current)) as TTMLLyric;
-      draft.lyricLines.forEach((line, index) => {
-        if (targetLineIndices.has(index)) {
-          line.startTime = Math.max(0, line.startTime + finalOffset);
-          line.endTime = Math.max(0, line.endTime + finalOffset);
-
-          line.words.forEach((word) => {
-            word.startTime = Math.max(0, word.startTime + finalOffset);
-            word.endTime = Math.max(0, word.endTime + finalOffset);
-            if (word.ruby && word.ruby.length > 0) {
-              word.ruby.forEach((rubyWord) => {
-                rubyWord.startTime = Math.max(0, rubyWord.startTime + finalOffset);
-                rubyWord.endTime = Math.max(0, rubyWord.endTime + finalOffset);
-              });
-            }
-          });
-        }
-      });
-      return draft;
+      return applyReviewTimeShiftOperation(draft, operation);
     });
 
     setOpen(false);

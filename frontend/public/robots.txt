@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /review
+Disallow: /creator
+Disallow: /profile
+Disallow: /messages
+Disallow: /bind-account
+Disallow: /register
+Disallow: /reset-password

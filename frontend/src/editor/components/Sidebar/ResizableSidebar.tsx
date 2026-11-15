@@ -52,6 +52,13 @@ export const ResizableSidebar = <Panel extends string>({
   const contentWidth = tempWidth > 0 ? tempWidth : savedWidth;
   const isOpen = activePanel !== closedPanel;
 
+  const ratioLimit = window.innerWidth * maxWidthRatio;
+  const maxAllowedWidth = maxWidth === undefined ? ratioLimit : Math.min(maxWidth, ratioLimit);
+  const clampWidth = useCallback(
+    (w: number) => Math.min(Math.max(w, minWidth), maxAllowedWidth),
+    [minWidth, maxAllowedWidth]
+  );
+
   const close = useCallback(() => setActivePanel(closedPanel), [closedPanel, setActivePanel]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
@@ -63,26 +70,27 @@ export const ResizableSidebar = <Panel extends string>({
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!isDragging || !sidebarRef.current) return;
-      // 左侧从左边缘向右量宽，右侧从右边缘向左量宽。
-      const newWidth =
-        side === 'left' ? e.clientX : sidebarRef.current.getBoundingClientRect().right - e.clientX;
-      const ratioLimit = window.innerWidth * maxWidthRatio;
-      const maxAllowedWidth = maxWidth === undefined ? ratioLimit : Math.min(maxWidth, ratioLimit);
+      // 左右两侧都用相对 sidebar 边缘的量，不假设侧边栏贴住视口 left: 0。
+      const rect = sidebarRef.current.getBoundingClientRect();
+      const newWidth = side === 'left' ? e.clientX - rect.left : rect.right - e.clientX;
 
       if (newWidth <= SNAP_CLOSE_THRESHOLD) {
         setTempWidth(0);
       } else {
-        setTempWidth(Math.min(Math.max(newWidth, minWidth), maxAllowedWidth));
+        setTempWidth(clampWidth(newWidth));
       }
     },
-    [isDragging, maxWidth, maxWidthRatio, minWidth, side]
+    [isDragging, side, clampWidth]
   );
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
       if (!isDragging) return;
       setIsDragging(false);
-      e.currentTarget.releasePointerCapture(e.pointerId);
+      // pointercancel 时浏览器已释放隐式捕获，无条件 release 会抛 NotFoundError
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
 
       if (tempWidth <= SNAP_CLOSE_THRESHOLD) {
         close();
@@ -102,10 +110,30 @@ export const ResizableSidebar = <Panel extends string>({
     <div
       className={styles.resizer}
       data-dragging={isDragging}
+      role="separator"
+      aria-orientation="vertical"
+      aria-valuenow={Math.round(tempWidth)}
+      aria-valuemin={minWidth}
+      aria-valuemax={Math.round(maxAllowedWidth)}
+      aria-label="调整侧边栏宽度"
+      tabIndex={0}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
+      onKeyDown={(e) => {
+        // 按 ARIA separator 模式补键盘操作，键盘用户也能调整宽度
+        const step = e.shiftKey ? 50 : 10;
+        let next: number | null = null;
+        if (e.key === 'ArrowLeft') next = clampWidth(tempWidth - step);
+        else if (e.key === 'ArrowRight') next = clampWidth(tempWidth + step);
+        else if (e.key === 'Home') next = minWidth;
+        else if (e.key === 'End') next = Math.round(maxAllowedWidth);
+        if (next === null) return;
+        e.preventDefault();
+        setTempWidth(next);
+        setSavedWidth(next);
+      }}
     />
   );
 
@@ -142,7 +170,14 @@ export const ResizableSidebar = <Panel extends string>({
               <X className="size-4" />
             </Button>
           </div>
-          <div className={styles.content}>{children}</div>
+          <div
+            className={styles.content}
+            id={isOpen ? `sidebar-panel-${activePanel}` : undefined}
+            role={isOpen ? 'tabpanel' : undefined}
+            aria-labelledby={isOpen ? `sidebar-tab-${activePanel}` : undefined}
+          >
+            {children}
+          </div>
         </div>
       </motion.div>
       {side === 'left' && resizer}

@@ -14,8 +14,9 @@ import { useAtomValue, useSetAtom } from 'jotai';
 import { useCallback } from 'react';
 import { uid } from 'uid';
 import { audioEngine } from '$/modules/audio/audio-engine';
-import { getProjectList } from '$/modules/project/autosave/autosave';
+import { getProjectSummaries } from '$/modules/project/autosave/autosave';
 import { applyDefaultTtmlAuthorMetadata } from '$/modules/project/logic/default-metadata';
+import { extractBracketMetadata } from '$/modules/project/utils/metadata-matcher';
 import { getSuggestedTtmlFileName } from '$/modules/project/logic/metadata-filename';
 import { isProjectMatch } from '$/modules/project/logic/project-match';
 import {
@@ -267,6 +268,14 @@ export const useFileOpener = () => {
           if (!parser) return;
           const rawLines = parser(text);
           lyricData = normalizeLyricLines(rawLines);
+          // LRC / QRC 等文本格式自带的 [ti:] [ar:] [作词:] 标签接进 metadata，
+          // 否则中文标签会被当成未知 key 丢掉（metadata-matcher 之前没接线）
+          const extracted = extractBracketMetadata(text);
+          const entries: TTMLMetadata[] = Object.entries(extracted).map(([key, value]) => ({
+            key,
+            value,
+          }));
+          if (entries.length > 0) lyricData.metadata = entries;
         } else {
           setPushNotification({
             title: `不支持的文件格式: ${ext}`,
@@ -287,8 +296,10 @@ export const useFileOpener = () => {
 
         try {
           if (lyricData.metadata.length > 0) {
-            const projects = await getProjectList();
-            const matchedProject = projects.find((p) => isProjectMatch(p, lyricData as TTMLLyric));
+            const projects = await getProjectSummaries();
+            const matchedProject = projects.find((p) =>
+              isProjectMatch(p.metadata, lyricData as TTMLLyric)
+            );
 
             if (matchedProject) {
               fileOpenerLogger.debug(

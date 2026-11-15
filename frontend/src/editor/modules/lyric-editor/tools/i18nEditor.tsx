@@ -87,18 +87,18 @@ export const I18nEditor: FC = () => {
       const byLang = line.translatedLyricByLang;
       if (!byLang) continue;
       const keys = Object.keys(byLang);
-      if (keys.length === 1 && keys[0] === 'und') {
-        if (matchedLang && matchedLang !== 'und') return undefined;
-        matchedLang = 'und';
-        continue;
-      }
-      const matched = Object.entries(byLang).find(([, value]) => {
-        const nextValue = value.trim().length > 0 ? value : '';
-        return nextValue === line.translatedLyric && value.trim().length > 0;
-      })?.[0];
-      if (!matched) return undefined;
-      if (matchedLang && matchedLang !== matched) return undefined;
-      matchedLang = matched;
+      if (keys.length === 0) continue;
+      // 语言由 key 决定，内容是否为空不参与判定；单语言直接命中，
+      // 多语言时沿用已确定的语言或按显示值（trim 后）反查。
+      let lang = keys.length === 1 ? keys[0] : undefined;
+      if (!lang && matchedLang && byLang[matchedLang] !== undefined) lang = matchedLang;
+      if (!lang)
+        lang = Object.entries(byLang).find(
+          ([, value]) => value.trim() === (line.translatedLyric ?? '').trim()
+        )?.[0];
+      if (!lang) continue;
+      if (matchedLang && matchedLang !== lang) return undefined;
+      matchedLang = lang;
     }
     return matchedLang;
   }, [lyricLines]);
@@ -109,18 +109,16 @@ export const I18nEditor: FC = () => {
       const byLang = line.romanLyricByLang;
       if (!byLang) continue;
       const keys = Object.keys(byLang);
-      if (keys.length === 1 && keys[0] === 'und') {
-        if (matchedLang && matchedLang !== 'und') return undefined;
-        matchedLang = 'und';
-        continue;
-      }
-      const matched = Object.entries(byLang).find(([, value]) => {
-        const nextValue = value.trim().length > 0 ? value : '';
-        return nextValue === line.romanLyric && value.trim().length > 0;
-      })?.[0];
-      if (!matched) return undefined;
-      if (matchedLang && matchedLang !== matched) return undefined;
-      matchedLang = matched;
+      if (keys.length === 0) continue;
+      let lang = keys.length === 1 ? keys[0] : undefined;
+      if (!lang && matchedLang && byLang[matchedLang] !== undefined) lang = matchedLang;
+      if (!lang)
+        lang = Object.entries(byLang).find(
+          ([, value]) => value.trim() === (line.romanLyric ?? '').trim()
+        )?.[0];
+      if (!lang) continue;
+      if (matchedLang && matchedLang !== lang) return undefined;
+      matchedLang = lang;
     }
     return matchedLang;
   }, [lyricLines]);
@@ -128,37 +126,16 @@ export const I18nEditor: FC = () => {
   const currentWordRomanizationLang = useMemo(() => {
     let matchedLang: string | undefined;
     for (const line of lyricLines.lyricLines) {
-      if (line.wordRomanizationLang === 'und') {
-        if (matchedLang && matchedLang !== 'und') return undefined;
-        matchedLang = 'und';
-        continue;
-      }
       const byLang = line.wordRomanizationByLang;
-      if (!byLang) continue;
-      let lineMatched: string | undefined;
-      for (const [lang, romans] of Object.entries(byLang)) {
-        if (romans.length === 0) continue;
-        let matches = true;
-        for (const word of line.words) {
-          if (word.word.trim().length === 0) continue;
-          const match = romans.find(
-            (r) => r.startTime === word.startTime && r.endTime === word.endTime
-          );
-          const roman = match?.text ?? '';
-          if (roman.trim().length === 0) continue;
-          if (word.romanWord !== roman) {
-            matches = false;
-            break;
-          }
-        }
-        if (matches) {
-          lineMatched = lang;
-          break;
-        }
-      }
-      if (!lineMatched) return undefined;
-      if (matchedLang && matchedLang !== lineMatched) return undefined;
-      matchedLang = lineMatched;
+      // 行上已记录的语言优先；否则取任意一个有数据的语言，再退到任意 key。
+      // 不因某行没有逐字音译内容就否决整体、退回占位符。
+      const lang =
+        line.wordRomanizationLang ||
+        Object.entries(byLang ?? {}).find(([, romans]) => romans.length > 0)?.[0] ||
+        Object.keys(byLang ?? {})[0];
+      if (!lang) continue;
+      if (matchedLang && matchedLang !== lang) return undefined;
+      matchedLang = lang;
     }
     return matchedLang;
   }, [lyricLines]);

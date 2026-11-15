@@ -74,7 +74,7 @@ export function SongPreviewCard({
         <div className="flex flex-wrap items-center gap-2">
           {name && <span className="truncate text-base font-semibold text-foreground">{name}</span>}
           {platform && (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded border border-line bg-card px-1.5 py-0.5 text-[10px] text-ink-3">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded border border-line bg-card px-1.5 py-0.5 text-[11px] text-ink-3">
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
                   platform === 'qq' ? 'bg-[#31c27c]' : 'bg-[#c20c0c]'

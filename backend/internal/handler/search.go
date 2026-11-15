@@ -27,10 +27,10 @@ func (h *SearchHandler) Search(c *gin.Context) {
 	q := strings.TrimSpace(c.Query("q"))
 	field := strings.TrimSpace(c.DefaultQuery("field", "all"))
 	limit := pkg.Clamp(pkg.ParseInt(c.Query("limit"), 20), 1, 100)
-	offset := pkg.Clamp(pkg.ParseInt(c.Query("offset"), 0), 0, 100000)
-	// all=true 时返回全部命中
+	offset := pkg.Clamp(pkg.ParseInt(c.Query("offset"), 0), 0, 10000)
+	// all=true 时返回全部命中；上限与 MeiliSearch MaxTotalHits 对齐（方案 §8）
 	if c.Query("all") == "true" {
-		limit = 100000
+		limit = 10000
 	}
 
 	// 校验 field
@@ -49,6 +49,9 @@ func (h *SearchHandler) Search(c *gin.Context) {
 		Field:  field,
 		Limit:  limit,
 		Offset: offset,
+		// 歌词搜索允许命中旧版本：某句词可能只存在于被修改前的版本里，
+		// 此时不按 isGroupHead 去重（见分组重构方案 §7.6 / §12.1）
+		IncludeHistory: field == "lyric",
 	})
 	if err != nil {
 		if errors.Is(err, service.ErrUpstreamUnavailable) {

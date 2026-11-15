@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
@@ -47,15 +46,15 @@ type PluginCatalogDocument struct {
 }
 
 // PluginCatalogService 目录生成与缓存
+//
+// 只使用 Redis 作为缓存，不在进程内存里再存一份：多实例部署时 Invalidate
+// 只能清掉当前实例的内存与共享的 Redis，其它实例的内存副本会一直用到过期，
+// 客户端就可能拿到少插件的旧目录和旧 ETag。目录构建本身只是一次 DB 查询
+// 加序列化，省下的 MGET 远不值得这致性风险。
 type PluginCatalogService struct {
 	cfg     *config.Config
 	redis   *redis.Client
 	plugins *repository.PluginRepo
-
-	mu       sync.Mutex
-	body     []byte
-	etag     string
-	expireAt time.Time
 }
 
 func NewPluginCatalogService(cfg *config.Config, rdb *redis.Client, plugins *repository.PluginRepo) *PluginCatalogService {
@@ -76,15 +75,6 @@ func (s *PluginCatalogService) Get(ctx context.Context) ([]byte, string, error) 
 }
 
 func (s *PluginCatalogService) readCache(ctx context.Context) ([]byte, string, bool) {
-	ttl := s.cfg.PluginStore.CatalogCacheTTL
-	s.mu.Lock()
-	if s.body != nil && time.Now().Before(s.expireAt) {
-		body, etag := s.body, s.etag
-		s.mu.Unlock()
-		return body, etag, true
-	}
-	s.mu.Unlock()
-
 	if s.redis == nil {
 		return nil, "", false
 	}
@@ -97,11 +87,6 @@ func (s *PluginCatalogService) readCache(ctx context.Context) ([]byte, string, b
 	if !ok1 || !ok2 || body == "" || etag == "" {
 		return nil, "", false
 	}
-	s.mu.Lock()
-	s.body = []byte(body)
-	s.etag = etag
-	s.expireAt = time.Now().Add(ttl)
-	s.mu.Unlock()
 	return []byte(body), etag, true
 }
 
@@ -110,12 +95,6 @@ func (s *PluginCatalogService) writeCache(ctx context.Context, body []byte, etag
 	if ttl <= 0 {
 		ttl = time.Minute
 	}
-	s.mu.Lock()
-	s.body = body
-	s.etag = etag
-	s.expireAt = time.Now().Add(ttl)
-	s.mu.Unlock()
-
 	if s.redis == nil {
 		return
 	}
@@ -129,11 +108,6 @@ func (s *PluginCatalogService) writeCache(ctx context.Context, body []byte, etag
 
 // Invalidate 在数据库事务提交后调用
 func (s *PluginCatalogService) Invalidate(ctx context.Context) {
-	s.mu.Lock()
-	s.body = nil
-	s.etag = ""
-	s.expireAt = time.Time{}
-	s.mu.Unlock()
 	if s.redis == nil {
 		return
 	}

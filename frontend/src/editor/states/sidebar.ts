@@ -6,6 +6,9 @@ import { atomWithStorage } from 'jotai/utils';
  */
 export type SidebarTabId = 'outline' | 'bpm' | 'requirements';
 
+/** 老版本会把已下线的 tab（如 background）留在 localStorage，读的时候先滤掉 */
+const VALID_TAB_IDS: SidebarTabId[] = ['outline', 'bpm', 'requirements'];
+
 /**
  * 侧边栏可能显示的面板类型
  *
@@ -28,9 +31,13 @@ const baseActiveSidebarTabAtom = atomWithStorage<SidebarPanelType>('activeSideba
 export const activeSidebarTabAtom = atom(
   (get) => {
     const active = get(baseActiveSidebarTabAtom);
-    const openTabs = get(openSidebarTabsAtom);
-    if (active !== 'none' && !openTabs.includes(active as SidebarTabId)) {
-      return openTabs[openTabs.length - 1] ?? 'none';
+    const validOpen = get(openSidebarTabsAtom).filter((id) => VALID_TAB_IDS.includes(id));
+    if (active === 'none') return 'none';
+    if (
+      !VALID_TAB_IDS.includes(active as SidebarTabId) ||
+      !validOpen.includes(active as SidebarTabId)
+    ) {
+      return validOpen[validOpen.length - 1] ?? 'none';
     }
     return active;
   },
@@ -97,21 +104,6 @@ export const toggleTabAtom = atom(
  * 左侧边栏的宽度
  */
 export const sidebarWidthAtom = atomWithStorage('sidebarWidth', 300);
-
-/**
- * 右侧边栏可能显示的面板类型
- */
-export type RightSidebarPanelType = 'none' | 'annotations';
-
-/**
- * 当前激活的右侧面板
- */
-export const rightSidebarPanelAtom = atom<RightSidebarPanelType>('none');
-
-/**
- * 右侧边栏的宽度（最大不超过视口 40%，在组件内钳制）
- */
-export const rightSidebarWidthAtom = atomWithStorage('rightSidebarWidth', 320);
 
 /**
  * 用于触发编辑器跳转的事件 Atom

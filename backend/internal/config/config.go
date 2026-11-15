@@ -20,6 +20,7 @@ type Config struct {
 	MinIO        MinIOConfig
 	RabbitMQ     RabbitMQConfig
 	MeiliSearch  MeiliSearchConfig
+	Search       SearchConfig
 	GitHub       GitHubConfig
 	GitHubApp    GitHubAppConfig
 	GitHubOAuth  GitHubOAuthConfig
@@ -29,6 +30,7 @@ type Config struct {
 	QM           QMConfig
 	OnlineSearch OnlineSearchConfig
 	Casdoor      CasdoorConfig
+	MFA          MFAConfig
 	Submission   SubmissionConfig
 	PluginStore  PluginStoreConfig
 	Worker       WorkerConfig
@@ -38,6 +40,13 @@ type Config struct {
 
 type HTTPConfig struct {
 	Port string
+}
+
+// MFAConfig 二次认证开关
+type MFAConfig struct {
+	// SetupEnabled 是否允许用户新开启二次认证。
+	// Casdoor 的 MFA 会话链路异常期间置 false，仅禁止新开启，已开启的因子仍可关闭。
+	SetupEnabled bool
 }
 
 type DatabaseConfig struct {
@@ -87,6 +96,15 @@ type MeiliSearchConfig struct {
 	Host   string
 	APIKey string
 	Index  string
+}
+
+// SearchConfig 搜索相关配置
+type SearchConfig struct {
+	// GroupFilter 是否启用索引层预分组（搜索时追加 isGroupHead = true 过滤）。
+	// 关闭时退回「不按组去重」的直出行为，用于灰度/回滚。
+	// 依赖前置：索引必须先由 Worker 回填 songGroupId / isGroupHead 字段，
+	// 否则带该 filter 的查询会返回 invalid_search_filter 或空结果。
+	GroupFilter bool
 }
 
 type GitHubConfig struct {
@@ -317,6 +335,11 @@ func Load() (*Config, error) {
 	v.SetDefault("MEILISEARCH_API_KEY", "")
 	v.SetDefault("MEILISEARCH_INDEX", "songs")
 
+	// 搜索预分组开关（方案 §9.1）：默认开启 isGroupHead 过滤。
+	// 必须按 §9 灰度顺序：先跑迁移、部署新 Worker 完成 song_groups 回填与索引字段
+	// patch，最后才部署新 Go。索引尚未补齐时临时置 false 可热重启降级。
+	v.SetDefault("SEARCH_GROUP_FILTER", true)
+
 	// GitHub
 	v.SetDefault("GITHUB_TOKEN", "")
 	v.SetDefault("GITHUB_REPO", "amll-dev/amll-ttml-db")
@@ -333,6 +356,9 @@ func Load() (*Config, error) {
 	v.SetDefault("CASDOOR_ORGANIZATION", "amll")
 	v.SetDefault("CASDOOR_APPLICATION", "amll-hub")
 	v.SetDefault("CASDOOR_JWT_TTL", "24h")
+
+	// MFA：默认禁止新开启，避免 Casdoor 会话异常时把用户锁在登录页
+	v.SetDefault("MFA_SETUP_ENABLED", false)
 
 	// GitHub App
 	v.SetDefault("GITHUB_APP_ID", 0)
@@ -359,6 +385,11 @@ func Load() (*Config, error) {
 	v.SetDefault("SUBMISSION_AUTO_REJECT_INTERVAL", "1h")
 	v.SetDefault("SUBMISSION_AUTO_REJECT_AFTER", "96h")
 	v.SetDefault("SUBMISSION_REVIEWER_CACHE_TTL", "30s")
+	// 审核租约：这两个键原来没有 SetDefault，环境变量缺失时 GetDuration 返回 0，
+	// 只靠 NewReviewLeaseJob 里的 ttl <= 0 兜底。配置面缺位会让运维不知道能调，
+	// 在此显式给出与兜底一致的默认值。
+	v.SetDefault("SUBMISSION_REVIEW_LEASE_TTL", "3m")
+	v.SetDefault("SUBMISSION_REVIEW_LEASE_INTERVAL", "30s")
 	v.SetDefault("SUBMISSION_MAX_TTML_SIZE", 2*1024*1024)    // 2MB
 	v.SetDefault("SUBMISSION_MAX_AUDIO_SIZE", 150*1024*1024) // 150MB
 	v.SetDefault("SUBMISSION_MAX_IMAGE_SIZE", 100*1024*1024) // 100MB
@@ -428,6 +459,9 @@ func Load() (*Config, error) {
 			APIKey: v.GetString("MEILISEARCH_API_KEY"),
 			Index:  v.GetString("MEILISEARCH_INDEX"),
 		},
+		Search: SearchConfig{
+			GroupFilter: v.GetBool("SEARCH_GROUP_FILTER"),
+		},
 		GitHub: GitHubConfig{
 			Token:  v.GetString("GITHUB_TOKEN"),
 			Repo:   v.GetString("GITHUB_REPO"),
@@ -457,6 +491,9 @@ func Load() (*Config, error) {
 			ApplicationOwner: v.GetString("CASDOOR_APPLICATION_OWNER"),
 			JWTSecret:        v.GetString("CASDOOR_JWT_SECRET"),
 			JWTTTL:           v.GetDuration("CASDOOR_JWT_TTL"),
+		},
+		MFA: MFAConfig{
+			SetupEnabled: v.GetBool("MFA_SETUP_ENABLED"),
 		},
 		GitHubApp: GitHubAppConfig{
 			AppID:          v.GetInt64("GITHUB_APP_ID"),
@@ -535,14 +572,16 @@ func Load() (*Config, error) {
 	}
 
 	if os.Getenv("APP_ENV") == "production" {
+		// 默认凭据出现在生产环境 = 内网服务实际上对公网敞开。
+		// 与 CASDOOR_JWT_SECRET 的处理保持一致：直接拒绝启动，而不是打完警告继续跑。
 		if cfg.MinIO.AccessKey == "minioadmin" {
-			logrus.Warnf("MINIO_ACCESS_KEY is default 'minioadmin' in production")
+			logrus.Fatal("MINIO_ACCESS_KEY is default 'minioadmin' in production: refusing to start with a public default credential")
 		}
 		if cfg.MinIO.SecretKey == "minioadmin" {
-			logrus.Warnf("MINIO_SECRET_KEY is default 'minioadmin' in production")
+			logrus.Fatal("MINIO_SECRET_KEY is default 'minioadmin' in production: refusing to start with a public default credential")
 		}
 		if strings.Contains(cfg.RabbitMQ.URL, "guest:guest") {
-			logrus.Warnf("RABBITMQ_URL contains default 'guest:guest' credentials in production")
+			logrus.Fatal("RABBITMQ_URL contains default 'guest:guest' credentials in production: refusing to start")
 		}
 	}
 

@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { SearchBar } from './SearchBar';
 import { useStats } from '@/hooks/useStats';
 import { useSearchContext } from '@/hooks/useSearchContext';
@@ -30,98 +30,80 @@ export function Hero() {
       className="px-6 pb-16 pt-[120px]"
     >
       <div className="mx-auto max-w-[1200px]">
-        {/* 装饰性内容（标题/副标题/统计）搜索时隐藏 */}
-        <AnimatePresence mode="popLayout">
-          {!hasQuery && (
-            <motion.div
-              key="hero-deco"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <motion.h1
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, ease: [0.2, 0.8, 0.2, 1] }}
-                className="text-center text-[clamp(40px,7vw,72px)] font-bold leading-tight tracking-[-0.03em]"
-              >
-                AMLL Hub
-              </motion.h1>
+        {/* 装饰性内容（标题/副标题/统计） */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2 }}
+        >
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: [0.2, 0.8, 0.2, 1] }}
+            className="text-center text-[clamp(40px,7vw,72px)] font-bold leading-tight tracking-[-0.03em]"
+          >
+            AMLL Hub
+          </motion.h1>
 
-              <motion.p
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.1, ease: [0.2, 0.8, 0.2, 1] }}
-                className="mt-4 text-center text-lg text-ink-2"
-              >
-                Apple Music Like Lyrics 歌词社区 · 搜索、发现、贡献逐词歌词
-              </motion.p>
-            </motion.div>
-          )}
-        </AnimatePresence>
+          <motion.p
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.1, ease: [0.2, 0.8, 0.2, 1] }}
+            className="mt-4 text-center text-lg text-ink-2"
+          >
+            Apple Music Like Lyrics 歌词社区 · 搜索、发现、贡献逐词歌词
+          </motion.p>
+        </motion.div>
 
         {/* SearchBar 槽位 */}
-        <div className={hasQuery ? 'flex justify-center' : 'mt-10 flex justify-center'}>
-          <AnimatePresence mode="popLayout">
-            {!hasQuery && (
-              <motion.div
-                key="searchbar"
-                layoutId="searchbar"
-                className="relative z-[100]"
-                style={{ width: 460, maxWidth: '100%' }}
-                transition={{ duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
-                exit={{ opacity: 0, transition: { duration: 0.2 } }}
-              >
-                <SearchBar
-                  query={query}
-                  loading={searching}
-                  onQueryChange={setQuery}
-                  onSubmit={submit}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
+        <div className="mt-10 flex justify-center">
+          <motion.div
+            layoutId="searchbar"
+            className="relative z-[100]"
+            style={{ width: 460, maxWidth: '100%' }}
+            transition={{ duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
+          >
+            <SearchBar
+              query={query}
+              loading={searching}
+              onQueryChange={setQuery}
+              onSubmit={submit}
+            />
+          </motion.div>
         </div>
 
-        <AnimatePresence mode="popLayout">
-          {!hasQuery && (
-            <motion.div
-              key="hero-stats"
-              initial="hidden"
-              animate="show"
-              exit={{ opacity: 0 }}
-              variants={staggerContainer}
-              className="mx-auto mt-10 flex min-h-[56px] max-w-[640px] flex-wrap items-center justify-center gap-x-10 gap-y-6"
-            >
-              {loading ? (
-                <>
-                  <div className="amll-skeleton h-12 w-24 rounded-md" />
-                  <div className="amll-skeleton h-12 w-24 rounded-md" />
-                  <div className="amll-skeleton h-12 w-24 rounded-md" />
-                  <div className="amll-skeleton h-12 w-24 rounded-md" />
-                </>
-              ) : error || !stats ? (
-                <span className="text-sm text-ink-3">词库统计暂不可用</span>
-              ) : (
-                <>
-                  <motion.div variants={listItem}>
-                    <StatBadge value={formatCount(stats.totalSongs)} label="歌曲" />
-                  </motion.div>
-                  <motion.div variants={listItem}>
-                    <StatBadge value={formatCount(stats.totalArtists)} label="艺术家" />
-                  </motion.div>
-                  <motion.div variants={listItem}>
-                    <StatBadge value={formatCount(stats.totalLines)} label="歌词行" />
-                  </motion.div>
-                  <motion.div variants={listItem}>
-                    <StatBadge value={formatCount(stats.totalWords)} label="歌词字数" />
-                  </motion.div>
-                </>
-              )}
-            </motion.div>
+        <motion.div
+          initial="hidden"
+          animate="show"
+          variants={staggerContainer}
+          className="mx-auto mt-10 flex min-h-[56px] max-w-[640px] flex-wrap items-center justify-center gap-x-10 gap-y-6"
+        >
+          {loading ? (
+            <>
+              <div className="amll-skeleton h-12 w-24 rounded-md" />
+              <div className="amll-skeleton h-12 w-24 rounded-md" />
+              <div className="amll-skeleton h-12 w-24 rounded-md" />
+              <div className="amll-skeleton h-12 w-24 rounded-md" />
+            </>
+          ) : error || !stats ? (
+            <span className="text-sm text-ink-3">词库统计暂不可用</span>
+          ) : (
+            <>
+              <motion.div variants={listItem}>
+                <StatBadge value={formatCount(stats.totalSongs)} label="歌曲" />
+              </motion.div>
+              <motion.div variants={listItem}>
+                <StatBadge value={formatCount(stats.totalArtists)} label="艺术家" />
+              </motion.div>
+              <motion.div variants={listItem}>
+                <StatBadge value={formatCount(stats.totalLines)} label="歌词行" />
+              </motion.div>
+              <motion.div variants={listItem}>
+                <StatBadge value={formatCount(stats.totalWords)} label="歌词字数" />
+              </motion.div>
+            </>
           )}
-        </AnimatePresence>
+        </motion.div>
       </div>
     </motion.section>
   );

@@ -76,11 +76,12 @@ type Artist struct {
 func (Artist) TableName() string { return "artists" }
 
 // PlatformMapping 平台 ID 映射表
+// 同一首歌内 (platform, platform_id) 唯一；不同历史版本可以共享同一个平台 ID
 type PlatformMapping struct {
 	ID         int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	SongID     int64     `gorm:"not null;index:idx_pm_song_platform,priority:1" json:"songId"`
-	Platform   string    `gorm:"type:varchar(50);not null;index:idx_pm_song_platform,priority:2;index:idx_pm_platform_id,priority:1" json:"platform"`
-	PlatformID string    `gorm:"column:platform_id;type:varchar(100);not null;index:idx_pm_platform_id,priority:2" json:"platformId"`
+	SongID     int64     `gorm:"not null;uniqueIndex:uq_platform_mappings_song_platform_id,priority:1" json:"songId"`
+	Platform   string    `gorm:"type:varchar(50);not null;uniqueIndex:uq_platform_mappings_song_platform_id,priority:2;index:idx_pm_platform_id,priority:1" json:"platform"`
+	PlatformID string    `gorm:"column:platform_id;type:varchar(100);not null;uniqueIndex:uq_platform_mappings_song_platform_id,priority:3;index:idx_pm_platform_id,priority:2" json:"platformId"`
 	CreatedAt  time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"createdAt"`
 }
 

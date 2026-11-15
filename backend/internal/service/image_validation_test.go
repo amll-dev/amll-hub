@@ -39,6 +39,32 @@ func TestValidateImageUpload(t *testing.T) {
 	}
 }
 
+// 上传侧自己也要挡住 CSP sandbox 之外的 XSS 载荷
+func TestValidateSVGContent(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantErr bool
+	}{
+		{name: "合法 SVG", content: `<svg xmlns="http://www.w3.org/2000/svg"><use href="#a"/><circle r="1"/></svg>`},
+		{name: "onload 事件属性", content: `<svg onload="alert(1)"></svg>`, wantErr: true},
+		{name: "animate onbegin", content: `<svg><animate onbegin="alert(1)" attributeName="x" dur="1s"></animate></svg>`, wantErr: true},
+		{name: "foreignObject", content: `<svg><foreignObject><iframe src="javascript:alert(1)"></iframe></foreignObject></svg>`, wantErr: true},
+		{name: "javascript 链接", content: `<svg><a href="javascript:alert(1)">x</a></svg>`, wantErr: true},
+		{name: "外部链接", content: `<svg><use href="https://evil.example/x.svg#a"/></svg>`, wantErr: true},
+		{name: "script 元素", content: `<svg><script>alert(1)</script></svg>`, wantErr: true},
+		{name: "非 SVG 根元素", content: `<html><body></body></html>`, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateSVGContent([]byte(tt.content))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("wantErr=%v, err=%v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestSubmissionPlatformIDs(t *testing.T) {
 	sub := &model.Submission{
 		NcmID:     "111",

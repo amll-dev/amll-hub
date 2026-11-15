@@ -12,6 +12,14 @@ interface DownloadMeta {
   coverUrl?: string;
 }
 
+/**
+ * 单次下载的兜底超时。fetch 没有默认超时：CDN 慢响应或连接不关时，
+ * 批量下载的 worker 会被永久占住，进度条停在某个数字且不报错。
+ */
+const DOWNLOAD_TIMEOUT_MS = 120_000;
+/** 封面是小文件，超时给短一点 */
+const COVER_TIMEOUT_MS = 30_000;
+
 /** 批量下载的列表项 */
 export interface BatchDownloadItem {
   songId: string;
@@ -32,7 +40,7 @@ export interface BatchProgress {
  * 下载音乐并写入 ID3v2.3 元数据
  */
 export async function downloadMusicWithMeta(audioUrl: string, meta: DownloadMeta): Promise<void> {
-  const audioRes = await fetch(audioUrl);
+  const audioRes = await fetch(audioUrl, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   if (!audioRes.ok) {
     throw new Error(`下载失败：HTTP ${audioRes.status}`);
   }
@@ -93,7 +101,7 @@ export async function downloadAllAsZip(
         onProgress({ done, total, failed, currentName: item.name });
         return;
       }
-      const audioRes = await fetch(info.url);
+      const audioRes = await fetch(info.url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
       if (!audioRes.ok) {
         failed++;
         done++;
@@ -148,7 +156,7 @@ export async function downloadAllAsZip(
  * 请求失败或 HTTP 非 2xx 时抛出 Error（含状态码），由调用方负责提示用户。
  */
 export async function downloadBlobFile(url: string, fileName: string): Promise<void> {
-  const res = await fetch(url);
+  const res = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`);
   }
@@ -176,7 +184,7 @@ function isMp3Content(url: string, contentType: string): boolean {
 async function fetchCover(coverUrl?: string): Promise<ArrayBuffer | null> {
   if (!coverUrl) return null;
   try {
-    const res = await fetch(coverUrl);
+    const res = await fetch(coverUrl, { signal: AbortSignal.timeout(COVER_TIMEOUT_MS) });
     if (!res.ok) return null;
     return await res.arrayBuffer();
   } catch {

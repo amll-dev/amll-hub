@@ -30,13 +30,20 @@ const (
 var docSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 // DocumentInput 文档创建/更新入参
+//
+// SortOrder / Content 用指针区分「请求未提供」与「显式设为 0 / 空串」：
+// PUT 是部分更新语义（slug/title/group/status 都是空则保持原值），如果这两项
+// 用零值表示「未提供」，单独的 `{"status":"draft"}` 会把正文清空，且 sortOrder
+// 永远无法设回 0。
 type DocumentInput struct {
-	Slug      string
-	Title     string
-	Group     string
-	Status    string
-	SortOrder int
-	Content   string
+	Slug   string
+	Title  string
+	Group  string
+	Status string
+	// SortOrder nil 表示保持原值
+	SortOrder *int
+	// Content nil 表示保持原值，指向空串表示显式清空正文
+	Content *string
 	// Note 本次保存的备注，写进版本快照
 	Note string
 }
@@ -60,6 +67,44 @@ func (s *DocumentService) ListPublic(
 	return s.repo.List(ctx, repository.DocumentListQuery{
 		Page: page, PageSize: size, Group: group, Status: model.DocStatusPublished, Q: q,
 	})
+}
+
+// DocumentNavItem 精简导航项：首页、侧栏、上一篇/下一篇只需要这几个字段。
+// group 不能省：前端 groupDocs 按它分桶，缺了首页和侧栏就无法归组。
+type DocumentNavItem struct {
+	ID        int64     `json:"id"`
+	Slug      string    `json:"slug"`
+	Title     string    `json:"title"`
+	Group     string    `json:"group"`
+	UpdatedBy string    `json:"updatedBy"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// maxDocNavItems 导航接口一次最多返回的条数，防止异常数据把响应撑大
+const maxDocNavItems = 1000
+
+// ListNav 返回全部已发布文档的精简字段（不分页）。
+// 文档量级通常几十到一两百，首页 / 侧栏 / 上下篇一次性取全，避免被分页上限截断。
+func (s *DocumentService) ListNav(ctx context.Context) ([]DocumentNavItem, error) {
+	rows, err := s.repo.ListAllPublished(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) > maxDocNavItems {
+		rows = rows[:maxDocNavItems]
+	}
+	items := make([]DocumentNavItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, DocumentNavItem{
+			ID:        row.ID,
+			Slug:      row.Slug,
+			Title:     row.Title,
+			Group:     row.GroupName,
+			UpdatedBy: row.UpdatedBy,
+			UpdatedAt: row.UpdatedAt,
+		})
+	}
+	return items, nil
 }
 
 // ListManage 管理端列表：可含草稿
@@ -114,7 +159,7 @@ func (s *DocumentService) Create(ctx context.Context, in DocumentInput, actor *S
 	if doc.Slug == "" {
 		return nil, invalidInput("slug 必填")
 	}
-	taken, err := s.repo.SlugExists(ctx, doc.Slug, 0)
+	taken, err := s.repo.SlugExists(ctx, nil, doc.Slug, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +176,11 @@ func (s *DocumentService) Create(ctx context.Context, in DocumentInput, actor *S
 
 	err = s.repo.Transaction(ctx, func(tx *gorm.DB) error {
 		if err := s.repo.Create(ctx, tx, doc); err != nil {
+			// 并发创建同名 slug 时，先查后插之间的窗口会让唯一索引兜底；此时按
+			// 「slug 已被占用」返回 409，而不是把 23505 当内部错误抛 500。
+			if isDocSlugConflict(err) {
+				return ErrDocumentSlugTaken
+			}
 			return err
 		}
 		return s.repo.CreateRevision(ctx, tx, revisionOf(doc, in.Note, actor))
@@ -158,7 +208,9 @@ func (s *DocumentService) Update(ctx context.Context, id int64, in DocumentInput
 		if doc.Slug == "" {
 			return invalidInput("slug 必填")
 		}
-		taken, err := s.repo.SlugExists(ctx, doc.Slug, id)
+		// 用事务连接查，避免「检查走了另一条连接」时看不到本事务内的改动；
+		// 真正的并发窗口由下面的唯一约束兜底（见 UpdateFields 的错误映射）。
+		taken, err := s.repo.SlugExists(ctx, tx, doc.Slug, id)
 		if err != nil {
 			return err
 		}
@@ -183,6 +235,12 @@ func (s *DocumentService) Update(ctx context.Context, id int64, in DocumentInput
 			"published_at":    doc.PublishedAt,
 		}
 		if err := s.repo.UpdateFields(ctx, tx, id, updates); err != nil {
+			// 两个管理员同时把文档改成同一个 slug 时，两边的事务内检查都看不到
+			// 对方未提交的改动，只能靠唯一索引拦下后来者：这里把 23505 翻成
+			// 「slug 已被占用」，前端拿到可理解的 409 而不是 500。
+			if isDocSlugConflict(err) {
+				return ErrDocumentSlugTaken
+			}
 			return err
 		}
 		if err := s.repo.CreateRevision(ctx, tx, revisionOf(doc, in.Note, actor)); err != nil {
@@ -197,8 +255,12 @@ func (s *DocumentService) Update(ctx context.Context, id int64, in DocumentInput
 	return out, nil
 }
 
-// Delete 删除文档
-func (s *DocumentService) Delete(ctx context.Context, id int64) error {
+// Delete 删除文档（软删除）
+//
+// 原实现是 DELETE + document_revisions 的 ON DELETE CASCADE，一篇文档连同全部
+// 历史版本一起消失，且不留操作人。对「多人共同维护文档」的系统这个审计缺口太贵，
+// 所以改为只写 deleted_at / deleted_by，版本快照与正文都留在库里。
+func (s *DocumentService) Delete(ctx context.Context, id int64, actor *SubmissionUser) error {
 	doc, err := s.repo.GetByID(ctx, nil, id)
 	if err != nil {
 		return err
@@ -206,7 +268,11 @@ func (s *DocumentService) Delete(ctx context.Context, id int64) error {
 	if doc == nil {
 		return ErrDocumentNotFound
 	}
-	return s.repo.Delete(ctx, id)
+	by := ""
+	if actor != nil {
+		by = actor.Name
+	}
+	return s.repo.SoftDelete(ctx, id, by)
 }
 
 // UploadMarkdown 导入 .md
@@ -220,7 +286,7 @@ func (s *DocumentService) UploadMarkdown(
 	if len([]byte(text)) > MaxDocContentSize {
 		return nil, invalidInput("正文超过 %d 字节上限", MaxDocContentSize)
 	}
-	in.Content = text
+	in.Content = &text
 	if in.Note == "" {
 		in.Note = "上传 " + path.Base(fileName)
 	}
@@ -280,6 +346,9 @@ func (s *DocumentService) GetRevision(ctx context.Context, docID, revID int64) (
 }
 
 // Rollback 回滚到指定版本：恢复标题与正文，并追加一条快照
+//
+// 版本快照只保存 title / content（见 001_init.up.sql 的注释），所以回滚
+// 不会动 slug、分组、状态、排序；前端回滚入口必须把这句话告诉用户。
 func (s *DocumentService) Rollback(ctx context.Context, docID, revID int64, actor *SubmissionUser) (*model.Document, error) {
 	var out *model.Document
 	err := s.repo.Transaction(ctx, func(tx *gorm.DB) error {
@@ -359,12 +428,15 @@ func applyDocumentInput(doc *model.Document, in DocumentInput) error {
 		}
 	}
 
-	// 调用方（编辑器 / 上传 / 导入）始终提交完整正文，这里不做"空值保留"，
-	// 否则草稿清空正文会被静默忽略。
-	if len([]byte(in.Content)) > MaxDocContentSize {
-		return invalidInput("正文超过 %d 字节上限", MaxDocContentSize)
+	// 正文只在请求体显式带 content 时覆盖：nil = 未提供，保持原值；
+	// "" = 显式清空（草稿场景）。这样才能和 slug/title 等字段的语义对齐，
+	// 不会因为一次 `{"status":"draft"}` 把几十 KB 正文清掉。
+	if in.Content != nil {
+		if len([]byte(*in.Content)) > MaxDocContentSize {
+			return invalidInput("正文超过 %d 字节上限", MaxDocContentSize)
+		}
+		doc.Content = *in.Content
 	}
-	doc.Content = in.Content
 
 	if doc.Status == model.DocStatusPublished && strings.TrimSpace(doc.Content) == "" {
 		return invalidInput("发布的文档正文不能为空")
@@ -373,10 +445,23 @@ func applyDocumentInput(doc *model.Document, in DocumentInput) error {
 		return invalidInput("标题必填")
 	}
 
-	if in.SortOrder != 0 {
-		doc.SortOrder = in.SortOrder
+	// 同上：0 是合法排序值，必须用指针区分「没传」与「传了 0」
+	if in.SortOrder != nil {
+		doc.SortOrder = *in.SortOrder
 	}
 	return nil
+}
+
+// isDocSlugConflict 判断是否为 slug 唯一索引冲突（PostgreSQL SQLSTATE 23505）。
+// 事务内的 SlugExists 只能看到已提交数据，并发改同一个 slug 时两边都能通过检查，
+// 最终由 ux_documents_slug_active 拦下后来者。
+func isDocSlugConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "23505") ||
+		strings.Contains(msg, "duplicate key value violates unique constraint")
 }
 
 // revisionOf 生成当前内容的版本快照

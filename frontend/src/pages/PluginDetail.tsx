@@ -22,6 +22,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { triggerDownloadUrl } from '@/lib/blob-download';
 import { queryKeys } from '@/lib/query';
 import { formatBytes, formatCount, formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -142,12 +143,10 @@ export function PluginDetail() {
   // 点击下载后先本地 +1；带时间戳发起请求避免命中旧缓存，稍后再与服务端对齐
   const handleDownload = (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
-    const link = document.createElement('a');
-    link.href = `/api/v1/store/artifacts/${version.sha256}.zip?t=${Date.now()}`;
-    link.download = `${plugin.pluginKey}-${version.version}.zip`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    triggerDownloadUrl(
+      `/api/v1/store/artifacts/${version.sha256}.zip?t=${Date.now()}`,
+      `${plugin.pluginKey}-${version.version}.zip`
+    );
 
     queryClient.setQueryData<PluginDetailResult>(queryKeys.pluginDetail(key), (old) =>
       old

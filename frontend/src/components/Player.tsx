@@ -130,7 +130,7 @@ export function SongIdSelectDialog() {
                     onClick={() => resolveSelect(choice)}
                     className="flex w-full items-center gap-2 rounded-md border border-input bg-surface-2 px-3 py-2 text-left text-sm transition-colors hover:border-primary hover:bg-primary-tint hover:text-primary"
                   >
-                    <span className="shrink-0 rounded border border-line bg-card px-1.5 py-0.5 text-[10px] text-ink-3">
+                    <span className="shrink-0 rounded border border-line bg-card px-1.5 py-0.5 text-[11px] text-ink-3">
                       {CHOICE_PLATFORM_LABEL[choice.platform] ?? choice.platform}
                     </span>
                     <span className="font-medium">{choice.id}</span>
@@ -272,7 +272,7 @@ function QualityControl() {
       >
         {currentLabel}
         {downgraded && (
-          <span className="rounded bg-warning/15 px-1 text-[10px] font-semibold text-warning">
+          <span className="rounded bg-warning/15 px-1 text-[11px] font-semibold text-warning">
             已降级
           </span>
         )}
@@ -574,7 +574,7 @@ export function PlayerBar() {
               >
                 <ListMusic className="h-4 w-4" />
                 {playlist.length > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-ink-3 px-1 text-[9px] font-medium text-white shadow-sm">
+                  <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-ink-3 px-1 text-[11px] font-medium leading-none text-white shadow-sm">
                     {playlist.length}
                   </span>
                 )}

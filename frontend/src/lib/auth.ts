@@ -52,6 +52,8 @@ export interface MfaStatusItem {
 export interface MfaStatus {
   methods: MfaStatusItem[];
   preferred?: string;
+  /** 是否允许新开启二次认证（维护期间为 false） */
+  setupEnabled?: boolean;
 }
 
 /** MFA 管理：开始绑定 */

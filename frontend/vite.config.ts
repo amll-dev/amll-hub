@@ -30,67 +30,17 @@ const REACT_PKGS = new Set([
 ]);
 
 const REACT_SCOPES = ['@radix-ui/', '@griffel/', '@floating-ui/', '@fluentui/', '@tanstack/'];
-const DOCS_EDITOR_PREFIXES = [
-  '@uiw/',
-  'rehype',
-  'remark-',
-  'micromark',
-  'mdast-util-',
-  'hast-util-',
-  'unist-util-',
-  'vfile',
-  'estree-util-',
-];
 
+// 文档页专用：marked 的高亮/标题锚点/告示块插件 + highlight.js。
+// 它们只被文档渲染管线（markdown.ts）引用，圈进独立 chunk 才不会落进 vendor-react。
 const DOCS_EDITOR_PKGS = new Set([
-  'react-markdown',
   'highlight.js',
   // 两个 marked 插件是文档页专用；若不圈进来会落进 vendor-react，
-  // 再经 github-slugger 反向依赖编辑器 chunk，形成循环。
+  // 再经 github-slugger 反向依赖文档 chunk，形成循环。
   'marked-gfm-heading-id',
   'marked-highlight',
   'marked-alert',
-  'refractor',
-  'prismjs',
-  'parse5',
-  'hastscript',
-  'property-information',
-  'html-url-attributes',
-  'html-void-elements',
-  'web-namespaces',
-  'space-separated-tokens',
-  'comma-separated-tokens',
-  'stringify-entities',
-  'character-entities',
-  'character-entities-html4',
-  'character-entities-legacy',
-  'decode-named-character-reference',
-  'parse-entities',
-  'parse-numeric-range',
-  'is-alphabetical',
-  'is-alphanumerical',
-  'is-decimal',
-  'is-hexadecimal',
-  'style-to-object',
-  'inline-style-parser',
   'github-slugger',
-  'direction',
-  'escape-string-regexp',
-  'longest-streak',
-  'markdown-table',
-  'ccount',
-  'bail',
-  'trough',
-  'zwitch',
-  'devlop',
-  'is-plain-obj',
-  'trim-lines',
-  'unified',
-  '@ungap/structured-clone',
-  'bcp-47-match',
-  'boolbase',
-  'css-selector-parser',
-  'nth-check',
 ]);
 
 function resolveCoepMode(raw) {
@@ -132,10 +82,11 @@ export default defineConfig(({ mode }) => {
         },
         output: {
           manualChunks(id) {
+            // Vite 的 preload helper 是首屏动态 import 的运行时辅助，必须跟首屏一起加载。
             if (id.includes('vite/preload-helper')) return 'vendor-react';
             if (!id.includes('node_modules')) return undefined;
             const pkg = packageNameOf(id);
-            if (!pkg) return 'vendor-react';
+            if (!pkg) return undefined;
 
             if (
               pkg.startsWith('@applemusic-like-lyrics/') ||
@@ -160,8 +111,7 @@ export default defineConfig(({ mode }) => {
               return 'vendor-media';
             if (pkg === 'framer-motion' || pkg === 'motion-dom' || pkg === 'motion-utils')
               return 'vendor-motion';
-            if (DOCS_EDITOR_PREFIXES.some((p) => pkg.startsWith(p)) || DOCS_EDITOR_PKGS.has(pkg))
-              return 'vendor-docs-editor';
+            if (DOCS_EDITOR_PKGS.has(pkg)) return 'vendor-docs-editor';
             // react 本体 + 整个 react 生态（radix/griffel/tanstack/fluentui…）
             if (
               REACT_PKGS.has(pkg) ||
@@ -186,7 +136,11 @@ export default defineConfig(({ mode }) => {
               pkg === 'url'
             )
               return 'vendor-markdown';
-            return 'vendor-react';
+            // 未匹配的包交回 Rollup 自动分块。
+            // 不能再兜底到 vendor-react：那会把所有懒加载依赖提前到首屏；
+            // 也不能笼统塞进一个 vendor-misc——实测只要该 chunk 里有一个包
+            // 被首屏引用，整个 800KB 的 chunk 都会出现在 modulepreload 里。
+            return undefined;
           },
         },
       },

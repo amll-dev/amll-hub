@@ -62,10 +62,8 @@ func (h *LyricRequestHandler) ListMine(c *gin.Context) {
 
 // Hot GET /api/v1/lyric-requests/hot
 func (h *LyricRequestHandler) Hot(c *gin.Context) {
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("limit", "6"))
-	if pageSize <= 0 || pageSize > 20 {
-		pageSize = 6
-	}
+	// Hot 列表只展示少量热门请愿，沿用原有 20 上限，统一改用 pkg.Clamp
+	pageSize := pkg.Clamp(pkg.ParseInt(c.Query("limit"), 6), 1, 20)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 

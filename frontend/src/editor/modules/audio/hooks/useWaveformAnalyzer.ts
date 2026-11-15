@@ -26,6 +26,8 @@ export const useWaveformAnalyzer = ({
   const analyzedSamplesRef = useRef<Float32Array | null>(null);
   /** 延迟销毁句柄 */
   const destroyTimerRef = useRef<number | null>(null);
+  /** pcmDataReady 兜底定时器：analyzer 永不回消息时强制放行频谱 */
+  const pcmDataReadyTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (destroyTimerRef.current !== null) {
@@ -40,6 +42,10 @@ export const useWaveformAnalyzer = ({
     return () => {
       destroyTimerRef.current = window.setTimeout(() => {
         destroyTimerRef.current = null;
+        if (pcmDataReadyTimeoutRef.current !== null) {
+          window.clearTimeout(pcmDataReadyTimeoutRef.current);
+          pcmDataReadyTimeoutRef.current = null;
+        }
         analyzerWorkerRef.current?.terminate();
         analyzerWorkerRef.current = null;
         rendererWorkerRef.current?.terminate();
@@ -53,7 +59,27 @@ export const useWaveformAnalyzer = ({
   }, []);
 
   useEffect(() => {
+    const clearReadyTimeout = () => {
+      if (pcmDataReadyTimeoutRef.current !== null) {
+        window.clearTimeout(pcmDataReadyTimeoutRef.current);
+        pcmDataReadyTimeoutRef.current = null;
+      }
+    };
+    // 无论正常/错误/异常路径都用它放行 latch，避免频谱永久停在「正在解码音频」
+    const markPcmReady = () => {
+      clearReadyTimeout();
+      setPcmDataReady(true);
+    };
+    const failAnalysis = (err: unknown) => {
+      markPcmReady();
+      setBpmState({
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    };
+
     if (!pcm) {
+      clearReadyTimeout();
       setBpmState({ status: 'idle' });
       rendererWorkerRef.current?.postMessage({ type: 'CLEAR' });
       return;
@@ -61,7 +87,10 @@ export const useWaveformAnalyzer = ({
 
     if (!rendererWorkerRef.current || !canvasRef.current || !wsContainerRef.current) return;
 
+    // StrictMode 二次 mount 命中缓存：上一轮已 setPcmDataReady(false)，
+    // 这里必须恢复 latch，否则频谱开发环境一进编辑器就永久空白。
     if (analyzedSamplesRef.current === pcm.samples) {
+      markPcmReady();
       return;
     }
     analyzedSamplesRef.current = pcm.samples;
@@ -71,8 +100,17 @@ export const useWaveformAnalyzer = ({
       analyzerWorkerRef.current = null;
     }
 
+    // 开新分析前清掉上一轮遗留的兜底定时器
+    clearReadyTimeout();
     setPcmDataReady(false);
     setBpmState({ status: 'analyzing' });
+
+    // analyzer 若因 wasm 初始化 hang / OPFS 死锁 / CSP 等永不回消息，
+    // 15s 后强制放行频谱，避免「正在解码音频」永久停留。
+    pcmDataReadyTimeoutRef.current = window.setTimeout(() => {
+      pcmDataReadyTimeoutRef.current = null;
+      setPcmDataReady(true);
+    }, 15000);
 
     if (!offscreenTransferred.current) {
       let offscreen: OffscreenCanvas;
@@ -81,6 +119,7 @@ export const useWaveformAnalyzer = ({
       } catch {
         // HMR 等极端时序下 canvas 已被转移过：跳过波形初始化，但不要打断播放与打轴
         offscreenTransferred.current = true;
+        markPcmReady();
         return;
       }
       const styles = getComputedStyle(wsContainerRef.current);
@@ -109,12 +148,26 @@ export const useWaveformAnalyzer = ({
       mc.port2,
     ]);
 
+    // 交给 worker 时 transfer 会 neuter 掉原 buffer，而 atom 里的 pcm.samples
+    // 还要给频谱侧继续用，所以必须复制一份。代价是峰值多占一份 PCM
+    //（44100 × 300s × 4B ≈ 53MB）；要真正省掉它得把解码缓冲改成
+    // SharedArrayBuffer（需要 COOP/COEP 隔离），属于另一个量级的改造。
     const pcmCopy = pcm.samples.slice();
 
-    analyzerWorkerRef.current = new AnalyzerWorker();
-    analyzerWorkerRef.current.onmessage = (e) => {
+    let worker: Worker;
+    try {
+      worker = new AnalyzerWorker();
+    } catch (err) {
+      // CSP / worker 资源 404 等：构造抛错，worker 永远不会回消息
+      console.error('[WaveformAnalyzer] 创建分析 Worker 失败:', err);
+      failAnalysis(err);
+      return;
+    }
+    analyzerWorkerRef.current = worker;
+
+    worker.onmessage = (e) => {
       if (e.data.type === 'ANALYZE_DONE') {
-        setPcmDataReady(true);
+        markPcmReady();
         if (e.data.payload?.bpmResult) {
           setBpmState({
             status: 'completed',
@@ -126,29 +179,51 @@ export const useWaveformAnalyzer = ({
         }
 
         // 分析完销毁以便腾出内存
-        analyzerWorkerRef.current?.terminate();
-        analyzerWorkerRef.current = null;
+        worker.terminate();
+        if (analyzerWorkerRef.current === worker) analyzerWorkerRef.current = null;
       } else if (e.data.type === 'ANALYZE_ERROR') {
+        // 错误分支也放行 latch，让频谱尝试 OPFS 兜底，而不是彻底罢工
+        markPcmReady();
         setBpmState({
           status: 'error',
           error: e.data.payload?.error || 'Unknown analysis error',
         });
-        analyzerWorkerRef.current?.terminate();
-        analyzerWorkerRef.current = null;
+        worker.terminate();
+        if (analyzerWorkerRef.current === worker) analyzerWorkerRef.current = null;
       }
     };
 
-    analyzerWorkerRef.current.postMessage(
-      {
-        type: 'INIT',
-        payload: {
-          pcm: pcmCopy,
-          sampleRate: pcm.sampleRate,
-          port: mc.port1,
+    // worker 脚本加载失败 / worker 内未捕获异常：构造不一定抛错，靠 onerror 兜底
+    worker.onerror = (e) => {
+      console.error('[WaveformAnalyzer] 分析 Worker 运行错误:', e.message);
+      failAnalysis(new Error(e.message || 'Analyzer worker error'));
+      worker.terminate();
+      if (analyzerWorkerRef.current === worker) analyzerWorkerRef.current = null;
+    };
+
+    try {
+      worker.postMessage(
+        {
+          type: 'INIT',
+          payload: {
+            pcm: pcmCopy,
+            sampleRate: pcm.sampleRate,
+            port: mc.port1,
+          },
         },
-      },
-      [mc.port1, pcmCopy.buffer]
-    );
+        [mc.port1, pcmCopy.buffer]
+      );
+    } catch (err) {
+      // DataCloneError 等：INIT 没发出去，worker 永远不会回消息
+      console.error('[WaveformAnalyzer] 发送 INIT 失败:', err);
+      failAnalysis(err);
+      worker.terminate();
+      if (analyzerWorkerRef.current === worker) analyzerWorkerRef.current = null;
+    }
+
+    return () => {
+      clearReadyTimeout();
+    };
   }, [pcm, setPcmDataReady, setBpmState, canvasRef, wsContainerRef]);
 
   // 处理窗口大小变化并触发防抖重绘

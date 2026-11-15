@@ -1,5 +1,5 @@
 import { useAtom, useAtomValue } from 'jotai';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   spectrogramContainerWidthAtom,
   spectrogramScrollLeftAtom,
@@ -134,6 +134,17 @@ export const useAudioRegion = (
       containerRef,
       isDraggingRef,
     ]
+  );
+
+  // 卸载时摘掉 window 监听并复位拖拽状态（与 useScrubbing 同一模式）
+  useEffect(
+    () => () => {
+      dragStateRef.current = null;
+      if (isDraggingRef) isDraggingRef.current = false;
+      window.removeEventListener('mousemove', handleDragMove);
+      window.removeEventListener('mouseup', handleDragEnd);
+    },
+    [handleDragMove, handleDragEnd, isDraggingRef]
   );
 
   const audioLoaded = currentDuration > 0 && sliderWidthPx > 0;

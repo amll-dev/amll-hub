@@ -252,7 +252,7 @@ func (r *SongRepo) CountAlbums(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-// PlatformDistribution 各平台歌曲数
+// PlatformDistribution 各平台歌曲数（按平台 ID 去重，历史版本共享 ID 只算一次）
 func (r *SongRepo) PlatformDistribution(ctx context.Context) (map[string]int64, error) {
 	type row struct {
 		Platform string
@@ -261,7 +261,7 @@ func (r *SongRepo) PlatformDistribution(ctx context.Context) (map[string]int64, 
 	var rows []row
 	err := r.db.WithContext(ctx).
 		Table("platform_mappings").
-		Select("platform, COUNT(*) AS count").
+		Select("platform, COUNT(DISTINCT platform_id) AS count").
 		Group("platform").
 		Scan(&rows).Error
 	if err != nil {

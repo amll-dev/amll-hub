@@ -10,7 +10,7 @@
  */
 
 import { useAtom } from 'jotai';
-import { forwardRef } from 'react';
+import { forwardRef, useEffect, useState } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
@@ -26,6 +26,12 @@ export const PreviewModeRibbonBar = forwardRef<HTMLDivElement>((_props, ref) => 
   const [showRomanLine, setShowRomanLine] = useAtom(showRomanLinesAtom);
   const [hideObsceneWords, setHideObsceneWords] = useAtom(hideObsceneWordsAtom);
   const [lyricWordFadeWidth, setLyricWordFadeWidth] = useAtom(lyricWordFadeWidthAtom);
+  // 输入框保持本地草稿：外部切预设/重置时同步，输入过程中不被 atom 立即回写打断
+  const [fadeInput, setFadeInput] = useState(String(lyricWordFadeWidth));
+
+  useEffect(() => {
+    setFadeInput(String(lyricWordFadeWidth));
+  }, [lyricWordFadeWidth]);
 
   return (
     <RibbonFrame ref={ref}>
@@ -47,11 +53,14 @@ export const PreviewModeRibbonBar = forwardRef<HTMLDivElement>((_props, ref) => 
           <span className="whitespace-nowrap text-xs">过渡宽度</span>
           <Input
             className="h-7 w-[4em] px-2 text-xs"
-            defaultValue={lyricWordFadeWidth}
+            value={fadeInput}
+            onChange={(e) => setFadeInput(e.target.value)}
             onBlur={(e) => {
               const value = Number.parseFloat(e.target.value);
               if (Number.isFinite(value)) {
                 setLyricWordFadeWidth(value);
+              } else {
+                setFadeInput(String(lyricWordFadeWidth));
               }
             }}
           />

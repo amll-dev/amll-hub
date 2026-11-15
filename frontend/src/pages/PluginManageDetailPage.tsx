@@ -44,7 +44,7 @@ export function PluginManageDetailPage({ reviewMode = false }: { reviewMode?: bo
       </PageContainer>
 
       <footer className="flex items-center justify-center gap-2 border-t border-line py-4">
-        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-500">
           测试版
         </span>
         <span className="text-xs text-ink-3">测试版本，不代表最终品质</span>

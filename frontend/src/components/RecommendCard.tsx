@@ -8,6 +8,7 @@ import QRCode from 'qrcode';
 import { domToPng } from 'modern-screenshot';
 import type { DailyRecommendation, MusicPlatform } from '@/lib/types';
 import { parseMarkupText } from '@/lib/markup';
+import { triggerDownloadUrl } from '@/lib/blob-download';
 import { usernameOf } from '@/lib/username';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
@@ -284,10 +285,7 @@ export function RecommendCard({
       // canvas 层裁剪圆角：CSS border-radius 在 foreignObject 光栅化时
       // 对 blur 滤镜背景的裁剪不可靠，直接用裁剪路径切，角外必为透明
       const rounded = await roundImageCorners(png, DOWNLOAD_RADIUS * 2);
-      const link = document.createElement('a');
-      link.download = `amll-daily-${recommendation.date}.png`;
-      link.href = rounded;
-      link.click();
+      triggerDownloadUrl(rounded, `amll-daily-${recommendation.date}.png`);
     } catch (e) {
       console.error('下载失败:', e);
     } finally {
@@ -480,7 +478,7 @@ export function RecommendCard({
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-              className="text-[10px] text-ink-2"
+              className="text-[11px] text-ink-2"
             >
               {likeCount}
             </motion.span>

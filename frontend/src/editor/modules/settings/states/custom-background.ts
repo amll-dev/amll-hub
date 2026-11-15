@@ -95,13 +95,15 @@ export const customBackgroundImageAtom = atom(
       URL.revokeObjectURL(previous);
     }
     if (!next) {
-      await writeCustomBackgroundBlob(null);
+      // 先让 UI 清空，再后台落盘：几 MB 的图写 IndexedDB 要几十到几百毫秒
       set(customBackgroundImageValueAtom, null);
+      await writeCustomBackgroundBlob(null);
       return;
     }
-    await writeCustomBackgroundBlob(next);
+    // 先 createObjectURL 让背景立刻可见，持久化放后台
     const url = URL.createObjectURL(next);
     set(customBackgroundImageValueAtom, url);
+    await writeCustomBackgroundBlob(next);
   }
 );
 

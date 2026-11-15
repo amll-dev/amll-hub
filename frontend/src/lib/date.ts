@@ -1,3 +1,5 @@
+import { formatDate } from './format';
+
 export const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 
 export const MONTHS = [
@@ -15,12 +17,12 @@ export const MONTHS = [
   '12月',
 ];
 
-/** 格式化日期为 YYYY-MM-DD */
+/**
+ * 格式化日期为 YYYY-MM-DD。
+ * 实现复用 `lib/format.ts` 的 `formatDate`，避免两套日期格式化并存。
+ */
 export function formatDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  return formatDate(date);
 }
 
 export interface MonthDayCell {

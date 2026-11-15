@@ -21,8 +21,18 @@ import { queryKeys } from '@/lib/query';
 import { formatBytes, formatCount, formatDateTime } from '@/lib/format';
 import { useAuth } from '@/hooks/useAuth';
 import { PageContainer } from '@/components/PageContainer';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState } from '@/components/ui/EmptyState';
 import {
@@ -35,10 +45,24 @@ import type { PluginStatus } from '@/lib/types';
 
 const PAGE_SIZE = 20;
 
-function askReason(action: string): string | null {
-  const reason = window.prompt(`请输入${action}原因（可留空）`);
-  return reason === null ? null : reason;
-}
+/**
+ * 待确认的管理操作。
+ *
+ * 原来用 window.prompt 收原因、window.confirm 做硬删除确认：
+ * 部分浏览器 / 内嵌 WebView 会直接拦截 prompt，导致按钮点了没有任何反应；
+ * 而且与全站 AlertDialog 的交互不一致。这里统一收口成一个受控弹窗。
+ */
+type PendingOp =
+  | { kind: 'status'; id: number; status: PluginStatus; title: string; description: string }
+  | {
+      kind: 'listing';
+      id: number;
+      action: 'list' | 'unlist' | 'yank';
+      title: string;
+      description: string;
+    }
+  | { kind: 'deleteVersion'; id: number; version: string; title: string; description: string }
+  | { kind: 'deletePlugin'; id: number; name: string; title: string; description: string };
 
 export function PluginAdmin() {
   const { user, openLogin } = useAuth();
@@ -48,6 +72,8 @@ export function PluginAdmin() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [selectedID, setSelectedID] = useState<number | null>(null);
+  const [pending, setPending] = useState<PendingOp | null>(null);
+  const [reason, setReason] = useState('');
 
   const listQuery = useQuery({
     queryKey: queryKeys.adminPlugins({ page, pageSize: PAGE_SIZE, q }),
@@ -122,6 +148,23 @@ export function PluginAdmin() {
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : '删除失败'),
   });
+
+  const openOp = (op: PendingOp) => {
+    setReason('');
+    setPending(op);
+  };
+
+  const confirmOp = () => {
+    const op = pending;
+    setPending(null);
+    if (!op) return;
+    const r = reason.trim();
+    if (op.kind === 'status') statusMutation.mutate({ id: op.id, status: op.status, reason: r });
+    else if (op.kind === 'listing')
+      listingMutation.mutate({ id: op.id, action: op.action, reason: r });
+    else if (op.kind === 'deleteVersion') deleteVersionMutation.mutate({ id: op.id, reason: r });
+    else deletePluginMutation.mutate({ id: op.id, reason: r });
+  };
 
   if (!user) {
     return (
@@ -290,11 +333,15 @@ export function PluginAdmin() {
                           key={status}
                           variant={detail.plugin.status === status ? 'default' : 'outline'}
                           size="sm"
-                          onClick={() => {
-                            const reason = askReason(`切换为 ${status}`);
-                            if (reason === null) return;
-                            statusMutation.mutate({ id: detail.plugin.id, status, reason });
-                          }}
+                          onClick={() =>
+                            openOp({
+                              kind: 'status',
+                              id: detail.plugin.id,
+                              status,
+                              title: `将插件切换为「${status === 'active' ? '正常' : status === 'hidden' ? '隐藏' : '封禁'}」`,
+                              description: '变更会立即对插件广场生效，并写入操作审计。',
+                            })
+                          }
                         >
                           {status === 'active' ? (
                             <Eye className="h-4 w-4" />
@@ -309,15 +356,15 @@ export function PluginAdmin() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => {
-                          if (
-                            !window.confirm(`确定硬删除插件「${detail.plugin.name}」及全部版本？`)
-                          )
-                            return;
-                          const reason = askReason('删除');
-                          if (reason === null) return;
-                          deletePluginMutation.mutate({ id: detail.plugin.id, reason });
-                        }}
+                        onClick={() =>
+                          openOp({
+                            kind: 'deletePlugin',
+                            id: detail.plugin.id,
+                            name: detail.plugin.name,
+                            title: `硬删除插件「${detail.plugin.name}」`,
+                            description: '插件及其全部版本、评论会被永久删除，无法恢复。',
+                          })
+                        }
                       >
                         <Trash2 className="h-4 w-4" />
                         删除插件
@@ -349,11 +396,15 @@ export function PluginAdmin() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => {
-                                  const reason = askReason('上架');
-                                  if (reason === null) return;
-                                  listingMutation.mutate({ id: v.id, action: 'list', reason });
-                                }}
+                                onClick={() =>
+                                  openOp({
+                                    kind: 'listing',
+                                    id: v.id,
+                                    action: 'list',
+                                    title: `上架 v${v.version}`,
+                                    description: '上架后所有用户都可以在插件广场下载。',
+                                  })
+                                }
                               >
                                 <Upload className="h-4 w-4" />
                                 上架
@@ -363,11 +414,15 @@ export function PluginAdmin() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => {
-                                  const reason = askReason('下架');
-                                  if (reason === null) return;
-                                  listingMutation.mutate({ id: v.id, action: 'unlist', reason });
-                                }}
+                                onClick={() =>
+                                  openOp({
+                                    kind: 'listing',
+                                    id: v.id,
+                                    action: 'unlist',
+                                    title: `下架 v${v.version}`,
+                                    description: '下架后新用户无法下载，已安装的用户不受影响。',
+                                  })
+                                }
                               >
                                 <EyeOff className="h-4 w-4" />
                                 下架
@@ -377,11 +432,15 @@ export function PluginAdmin() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => {
-                                  const reason = askReason('yank');
-                                  if (reason === null) return;
-                                  listingMutation.mutate({ id: v.id, action: 'yank', reason });
-                                }}
+                                onClick={() =>
+                                  openOp({
+                                    kind: 'listing',
+                                    id: v.id,
+                                    action: 'yank',
+                                    title: `Yank v${v.version}`,
+                                    description: '作废该版本，客户端将拒绝加载。',
+                                  })
+                                }
                               >
                                 <Ban className="h-4 w-4" />
                                 Yank
@@ -390,12 +449,15 @@ export function PluginAdmin() {
                             <Button
                               variant="destructive"
                               size="sm"
-                              onClick={() => {
-                                if (!window.confirm(`确定硬删除 v${v.version}？`)) return;
-                                const reason = askReason('删除版本');
-                                if (reason === null) return;
-                                deleteVersionMutation.mutate({ id: v.id, reason });
-                              }}
+                              onClick={() =>
+                                openOp({
+                                  kind: 'deleteVersion',
+                                  id: v.id,
+                                  version: v.version,
+                                  title: `硬删除 v${v.version}`,
+                                  description: '该版本的构建产物与记录会被永久删除，无法恢复。',
+                                })
+                              }
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -477,6 +539,47 @@ export function PluginAdmin() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* 状态的变更原因 + 硬删除确认都走这一个弹窗 */}
+      <AlertDialog
+        open={pending !== null}
+        onOpenChange={(open) => {
+          if (!open) setPending(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{pending?.title ?? ''}</AlertDialogTitle>
+            <AlertDialogDescription>{pending?.description ?? ''}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1.5">
+            <label htmlFor="plugin-admin-reason" className="text-xs text-ink-2">
+              原因（可留空，会写入操作审计）
+            </label>
+            <Input
+              id="plugin-admin-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="例如：插件包内含远程脚本"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmOp}
+              className={
+                pending?.kind === 'deletePlugin' || pending?.kind === 'deleteVersion'
+                  ? buttonVariants({ variant: 'destructive' })
+                  : undefined
+              }
+            >
+              {pending?.kind === 'deletePlugin' || pending?.kind === 'deleteVersion'
+                ? '确认删除'
+                : '确认'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageContainer>
   );
 }

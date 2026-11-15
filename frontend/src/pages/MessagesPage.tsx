@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCheck, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CheckCheck } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import {
   useDeleteNotification,
@@ -10,13 +10,8 @@ import {
 } from '@/hooks/useNotifications';
 import { PageContainer } from '@/components/PageContainer';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-} from '@/components/ui/pagination';
 import { NotificationList } from '@/components/notification/NotificationList';
+import { ListPagination } from '@/components/ui/list-pagination';
 import type { MessageType } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -127,53 +122,8 @@ export function MessagesPage() {
         )}
       </div>
 
-      {/* 分页（照 Ranking：页码 + 上下页） */}
-      {totalPages > 1 && (
-        <Pagination className="mt-8">
-          <PaginationContent>
-            <PaginationItem>
-              <PaginationLink
-                href="#"
-                aria-label="上一页"
-                onClick={(e) => {
-                  e.preventDefault();
-                  goPage(page - 1);
-                }}
-                className={page <= 1 ? 'pointer-events-none opacity-40' : ''}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </PaginationLink>
-            </PaginationItem>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-              <PaginationItem key={p}>
-                <PaginationLink
-                  href="#"
-                  isActive={p === page}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    goPage(p);
-                  }}
-                >
-                  {p}
-                </PaginationLink>
-              </PaginationItem>
-            ))}
-            <PaginationItem>
-              <PaginationLink
-                href="#"
-                aria-label="下一页"
-                onClick={(e) => {
-                  e.preventDefault();
-                  goPage(page + 1);
-                }}
-                className={page >= totalPages ? 'pointer-events-none opacity-40' : ''}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </PaginationLink>
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
-      )}
+      {/* 统一用 ListPagination：5000 条消息时不会渲染 250 个页码按钮 */}
+      <ListPagination className="mt-8" page={page} totalPages={totalPages} onPageChange={goPage} />
     </PageContainer>
   );
 }

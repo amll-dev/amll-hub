@@ -91,7 +91,7 @@ func (s *GitHubService) UploadFile(ctx context.Context, fileName string, content
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxGitHubResponseBytes))
-		return fmt.Errorf("upload to github failed: status=%d body=%s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("upload to github failed: status=%d body=%s", resp.StatusCode, truncateBody(respBody, upstreamErrBodyLimit))
 	}
 	return nil
 }
@@ -118,7 +118,7 @@ func (s *GitHubService) getFileSHA(ctx context.Context, token, owner, repo, path
 	}
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxGitHubResponseBytes))
-		return "", fmt.Errorf("get file sha failed: status=%d body=%s", resp.StatusCode, string(respBody))
+		return "", fmt.Errorf("get file sha failed: status=%d body=%s", resp.StatusCode, truncateBody(respBody, upstreamErrBodyLimit))
 	}
 
 	var file struct {

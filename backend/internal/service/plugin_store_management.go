@@ -203,13 +203,15 @@ func (s *PluginStoreService) UpdateMyPlugin(ctx context.Context, username, plugi
 	if plugin.OwnerUsername != username {
 		return ErrPluginForbidden
 	}
-	homepage := strings.TrimSpace(in.Homepage)
-	if homepage != "" && !strings.HasPrefix(homepage, "http://") && !strings.HasPrefix(homepage, "https://") {
-		homepage = "https://" + homepage
+	// 协议白名单统一走 validateExternalURL：无协议时补 https://，
+	// 拒绝 javascript: 等伪协议，并顺手规范化 HTTPS:// 这类大小写混写。
+	homepage, err := validateExternalURL(in.Homepage)
+	if err != nil {
+		return err
 	}
-	repoURL := strings.TrimSpace(in.RepoURL)
-	if repoURL != "" && !strings.HasPrefix(repoURL, "http://") && !strings.HasPrefix(repoURL, "https://") {
-		repoURL = "https://" + repoURL
+	repoURL, err := validateExternalURL(in.RepoURL)
+	if err != nil {
+		return err
 	}
 	if pkg.UTF16Len(in.Summary) > 512 {
 		return fmt.Errorf("%w: summary 最多 512 个字符", ErrPluginInvalidInput)
@@ -234,15 +236,15 @@ func (s *PluginStoreService) UpdateMyPlugin(ctx context.Context, username, plugi
 	return nil
 }
 
-// ListComments 插件评论列表
-func (s *PluginStoreService) ListComments(ctx context.Context, pluginKey string) ([]model.PluginComment, error) {
+// ListComments 插件评论列表（分页）
+func (s *PluginStoreService) ListComments(ctx context.Context, pluginKey string, page, size int) ([]model.PluginComment, int64, error) {
 	if _, err := s.plugins.GetByKey(ctx, pluginKey); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrPluginNotFound
+			return nil, 0, ErrPluginNotFound
 		}
-		return nil, err
+		return nil, 0, err
 	}
-	return s.comments.ListByPlugin(ctx, pluginKey)
+	return s.comments.ListByPlugin(ctx, pluginKey, page, size)
 }
 
 // AddComment 发表插件评论

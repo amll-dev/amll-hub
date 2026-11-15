@@ -148,6 +148,16 @@ export function PluginStore() {
     setHeroTrackIndex((value) => (value >= heroSlides.length ? value : value + 1));
   };
 
+  // 轨道只在末尾放了一张首屏副本（专为向左无缝循环），前面没有反向副本，
+  // 所以「上一张 / 指定圆点」没法倒放动画：直接无动画定位到目标页，
+  // 保证按钮 / 圆点的 aria-label 与实际行为一致。
+  const jumpToSlide = (index: number) => {
+    if (heroLockRef.current) return;
+    heroLockRef.current = true;
+    setHeroJump(true);
+    setHeroTrackIndex(((index % heroSlides.length) + heroSlides.length) % heroSlides.length);
+  };
+
   return (
     <PageContainer width="md" className="py-8 sm:py-10">
       {/* Hero 轮播 */}
@@ -219,7 +229,7 @@ export function PluginStore() {
           type="button"
           aria-label="上一张"
           className="rounded-full p-1 transition-colors hover:bg-surface-2 hover:text-primary"
-          onClick={advanceSlide}
+          onClick={() => jumpToSlide(heroIndex - 1)}
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -231,7 +241,7 @@ export function PluginStore() {
               aria-label={`切换到第 ${index + 1} 张`}
               aria-current={index === heroIndex}
               onClick={() => {
-                if (index !== heroIndex) advanceSlide();
+                if (index !== heroIndex) jumpToSlide(index);
               }}
               className={cn(
                 'h-1.5 rounded-full transition-all',

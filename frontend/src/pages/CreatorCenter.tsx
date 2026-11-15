@@ -33,9 +33,8 @@ import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
 import { NavItem } from '@/components/NavItem';
 import { PageContainer } from '@/components/PageContainer';
 import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
-import { langText, statusMeta } from '@/components/submission/status';
-import { FirstSubmissionBadge } from '@/components/submission/FirstSubmissionBadge';
-import { RevisionBadge } from '@/components/submission/RevisionBadge';
+import { statusMeta } from '@/components/submission/status';
+import { SubmissionListRows } from '@/components/submission/SubmissionListRows';
 import { buttonVariants } from '@/components/ui/button';
 import { CardDetailSkeleton, ListSkeleton } from '@/components/ui/Skeleton';
 import { ListPagination } from '@/components/ui/list-pagination';
@@ -248,46 +247,7 @@ function LyricsList({
           <p className="mb-3 text-xs text-ink-3">
             共 {total} 条 · 第 {page} / {totalPages} 页
           </p>
-          <ul className="space-y-2">
-            {items.map((item) => {
-              const meta = statusMeta[item.status] ?? {
-                label: item.status,
-                className: 'bg-surface-2 text-ink-2',
-              };
-              return (
-                <motion.li key={item.id} variants={fadeUp}>
-                  <button
-                    type="button"
-                    onClick={() => openDetail(item.id)}
-                    className="flex w-full items-center justify-between gap-3 rounded-md border border-line bg-background px-4 py-3 text-left transition-colors hover:bg-surface-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="min-w-0 truncate font-medium text-foreground">
-                          {item.title || '未命名'}
-                        </span>
-                        {item.isFirstSubmission && <FirstSubmissionBadge />}
-                        {item.submissionType === 'revision' && <RevisionBadge />}
-                        <span className="shrink-0 text-xs text-ink-3">#{item.id}</span>
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
-                        <span>{formatDateTime(item.createdAt)}</span>
-                        <span className="text-line">|</span>
-                        <Badge
-                          variant="outline"
-                          className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${meta.className} border-transparent`}
-                        >
-                          {meta.label}
-                        </Badge>
-                        <span className="text-line">|</span>
-                        <span>语言：{langText(item.language)}</span>
-                      </div>
-                    </div>
-                  </button>
-                </motion.li>
-              );
-            })}
-          </ul>
+          <SubmissionListRows items={items} onOpen={openDetail} />
 
           <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </>
@@ -612,10 +572,10 @@ export function CreatorCenter() {
               <span className="text-lg font-bold tracking-tight text-foreground">
                 AMLL Hub 创作中心
               </span>
-              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-500">
                 测试版
               </span>
-              <span className="absolute inset-x-0 top-full mt-0.5 whitespace-nowrap text-center text-[9px] leading-none text-ink-3">
+              <span className="absolute inset-x-0 top-full mt-0.5 whitespace-nowrap text-center text-[11px] leading-none text-ink-3">
                 测试版本，不代表最终品质
               </span>
             </div>
@@ -956,7 +916,7 @@ export function CreatorCenter() {
 
       {/* 底部提示：固定在屏幕底部 */}
       <footer className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-center gap-2 border-t border-line bg-card/90 py-3 backdrop-blur-xl">
-        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-500">
           测试版
         </span>
         <span className="text-xs text-ink-3">测试版本，不代表最终品质</span>

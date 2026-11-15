@@ -39,8 +39,8 @@ function LineDiffRow({ diff }: { diff: LineDiff }) {
 
   return (
     <div className="flex items-start gap-2 border-b border-line/60 px-3 py-1.5 text-xs last:border-0">
-      <Badge className={`shrink-0 text-[10px] ${kindMeta.cls}`}>{kindMeta.label}</Badge>
-      <span className="w-12 shrink-0 text-right font-mono text-[10px] text-ink-3">{lineNo}</span>
+      <Badge className={`shrink-0 text-[11px] ${kindMeta.cls}`}>{kindMeta.label}</Badge>
+      <span className="w-12 shrink-0 text-right font-mono text-[11px] text-ink-3">{lineNo}</span>
       <span className="min-w-0 flex-1">
         {diff.kind !== 'added' && diff.textChanged && (
           <span className="mr-1 text-red-700 line-through">{diff.originalText}</span>
@@ -93,15 +93,25 @@ function useRevisionDiff(detail: SubmissionDetail): {
     let cancelled = false;
     setLoading(true);
     void (async () => {
-      const [a, b] = await Promise.all([parseTTML(originalTtml), parseTTML(revisionTtml)]);
-      if (cancelled) return;
-      setLoading(false);
-      if (!a.success || !b.success) {
-        setFailed(true);
-        return;
+      try {
+        const [a, b] = await Promise.all([parseTTML(originalTtml), parseTTML(revisionTtml)]);
+        if (cancelled) return;
+        setLoading(false);
+        if (!a.success || !b.success) {
+          setFailed(true);
+          return;
+        }
+        setFailed(false);
+        setDiff(computeRevisionDiff(a.data, b.data));
+      } catch (err) {
+        // parseTTML（WASM）可能直接 reject（wasm 加载失败 / 内存不足）。
+        // 不 catch 的话 setLoading(false) 永远不执行，卡片永久停在「正在解析两份歌词…」
+        console.error('[revision-diff] 解析 TTML 失败', err);
+        if (!cancelled) {
+          setLoading(false);
+          setFailed(true);
+        }
       }
-      setFailed(false);
-      setDiff(computeRevisionDiff(a.data, b.data));
     })();
     return () => {
       cancelled = true;
@@ -159,7 +169,7 @@ export function RevisionConfirmCard({ detail, isSubmitter, onDone }: RevisionCon
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold text-purple-900">审核员提交了修订版</h3>
-            <Badge className="bg-purple-100 text-[10px] text-purple-700">待投稿者确认</Badge>
+            <Badge className="bg-purple-100 text-[11px] text-purple-700">待投稿者确认</Badge>
           </div>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-purple-800">
             <UserAvatar

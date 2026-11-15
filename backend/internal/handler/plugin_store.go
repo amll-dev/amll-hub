@@ -147,6 +147,8 @@ func (h *PluginStoreHandler) Artifact(c *gin.Context) {
 func (h *PluginStoreHandler) ListPublic(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	// 与仓库层同一套钳制，回显实际生效的 size，避免前端按请求值算页数
+	page, pageSize = repository.NormalizePage(page, pageSize)
 	q := repository.PluginListQuery{
 		Page:     page,
 		PageSize: pageSize,
@@ -304,6 +306,8 @@ func (h *PluginStoreHandler) ListMyPlugins(c *gin.Context) {
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	// 与仓库层同一套钳制，回显实际生效的 size，避免前端按请求值算页数
+	page, pageSize = repository.NormalizePage(page, pageSize)
 	q := repository.PluginListQuery{
 		Page:     page,
 		PageSize: pageSize,
@@ -412,9 +416,12 @@ func (h *PluginStoreHandler) UpdateMyPlugin(c *gin.Context) {
 
 // ListComments GET /api/v1/store/plugins/:key/comments
 func (h *PluginStoreHandler) ListComments(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	page, pageSize = repository.NormalizePage(page, pageSize)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
-	comments, err := h.svc.ListComments(ctx, c.Param("key"))
+	comments, total, err := h.svc.ListComments(ctx, c.Param("key"), page, pageSize)
 	if err != nil {
 		writePluginErr(c, err)
 		return
@@ -422,7 +429,7 @@ func (h *PluginStoreHandler) ListComments(c *gin.Context) {
 	if comments == nil {
 		comments = []model.PluginComment{}
 	}
-	pkg.OK(c, comments)
+	pkg.OK(c, gin.H{"items": comments, "total": total, "page": page, "pageSize": pageSize})
 }
 
 // CreateComment POST /api/v1/store/plugins/:key/comments
@@ -481,6 +488,8 @@ func (h *PluginStoreHandler) ListMine(c *gin.Context) {
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	// 与仓库层同一套钳制，回显实际生效的 size，避免前端按请求值算页数
+	page, pageSize = repository.NormalizePage(page, pageSize)
 	q := repository.PluginVersionListQuery{
 		Page:     page,
 		PageSize: pageSize,

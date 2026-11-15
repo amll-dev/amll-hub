@@ -178,14 +178,13 @@ func (s *AuthService) ConfirmQRTicket(ctx context.Context, ticket, userID string
 		return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
-	claims := &pkg.Claims{
+	token, err := pkg.SignUserToken(pkg.UserTokenInput{
 		Sub:         userID,
 		Name:        user.Name,
 		DisplayName: user.DisplayName,
 		Email:       user.Email,
 		Avatar:      user.Avatar,
-	}
-	token, err := pkg.SignJWT(claims, s.jwtSecret, s.jwtTTL)
+	}, s.jwtSecret, s.jwtTTL)
 	if err != nil {
 		return fmt.Errorf("签发 token 失败: %w", err)
 	}

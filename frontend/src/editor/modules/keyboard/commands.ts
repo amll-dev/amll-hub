@@ -1,9 +1,8 @@
+import { DELETE_KEY, IS_MAC, PRIMARY_MODIFIER } from '$/utils/platform';
 import { t } from './i18n-helper';
 import { registerCommand } from './registry';
 
-const IS_MAC = navigator.userAgent.includes('Mac');
-const CONTROL_KEY = IS_MAC ? 'Meta' : 'Control';
-const DELETE_KEY = IS_MAC ? 'Backspace' : 'Delete';
+const CONTROL_KEY = PRIMARY_MODIFIER;
 
 // =========================================================================================
 //  文件操作

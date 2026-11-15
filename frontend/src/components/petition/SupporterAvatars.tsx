@@ -37,7 +37,7 @@ export function SupporterAvatars({
       ))}
       {remaining > 0 &&
         (overlapping ? (
-          <span className="flex h-5 items-center rounded-full bg-surface-2 px-1.5 text-[10px] text-ink-3 ring-2 ring-card">
+          <span className="flex h-5 items-center rounded-full bg-surface-2 px-1.5 text-[11px] text-ink-3 ring-2 ring-card">
             +{remaining}
           </span>
         ) : (

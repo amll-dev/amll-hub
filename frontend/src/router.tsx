@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { Layout } from '@/App';
 import { RouteErrorBoundary } from '@/components/ErrorBoundary';
+import { RouteGuard, type RouteRequirement } from '@/components/RouteGuard';
 import { LyricEditorShell } from '@/components/review/LyricEditorShell';
 import {
   BindAccount,
@@ -40,10 +42,16 @@ import {
   ViewLyricPage,
 } from '@/routes';
 
+/** 需要登录 / 权限的页面统一套这层，避免每个页面各写一遍判断 */
+const guard = (require: RouteRequirement, element: ReactNode) => (
+  <RouteGuard require={require}>{element}</RouteGuard>
+);
+
 export const router = createBrowserRouter([
   {
     path: '/review/editor/:id',
-    element: (
+    element: guard(
+      'reviewer',
       <LyricEditorShell>
         <LyricEditorPage />
       </LyricEditorShell>
@@ -52,7 +60,8 @@ export const router = createBrowserRouter([
   },
   {
     path: '/creator/lyrics/editor/:id',
-    element: (
+    element: guard(
+      'auth',
       <LyricEditorShell>
         <LyricEditorPage mode="creator" />
       </LyricEditorShell>
@@ -100,27 +109,30 @@ export const router = createBrowserRouter([
       { path: '/user/:name', element: <UserProfilePage /> },
       { path: '/bind-account', element: <BindAccount /> },
       { path: '/messages', element: <MessagesPage /> },
-      { path: '/creator', element: <CreatorCenter /> },
-      { path: '/creator/plugins', element: <CreatorCenter /> },
-      { path: '/creator/plugins/detail', element: <PluginManageDetailPage /> },
+      { path: '/creator', element: guard('auth', <CreatorCenter />) },
+      { path: '/creator/plugins', element: guard('auth', <CreatorCenter />) },
+      { path: '/creator/plugins/detail', element: guard('auth', <PluginManageDetailPage />) },
       { path: '/plugins', element: <PluginStore /> },
       { path: '/plugins/submit', element: <Navigate to="/creator?tab=plugins" replace /> },
-      { path: '/plugins/admin', element: <PluginAdmin /> },
+      { path: '/plugins/admin', element: guard('admin', <PluginAdmin />) },
       { path: '/plugins/:key', element: <PluginDetail /> },
-      { path: '/creator/requests', element: <CreatorCenter /> },
-      { path: '/creator/requests/:id/edit', element: <CreatorCenter /> },
+      { path: '/creator/requests', element: guard('auth', <CreatorCenter />) },
+      { path: '/creator/requests/:id/edit', element: guard('auth', <CreatorCenter />) },
+      // 请愿详情对外公开（支持/评论需要游客可读），只有编辑入口需要登录
       { path: '/creator/requests/:id', element: <RequestDetailPage /> },
       {
         path: '/creator/lyrics/detail',
-        element: (
+        element: guard(
+          'auth',
           <SubmissionDetailPage isReviewer={false} backPath="/creator" backLabel="返回创作中心" />
         ),
       },
-      { path: '/review', element: <ReviewCenter /> },
-      { path: '/review/plugin', element: <PluginManageDetailPage reviewMode /> },
+      { path: '/review', element: guard('reviewer', <ReviewCenter />) },
+      { path: '/review/plugin', element: guard('reviewer', <PluginManageDetailPage reviewMode />) },
       {
         path: '/review/detail',
-        element: (
+        element: guard(
+          'reviewer',
           <SubmissionDetailPage isReviewer={true} backPath="/review" backLabel="返回审核中心" />
         ),
       },

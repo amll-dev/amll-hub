@@ -328,6 +328,13 @@ export function LyricsPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // 歌词页打开时锁定页面滚动，隐藏右侧浏览器滚动条
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('lyric-page-open', isLyricPageOpened);
+    return () => root.classList.remove('lyric-page-open');
+  }, [isLyricPageOpened]);
+
   // 全屏状态跟随浏览器（F11 / Esc 退出全屏都能同步）
   useEffect(() => {
     const sync = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -384,7 +391,8 @@ export function LyricsPage() {
 
   return (
     <>
-      <PlayerStateSync />
+      {/* 关闭时卸载：内部的 rAF 进度同步循环每帧写 atom，隐藏状态下没必要跑 */}
+      {isLyricPageOpened && <PlayerStateSync />}
       <ContextMenu onOpenChange={setMenuOpen}>
         <ContextMenuTrigger asChild>
           <div
@@ -407,7 +415,7 @@ export function LyricsPage() {
         </ContextMenuTrigger>
 
         {/* 歌词页右键菜单 */}
-        <ContextMenuContent className="z-[300] min-w-[208px] rounded-xl border-0 bg-white p-1.5 text-[#1c1c1e] shadow-[0_14px_40px_-12px_rgba(0,0,0,0.6)]">
+        <ContextMenuContent className="lyric-page-menu z-[300] min-w-[208px] rounded-xl border-0 bg-white p-1.5 text-[#1c1c1e] shadow-[0_14px_40px_-12px_rgba(0,0,0,0.6)]">
           <MenuRow label="上一首" shortcut="Ctrl Alt ←" onSelect={() => playerActions.playPrev()} />
           <MenuRow
             label="暂停 / 继续"

@@ -308,7 +308,10 @@ class AudioQueueCore implements MainAudioController, AudioWriter, AudioReader {
     for (let c = 0; c < this.channels; c++) {
       const output = outputs[c];
       const ring = this.channelBuffers[c];
-      if (!output || !ring) continue;
+      // wasm 扩容会让建在旧 memory.buffer 上的视图 detach（长度归零）。
+      // 此时若继续 set 会抛异常并永久终止 AudioWorklet processor；
+      // 宁可跳过本轮写入，由 worklet 重建视图后在下一块补上。
+      if (!output || !ring || output.length === 0) continue;
       if (readAmount <= spaceToEnd) {
         output.set(ring.subarray(ringPos, ringPos + readAmount));
       } else {

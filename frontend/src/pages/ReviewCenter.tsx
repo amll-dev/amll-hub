@@ -31,6 +31,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { fadeUp, staggerContainer } from '@/lib/motion';
 import { formatDateTime } from '@/lib/format';
 import { api } from '@/lib/api';
+import { openExternal } from '@/lib/navigation';
 import { queryKeys } from '@/lib/query';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
 import { NavItem } from '@/components/NavItem';
@@ -45,13 +46,10 @@ import { DocEditorPanel } from '@/components/docs/DocEditorPanel';
 import { ReviewerManagePanel } from '@/components/review/ReviewerManagePanel';
 import { PluginReviewPanel } from '@/components/plugin/PluginReviewPanel';
 import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
-import { UserAvatar } from '@/components/submission/UserAvatar';
-import { UserDisplayName } from '@/components/submission/UserDisplayName';
+import { SubmissionListRows } from '@/components/submission/SubmissionListRows';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { langText, statusMeta } from '@/components/submission/status';
-import { FirstSubmissionBadge } from '@/components/submission/FirstSubmissionBadge';
-import { RevisionBadge } from '@/components/submission/RevisionBadge';
+import { statusMeta } from '@/components/submission/status';
 
 // 状态与语言的展示元数据统一在 status.ts（纯模块，不带 marked 依赖）
 
@@ -85,6 +83,13 @@ function ReviewList() {
   // 列表筛选状态存全局 atoms（页面卸载时统一复位）
   const [tab, setTab] = useAtom(reviewTabAtom);
   const [search, setSearch] = useAtom(reviewSearchAtom);
+  // 输入框本地即时更新，300ms 防抖后才写全局 atom（queryKey），
+  // 避免每敲一个字符都触发一次 listAllSubmissions（含后端 count）
+  const [searchInput, setSearchInput] = useState(search);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearch(searchInput), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput, setSearch]);
   const [page, setPage] = useState(1);
   const trimmedSearch = search.trim() || undefined;
 
@@ -175,8 +180,8 @@ function ReviewList() {
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-3" />
         <input
           type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           placeholder="搜索标题或歌手…"
           className="h-10 w-full rounded-md border border-input bg-surface-2 pl-9 pr-4 text-sm outline-none focus:border-primary"
         />
@@ -194,80 +199,7 @@ function ReviewList() {
             <p className="mb-3 text-xs text-ink-3">
               共 {total} 条 · 第 {page} / {totalPages} 页
             </p>
-            <ul className="space-y-2">
-              {items.map((item) => {
-                const meta = statusMeta[item.status] ?? {
-                  label: item.status,
-                  className: 'bg-surface-2 text-ink-2',
-                };
-                return (
-                  <motion.li key={item.id} variants={fadeUp}>
-                    <button
-                      type="button"
-                      onClick={() => openDetail(item.id)}
-                      className="flex w-full items-center justify-between gap-3 rounded-md border border-line bg-background px-4 py-3 text-left transition-colors hover:bg-surface-2"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="min-w-0 truncate font-medium text-foreground">
-                            {item.title || '未命名'}
-                          </span>
-                          {item.isFirstSubmission && <FirstSubmissionBadge />}
-                          {item.submissionType === 'revision' && <RevisionBadge />}
-                          <span className="shrink-0 text-xs text-ink-3">#{item.id}</span>
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-3">
-                          <span>{formatDateTime(item.createdAt)}</span>
-                          <span className="text-line">|</span>
-                          <Badge
-                            variant="outline"
-                            className={`shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${meta.className} border-transparent`}
-                          >
-                            {meta.label}
-                          </Badge>
-                          <span className="text-line">|</span>
-                          {/* 投稿人：审核时先看是谁投的 */}
-                          <span className="inline-flex min-w-0 items-center gap-1">
-                            <UserAvatar
-                              avatar={item.submitterInfo?.avatar}
-                              name={item.submitterInfo?.displayName || item.submitter}
-                              size={14}
-                            />
-                            <span className="shrink-0">投稿人</span>
-                            <span className="truncate text-ink-2">
-                              <UserDisplayName
-                                displayName={item.submitterInfo?.displayName}
-                                username={item.submitter}
-                              />
-                            </span>
-                          </span>
-                          {/* 审核中：显示当前占用者，避免多个审核员重复劳动 */}
-                          {item.status === 'reviewing' && item.reviewer && (
-                            <>
-                              <span className="text-line">|</span>
-                              <span className="inline-flex items-center gap-1 text-primary">
-                                <UserAvatar
-                                  avatar={item.reviewerInfo?.avatar}
-                                  name={item.reviewerInfo?.displayName || item.reviewer}
-                                  size={14}
-                                />
-                                <span className="shrink-0">审核人</span>
-                                <UserDisplayName
-                                  displayName={item.reviewerInfo?.displayName}
-                                  username={item.reviewer}
-                                />
-                              </span>
-                            </>
-                          )}
-                          <span className="text-line">|</span>
-                          <span>语言：{langText(item.language)}</span>
-                        </div>
-                      </div>
-                    </button>
-                  </motion.li>
-                );
-              })}
-            </ul>
+            <SubmissionListRows items={items} onOpen={openDetail} showSubmitter showReviewer />
 
             <ListPagination page={page} totalPages={totalPages} onPageChange={setPage} />
           </>
@@ -580,9 +512,7 @@ function HomeOverview() {
             title={item.pluginName}
             tag={`v${item.version.version}`}
             time={formatDateTime(item.version.submittedAt)}
-            onOpen={() =>
-              window.open(`/review/plugin?key=${encodeURIComponent(item.pluginKey)}`, '_blank')
-            }
+            onOpen={() => openExternal(`/review/plugin?key=${encodeURIComponent(item.pluginKey)}`)}
           />
         ))}
       </HomePendingCard>
@@ -652,10 +582,10 @@ export function ReviewCenter() {
               <span className="text-lg font-bold tracking-tight text-foreground">
                 AMLL Hub {user.isReviewer ? '审核中心' : '管理中心'}
               </span>
-              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-500">
                 测试版
               </span>
-              <span className="absolute inset-x-0 top-full mt-0.5 whitespace-nowrap text-center text-[9px] leading-none text-ink-3">
+              <span className="absolute inset-x-0 top-full mt-0.5 whitespace-nowrap text-center text-[11px] leading-none text-ink-3">
                 测试版本，不代表最终品质
               </span>
             </div>
@@ -896,7 +826,7 @@ export function ReviewCenter() {
 
       {/* 底部提示：固定在屏幕底部 */}
       <footer className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-center gap-2 border-t border-line bg-card/90 py-3 backdrop-blur-xl">
-        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-500">
           测试版
         </span>
         <span className="text-xs text-ink-3">测试版本，不代表最终品质</span>

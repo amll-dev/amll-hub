@@ -9,6 +9,22 @@ import { formatBytes } from '@/lib/format';
 import { buttonTap } from '@/lib/motion';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
+/** 封面大小上限与扩展名白名单（后端图片上限远大于此，前端先拦一道） */
+const MAX_COVER_SIZE = 5 * 1024 * 1024;
+const COVER_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'avif'];
+const COVER_ACCEPT = COVER_EXTS.map((e) => `.${e}`).join(',');
+
+function validateCover(f: File): string | null {
+  const ext = f.name.slice(f.name.lastIndexOf('.') + 1).toLowerCase();
+  if (!f.type.startsWith('image/') || !COVER_EXTS.includes(ext)) {
+    return '封面仅支持 JPG / PNG / WebP / AVIF 格式';
+  }
+  if (f.size > MAX_COVER_SIZE) {
+    return `封面 ${formatBytes(f.size)} 超过 5 MB 上限，请压缩或更换`;
+  }
+  return null;
+}
+
 /** 解析音频文件的 ID3/原子容器元数据 */
 async function parseAudioMeta(file: File): Promise<{
   title?: string;
@@ -24,7 +40,8 @@ async function parseAudioMeta(file: File): Promise<{
     if (common.artist?.trim()) out.artist = common.artist.trim();
     if (common.album?.trim()) out.album = common.album.trim();
     const pic = common.picture?.[0];
-    if (pic && pic.data && pic.data.length > 0 && pic.format) {
+    // 内嵌封面超过上限直接丢弃，不生成 File、不进入上传队列
+    if (pic && pic.data && pic.data.length > 0 && pic.data.length <= MAX_COVER_SIZE && pic.format) {
       try {
         const ext = pic.format.includes('png')
           ? 'png'
@@ -292,11 +309,20 @@ export function UploadAudioArea({ submissionId, onClose, onSuccess }: UploadAudi
             <input
               ref={coverInputRef}
               type="file"
-              accept="image/*"
+              accept={COVER_ACCEPT}
               className="hidden"
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) setCoverFile(f);
+                if (f) {
+                  const err = validateCover(f);
+                  if (err) {
+                    setMsg({ type: 'error', text: err });
+                  } else {
+                    setMsg(null);
+                    setCoverFile(f);
+                  }
+                }
+                e.target.value = '';
               }}
             />
           </div>

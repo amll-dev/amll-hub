@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useBlocker, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { ArrowLeft, Loader2 } from 'lucide-react';
@@ -16,6 +16,7 @@ import {
   toolModeAtom,
 } from '@/editor/states/main.ts';
 import { openTabAtom } from '@/editor/states/sidebar.ts';
+import { confirmDialogAtom } from '@/editor/states/dialogs.ts';
 import { useFileOpener } from '@/editor/hooks/useFileOpener.ts';
 import type { ReviewReport } from '@/editor/modules/review/services/report-service/types';
 import {
@@ -36,17 +37,46 @@ import { LyricEditorHeader } from '@/components/review/LyricEditorHeader';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { findValidationDocLink, stripValidationLinks } from '@/lib/validation';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { useViewers } from '@/hooks/useViewers';
 import { buildEditorAudioSources } from '@/lib/review/audio-sources';
-import { buildEditorSaveBundle } from '@/lib/review/editor-save-bundle';
+import { buildEditorSaveBundle, findInvalidWordTimings } from '@/lib/review/editor-save-bundle';
+import type { TTMLLyric } from '@/editor/types/ttml';
 import type { EditorContext, ReviewAction } from '@/lib/types';
 
 export type LyricEditorMode = 'review' | 'creator';
 
+/** 保存成功后提示「有词时间无效」：这些词在频谱里被过滤掉，但会照样写进 TTML */
+function warnInvalidWordTimings(lyric: TTMLLyric): void {
+  const invalid = findInvalidWordTimings(lyric);
+  if (invalid.length === 0) return;
+  const first = invalid[0];
+  const where = first
+    ? `（如第 ${first.lineNumber} 行第 ${first.wordIndex} 个「${first.word}」）`
+    : '';
+  toast.warning(`本稿有 ${invalid.length} 个词时间无效${where}，导出后播放到这些词不会高亮`);
+}
+
 /** 审核占用心跳间隔：需小于后端租约时长（默认 3 分钟）才能持续续约 */
 const REVIEW_HEARTBEAT_MS = 60_000;
+
+/** 自动审核报告的重算间隔：停手后再算，不跟着每次击键跑 WASM + 全量 diff */
+const REPORT_DEBOUNCE_MS = 400;
+
+/**
+ * 尾部防抖：连续变化时保留旧值，只在停止变化 delayMs 之后更新。
+ * 只用于昂贵的派生计算，不要拿去做输入受控值。
+ */
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [value, delayMs]);
+  return debounced;
+}
 
 export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode }) {
   const { id } = useParams<{ id: string }>();
@@ -328,12 +358,52 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
     return () => window.removeEventListener('beforeunload', handler);
   }, [isDirty]);
 
+  // SPA 内部路由跳转不触发 beforeunload：用 data router 的 useBlocker 补上，
+  // 有未保存改动时拦截所有应用内导航并弹确认框。
+  // isDirty 用 ref 镜像，shouldBlock 只读 ref，不依赖闭包更新时机。
+  const dirtyRef = useRef(isDirty);
+  dirtyRef.current = isDirty;
+  // 保存成功后的跳转要放行：markLyricLinesSaved() 与 navigate() 在同一回调里，
+  // React 还没重渲染，dirtyRef 仍是旧值，用同步旁路标志让本次导航通过。
+  const allowNavRef = useRef(false);
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      !allowNavRef.current && dirtyRef.current && currentLocation.pathname !== nextLocation.pathname
+  );
+  const setConfirmDialog = useSetAtom(confirmDialogAtom);
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return;
+    // 期间已保存 / 不再脏：直接放行，不再弹框
+    if (!isDirty) {
+      blocker.reset();
+      return;
+    }
+    // 用站内 ConfirmDialog 代替 window.confirm：样式与编辑器其它确认一致，
+    // 也不会被浏览器的「阻止弹窗」拦掉。blocker 会停在 blocked 等用户选择，
+    // 确认才 proceed，取消 / ESC / 点遮罩都走 onCancel 复位。
+    setConfirmDialog({
+      open: true,
+      title: '有未保存的改动',
+      description: '离开后未保存的改动将会丢失，确定要离开吗？',
+      onConfirm: () => blocker.proceed(),
+      onCancel: () => blocker.reset(),
+    });
+  }, [blocker, isDirty, setConfirmDialog]);
+  // 用户继续编辑再次变脏时撤销旁路，避免后续导航被误放行
+  useEffect(() => {
+    if (isDirty) allowNavRef.current = false;
+  }, [isDirty]);
+
+  // buildEditorSaveBundle 内部会 WASM 序列化当前状态 + 解析原稿 + 三轮全量 diff。
+  // lyricLines 每敲一个字都是新引用，直接依赖它等于把整条链路放在击键的同步路径上。
+  const debouncedLyricLines = useDebouncedValue(lyricLines, REPORT_DEBOUNCE_MS);
+
   const report = useMemo<ReviewReport | null>(() => {
     if (!originalTtml) return null;
-    const bundle = buildEditorSaveBundle(originalTtml, lyricLines);
+    const bundle = buildEditorSaveBundle(originalTtml, debouncedLyricLines);
     if (!bundle.ok) return null;
     return (bundle.bundle.structured.reviewReport as ReviewReport) ?? null;
-  }, [originalTtml, lyricLines]);
+  }, [originalTtml, debouncedLyricLines]);
 
   const setAutoReport = useSetAtom(autoReviewReportAtom);
   const setEditedReport = useSetAtom(editedReviewReportAtom);
@@ -379,8 +449,11 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
       void queryClient.invalidateQueries({ queryKey: ['submissions'] });
       // 提交成功后把当前内容记为已保存基线，顶栏不再显示「有未保存改动」
       markLyricLinesSaved();
+      // 保存后跳转属于「已保存」，旁路 useBlocker 的未保存确认
+      allowNavRef.current = true;
       setReviewDialog({ open: false, title: '' });
       toast.success(input.uploadTtml ? '修订版已提交，等待投稿者确认' : '审核结果已提交');
+      warnInvalidWordTimings(lyricLines);
       void api.releaseReview(submissionId, true).catch(() => {});
       navigate('/review/detail?id=' + submissionId);
     },
@@ -414,12 +487,26 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
       void queryClient.invalidateQueries({ queryKey: queryKeys.submission(submissionId) });
       void queryClient.invalidateQueries({ queryKey: ['submissions'] });
       markLyricLinesSaved();
+      // 保存后跳转属于「已保存」，旁路 useBlocker 的未保存确认
+      allowNavRef.current = true;
       setReviewDialog({ open: false, title: '' });
       toast.success('歌词已提交修改');
+      warnInvalidWordTimings(lyricLines);
       navigate(`/creator/lyrics/detail?id=${submissionId}`);
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : '提交失败');
+      const message = err instanceof Error ? err.message : '提交失败';
+      const docLink = findValidationDocLink(message);
+      if (!docLink) {
+        toast.error(message);
+        return;
+      }
+      toast.error(stripValidationLinks(message), {
+        action: {
+          label: docLink.label,
+          onClick: () => window.open(docLink.href, '_blank', 'noopener,noreferrer'),
+        },
+      });
     },
   });
 
@@ -428,9 +515,9 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
     : `/review/detail?id=${submissionId}`;
 
   const goBack = useCallback(() => {
-    if (isDirty && !confirm('有未保存的改动，确定离开吗？')) return;
+    // 未保存确认统一交给 useBlocker，避免返回按钮弹两次框
     navigate(backPath);
-  }, [backPath, isDirty, navigate]);
+  }, [backPath, navigate]);
 
   // 解析在线音频期间不能判成「无音频」，否则会闪一下空状态/文本模式
   const resolvingAudio = ncmQuery.isLoading || qmQuery.isLoading;

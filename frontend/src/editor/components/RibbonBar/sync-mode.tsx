@@ -24,12 +24,7 @@ import {
   syncTimeOffsetAtom,
   visualizeTimestampUpdateAtom,
 } from '$/modules/settings/states/sync.ts';
-import {
-  keySyncEndAtom,
-  keySyncNextAltAtom,
-  keySyncNextAtom,
-  keySyncStartAtom,
-} from '$/states/keybindings.ts';
+import { cmdSyncEnd, cmdSyncNext, cmdSyncNextAlt, cmdSyncStart } from '$/modules/keyboard/commands';
 import { bgLyricIgnoreSyncAtom, lyricLinesAtom } from '$/states/main.ts';
 import { useAtom, useAtomValue } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
@@ -81,7 +76,7 @@ export const SyncModeRibbonBar: FC = forwardRef<HTMLDivElement>((_props, ref) =>
   const showWordRomanizationInput = useAtomValue(showWordRomanizationInputAtom);
   const [syncTimeOffset, setSyncTimeOffset] = useAtom(syncTimeOffsetAtom);
   const syncNextDualMode = useAtomValue(syncNextDualModeAtom);
-  const syncNextAltKeys = useAtomValue(keySyncNextAltAtom);
+  const syncNextAltKeys = useAtomValue(cmdSyncNextAlt.atom);
 
   return (
     <RibbonFrame ref={ref}>
@@ -94,7 +89,11 @@ export const SyncModeRibbonBar: FC = forwardRef<HTMLDivElement>((_props, ref) =>
               step={1}
               className="h-7 w-[8em] px-2 text-xs"
               value={syncTimeOffset}
-              onChange={(e) => setSyncTimeOffset(e.target.valueAsNumber)}
+              onChange={(e) => {
+                // 清空输入框时 valueAsNumber 为 NaN，直接写进 atom 会让后续打轴计算出 NaN 时间戳
+                const next = e.target.valueAsNumber;
+                setSyncTimeOffset(Number.isNaN(next) ? 0 : next);
+              }}
             />
             <span className="text-xs text-ink-3">ms</span>
           </div>
@@ -157,14 +156,14 @@ export const SyncModeRibbonBar: FC = forwardRef<HTMLDivElement>((_props, ref) =>
         <div className="flex gap-4">
           <div className="grid flex-1 grid-cols-[auto_auto] items-center justify-center gap-x-4 gap-y-1">
             <span className="whitespace-nowrap text-xs">起始轴</span>
-            <KeyBinding kbdAtom={keySyncStartAtom} />
+            <KeyBinding kbdAtom={cmdSyncStart.atom} />
             <span className="whitespace-nowrap text-xs">连续轴</span>
             <div className="flex items-center gap-2">
-              <KeyBinding kbdAtom={keySyncNextAtom} />
+              <KeyBinding kbdAtom={cmdSyncNext.atom} />
               {syncNextDualMode ? <Kbd>{formatKeyBindings(syncNextAltKeys)}</Kbd> : null}
             </div>
             <span className="whitespace-nowrap text-xs">结束轴</span>
-            <KeyBinding kbdAtom={keySyncEndAtom} />
+            <KeyBinding kbdAtom={cmdSyncEnd.atom} />
           </div>
         </div>
       </RibbonSection>

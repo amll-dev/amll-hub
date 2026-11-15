@@ -92,7 +92,7 @@
 @property --amll-ink-3 {
   syntax: '<color>';
   inherits: true;
-  initial-value: #8a8a90;
+  initial-value: #6e6e76;
 }
 @property --amll-line {
   syntax: '<color>';
@@ -166,7 +166,11 @@
 
   --amll-ink: #1d1d1f;
   --amll-ink-2: #535359;
-  --amll-ink-3: #8a8a90;
+  /* 对比度 4.89:1（#fbfbfd 底），达 WCAG AA */
+  --amll-ink-3: #6e6e76;
+
+  /* 罗马音/音译强调色 */
+  --amll-roman: #7c3aed;
 
   --amll-line: #ededf1;
 
@@ -220,7 +224,10 @@ html.dark,
 
   --amll-ink: #f5f5f7;
   --amll-ink-2: #a8a8b0;
-  --amll-ink-3: #71717a;
+  /* 对比度约 5.6:1（#101014 底），达 WCAG AA */
+  --amll-ink-3: #8b8b94;
+
+  --amll-roman: #a78bfa;
 
   --amll-line: #2c2c33;
 
@@ -304,6 +311,7 @@ html.dark,
   --color-ink: var(--amll-ink);
   --color-ink-2: var(--amll-ink-2);
   --color-ink-3: var(--amll-ink-3);
+  --color-roman: var(--amll-roman);
 
   --color-line: var(--amll-line);
 
@@ -332,6 +340,49 @@ html {
      避免在浅色背景下下拉列表透明看不清；
      深色时由 atoms/theme 写内联 color-scheme + 下方 html.dark 兜底 */
   color-scheme: light;
+}
+
+/* 歌词页是全屏固定覆盖层：打开时锁定页面滚动，隐藏右侧原生滚动条并释放 gutter 预留 */
+html.lyric-page-open {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+html.lyric-page-open body {
+  overflow: hidden;
+}
+
+/* 歌词页右键菜单：显式的进出场动画（Radix Presence 会等 animationend 后再卸载） */
+.lyric-page-menu[data-state='open'] {
+  transform-origin: var(--radix-context-menu-content-transform-origin, center);
+  animation: lyric-menu-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.lyric-page-menu[data-state='closed'] {
+  transform-origin: var(--radix-context-menu-content-transform-origin, center);
+  animation: lyric-menu-out 120ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes lyric-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes lyric-menu-out {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96) translateY(-2px);
+  }
 }
 :root {
   /* 行块底色（低 alpha！叠三四行仍需透光） */
@@ -929,71 +980,6 @@ html.dark .docs-prose .hljs-literal {
   color: #c4b5fd;
 }
 
-/* 文档编辑器：把 @uiw/react-md-editor 的 GitHub 原生外观收敛到站点主题。
- * 选择器里重复 .w-md-editor 是为了拿到 (0,3,0) 的权重，
- * 稳压组件自带样式表中 [data-color-mode] .w-md-editor 的变量覆盖。
- */
-.docs-editor .w-md-editor.w-md-editor {
-  border-radius: var(--amll-radius-md);
-  background-color: var(--amll-card);
-  color: var(--amll-ink);
-  box-shadow:
-    0 0 0 1px var(--amll-input),
-    0 1px 2px rgb(0 0 0 / 0.04);
-  overflow: hidden;
-  --md-editor-font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-  --md-editor-background-color: var(--amll-card);
-  --md-editor-box-shadow-color: var(--amll-line);
-  --color-fg-default: var(--amll-ink);
-  --color-canvas-default: var(--amll-card);
-  --color-border-default: var(--amll-line);
-}
-
-.docs-editor .w-md-editor-toolbar {
-  padding: 4px 6px;
-  background-color: var(--amll-surface-2);
-  border-bottom: 1px solid var(--amll-line);
-}
-
-.docs-editor .w-md-editor-toolbar li > button {
-  color: var(--amll-ink-2);
-  border-radius: 4px;
-}
-
-.docs-editor .w-md-editor-toolbar li > button:hover,
-.docs-editor .w-md-editor-toolbar li > button:focus {
-  color: var(--amll-primary);
-  background-color: var(--amll-primary-soft);
-}
-
-.docs-editor .w-md-editor-toolbar-divider {
-  background-color: var(--amll-line);
-}
-
-.docs-editor .w-md-editor-text {
-  padding: 12px 14px;
-  font-size: 13px !important;
-  line-height: 1.7 !important;
-}
-
-.docs-editor .w-md-editor-text-input {
-  caret-color: var(--amll-primary);
-}
-
-.docs-editor .w-md-editor-content {
-  border-radius: 0 0 var(--amll-radius-md) var(--amll-radius-md);
-}
-
-/* 深色下工具栏图标需要提亮一档，否则贴在 surface-2 上看不清 */
-html.dark .docs-editor .w-md-editor-toolbar li > button {
-  color: var(--amll-ink-2);
-}
-
-/* 聚焦时给编辑器一圈主色描边，和全站输入框的 focus 反馈保持一致 */
-.docs-editor .w-md-editor:focus-within {
-  box-shadow: 0 0 0 1px var(--amll-primary);
-}
-
 /* GitHub 风格告示块（marked-alert）：> [!NOTE] / [!TIP] / [!IMPORTANT] / [!WARNING] / [!CAUTION]
  * 标题文案由 ::after 输出中文，组件自带的英文 title 用 font-size: 0 隐藏（图标是固定尺寸 svg，不受影响）。
  */
@@ -1014,38 +1000,15 @@ html.dark .docs-editor .w-md-editor-toolbar li > button {
   margin-top: 0.45em;
 }
 
+/* 标题文案在 markdown.ts 里替换成中文（保留 marked-alert 自带的图标） */
 .docs-prose .markdown-alert-title {
   display: flex;
   align-items: center;
   gap: 4px;
   margin: 0 0 0.35em;
-  font-weight: 600;
-  font-size: 0;
-}
-
-.docs-prose .markdown-alert-title::after {
   font-size: 14px;
   line-height: 1.4;
-}
-
-.docs-prose .markdown-alert-note .markdown-alert-title::after {
-  content: '提示';
-}
-
-.docs-prose .markdown-alert-tip .markdown-alert-title::after {
-  content: '建议';
-}
-
-.docs-prose .markdown-alert-important .markdown-alert-title::after {
-  content: '重要';
-}
-
-.docs-prose .markdown-alert-warning .markdown-alert-title::after {
-  content: '警告';
-}
-
-.docs-prose .markdown-alert-caution .markdown-alert-title::after {
-  content: '注意';
+  font-weight: 600;
 }
 
 .docs-prose .markdown-alert svg {

@@ -31,7 +31,14 @@ func OKWithMsg(c *gin.Context, data any, message string) {
 	})
 }
 
-// Fail 失败响应
+// 业务错误码：需要前端按「原因」分支、而不是按文案分支时使用。
+// 文案随时会改，文案判断会在改字之后静默失效。
+const (
+	// CodeCaptchaFailed 人机验证未通过：前端据此保留验证码弹窗让用户重试
+	CodeCaptchaFailed = 4001
+)
+
+// 失败响应
 func Fail(c *gin.Context, httpCode, code int, message string) {
 	c.JSON(httpCode, Response{
 		Code:    code,

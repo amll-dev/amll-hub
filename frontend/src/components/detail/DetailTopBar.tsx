@@ -93,7 +93,7 @@ export function DetailTopBar({
   setShowModal: (v: boolean) => void;
 }) {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, openLogin } = useAuth();
 
   return (
     <header className="sticky top-0 z-50 border-b border-line bg-card/80 backdrop-blur-xl">
@@ -106,10 +106,10 @@ export function DetailTopBar({
             <span className="text-lg font-bold tracking-tight text-foreground">
               AMLL Hub {pageTitle}
             </span>
-            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-500">
               测试版
             </span>
-            <span className="absolute inset-x-0 top-full mt-0.5 whitespace-nowrap text-center text-[9px] leading-none text-ink-3">
+            <span className="absolute inset-x-0 top-full mt-0.5 whitespace-nowrap text-center text-[11px] leading-none text-ink-3">
               测试版本，不代表最终品质
             </span>
           </div>
@@ -131,7 +131,17 @@ export function DetailTopBar({
             showModal={showModal}
             setShowModal={setShowModal}
           />
-          <UserMenu />
+          {user ? (
+            <UserMenu />
+          ) : (
+            <button
+              type="button"
+              onClick={() => openLogin()}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+            >
+              登录
+            </button>
+          )}
         </div>
       </div>
     </header>

@@ -22,8 +22,10 @@ jobs:
         uses: actions/checkout@v7
 
       - name: 配置 Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          # sqlx 0.7.4（sea-orm 0.12 依赖）无法在 Rust 1.93+ 下编译，见 worker/Cargo.toml 注释
+          toolchain: "1.92.0"
           components: clippy
 
       - name: 缓存 Cargo
@@ -105,8 +107,9 @@ jobs:
         run: ${{ matrix.install_deps }}
 
       - name: 配置 Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.92.0"
           targets: ${{ matrix.target }}
 
       - name: 缓存 Cargo

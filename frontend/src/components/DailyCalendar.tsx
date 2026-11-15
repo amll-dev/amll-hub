@@ -159,7 +159,7 @@ export function DailyCalendar({
 
             if (cell.isToday)
               cls += ' !bg-primary !text-primary-foreground !border-primary font-semibold';
-            if (cell.hasRecommend && !cell.isToday) cls += ' !border-[#10b981] !text-[#065f46]';
+            if (cell.hasRecommend && !cell.isToday) cls += ' !border-success !text-success';
             if (cell.isSelected && !cell.isToday)
               cls += ' !border-primary !bg-primary/10 font-semibold';
 

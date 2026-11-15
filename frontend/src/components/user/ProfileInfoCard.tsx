@@ -1,15 +1,9 @@
 import { Cake, CalendarDays, ShieldQuestion, UserRound } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDate } from '@/lib/format';
-import type { Gender, PublicUserProfile } from '@/lib/types';
+import { GENDER_LABEL } from '@/lib/profile';
+import type { PublicUserProfile } from '@/lib/types';
 import { cn } from '@/lib/utils';
-
-const GENDER_LABEL: Record<Gender, string> = {
-  male: '男',
-  female: '女',
-  other: '其他',
-  unknown: '保密',
-};
 
 interface RowDef {
   key: string;

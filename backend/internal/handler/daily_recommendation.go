@@ -214,7 +214,7 @@ func (h *DailyRecommendationHandler) ListMine(c *gin.Context) {
 	defer cancel()
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	size, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	size := pkg.Clamp(pkg.ParseInt(c.Query("limit"), 20), 1, 200)
 
 	result, err := h.svc.ListBySubmitter(ctx, username, page, size)
 	if err != nil {

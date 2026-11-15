@@ -39,7 +39,7 @@ func (h *AnnouncementHandler) Audience(c *gin.Context) {
 // List GET /api/v1/manage/announcements?page=&limit=
 func (h *AnnouncementHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	limit := pkg.Clamp(pkg.ParseInt(c.Query("limit"), 20), 1, 200)
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()

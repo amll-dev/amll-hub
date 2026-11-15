@@ -1,7 +1,16 @@
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use meilisearch_sdk::client::Client;
 use meilisearch_sdk::indexes::Index;
 use serde_json::Value;
+
+/// 单批提交的最大尝试次数（含首次）
+const BATCH_MAX_ATTEMPTS: u32 = 3;
+/// wait_for_completion 的显式超时：大批量歌词文本索引不能用 SDK 默认超时
+const TASK_TIMEOUT: Duration = Duration::from_secs(600);
+/// 批次重试的基础退避
+const BATCH_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 /// 索引文档
 pub struct MeiliDocument {
@@ -29,6 +38,10 @@ pub struct MeiliDocument {
     pub line_count: i64,
     /// 提交时间戳（毫秒），用于搜索结果按新旧排序
     pub commit_timestamp: Option<i64>,
+    /// 所属分组 ID（组内最小 song_id），由同步后的分组重算写入
+    pub song_group_id: i64,
+    /// 是否为组内代表版本，Go 侧 isGroupHead = true 过滤依赖此字段
+    pub is_group_head: bool,
 }
 
 impl MeiliDocument {
@@ -55,11 +68,18 @@ impl MeiliDocument {
             "wordCount": self.word_count,
             "lineCount": self.line_count,
             "commitTimestamp": self.commit_timestamp,
+            "songGroupId": self.song_group_id,
+            "isGroupHead": self.is_group_head,
         })
     }
 }
 
 /// 批量更新 MeiliSearch 索引
+///
+/// 逐批提交存在「第 k 批失败、前 k-1 批已入库」的缺口：整轮同步返回错误后
+/// sync_state 不推进，下一轮 diff 以本地 DB 为准，缺失文档不会被重新提交。
+/// 因此这里对失败批次做有限重试 + 显式超时；仍失败时把失败批次的文档 id 带进错误，
+/// 由调用方标记该轮需全量重建索引（见 sync_task.rs 的 force_full_reindex）。
 pub async fn add_documents_in_batches(
     client: &Client,
     index_name: &str,
@@ -69,15 +89,55 @@ pub async fn add_documents_in_batches(
     let index: Index = client.index(index_name);
     let batch_size = if batch_size == 0 { 100 } else { batch_size };
 
-    for chunk in documents.chunks(batch_size) {
+    for (batch_idx, chunk) in documents.chunks(batch_size).enumerate() {
         let docs: Vec<Value> = chunk.iter().map(|d| d.to_json()).collect();
-        index
-            .add_documents(&docs, Some("id"))
-            .await
-            .context("add_documents")?
-            .wait_for_completion(client, None, None)
-            .await
-            .context("wait add_documents")?;
+        let ids: Vec<String> = chunk.iter().map(|d| d.id.clone()).collect();
+
+        let mut last_err: Option<anyhow::Error> = None;
+        for attempt in 1..=BATCH_MAX_ATTEMPTS {
+            let submitted = async {
+                index
+                    .add_documents(&docs, Some("id"))
+                    .await
+                    .context("add_documents")?
+                    .wait_for_completion(client, None, Some(TASK_TIMEOUT))
+                    .await
+                    .context("wait add_documents")?;
+                Ok::<(), anyhow::Error>(())
+            }
+            .await;
+
+            match submitted {
+                Ok(()) => {
+                    last_err = None;
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    if attempt < BATCH_MAX_ATTEMPTS {
+                        tracing::warn!(
+                            batch = batch_idx + 1,
+                            attempt,
+                            docs = docs.len(),
+                            error = %last_err.as_ref().unwrap(),
+                            "MeiliSearch 批次提交失败，准备重试"
+                        );
+                        tokio::time::sleep(BATCH_RETRY_DELAY * attempt).await;
+                    }
+                }
+            }
+        }
+
+        if let Some(e) = last_err {
+            anyhow::bail!(
+                "MeiliSearch 第 {} 批（{} 条）提交失败，前 {} 批已入库，需全量重建索引: {:#}；失败文档 id 前 10 个: {:?}",
+                batch_idx + 1,
+                docs.len(),
+                batch_idx,
+                e,
+                &ids[..ids.len().min(10)]
+            );
+        }
     }
 
     Ok(())
@@ -97,5 +157,41 @@ pub async fn delete_documents(client: &Client, index_name: &str, ids: &[String])
         .wait_for_completion(client, None, None)
         .await
         .context("wait delete_documents")?;
+    Ok(())
+}
+
+/// 分组字段的部分更新载荷：只带主键与三个分组字段
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GroupPatch {
+    pub id: String,
+    #[serde(rename = "songGroupId")]
+    pub song_group_id: i64,
+    #[serde(rename = "isGroupHead")]
+    pub is_group_head: bool,
+}
+
+/// 只更新分组的三个字段
+///
+/// ★ 必须用 add_or_update（PATCH 语义），不能用 add_documents
+///   —— 后者是 add_or_replace 的别名，会把文档整体替换掉，歌词等字段全部丢失。
+///   注意 0.27 版本没有名为 update_documents 的方法，部分更新就是 add_or_update。
+pub async fn patch_group_fields(
+    client: &Client,
+    index_name: &str,
+    patches: &[GroupPatch],
+) -> Result<()> {
+    if patches.is_empty() {
+        return Ok(());
+    }
+    let index: Index = client.index(index_name);
+    for chunk in patches.chunks(1000) {
+        index
+            .add_or_update(chunk, Some("id"))
+            .await
+            .context("add_or_update(group)")?
+            .wait_for_completion(client, None, None)
+            .await
+            .context("wait add_or_update(group)")?;
+    }
     Ok(())
 }

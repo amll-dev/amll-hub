@@ -1,4 +1,21 @@
-import { initProcessor, requireProcessor } from './wasm/processor';
+/**
+ * 应用侧 TTML 处理入口。
+ *
+ * 实际实现只有一套：`editor/modules/ttml-processor`（vite-plugin-wasm 同步加载）。
+ * 本文件保留异步签名与 Record 化的 metadata，只是为了不惊动既有调用点：
+ *
+ * - `parseTTML` / `generateTTML` 是 async（调用方已经 await，改成同步会是
+ *   大面积改动，且导入路径上原来就是动态 import）
+ * - metadata 的 Map 字段（agents / platformIds / rawProperties）在这里统一
+ *   转成普通对象，才能安全 JSON 化、进 React state、做深比较
+ *
+ * 不要再在这里引入第二份 wasm 胶水：两套同名导出、不同返回类型，
+ * 任何人 import 错地方都要调试半天（本目录原来的 `wasm/` 就是这么来的）。
+ */
+import {
+  generateTTML as generateTTMLSync,
+  parseTTML as parseTTMLSync,
+} from '@/editor/modules/ttml-processor';
 import {
   DEFAULT_GENERATOR_CONFIG,
   type Agent,
@@ -9,7 +26,11 @@ import {
 } from './types';
 
 export * from './types';
-export { initProcessor };
+
+/** wasm 已随 editor 模块同步加载，保留空实现仅为兼容既有 `await initProcessor()` */
+export async function initProcessor(): Promise<void> {
+  // no-op
+}
 
 /** wasm 原生返回结构（Rust 侧 serde 约定） */
 export type ProcessorResult<T> =
@@ -52,7 +73,6 @@ function fromWasmMap<T>(value: unknown): Record<string, T> | undefined {
 }
 
 /** 把 metadata 里的 Map 字段（agents / platformIds / rawProperties）归一成普通对象 */
-/** 把 metadata 里的 Map 字段（agents / platformIds / rawProperties）归一成普通对象 */
 function normalizeMetadata(metadata: TTMLMetadata): TTMLMetadata {
   const out: TTMLMetadata = { ...metadata };
   const agents = fromWasmMap<Agent>(metadata.agents);
@@ -94,8 +114,7 @@ function backfillAgentIds(content: string, lines: LyricLine[]): void {
 export async function parseTTML(content: string): Promise<ProcessorResult<TTMLResult>> {
   if (!content.trim()) return makeError('TTML 内容为空');
   try {
-    await initProcessor();
-    const raw = requireProcessor().parseTtml(content) as ProcessorResult<TTMLResult>;
+    const raw = parseTTMLSync(content) as ProcessorResult<TTMLResult>;
     if (!raw?.success) return raw?.error ? raw : makeError('TTML 解析失败');
     const lines = normalizeLines(raw.data?.lines ?? []);
     if (!lines.length) return makeError('TTML 中没有可解析的歌词行');
@@ -118,12 +137,23 @@ export async function generateTTML(
 ): Promise<ProcessorResult<string>> {
   if (!Array.isArray(result?.lines)) return makeError('歌词数据格式错误：lines 必须是数组');
   try {
-    await initProcessor();
-    const payload: TTMLResult = {
-      metadata: clone(result.metadata ?? {}),
+    // metadata 的 Map 字段在我们这层是普通对象，送进 wasm 前要还原成 Map
+    const payload = {
+      metadata: {
+        ...clone(result.metadata ?? {}),
+        agents: result.metadata?.agents
+          ? new Map(Object.entries(result.metadata.agents))
+          : undefined,
+        platformIds: result.metadata?.platformIds
+          ? new Map(Object.entries(result.metadata.platformIds))
+          : undefined,
+        rawProperties: result.metadata?.rawProperties
+          ? new Map(Object.entries(result.metadata.rawProperties))
+          : undefined,
+      },
       lines: clone(result.lines),
     };
-    const raw = requireProcessor().generateTtml(payload, config) as ProcessorResult<string>;
+    const raw = generateTTMLSync(payload as never, config) as ProcessorResult<string>;
     if (!raw?.success) return raw?.error ? raw : makeError('TTML 生成失败');
     if (typeof raw.data !== 'string' || !raw.data.trim()) {
       return makeError('TTML 生成结果为空');
@@ -131,57 +161,5 @@ export async function generateTTML(
     return { success: true, data: raw.data };
   } catch (err) {
     return toFailure(err);
-  }
-}
-
-/**
- * 解析 → 原地编辑 → 生成的文档封装。
- * 编辑器里所有改动都作用在 draft 上，original 保持只读供 diff 用。
- */
-export class TTMLDocument {
-  private constructor(
-    /** 打开时的原始数据，只读，供 diff 使用 */
-    private readonly original: TTMLResult,
-    /** 当前编辑态 */
-    private draft: TTMLResult,
-    /** 打开时的 TTML 原文 */
-    readonly sourceTtml: string
-  ) {}
-
-  /** 从 TTML 文本创建文档 */
-  static async create(content: string): Promise<ProcessorResult<TTMLDocument>> {
-    const parsed = await parseTTML(content);
-    if (!parsed.success) return parsed;
-    const original = parsed.data;
-    // 深拷贝一份作为草稿；原始结构中 agents 等字段已归一为普通对象，可安全 JSON 化
-    return {
-      success: true,
-      data: new TTMLDocument(original, clone(original), content),
-    };
-  }
-
-  get lines(): LyricLine[] {
-    return this.draft.lines;
-  }
-
-  get metadata(): TTMLMetadata {
-    return this.draft.metadata;
-  }
-
-  /** 生成当前草稿的 TTML 文本 */
-  async generate(config?: GeneratorConfig): Promise<ProcessorResult<string>> {
-    return generateTTML(this.draft, config);
-  }
-
-  /** 是否相对打开时的内容有改动（用于离开确认与保存按钮态） */
-  get dirty(): boolean {
-    return JSON.stringify(this.original) !== JSON.stringify(this.draft);
-  }
-
-  /** 放弃所有改动，回到打开时的状态 */
-  revert(): void {
-    const fresh = clone(this.original);
-    this.draft.metadata = fresh.metadata;
-    this.draft.lines = fresh.lines;
   }
 }

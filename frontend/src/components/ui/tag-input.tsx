@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { Sparkles, X } from 'lucide-react';
 
+/** 与后端 normalizePluginTags 对齐：单标签超过 32 字会被丢弃，前端先截断，
+ *  避免用户看到「加了但没保存」的黑洞 */
+const MAX_TAG_LEN = 32;
+
 /** 标签输入 */
 export function TagInput({
   tags,
@@ -22,9 +26,28 @@ export function TagInput({
 }) {
   const [input, setInput] = useState('');
 
+  /** 批量添加：粘贴「流行,摇滚」时按逗号/顿号拆成多个标签 */
+  const addMany = (raw: string) => {
+    const parts = raw
+      .split(/[,，、]/)
+      .map((part) => part.trim().slice(0, MAX_TAG_LEN))
+      .filter(Boolean);
+    // tags 是父组件的 props，连续 onAdd 期间不会即时更新，本地再记一份去重
+    const added: string[] = [];
+    let remaining = maxTags ? Math.max(0, maxTags - tags.length) : Number.POSITIVE_INFINITY;
+    for (const part of parts) {
+      if (remaining <= 0) break;
+      if (tags.includes(part)) continue;
+      if (added.includes(part)) continue;
+      onAdd(part);
+      added.push(part);
+      remaining -= 1;
+    }
+  };
+
   const add = () => {
-    const tag = input.trim();
-    if (tag && !tags.includes(tag) && (!maxTags || tags.length < maxTags)) onAdd(tag);
+    if (!input.trim()) return;
+    addMany(input);
     setInput('');
   };
 
@@ -34,6 +57,14 @@ export function TagInput({
         type="text"
         value={input}
         onChange={(e) => setInput(e.target.value)}
+        onPaste={(e) => {
+          // 只有带分隔符的粘贴才接管：普通文本继续走默认行为，避免选区/撤销被破坏
+          const text = e.clipboardData.getData('text');
+          if (!text || !/[,，、]/.test(text)) return;
+          e.preventDefault();
+          addMany(`${input}${text}`);
+          setInput('');
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault();

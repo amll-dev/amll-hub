@@ -2,7 +2,7 @@ import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { audioEngine } from '$/modules/audio/audio-engine';
 import { audioEngineStateAtom, currentDurationAtom } from '$/modules/audio/states';
-import { lyricLinesAtom, selectedLinesAtom } from '$/states/main';
+import { lineTimelineAtom, selectedLinesAtom } from '$/states/main';
 import { useHoverGuide } from '../hooks';
 import { useWaveformAnalyzer } from '../hooks/useWaveformAnalyzer';
 import { AudioRegion } from './AudioRegion';
@@ -12,7 +12,7 @@ import { HoverGuide } from './HoverGuide';
 export const AudioSlider = () => {
   const currentDuration = useAtomValue(currentDurationAtom);
   const engineState = useAtomValue(audioEngineStateAtom);
-  const lyricLines = useAtomValue(lyricLinesAtom);
+  const lineTimeline = useAtomValue(lineTimelineAtom);
   const selectedLines = useAtomValue(selectedLinesAtom);
 
   const wsContainerRef = useRef<HTMLDivElement>(null);
@@ -81,7 +81,7 @@ export const AudioSlider = () => {
     const pixelsPerMs = sliderWidthPx / currentDuration;
     const regions: { id: string; left: number; width: number }[] = [];
 
-    for (const line of lyricLines.lyricLines) {
+    for (const line of lineTimeline) {
       if (selectedLines.has(line.id)) {
         const left = line.startTime * pixelsPerMs;
         const width = (line.endTime - line.startTime) * pixelsPerMs;
@@ -89,7 +89,7 @@ export const AudioSlider = () => {
       }
     }
     return regions;
-  }, [lyricLines.lyricLines, selectedLines, currentDuration, sliderWidthPx]);
+  }, [lineTimeline, selectedLines, currentDuration, sliderWidthPx]);
 
   const handleTimelineMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // PluginVersionRepo 插件版本数据访问层
@@ -64,9 +65,28 @@ func (r *PluginVersionRepo) GetBySHA(ctx context.Context, sha string) (*model.Pl
 	return &v, nil
 }
 
-func (r *PluginVersionRepo) CountBySHA(ctx context.Context, sha string) (int64, error) {
+// LockBySHA 在事务内对同一 artifact 的所有版本行加行锁。
+// 两个版本并发删除同一个 sha 时，先拿锁的事务先删除并计数，后一个必须等它
+// 提交后才能读到最新行数，否则双方都会看到 remaining>0，对象永远无人删除。
+func (r *PluginVersionRepo) LockBySHA(ctx context.Context, tx *gorm.DB, sha string) error {
+	db := r.db.WithContext(ctx)
+	if tx != nil {
+		db = tx.WithContext(ctx)
+	}
+	var ids []int64
+	return db.Model(&model.PluginVersion{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("sha256 = ?", sha).
+		Pluck("id", &ids).Error
+}
+
+func (r *PluginVersionRepo) CountBySHA(ctx context.Context, tx *gorm.DB, sha string) (int64, error) {
+	db := r.db.WithContext(ctx)
+	if tx != nil {
+		db = tx.WithContext(ctx)
+	}
 	var n int64
-	if err := r.db.WithContext(ctx).Model(&model.PluginVersion{}).
+	if err := db.Model(&model.PluginVersion{}).
 		Where("sha256 = ?", sha).Count(&n).Error; err != nil {
 		return 0, err
 	}
@@ -86,24 +106,25 @@ func (r *PluginVersionRepo) ListByPlugin(ctx context.Context, pluginID int64) ([
 
 // PluginVersionSummaryRow 版本摘要查询行（不含 manifest / README）
 type PluginVersionSummaryRow struct {
-	ID            int64                 `gorm:"column:id"`
-	PluginID      int64                 `gorm:"column:plugin_id"`
-	Version       string                `gorm:"column:version"`
-	Channel       string                `gorm:"column:channel"`
-	APIVersion    int                   `gorm:"column:api_version"`
-	Platforms     model.JSONStringArray `gorm:"column:platforms"`
-	SHA256        string                `gorm:"column:sha256"`
-	SizeBytes     int64                 `gorm:"column:size_bytes"`
-	ReviewStatus  string                `gorm:"column:review_status"`
-	ListingStatus string                `gorm:"column:listing_status"`
-	ReviewComment string                `gorm:"column:review_comment"`
-	DownloadCount int64                 `gorm:"column:download_count"`
-	SubmitterInfo model.UserInfo        `gorm:"column:submitter_info"`
-	Reviewer      string                `gorm:"column:reviewer"`
-	ReviewerInfo  model.UserInfo        `gorm:"column:reviewer_info"`
-	SubmittedAt   time.Time             `gorm:"column:submitted_at"`
-	ReviewedAt    *time.Time            `gorm:"column:reviewed_at"`
-	ListedAt      *time.Time            `gorm:"column:listed_at"`
+	ID            int64                 `gorm:"column:id" json:"id"`
+	PluginID      int64                 `gorm:"column:plugin_id" json:"pluginId"`
+	Version       string                `gorm:"column:version" json:"version"`
+	Channel       string                `gorm:"column:channel" json:"channel"`
+	APIVersion    int                   `gorm:"column:api_version" json:"apiVersion"`
+	Platforms     model.JSONStringArray `gorm:"column:platforms" json:"platforms"`
+	SHA256        string                `gorm:"column:sha256" json:"sha256"`
+	SizeBytes     int64                 `gorm:"column:size_bytes" json:"sizeBytes"`
+	ReviewStatus  string                `gorm:"column:review_status" json:"reviewStatus"`
+	ListingStatus string                `gorm:"column:listing_status" json:"listingStatus"`
+	ReviewComment string                `gorm:"column:review_comment" json:"reviewComment"`
+	DownloadCount int64                 `gorm:"column:download_count" json:"downloadCount"`
+	SubmittedBy   string                `gorm:"column:submitted_by" json:"submittedBy"`
+	SubmitterInfo model.UserInfo        `gorm:"column:submitter_info" json:"submitterInfo"`
+	Reviewer      string                `gorm:"column:reviewer" json:"reviewer"`
+	ReviewerInfo  model.UserInfo        `gorm:"column:reviewer_info" json:"reviewerInfo"`
+	SubmittedAt   time.Time             `gorm:"column:submitted_at" json:"submittedAt"`
+	ReviewedAt    *time.Time            `gorm:"column:reviewed_at" json:"reviewedAt,omitempty"`
+	ListedAt      *time.Time            `gorm:"column:listed_at" json:"listedAt,omitempty"`
 }
 
 // ListSummariesByPluginIDs 批量查询发布者管理页所需的版本摘要
@@ -161,7 +182,10 @@ func (r *PluginVersionRepo) ListMine(ctx context.Context, q PluginVersionListQue
 	return items, total, nil
 }
 
-func (r *PluginVersionRepo) ListReviewQueue(ctx context.Context, q PluginReviewQueueQuery) ([]model.PluginVersion, int64, error) {
+// ListReviewQueue 审核队列：只取列表展示所需列。
+// 队列页不需要 manifest / readme_md / changelog_md，整行带出会让一页 20 条
+// 达到数百 KB 并原样序列化给前端。
+func (r *PluginVersionRepo) ListReviewQueue(ctx context.Context, q PluginReviewQueueQuery) ([]PluginVersionSummaryRow, int64, error) {
 	page, size := normalizePage(q.Page, q.PageSize)
 	base := r.db.WithContext(ctx).Model(&model.PluginVersion{}).
 		Joins("JOIN plugins p ON p.id = plugin_versions.plugin_id")
@@ -181,13 +205,20 @@ func (r *PluginVersionRepo) ListReviewQueue(ctx context.Context, q PluginReviewQ
 	if err := base.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	var items []model.PluginVersion
+	var items []PluginVersionSummaryRow
 	order := "plugin_versions.submitted_at DESC, plugin_versions.id DESC"
 	if q.Status == "" || q.Status == model.PluginReviewPending {
 		order = "plugin_versions.submitted_at ASC, plugin_versions.id ASC"
 	}
-	if err := base.Select("plugin_versions.*").Order(order).
-		Offset((page - 1) * size).Limit(size).Find(&items).Error; err != nil {
+	if err := base.Select(`plugin_versions.id, plugin_versions.plugin_id, plugin_versions.version,
+			plugin_versions.channel, plugin_versions.api_version, plugin_versions.platforms,
+			plugin_versions.sha256, plugin_versions.size_bytes,
+			plugin_versions.review_status, plugin_versions.listing_status, plugin_versions.review_comment,
+			plugin_versions.download_count, plugin_versions.submitted_by, plugin_versions.submitter_info,
+			plugin_versions.reviewer, plugin_versions.reviewer_info,
+			plugin_versions.submitted_at, plugin_versions.reviewed_at, plugin_versions.listed_at`).
+		Order(order).
+		Offset((page - 1) * size).Limit(size).Scan(&items).Error; err != nil {
 		return nil, 0, err
 	}
 	return items, total, nil

@@ -1,6 +1,7 @@
 import { atom, type createStore, useAtomValue } from 'jotai';
 import { atomWithStorage } from 'jotai/utils';
 import { type DependencyList, useEffect } from 'react';
+import { IS_MAC } from './platform';
 import { createLogger } from './logger';
 
 const keyBindingsLogger = createLogger('KeyBindings');
@@ -60,41 +61,33 @@ export const keyBindingTriggerModeAtom = atom(
   }
 );
 
-export function formatKeyBindings(cfg: KeyBindingsConfig): string {
-  return cfg
-    .map((key) => {
-      if (key.startsWith('Key')) return key.substring(3);
-      if (key.endsWith('Right')) return key.substring(0, key.length - 5);
-      if (key.endsWith('Left')) return key.substring(0, key.length - 4);
-      if (navigator.userAgent.includes('Mac')) {
-        if (key === 'Control') return '⌃';
-        if (key === 'Alt') return '⌥';
-        if (key === 'Shift') return '⇧';
-        if (key === 'Meta') return '⌘';
-        if (key === 'Backspace') return '⌫';
-      } else if (navigator.userAgent.includes('Windows')) {
-        if (key.startsWith('Control')) return 'Ctrl';
-        if (key === 'Meta') return 'Win';
-      }
-      return key;
-    })
-    .join(navigator.userAgent.includes('Mac') ? ' ' : ' + ');
+/**
+ * 单个按键码 → 展示用标签。
+ * `formatKeyBindings` / `formatKeyBindingsAsArray` 共用这一份，避免同一组合
+ * 在两个 UI 上显示成两种样子。
+ */
+function formatKeyLabel(key: string): string {
+  const code = removeSideOfKeyCode(key);
+  if (code.startsWith('Key')) return code.substring(3);
+  if (IS_MAC) {
+    if (code === 'Control') return '⌃';
+    if (code === 'Alt') return '⌥';
+    if (code === 'Shift') return '⇧';
+    if (code === 'Meta') return '⌘';
+    if (code === 'Backspace') return '⌫';
+    return code;
+  }
+  if (code.startsWith('Control')) return 'Ctrl';
+  if (code === 'Meta') return 'Win';
+  return code;
 }
 
 export function formatKeyBindingsAsArray(cfg: KeyBindingsConfig): string[] {
-  return cfg.map((key) => {
-    if (key.startsWith('Key')) return key.substring(3);
-    if (navigator.userAgent.includes('Mac')) {
-      if (key === 'Control') return '⌃';
-      if (key === 'Alt') return '⌥';
-      if (key === 'Shift') return '⇧';
-      if (key === 'Meta') return '⌘';
-    } else if (navigator.userAgent.includes('Windows')) {
-      if (key.startsWith('Control')) return 'Ctrl';
-      if (key === 'Meta') return 'Win';
-    }
-    return key;
-  });
+  return cfg.map(formatKeyLabel);
+}
+
+export function formatKeyBindings(cfg: KeyBindingsConfig): string {
+  return formatKeyBindingsAsArray(cfg).join(IS_MAC ? ' ' : ' + ');
 }
 
 export const RESET_KEYBINDING = Symbol('reset-keybinding');
@@ -108,26 +101,38 @@ export function atomWithKeybindingStorage(storageName: string, defaultValue: Key
       if (update) {
         if (update === RESET_KEYBINDING) set(keyAtom, defaultValue);
         else set(keyAtom, update);
-      } else {
-        try {
-          set(keyAtom, await recordShortcut());
-        } catch {
-          set(keyAtom, defaultValue);
-        }
       }
     }
   );
 }
 
-const blackListedKeys = new Set(['Bracket', 'Arrow']);
+/**
+ * 这些前缀的键左右是两个**不同的键**（`[` / `]`、方向键），不能剥掉 L/R 后缀。
+ * 名字按语义取：不是黑名单，是「保留左右区分的前缀」。
+ */
+const SIDE_SUFFIX_EXEMPT_PREFIXES = new Set(['Bracket', 'Arrow']);
+
 function removeSideOfKeyCode(code: string) {
-  for (const key of blackListedKeys) {
+  for (const key of SIDE_SUFFIX_EXEMPT_PREFIXES) {
     if (code.startsWith(key)) return code;
   }
   if (code.endsWith('Left')) return code.substring(0, code.length - 4);
   if (code.endsWith('Right')) return code.substring(0, code.length - 5);
   return code;
 }
+
+/**
+ * 组合键的统一字符串：**排序后拼接**。
+ * 不排序的话 `['Shift','Control','KeyZ']` 与 `['Control','Shift','KeyZ']`
+ * 是两个不同的键，用户先按哪个由手速决定，同一个组合会时灵时不灵。
+ * 注册侧（`registerKeyBindings`）与触发侧（keydown/keyup）必须都走这里。
+ */
+function joinKeyCodes(codes: Iterable<string>): string {
+  return [...codes].sort().join(' + ').trim();
+}
+
+/** 同一个组合被多个功能注册时会全部执行，提示一次，避免排查时无从下手 */
+const warnedConflicts = new Set<string>();
 
 const pressingKeys = new Set<string>();
 const registeredKeyBindings = new Map<string, Set<KeyBindingCallback>>();
@@ -178,8 +183,7 @@ window.addEventListener('keydown', (evt) => {
   pressingKeys.add(code);
 
   if (currentTriggerMode === KeyBindingTriggerMode.KeyDown) {
-    const joined = [...pressingKeys].join(' + ').trim();
-    triggerCallbacks(joined, evt, downTime);
+    triggerCallbacks(joinKeyCodes(pressingKeys), evt, downTime);
   }
 });
 
@@ -192,8 +196,7 @@ window.addEventListener('keyup', (evt) => {
   const code = removeSideOfKeyCode(evt.code);
 
   if (currentTriggerMode === KeyBindingTriggerMode.KeyUp) {
-    const joined = [...pressingKeys].join(' + ').trim();
-    triggerCallbacks(joined, evt, downTime);
+    triggerCallbacks(joinKeyCodes(pressingKeys), evt, downTime);
   }
 
   pressingKeys.delete(code);
@@ -211,7 +214,7 @@ export function forceInvokeKeyBindingAtom(
   evt?: MouseEvent | KeyboardEvent | TouchEvent
 ) {
   const keyBinding = store.get(thisAtom);
-  const joined = keyBinding.join(' + ').trim();
+  const joined = joinKeyCodes(keyBinding);
   const callbacks = registeredKeyBindings.get(joined);
 
   if (callbacks) {
@@ -242,9 +245,7 @@ export function isEditing(event: KeyboardEvent | MouseEvent) {
       target?.isContentEditable ||
       tagName === 'INPUT' ||
       tagName === 'SELECT' ||
-      tagName === 'TEXTAREA' ||
-      !!currentKeyDownEvent ||
-      !!currentKeyUpEvent
+      tagName === 'TEXTAREA'
     );
   };
   return (
@@ -261,9 +262,7 @@ export function isInteracting(event: KeyboardEvent | MouseEvent) {
       tagName === 'INPUT' ||
       tagName === 'SELECT' ||
       tagName === 'TEXTAREA' ||
-      tagName === 'BUTTON' ||
-      !!currentKeyDownEvent ||
-      !!currentKeyUpEvent
+      tagName === 'BUTTON'
     );
   };
   return (
@@ -276,11 +275,14 @@ export function registerKeyBindings(cfg: KeyBindingsConfig, callback: KeyBinding
   if (cfg.length === 0) {
     return () => {};
   }
-  const joined = [...cfg].join(' + ');
+  const joined = joinKeyCodes(cfg);
   let set = registeredKeyBindings.get(joined);
   if (!set) {
     set = new Set();
     registeredKeyBindings.set(joined, set);
+  } else if (set.size > 0 && !warnedConflicts.has(joined)) {
+    warnedConflicts.add(joined);
+    keyBindingsLogger.warn(`快捷键 ${joined} 已绑定 ${set.size} 个回调，本次注册会让它们同时执行`);
   }
   set.add(callback);
   return () => {
@@ -313,51 +315,4 @@ export function useKeyBindingAtom(
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deps 由调用方传入，长度运行时才确定，无法静态验证
   }, [keyBindings, callback, ...(deps || [])]);
   return keyBindings;
-}
-
-let currentKeyDownEvent: ((evt: KeyboardEvent) => void) | undefined;
-let currentKeyUpEvent: ((evt: KeyboardEvent) => void) | undefined;
-
-export function stopRecordingShortcut() {
-  if (currentKeyDownEvent) {
-    window.removeEventListener('keydown', currentKeyDownEvent);
-    currentKeyDownEvent = undefined;
-  }
-  if (currentKeyUpEvent) {
-    window.removeEventListener('keyup', currentKeyUpEvent);
-    currentKeyUpEvent = undefined;
-  }
-}
-
-export function recordShortcut(): Promise<KeyBindingsConfig> {
-  return new Promise((resolve, reject) => {
-    stopRecordingShortcut();
-    const recorded = new Set<string>();
-    const stack = new Set<string>();
-    const onKeyDown = (evt: KeyboardEvent) => {
-      recorded.add(evt.code);
-      stack.add(evt.code);
-      evt.preventDefault();
-      evt.stopPropagation();
-      evt.stopImmediatePropagation();
-    };
-    const onKeyUp = (evt: KeyboardEvent) => {
-      stack.delete(evt.code);
-      if (stack.size === 0) {
-        stopRecordingShortcut();
-        if (stack.has('Escape')) {
-          reject(new Error('User canceled'));
-        } else {
-          resolve([...recorded]);
-        }
-      }
-      evt.preventDefault();
-      evt.stopPropagation();
-      evt.stopImmediatePropagation();
-    };
-    currentKeyDownEvent = onKeyDown;
-    currentKeyUpEvent = onKeyUp;
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-  });
 }

@@ -59,6 +59,7 @@ export const queryKeys = {
   /** 文档列表 */
   docList: (params: { group?: string; q?: string; page?: number }) =>
     ['docs', 'list', params] as const,
+  docNav: ['docs', 'nav'] as const,
   /** 文档详情 */
   docDetail: (slug: string) => ['docs', 'detail', slug] as const,
   /** 文档管理列表 */
@@ -66,9 +67,14 @@ export const queryKeys = {
     ['docs', 'manage', params] as const,
   docRevisions: (id: number, page: number) => ['docs', 'revisions', id, page] as const,
   docRevision: (id: number, revId: number) => ['docs', 'revision', id, revId] as const,
-  notFoundRanking: (params: { limit?: number | 'all'; days?: number; platform?: string }) =>
-    ['not-found-ranking', params] as const,
+  notFoundRanking: (params: {
+    limit?: number | 'all';
+    offset?: number;
+    days?: number;
+    platform?: string;
+  }) => ['not-found-ranking', params] as const,
   latestSongs: ['latest-songs'] as const,
+  todayRecommendation: ['today-recommendation'] as const,
   search: (q: string, field: string, page: number) => ['search', { q, field, page }] as const,
   /** 按歌曲搜索目标歌词 */
   revisionTarget: (q: string) => ['revision-target', q] as const,
@@ -136,7 +142,6 @@ export const queryKeys = {
 
   // 每日推荐
   dailyList: ['daily-recommendations'] as const,
-  dailyToday: ['daily-recommendations', 'today'] as const,
   dailyLikeStatus: (id: number) => ['daily-recommendations', id, 'like'] as const,
   dailySubmissions: (page?: number) =>
     ['daily-recommendations', 'submissions', 'list', page] as const,
@@ -163,15 +168,14 @@ export const queryKeys = {
     sort?: string;
   }) => ['plugins', 'list', params] as const,
   pluginDetail: (key: string) => ['plugin', key] as const,
-  myPluginSubmissions: (params: { page?: number; pageSize?: number; status?: string }) =>
-    ['plugins', 'mine', params] as const,
   myPlugins: (params: { page?: number; pageSize?: number; q?: string }) =>
     ['plugins', 'mine-plugins', params] as const,
+  /** myPlugins 的前缀 key：插件改动后整组失效（queryKey 用前缀匹配） */
+  myPluginsRoot: ['plugins', 'mine-plugins'] as const,
   myPluginDetail: (key: string) => ['plugins', 'mine-plugin', key] as const,
   pluginComments: (key: string) => ['plugin', key, 'comments'] as const,
   pluginReviewQueue: (params: { page?: number; pageSize?: number; q?: string; status?: string }) =>
     ['plugins', 'review-queue', params] as const,
-  pluginReviewDetail: (id: number) => ['plugin-review', id] as const,
   adminPlugins: (params: { page?: number; pageSize?: number; q?: string }) =>
     ['plugins', 'admin', params] as const,
   adminPluginDetail: (id: number) => ['plugin', 'admin', id] as const,
@@ -195,7 +199,9 @@ export const queryKeys = {
 
   // 系统公告
   announcementAudience: ['announcements', 'audience'] as const,
-  announcements: (page: number) => ['announcements', 'list', page] as const,
+  /** 公告列表前缀：发布 / 发送完成后按前缀整体失效（页面里不要手写字面量） */
+  announcementsRoot: ['announcements', 'list'] as const,
+  announcements: (page: number) => [...queryKeys.announcementsRoot, page] as const,
   /** 单条公告发送状态 */
   announcement: (id: number) => ['announcements', 'detail', id] as const,
 

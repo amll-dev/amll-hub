@@ -163,9 +163,18 @@ export const LyricWordMenu = ({
       if (!line) return;
       const word = line.words[wordIndex];
       if (!word) return;
-      if (/^\s*$/.test(word.word) && !word.startTime && !word.endTime)
+
+      // 当前词是纯空白且没有时间：直接删掉，不额外建一条空行
+      if (/^\s*$/.test(word.word) && !word.startTime && !word.endTime) {
         line.words.splice(wordIndex, 1);
-      const wordsToMove = line.words.splice(wordIndex);
+        normalizeLineTime(line);
+        return;
+      }
+
+      // 「此后」不含当前词：从下一个词开始拆到新行
+      const wordsToMove = line.words.splice(wordIndex + 1);
+      if (wordsToMove.length === 0) return;
+
       const newLine = {
         ...newLyricLine(),
         isBG: line.isBG,

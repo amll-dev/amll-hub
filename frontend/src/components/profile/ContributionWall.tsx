@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import { api } from '@/lib/api';
+import { formatDate } from '@/lib/format';
 import { queryKeys } from '@/lib/query';
 import type { UserActivityDay } from '@/lib/types';
 
@@ -90,12 +91,6 @@ function buildGrid(year: number, dayMap: Map<string, UserActivityDay>): Cell[][]
   }
   if (week.length > 0) cells.push(week);
   return cells;
-}
-
-function formatDate(d: Date): string {
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
 }
 
 /** 今天的 YYYY-MM-DD */
@@ -193,7 +188,7 @@ export function ContributionWall({ username, scope = 'me' }: ContributionWallPro
               {monthMarks.map((m) => (
                 <span
                   key={`${m.label}-${m.week}`}
-                  className="absolute top-0 text-[10px] text-ink-3"
+                  className="absolute top-0 text-[11px] text-ink-3"
                   style={{ left: m.week * (CELL + GAP) }}
                 >
                   {m.label}
@@ -204,7 +199,7 @@ export function ContributionWall({ username, scope = 'me' }: ContributionWallPro
             <div className="flex">
               {/* 周几标签列 */}
               <div
-                className="mr-1 flex shrink-0 flex-col text-[10px] text-ink-3"
+                className="mr-1 flex shrink-0 flex-col text-[11px] text-ink-3"
                 style={{ height: 7 * (CELL + GAP) }}
               >
                 {WEEKDAY_LABELS.map((label, i) => (
@@ -234,7 +229,7 @@ export function ContributionWall({ username, scope = 'me' }: ContributionWallPro
       )}
 
       {/* 图例 */}
-      <div className="mt-3 flex items-center justify-end gap-1 text-[10px] text-ink-3">
+      <div className="mt-3 flex items-center justify-end gap-1 text-[11px] text-ink-3">
         <span>少</span>
         {[0, 1, 2, 3, 4].map((lv) => (
           <span

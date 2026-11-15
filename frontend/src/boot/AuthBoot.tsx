@@ -65,5 +65,7 @@ export function useAuthLoading(): boolean {
     staleTime: 5 * 60_000,
     retry: false,
   });
-  return !!getToken() && isPending && fetchStatus === 'fetching';
+  // `fetching` 只在请求进行中为真；首帧 query 还没启动时（idle）会误判为「已加载」，
+  // 于是「请先登录」先闪一下再变成正常内容。把 idle 也算进 loading。
+  return !!getToken() && (isPending || fetchStatus === 'fetching');
 }

@@ -119,6 +119,13 @@ func (s *MigrationService) Start(ctx context.Context, username string, submitter
 		ClosePrStatus: model.MigrationStatusPending,
 	}
 	if err := s.migRepo.CreateTask(ctx, task); err != nil {
+		// 上面的 GetActiveTask 只是普通 SELECT，挡不住两个请求同时通过检查。
+		// 真正的互斥由 github_migration_tasks 上的部分唯一索引
+		// uq_migration_active_per_user (username) WHERE status IN ('pending','running') 保证：
+		// 并发下第二个 INSERT 会撞 23505，语义与「已有进行中的任务」完全一致。
+		if isUniqueViolation(err) {
+			return nil, ErrMigrationInProgress
+		}
 		return nil, fmt.Errorf("create migration task: %w", err)
 	}
 	if submitter.Username == "" {
@@ -184,6 +191,11 @@ func (s *MigrationService) Retry(ctx context.Context, username string, id int64,
 	// 失败续传保留 cursor；已完成任务重新迁移则从头扫描
 	resetCursor := task.Status == model.MigrationStatusCompleted
 	if err := s.migRepo.ResetForRetry(ctx, task.ID, resetCursor); err != nil {
+		// 重置会把该任务改回 pending，若此时该用户已有另一条进行中的任务，
+		// 同样会被部分唯一索引拦下（唯一索引见 Start 的注释）。
+		if isUniqueViolation(err) {
+			return nil, ErrMigrationInProgress
+		}
 		return nil, fmt.Errorf("reset migration task: %w", err)
 	}
 

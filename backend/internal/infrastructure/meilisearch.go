@@ -52,12 +52,16 @@ func EnsureMeiliSearchIndex(client *meilisearch.Client, indexName string) error 
 	filterable := []string{
 		"platformIds_ncm", "platformIds_qq", "platformIds_spotify", "platformIds_apple",
 		"artists", "albums", "ttmlAuthorGithub", "ttmlAuthorGithubLogin",
+		// 索引层预分组（song_groups）：isGroupHead 用于搜索去重，id 用于回捞当前页完整文档，
+		// songGroupId 预留给「同组其他版本」查询 / 调试。主键默认不可 filter，必须显式声明。
+		"songGroupId", "isGroupHead", "id",
 	}
 	sortable := []string{
 		"commitTimestamp",
 	}
 	// rankingRules：纯相关性排序，不含 sort
-	// 同一歌曲多版本的时间排序在应用层处理（按歌曲名+平台ID分组后组内排序）
+	// 组内「取最新版本」已下沉到索引层（Worker 预计算 isGroupHead），
+	// 搜索时只需用 isGroupHead = true 过滤，不再在应用层拉全量做并查集分组。
 	rankingRules := []string{
 		"words", "typo", "proximity", "attribute", "exactness",
 	}
@@ -78,7 +82,8 @@ func EnsureMeiliSearchIndex(client *meilisearch.Client, indexName string) error 
 	// all=true 时返回全部命中
 	settings := meilisearch.Settings{
 		Pagination: &meilisearch.Pagination{
-			MaxTotalHits: 100000,
+			// 分页对象已从「文件」变为「歌」，1 万条覆盖 500 页（方案 §8）
+			MaxTotalHits: 10000,
 		},
 	}
 	if _, err := index.UpdateSettings(&settings); err != nil {

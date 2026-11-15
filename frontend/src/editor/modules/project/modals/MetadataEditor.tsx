@@ -15,6 +15,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { useImmerAtom } from 'jotai-immer';
 import { memo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useConfirmedAction } from '$/hooks/useConfirmedAction';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -55,7 +56,8 @@ interface MetadataItemEditorProps {
   entry: TTMLMetadata | null;
   option: SelectOption;
   setLyricLines: (args: (prev: TTMLLyric) => void) => void;
-  requestNeteaseMeta: (id: string) => Promise<void>;
+  /** 未提供时「从网易云获取元数据」按钮不渲染（审核页没有外部查询源） */
+  requestNeteaseMeta?: (id: string) => Promise<void>;
 }
 
 const contentTransition = {
@@ -90,7 +92,9 @@ interface MetadataValueEditorRowProps {
   removeValue: (index: number) => void;
   setFocusIndex: (value: number) => void;
   applySuggestionValues: (suggestions: string[]) => void;
-  requestNeteaseMeta: (id: string) => Promise<void>;
+  /** 未提供时「从网易云获取元数据」按钮不渲染（审核页没有外部查询源） */
+  requestNeteaseMeta?: (id: string) => Promise<void>;
+  appendDroppedValues: (text: string, firstIndex?: number) => void;
 }
 
 const MetadataValueEditorRow = memo(
@@ -111,6 +115,7 @@ const MetadataValueEditorRow = memo(
     setFocusIndex,
     applySuggestionValues,
     requestNeteaseMeta,
+    appendDroppedValues,
   }: MetadataValueEditorRowProps) => {
     const [suggestions, setSuggestions] = useState<MetaSuggestionResult[]>([]);
     const [isFocused, setIsFocused] = useState(false);
@@ -165,7 +170,8 @@ const MetadataValueEditorRow = memo(
     const isValid = validation ? validation.verifier(value) : true;
     const isButtonEnabled = !!url && isValid;
     const hasSuggestion = suggestions.length > 0;
-    const canFetchNeteaseMeta = option.value === 'ncmMusicId' && !isFocused && value.trim() !== '';
+    const canFetchNeteaseMeta =
+      !!requestNeteaseMeta && option.value === 'ncmMusicId' && !isFocused && value.trim() !== '';
 
     return (
       <div className={`flex items-center gap-2 ${styles.valueRow}`}>
@@ -189,6 +195,8 @@ const MetadataValueEditorRow = memo(
           onChange={(e) => updateValue(valueIndex, e.currentTarget.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
+              // 中文输入法选词时按 Enter 是「上屏」，不能当成追加/跳新行
+              if (e.nativeEvent.isComposing) return;
               e.preventDefault();
               addValue();
             } else if (e.key === 'Backspace' && e.currentTarget.value === '') {
@@ -211,7 +219,8 @@ const MetadataValueEditorRow = memo(
             setDragInputIndex(null);
             setIsDraggingCategory(false);
             const text = e.dataTransfer.getData('text');
-            if (text) updateValue(valueIndex, text);
+            // 与空白面板拖拽一致：按分隔符拆分，首个值写当前行，其余追加
+            if (text) appendDroppedValues(text, valueIndex);
           }}
         />
         {hasSuggestion && suggestions.length === 1 && suggestions[0]?.matchedValue !== value && (
@@ -268,7 +277,7 @@ const MetadataValueEditorRow = memo(
               if (!trimmed) return;
               setIsFetchingMeta(true);
               try {
-                await requestNeteaseMeta(trimmed);
+                await requestNeteaseMeta?.(trimmed);
               } finally {
                 setIsFetchingMeta(false);
               }
@@ -393,7 +402,7 @@ const MetadataItemEditor = memo(
     );
 
     const appendDroppedValues = useCallback(
-      (text: string) => {
+      (text: string, firstIndex?: number) => {
         const parts = splitDroppedValues(text);
         if (parts.length === 0) return;
 
@@ -402,6 +411,8 @@ const MetadataItemEditor = memo(
           const emptyIndices: number[] = [];
 
           metadata.value.forEach((val, i) => {
+            // 指定首行时该槽位会被覆盖，不参与空槽/去重统计
+            if (firstIndex === i) return;
             if (val.trim() === '') {
               emptyIndices.push(i);
             } else {
@@ -409,7 +420,17 @@ const MetadataItemEditor = memo(
             }
           });
 
-          for (const part of parts) {
+          // 拖到具体输入框：首个值写入这一行，其余按原有去重逻辑追加/填空槽
+          const partsToAppend = [...parts];
+          if (firstIndex !== undefined) {
+            const firstPart = partsToAppend.shift();
+            if (firstPart !== undefined) {
+              metadata.value[firstIndex] = firstPart;
+              existingSet.add(firstPart);
+            }
+          }
+
+          for (const part of partsToAppend) {
             if (existingSet.has(part)) continue;
 
             if (emptyIndices.length > 0) {
@@ -510,6 +531,7 @@ const MetadataItemEditor = memo(
               setDragInputIndex={setDragInputIndex}
               setIsDraggingCategory={setIsDraggingCategory}
               updateValue={updateValue}
+              appendDroppedValues={appendDroppedValues}
               addValue={addValue}
               removeValue={removeValue}
               setFocusIndex={setFocusIndex}
@@ -544,21 +566,6 @@ export const MetadataEditor = () => {
   // 订阅主题，主题切换时触发重渲染；accentStyle 每次渲染直接读取最新色阶。
   useAtomValue(resolvedThemeAtom);
   const accentStyle = readBrandAccentStyle();
-
-  /**
-   * 从网易云 ID 拉取歌曲资料并填进元数据。
-   *
-   * 审核页不搬网易云模块（tool 那边是「登录网易云后搜索并导入歌曲资料」，
-   * 涉及 OAuth 与 cookie 持久化）。审核页的元数据来自投稿本身，
-   * 运营方/作者该填的字段在下方表单里直接改，不需要外部查询源。
-   *
-   * 保留这个空实现（而不是删掉 prop）是为了让 `MetadataValueEditorRow`
-   * 的 props 形状与上游保持一致 —— 那里还有「粘贴 ncm ID → 查询」按钮，
-   * 点击后什么也不会发生，符合「审核页不提供该能力」的预期。
-   */
-  const requestNeteaseMeta = useCallback(async (_id: string) => {
-    // 审核页不提供网易云资料查询
-  }, []);
 
   const builtinOptions: SelectOption[] = useMemo(() => {
     const numeric = (value: string) => /^\d+$/.test(value);
@@ -758,12 +765,23 @@ export const MetadataEditor = () => {
     setCustomKey('');
   }, [customKey, setLyricLines]);
 
+  const confirmAction = useConfirmedAction();
+
   const clearAllMetadata = useCallback(() => {
-    setLyricLines((prev) => {
-      prev.metadata = [];
+    // 一次点击清空整张 metadata，且没有 undo —— 先确认
+    confirmAction({
+      title: '清空全部元数据？',
+      description: '所有 key 与取值都会被删除，且无法撤销。',
+      source: 'MetadataEditor',
+      successTitle: '已清空元数据',
+      run: () => {
+        setLyricLines((prev) => {
+          prev.metadata = [];
+        });
+        setActiveKey(builtinOptions[0]?.value ?? '');
+      },
     });
-    setActiveKey(builtinOptions[0]?.value ?? '');
-  }, [builtinOptions, setLyricLines]);
+  }, [builtinOptions, confirmAction, setLyricLines]);
 
   return (
     <Dialog
@@ -830,6 +848,8 @@ export const MetadataEditor = () => {
               onChange={(e) => setCustomKey(e.currentTarget.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
+                  // 中文输入法选词时按 Enter 是「上屏」，不能当成确认键名
+                  if (e.nativeEvent.isComposing) return;
                   e.preventDefault();
                   addCustomKey();
                 }
@@ -866,7 +886,6 @@ export const MetadataEditor = () => {
                     entry={activeEntry}
                     option={activeOption}
                     setLyricLines={setLyricLines}
-                    requestNeteaseMeta={requestNeteaseMeta}
                   />
                 </motion.div>
               )}

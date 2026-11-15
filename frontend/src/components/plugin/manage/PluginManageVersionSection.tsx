@@ -108,10 +108,12 @@ export function PluginManageVersionSection({
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={downloadMutation.isPending}
+                      disabled={
+                        downloadMutation.isPending && downloadMutation.variables?.id === v.id
+                      }
                       onClick={() => downloadMutation.mutate({ id: v.id, version: v.version })}
                     >
-                      {downloadMutation.isPending ? (
+                      {downloadMutation.isPending && downloadMutation.variables?.id === v.id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <FileArchive className="h-4 w-4" />
