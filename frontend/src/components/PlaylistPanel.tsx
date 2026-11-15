@@ -84,10 +84,7 @@ export function PlaylistPanel() {
                 {playlist.map((item, idx) => {
                   const isCurrent = idx === currentIndex;
                   return (
-                    <li
-                      key={item.uid ?? item.songId}
-                      ref={isCurrent ? currentItemRef : undefined}
-                    >
+                    <li key={item.uid ?? item.songId} ref={isCurrent ? currentItemRef : undefined}>
                       <div
                         className={`group flex items-center gap-2 px-3 py-2 transition-colors ${
                           isCurrent ? 'bg-primary-tint' : 'hover:bg-surface-2/60'

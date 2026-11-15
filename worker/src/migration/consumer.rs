@@ -739,7 +739,7 @@ pub async fn drain_close_pr_loop(
             async move {
                 let n = dropped.fetch_add(1, Ordering::Relaxed) + 1;
                 // 第一条一定告警（说明禁用期间仍有投递），之后按阈值采样
-                if n == 1 || n % DRAIN_LOG_EVERY == 0 {
+                if n == 1 || n.is_multiple_of(DRAIN_LOG_EVERY) {
                     warn!(
                         dropped = n,
                         "自动关闭 PR 已禁用，正在丢弃 migration.close_pr 消息"

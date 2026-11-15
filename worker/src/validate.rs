@@ -82,7 +82,7 @@ fn validate_metadata(meta: &TTMLMetadata, errors: &mut Vec<String>) {
         errors.push("歌词文件中未包含任何音乐平台 ID".to_string());
     }
 
-    if meta.author_ids.as_ref().map_or(true, |ids| {
+    if meta.author_ids.as_ref().is_none_or(|ids| {
         ids.is_empty()
             || ids
                 .iter()
@@ -91,7 +91,7 @@ fn validate_metadata(meta: &TTMLMetadata, errors: &mut Vec<String>) {
         errors.push("歌词文件中的 GitHub ID 不能为空且必须为纯数字。[查看文档](/docs/metadata-guide#%E9%80%90%E8%AF%8D%E6%AD%8C%E8%AF%8D%E4%BD%9C%E8%80%85-github-id--ttmlauthorgithub)".to_string());
     }
 
-    if meta.author_names.as_ref().map_or(true, |names| {
+    if meta.author_names.as_ref().is_none_or(|names| {
         names.is_empty() || names.iter().any(|name| name.trim().is_empty())
     }) {
         errors.push("歌词文件中的 GitHub用户名 不能为空。[查看文档](/docs/metadata-guide#%E9%80%90%E8%AF%8D%E6%AD%8C%E8%AF%8D%E4%BD%9C%E8%80%85-github-%E7%94%A8%E6%88%B7%E5%90%8D--ttmlauthorgithublogin)".to_string());

@@ -120,9 +120,7 @@ function localizeAlertTitles(html: string): string {
 export function renderDocsMarkdown(text: string): string {
   if (!text) return '';
   try {
-    const html = localizeAlertTitles(
-      docsMarked.parse(normalizeAlertMarkers(text)) as string
-    );
+    const html = localizeAlertTitles(docsMarked.parse(normalizeAlertMarkers(text)) as string);
     return DOMPurify.sanitize(html, {
       USE_PROFILES: { html: true, svg: true, svgFilters: true },
       ADD_ATTR: [

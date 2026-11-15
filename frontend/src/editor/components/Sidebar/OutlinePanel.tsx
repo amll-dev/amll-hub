@@ -99,7 +99,6 @@ export const OutlinePanel = memo(() => {
     >
       <div className={styles.dropIndicator} />
 
-
       <ViewportList overscan={10} items={outlineLines} viewportRef={containerRef}>
         {(line, index) => {
           const isSelected = selectedLines.has(line.id);

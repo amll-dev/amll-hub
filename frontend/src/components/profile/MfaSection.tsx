@@ -240,9 +240,7 @@ export function MfaSection() {
             <span
               className={cn(
                 'rounded px-1.5 py-0.5 text-[11px] font-medium',
-                enabledCount > 0
-                  ? 'bg-success/10 text-success'
-                  : 'bg-surface-2 text-ink-3'
+                enabledCount > 0 ? 'bg-success/10 text-success' : 'bg-surface-2 text-ink-3'
               )}
             >
               {enabledCount > 0 ? '已开启' : '未开启'}

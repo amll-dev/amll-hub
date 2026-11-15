@@ -124,10 +124,7 @@ export function RequestForm({
 
       {/* 歌曲名称 */}
       <motion.div variants={fadeUp}>
-        <label
-          htmlFor="request-song-name"
-          className="mb-1.5 block text-sm font-medium text-ink-2"
-        >
+        <label htmlFor="request-song-name" className="mb-1.5 block text-sm font-medium text-ink-2">
           歌曲名称 <span className="text-error">*</span>
         </label>
         <motion.input
