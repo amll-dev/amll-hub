@@ -82,6 +82,11 @@ import type {
   DocPayload,
   DocRevisionDetail,
   DocRevisionListResult,
+  ReviewerRecruitment,
+  ReviewerRecruitmentMember,
+  RecruitmentPayload,
+  RecruitmentDashboard,
+  RecruitmentProgress,
 } from './types';
 import type {
   CaptchaConfig,
@@ -1029,6 +1034,29 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ action, comment }),
     });
+  },
+
+  reviewerRecruitment: {
+    active(): Promise<{ active: ReviewerRecruitment | null }> {
+      return request('/api/v1/reviewer-recruitment/active');
+    },
+    dashboard(): Promise<RecruitmentDashboard> {
+      return request('/api/v1/manage/reviewer-recruitment');
+    },
+    create(input: RecruitmentPayload): Promise<ReviewerRecruitment> {
+      return request('/api/v1/manage/reviewer-recruitment', {
+        method: 'POST', body: JSON.stringify(input),
+      });
+    },
+    me(): Promise<{ member: ReviewerRecruitmentMember | null }> {
+      return request('/api/v1/reviewer-recruitment/me');
+    },
+    exit(): Promise<void> {
+      return request('/api/v1/reviewer-recruitment/exit', { method: 'POST' });
+    },
+    progress(id: number): Promise<{ progress: RecruitmentProgress | null }> {
+      return request(`/api/v1/submissions/${id}/recruitment`);
+    },
   },
 
   /**

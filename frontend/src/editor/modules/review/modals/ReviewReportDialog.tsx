@@ -86,6 +86,7 @@ export interface ReviewReportDialogProps {
   submitting: boolean;
   /** review = 审核员；creator = 投稿者修改 */
   mode?: 'review' | 'creator';
+  recruitment?: boolean;
 }
 
 /** 单个报告块的一行摘要 */
@@ -408,6 +409,7 @@ export const ReviewReportDialog = ({
   onSubmit,
   submitting,
   mode = 'review',
+  recruitment = false,
 }: ReviewReportDialogProps) => {
   const isCreator = mode === 'creator';
   const [dialog, setDialog] = useAtom(reviewReportDialogAtom);
@@ -745,7 +747,7 @@ export const ReviewReportDialog = ({
                       key={key}
                       type="button"
                       size="sm"
-                      className={action === key ? className : undefined}
+                      className={recruitment && key === 'approve' ? 'bg-blue-600 text-white hover:bg-blue-700' : action === key ? className : undefined}
                       variant={action === key ? 'default' : 'secondary'}
                       disabled={submitting}
                       onClick={() => {

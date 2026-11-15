@@ -9,7 +9,7 @@ import {
   type ContentMainTab,
   type SubmitTab,
 } from '@/atoms/creatorCenter';
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -37,7 +37,18 @@ import { PageContainer } from '@/components/PageContainer';
 import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
 import { statusMeta } from '@/components/submission/status';
 import { SubmissionListRows } from '@/components/submission/SubmissionListRows';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { CardDetailSkeleton, ListSkeleton } from '@/components/ui/Skeleton';
 import { ListPagination } from '@/components/ui/list-pagination';
 import { LyricSubmitForm } from '@/components/creator/LyricSubmitForm';
@@ -497,6 +508,19 @@ function SearchIpList() {
 
 export function CreatorCenter() {
   const { user, openLogin } = useAuth();
+  const queryClient = useQueryClient();
+  const participation = useQuery({
+    queryKey: ['reviewer-recruitment', 'me', user?.name],
+    queryFn: api.reviewerRecruitment.me,
+    enabled: Boolean(user),
+    refetchInterval: 30_000,
+  });
+  const exitRecruitment = useMutation({
+    mutationFn: api.reviewerRecruitment.exit,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['reviewer-recruitment'] });
+    },
+  });
   const canAccessRecruitment = Boolean(user?.isReviewer || user?.isAdmin);
   const navigate = useNavigate();
   const location = useLocation();
@@ -750,6 +774,38 @@ export function CreatorCenter() {
                 }}
               />
             </nav>
+          )}
+          {participation.data?.member && (
+            <div className="mt-6 px-3">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" className="w-full" disabled={exitRecruitment.isPending}>
+                    退出审核招募
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>确认退出审核招募？</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      退出后将清除本期招募的参与进度，已提交的歌词仍会保留。再次参与将重新计数。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => exitRecruitment.mutate()}>
+                      确认退出
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              {exitRecruitment.error && (
+                <p role="alert" className="mt-2 text-xs text-error">
+                  {exitRecruitment.error instanceof Error
+                    ? exitRecruitment.error.message
+                    : '退出失败，请重试'}
+                </p>
+              )}
+            </div>
           )}
         </aside>
 
