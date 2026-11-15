@@ -61,10 +61,10 @@ pub fn validate_lyrics_and_metadata(result: &TTMLResult) -> Result<(), Vec<Strin
 
 fn validate_metadata(meta: &TTMLMetadata, errors: &mut Vec<String>) {
     if meta.title.is_none() {
-        errors.push("歌词文件中未包含歌曲名称信息 (缺失 title 元数据)".to_string());
+        errors.push("歌词文件中未包含歌曲名称信息 (缺失 musicName 元数据)".to_string());
     }
     if meta.artist.is_none() {
-        errors.push("歌词文件中未包含音乐作者信息 (缺失 artist 元数据)".to_string());
+        errors.push("歌词文件中未包含音乐作者信息 (缺失 artists 元数据)".to_string());
     }
     if meta.album.is_none() {
         errors.push(
@@ -81,6 +81,21 @@ fn validate_metadata(meta: &TTMLMetadata, errors: &mut Vec<String>) {
     if !has_platform_id {
         errors.push("歌词文件中未包含任何音乐平台 ID".to_string());
     }
+
+    if meta.author_ids.as_ref().map_or(true, |ids| {
+        ids.is_empty()
+            || ids
+                .iter()
+                .any(|id| !id.chars().all(|ch| ch.is_ascii_digit()))
+    }) {
+        errors.push("歌词文件中的 GitHub ID 不能为空且必须为纯数字。[查看文档](/docs/metadata-guide#%E9%80%90%E8%AF%8D%E6%AD%8C%E8%AF%8D%E4%BD%9C%E8%80%85-github-id--ttmlauthorgithub)".to_string());
+    }
+
+    if meta.author_names.as_ref().map_or(true, |names| {
+        names.is_empty() || names.iter().any(|name| name.trim().is_empty())
+    }) {
+        errors.push("歌词文件中的 GitHub用户名 不能为空。[查看文档](/docs/metadata-guide#%E9%80%90%E8%AF%8D%E6%AD%8C%E8%AF%8D%E4%BD%9C%E8%80%85-github-%E7%94%A8%E6%88%B7%E5%90%8D--ttmlauthorgithublogin)".to_string());
+    }
 }
 
 fn validate_lyric_lines(lines: &[LyricLine], errors: &mut Vec<String>) {
@@ -95,6 +110,37 @@ fn validate_lyric_lines(lines: &[LyricLine], errors: &mut Vec<String>) {
 
     for (line_idx, line) in lines.iter().enumerate() {
         validate_single_line(line_idx, line, errors);
+    }
+
+    warn_cross_line_timeline_regressions(lines);
+}
+
+/// 跨行时间线单调性检查：只对主歌词行做，重叠超过阈值仅打 warning 日志，
+/// 不写入 `errors` —— 对唱 / 背景行的时间重叠是合法的，不能因此拒收投稿。
+fn warn_cross_line_timeline_regressions(lines: &[LyricLine]) {
+    /// 主歌词序列允许的最大重叠（毫秒），超过才告警，滤掉打轴误差
+    const OVERLAP_WARN_MS: u32 = 200;
+
+    let mut prev: Option<(usize, u32)> = None;
+    for (idx, line) in lines.iter().enumerate() {
+        // 带背景人声的行视作对唱 / 背景行，跳过以免误报
+        if line.background_vocal.is_some() {
+            continue;
+        }
+        if let Some((prev_idx, prev_end)) = prev
+            && line.start_time < prev_end
+            && prev_end - line.start_time > OVERLAP_WARN_MS
+        {
+            tracing::warn!(
+                prev_line = prev_idx + 1,
+                line = idx + 1,
+                prev_end_ms = prev_end,
+                start_ms = line.start_time,
+                overlap_ms = prev_end - line.start_time,
+                "主歌词跨行时间线倒退（仅告警，不拦截）"
+            );
+        }
+        prev = Some((idx, line.end_time));
     }
 }
 
@@ -181,6 +227,8 @@ mod tests {
             artist: Some(vec!["测试歌手".to_string()]),
             album: Some(vec!["测试专辑".to_string()]),
             platform_ids: Some(ids),
+            author_ids: Some(vec!["1234567".to_string()]),
+            author_names: Some(vec!["test-user".to_string()]),
             ..Default::default()
         }
     }
@@ -214,11 +262,37 @@ mod tests {
     fn missing_metadata_reports_each_field() {
         let r = result(TTMLMetadata::default(), vec![line(0, 100, "有内容的行")]);
         let errs = validate_lyrics_and_metadata(&r).unwrap_err();
-        assert_eq!(errs.len(), 4);
-        assert!(errs.iter().any(|e| e.contains("title")));
-        assert!(errs.iter().any(|e| e.contains("artist")));
+        assert_eq!(errs.len(), 6);
+        assert!(errs.iter().any(|e| e.contains("musicName")));
+        assert!(errs.iter().any(|e| e.contains("artists")));
         assert!(errs.iter().any(|e| e.contains("album")));
         assert!(errs.iter().any(|e| e.contains("平台 ID")));
+        assert!(errs.iter().any(|e| e.contains("GitHub ID")));
+        assert!(errs.iter().any(|e| e.contains("GitHub用户名")));
+    }
+
+    #[test]
+    fn invalid_github_id_reported() {
+        let mut meta = valid_meta();
+        meta.author_ids = Some(vec!["abc123".to_string()]);
+        let r = result(meta, vec![line(0, 100, "有内容的行")]);
+        let errs = validate_lyrics_and_metadata(&r).unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("GitHub ID") && e.contains("/docs/metadata-guide#"))
+        );
+    }
+
+    #[test]
+    fn blank_author_name_reported() {
+        let mut meta = valid_meta();
+        meta.author_names = Some(vec!["   ".to_string()]);
+        let r = result(meta, vec![line(0, 100, "有内容的行")]);
+        let errs = validate_lyrics_and_metadata(&r).unwrap_err();
+        assert!(
+            errs.iter()
+                .any(|e| e.contains("GitHub用户名") && e.contains("/docs/metadata-guide#"))
+        );
     }
 
     #[test]

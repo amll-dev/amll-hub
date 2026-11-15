@@ -18,9 +18,12 @@ import {
 import { useOnlineSearch } from '@/hooks/useOnlineSearch';
 import { usePlayer } from '@/hooks/usePlayer';
 import { api } from '@/lib/api';
+import { formatDurationSeconds } from '@/lib/format';
 import { qmCoverProxy } from '@/lib/qm';
 import { downloadText, sanitizeFileName } from '@/lib/download';
 import { buttonTap, fadeUp, listItem, staggerContainer } from '@/lib/motion';
+import { RowSkeleton } from '@/components/ui/Skeleton';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { ONLINE_LYRIC_EXT } from '@/components/LyricViewer';
 import { PageContainer } from '@/components/PageContainer';
 import type { OnlinePlatform, OnlineSearchHit } from '@/lib/types';
@@ -30,14 +33,6 @@ const PLATFORM_OPTIONS: { value: OnlinePlatform; label: string }[] = [
   { value: 'qq', label: 'QQ音乐' },
   { value: 'kugou', label: '酷狗' },
 ];
-
-/** 秒 -> mm:ss */
-function formatDuration(sec: number): string {
-  if (!Number.isFinite(sec) || sec <= 0) return '--:--';
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
 
 export function OnlineLyricSearch() {
   const {
@@ -273,10 +268,10 @@ function SearchResultList({
     return <p className="text-sm text-error">{error}</p>;
   }
   if (loading) {
-    return <ListSkeleton />;
+    return <RowSkeleton rowClassName="h-20 w-full rounded-md" />;
   }
   if (hits.length === 0) {
-    return <p className="text-sm text-ink-3">输入关键词开始搜索</p>;
+    return <EmptyState icon={Search} title="输入关键词开始搜索" size="sm" />;
   }
 
   const btnBase =
@@ -318,7 +313,7 @@ function SearchResultList({
               )}
               {/* 平台 ID 标签 */}
               <div className="mt-2 flex flex-wrap items-center gap-1">
-                <span className="inline-flex items-center gap-0.5 rounded border border-line bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-3">
+                <span className="inline-flex items-center gap-0.5 rounded border border-line bg-surface-2 px-1.5 py-0.5 text-[11px] text-ink-3">
                   <Hash className="h-2.5 w-2.5" />
                   {hit.platform}:{hit.platformId}
                 </span>
@@ -328,7 +323,7 @@ function SearchResultList({
             <div className="flex shrink-0 flex-col items-end gap-2">
               <div className="flex items-center gap-1 text-xs text-ink-3">
                 <Clock className="h-3.5 w-3.5" />
-                {formatDuration(hit.duration)}
+                {formatDurationSeconds(hit.duration)}
               </div>
               <div className="flex items-center gap-1">
                 {/* 播放 */}
@@ -395,17 +390,6 @@ function SongCover({ src, alt }: { src?: string; alt: string }) {
   return (
     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-surface-2 text-ink-3">
       <Music className="h-5 w-5" />
-    </div>
-  );
-}
-
-// ===== 骨架屏（对齐正常搜索的卡片骨架） =====
-function ListSkeleton() {
-  return (
-    <div className="space-y-2">
-      {[0, 1, 2, 3, 4].map((i) => (
-        <div key={i} className="amll-skeleton h-20 w-full rounded-md" />
-      ))}
     </div>
   );
 }

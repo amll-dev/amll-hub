@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 
 	"github.com/amll-dev/amll-hub/backend/internal/infrastructure"
@@ -186,7 +188,12 @@ func (s *AuthService) clearIdentity(ctx context.Context, userID string) {
 
 // isIdentityLocked 失败次数过多时临时锁定验证入口
 func (s *AuthService) isIdentityLocked(ctx context.Context, userID string) bool {
-	n, err := s.rdb.Exists(ctx, identityFailKey(userID)).Result()
+	// 必须读计数本身：recordIdentityFail 用 INCR 累加，EXISTS 只看键在不在（永远 0/1）
+	n, err := s.rdb.Get(ctx, identityFailKey(userID)).Int()
+	// 键不存在 = 从未失败过，不能走 fail-closed，否则所有用户一进来就被锁
+	if errors.Is(err, redis.Nil) {
+		return false
+	}
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"user_id": userID, "error": err}).Error("redis check identity lock failed, fail-closed")
 		return true

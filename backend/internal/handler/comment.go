@@ -22,6 +22,12 @@ func NewCommentHandler(svc *service.SubmissionService) *CommentHandler {
 
 // List GET /api/v1/submissions/:id/comments
 func (h *CommentHandler) List(c *gin.Context) {
+	user := currentUser(c)
+	if user == nil {
+		pkg.Unauthorized(c)
+		return
+	}
+
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
 		pkg.BadRequest(c, "无效的 id")
@@ -31,10 +37,17 @@ func (h *CommentHandler) List(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	comments, err := h.svc.ListComments(ctx, id)
+	// 把调用者身份传进 service：可见范围 = 本人 + 审核员/管理员，越权返回 404。
+	// 审核名单查询失败时按非审核员处理（fail-closed），不放大可见范围。
+	isReviewer, err := h.svc.CanManageSubmission(ctx, user.Name)
 	if err != nil {
-		logrus.WithError(err).Error("list comments failed")
-		pkg.InternalError(c, "查询评论失败")
+		logrus.WithError(err).Warn("check reviewer for comment list failed")
+		isReviewer = false
+	}
+
+	comments, err := h.svc.ListComments(ctx, id, user.Name, isReviewer)
+	if err != nil {
+		writeSubmissionErr(c, err)
 		return
 	}
 
@@ -66,7 +79,15 @@ func (h *CommentHandler) Create(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	if err := h.svc.AddComment(ctx, user, id, req.Content); err != nil {
+	// 与 List 一致：只有投稿者本人或审核员/管理员能评论，
+	// 归属不符按 404 处理（不泄露投稿是否存在）。
+	isReviewer, err := h.svc.CanManageSubmission(ctx, user.Name)
+	if err != nil {
+		logrus.WithError(err).Warn("check reviewer for add comment failed")
+		isReviewer = false
+	}
+
+	if err := h.svc.AddComment(ctx, user, id, req.Content, isReviewer); err != nil {
 		writeSubmissionErr(c, err)
 		return
 	}

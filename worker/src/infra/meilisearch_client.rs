@@ -55,6 +55,8 @@ async fn ensure_index(client: &Client, name: &str) -> Result<()> {
     ];
     // filterable 需覆盖后端 searchByExactID 的 filter 表达式引用的全部字段
     // （含 ttmlAuthorGithubLogin，否则按 ID 搜索报 502）
+    // filterable 必须与 Go 侧 EnsureMeiliSearchIndex 完全一致：
+    // 两边启动都会 set_settings，配置不一致时后启动的一方会覆盖前者（方案 §8）。
     let filterable: Vec<&str> = vec![
         "platformIds_ncm",
         "platformIds_qq",
@@ -64,6 +66,11 @@ async fn ensure_index(client: &Client, name: &str) -> Result<()> {
         "albums",
         "ttmlAuthorGithub",
         "ttmlAuthorGithubLogin",
+        // 索引层预分组：isGroupHead 用于搜索去重，id 用于回捞当前页完整文档，
+        // songGroupId 预留给「同组其他版本」查询 / 调试。主键默认不可 filter，须显式声明。
+        "songGroupId",
+        "isGroupHead",
+        "id",
     ];
 
     let settings = Settings::new()

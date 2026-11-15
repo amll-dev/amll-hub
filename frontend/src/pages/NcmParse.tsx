@@ -31,6 +31,7 @@ import { isQualityDowngraded, normalizeNcmLevel } from '@/lib/quality';
 import { QM_QUALITY_LABEL, type QmQuality } from '@/lib/types';
 import { PLATFORM_OPTIONS } from '@/lib/platform';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { RowSkeleton } from '@/components/ui/Skeleton';
 import { SegmentedSwitch } from '@/components/shared/SegmentedSwitch';
 import { SongSearchRow } from '@/components/shared/SongSearchRow';
 
@@ -212,7 +213,7 @@ function SearchModeContent() {
     if (searchError) {
       listNode = <p className="mt-2 text-sm text-red-500">{searchError}</p>;
     } else if (searchLoading && searchSongs === null) {
-      listNode = <ListSkeleton />;
+      listNode = <RowSkeleton rowClassName="h-16 rounded-xl" className="mt-4" />;
     } else if (!searchSongs || searchSongs.length === 0) {
       listNode = (
         <EmptyState size="sm" icon={Search} title="暂无搜索结果" description="换个关键词试试" />
@@ -445,7 +446,8 @@ function PlaylistResultsList() {
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
 
   if (playlistError) return <p className="mt-2 text-sm text-red-500">{playlistError}</p>;
-  if (playlistLoading && !playlistDetail) return <ListSkeleton />;
+  if (playlistLoading && !playlistDetail)
+    return <RowSkeleton rowClassName="h-16 rounded-xl" className="mt-4" />;
   if (!playlistDetail) {
     return (
       <EmptyState
@@ -996,16 +998,6 @@ function Cover({
       className={`${dim} flex shrink-0 items-center justify-center rounded-md bg-surface-2 text-ink-3`}
     >
       <Music className="h-5 w-5" />
-    </div>
-  );
-}
-
-function ListSkeleton() {
-  return (
-    <div className="mt-4 space-y-2">
-      {[0, 1, 2, 3, 4].map((i) => (
-        <div key={i} className="amll-skeleton h-16 rounded-xl" />
-      ))}
     </div>
   );
 }

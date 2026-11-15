@@ -10,7 +10,6 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
-	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"gorm.io/gorm"
 )
@@ -22,6 +21,27 @@ const (
 	ActionRevision     = "revision"
 	ActionMissingAudio = "missing_audio"
 )
+
+// ErrApproveNeedsManualFix GitHub 已上传成功、但其后的对象存储步骤失败：
+// 此时 DB 已置为 approved 且不能回滚（否则 GitHub 与 DB 更不一致），
+// GitHub 新版本 / MinIO 旧版本 / DB approved 三者不一致且无自动补偿，
+// 必须人工修复。该哨兵错误可被上层识别以便告警与人工介入。
+var ErrApproveNeedsManualFix = errors.New("approve side effect after github upload requires manual fix")
+
+// logApproveFailure 把 approve 失败原因结构化落日志，
+// 便于按 stage / 投稿 / 失败原因筛选需要人工处理的记录。
+func logApproveFailure(sub *model.Submission, stage string, cause error, extra logrus.Fields) {
+	fields := logrus.Fields{
+		"submission_id":  sub.ID,
+		"file_name":      sub.FileName,
+		"stage":          stage,
+		"failure_reason": cause.Error(),
+	}
+	for k, v := range extra {
+		fields[k] = v
+	}
+	logrus.WithFields(fields).Error("approve failed")
+}
 
 // ReviewInput 审核入参
 type ReviewInput struct {
@@ -248,7 +268,8 @@ func (s *ReviewService) ReleaseReview(ctx context.Context, user *SubmissionUser,
 	return nil
 }
 
-// claimAndRecord 在同一事务内原子完成
+// claimAndRecord 在同一事务内原子完成「抢占状态 + 写审核历史」。
+// 并发抢占与回滚的实现见 claim.go，审核与修订两条流程共用同一份。
 func (s *ReviewService) claimAndRecord(ctx context.Context, sub *model.Submission, newStatus, comment string, reviewerInfo model.UserInfo, now time.Time, fromStatuses []string) error {
 	sub.Status = newStatus
 	sub.Reviewer = reviewerInfo.Username
@@ -260,41 +281,19 @@ func (s *ReviewService) claimAndRecord(ctx context.Context, sub *model.Submissio
 		sub.ReviewComment = comment
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		ok, err := s.subRepo.UpdateStatusWhere(ctx, tx, sub, fromStatuses)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return ErrInvalidStatus
-		}
-		return s.historyRepo.Insert(ctx, tx, &model.ReviewHistory{
+		return claimAndRecord(ctx, tx, s.subRepo, s.historyRepo, sub, fromStatuses, &model.ReviewHistory{
 			SubmissionID: sub.ID,
 			Reviewer:     reviewerInfo.Username,
 			ReviewerInfo: reviewerInfo,
 			Status:       newStatus,
 			Comment:      comment,
-		})
+		}, nil)
 	})
 }
 
-// revertClaim 外部副作用失败时回滚状态迁移。
-// 使用脱离请求取消的 context，避免客户端断开后补偿无法执行。
+// revertClaim 外部副作用失败时回滚状态迁移（实现见 claim.go）。
 func (s *ReviewService) revertClaim(ctx context.Context, sub *model.Submission, fromStatus string) {
-	sub.Status = fromStatus
-	sub.Reviewer = ""
-	sub.ReviewerInfo = nil
-	sub.ReviewedAt = nil
-	sub.ReviewComment = ""
-	c, cancel := pkg.DetachedTimeout(ctx, 5*time.Second)
-	defer cancel()
-	ok, err := s.subRepo.UpdateStatusWhere(c, nil, sub, []string{model.StatusApproved, model.StatusRejected})
-	if err != nil || !ok {
-		logrus.WithFields(logrus.Fields{
-			"submission_id": sub.ID,
-			"target_status": fromStatus,
-			"err":           err,
-		}).Error("revert review claim failed, manual fix required")
-	}
+	revertClaim(ctx, s.subRepo, sub, fromStatus, "revert review claim failed, manual fix required")
 }
 
 func (s *ReviewService) approve(ctx context.Context, sub *model.Submission, comment string, user *SubmissionUser, reviewerInfo model.UserInfo, now time.Time, fromStatuses []string) error {
@@ -302,11 +301,13 @@ func (s *ReviewService) approve(ctx context.Context, sub *model.Submission, comm
 
 	// 1. 文件名必须符合仓库命名规范（不合法时不产生任何状态变更）
 	if err := ValidateRepoTTMLFileName(sub.FileName); err != nil {
+		logApproveFailure(sub, "validate_filename", err, nil)
 		return err
 	}
 
 	// 2. 原子抢占状态迁移权（并发审核员只有一个能成功）
 	if err := s.claimAndRecord(ctx, sub, model.StatusApproved, comment, reviewerInfo, now, fromStatuses); err != nil {
+		logApproveFailure(sub, "claim_and_record", err, nil)
 		return err
 	}
 
@@ -314,6 +315,7 @@ func (s *ReviewService) approve(ctx context.Context, sub *model.Submission, comm
 	srcKey := PendingLyricKey(sub.FileName)
 	reader, err := s.files.Get(ctx, srcKey)
 	if err != nil {
+		logApproveFailure(sub, "minio_get", err, nil)
 		s.revertClaim(ctx, sub, origStatus)
 		return fmt.Errorf("读取待审核文件失败: %w", err)
 	}
@@ -321,11 +323,13 @@ func (s *ReviewService) approve(ctx context.Context, sub *model.Submission, comm
 
 	content, err := ReadTTMLLimited(reader, s.files.MaxTTMLSize())
 	if err != nil {
+		logApproveFailure(sub, "read_ttml", err, nil)
 		s.revertClaim(ctx, sub, origStatus)
 		return err
 	}
 	prepared, err := PrepareTTML(ctx, s.validate, content, !sub.IsUnrearranged)
 	if err != nil {
+		logApproveFailure(sub, "prepare_ttml", err, nil)
 		s.revertClaim(ctx, sub, origStatus)
 		return err
 	}
@@ -333,6 +337,7 @@ func (s *ReviewService) approve(ctx context.Context, sub *model.Submission, comm
 	// 正常模式用重排结果覆盖待审核对象，保证对象存储与 GitHub 内容一致
 	if !sub.IsUnrearranged {
 		if err := s.files.UploadTTML(ctx, sub.FileName, prepared); err != nil {
+			logApproveFailure(sub, "minio_overwrite", err, nil)
 			s.revertClaim(ctx, sub, origStatus)
 			return fmt.Errorf("保存重排歌词失败: %w", err)
 		}
@@ -340,26 +345,25 @@ func (s *ReviewService) approve(ctx context.Context, sub *model.Submission, comm
 
 	// 4. 上传到 GitHub
 	if err := s.github.UploadFile(ctx, sub.FileName, bytes.NewReader(prepared), user.Name); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"submission_id": sub.ID,
-			"file":          sub.FileName,
-			"error":         err,
-		}).Error("github upload failed on approve")
+		logApproveFailure(sub, "github_upload", err, logrus.Fields{"github_state": "not_uploaded"})
 		s.revertClaim(ctx, sub, origStatus)
 		return fmt.Errorf("上传 GitHub 失败: %w", err)
 	}
 
-	// 4. 对象存储内移动：tg-lyrics/ → shtg-lyrics/
+	// 5. 对象存储内移动：tg-lyrics/ → shtg-lyrics/
 	dstKey := ApprovedLyricKey(sub.FileName)
 	if err := s.files.Move(ctx, srcKey, dstKey); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"submission_id": sub.ID,
-			"src":           srcKey,
-			"dst":           dstKey,
-			"error":         err,
-		}).Error("move object failed on approve")
-		// GitHub 已上传成功，文件移动失败：保留 approved 状态并记录，等待人工修复
-		return fmt.Errorf("移动对象存储文件失败（GitHub 已上传，需人工检查）: %w", err)
+		// GitHub 已上传成功，文件移动失败：不能回滚 DB（否则三处更不一致），
+		// 保留 approved 状态；结构化落日志并返回可被识别的明确错误，便于人工修复。
+		logApproveFailure(sub, "minio_move", err, logrus.Fields{
+			"src_key":      srcKey,
+			"dst_key":      dstKey,
+			"github_state": "uploaded",
+			"db_state":     model.StatusApproved,
+			"manual_fix":   true,
+		})
+		return fmt.Errorf("%w: submission=%d, file=%s, src=%s, dst=%s, cause=%v",
+			ErrApproveNeedsManualFix, sub.ID, sub.FileName, srcKey, dstKey, err)
 	}
 	return nil
 }

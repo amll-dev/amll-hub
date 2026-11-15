@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
-import { type FC, useEffect, useRef } from 'react';
+import { type FC, type KeyboardEvent, useEffect, useRef } from 'react';
 import type { SidebarPanelType } from '$/states/sidebar.ts';
 import type { SidebarTab } from './index';
 import styles from './SidebarTabBar.module.css';
@@ -26,6 +26,23 @@ export const SidebarTabBar: FC<SidebarTabBarProps> = ({
     prevTabIdsRef.current = new Set(tabs.map((t) => t.id));
   }, [tabs]);
 
+  // roving tabindex：只有当前 tab 可 Tab 聚焦，方向键在 tab 之间移动
+  const handleTabListKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (tabs.length === 0) return;
+    const currentIndex = tabs.findIndex((t) => t.id === activePanel);
+    let nextIndex = -1;
+    if (e.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') nextIndex = 0;
+    else if (e.key === 'End') nextIndex = tabs.length - 1;
+    if (nextIndex < 0) return;
+    e.preventDefault();
+    const next = tabs[nextIndex];
+    if (!next) return;
+    onSelectTab(next.id);
+    document.getElementById(`sidebar-tab-${next.id}`)?.focus();
+  };
+
   const singleTab = tabs.length === 1 ? tabs[0] : undefined;
   if (singleTab) {
     return (
@@ -36,7 +53,13 @@ export const SidebarTabBar: FC<SidebarTabBarProps> = ({
   }
 
   return (
-    <div className={styles.tabBar} role="tablist">
+    <div
+      className={styles.tabBar}
+      role="tablist"
+      aria-label="侧栏面板"
+      aria-orientation="horizontal"
+      onKeyDown={handleTabListKeyDown}
+    >
       <AnimatePresence mode="popLayout">
         {tabs.map((tab) => {
           const isActive = activePanel === tab.id;
@@ -45,9 +68,7 @@ export const SidebarTabBar: FC<SidebarTabBarProps> = ({
           return (
             <motion.div
               key={tab.id}
-              role="tab"
-              tabIndex={0}
-              aria-selected={isActive}
+              role="presentation"
               className={styles.tabItem}
               data-active={isActive}
               initial={isNewTab ? { y: 16, opacity: 0 } : false}
@@ -59,17 +80,22 @@ export const SidebarTabBar: FC<SidebarTabBarProps> = ({
                 damping: 28,
               }}
               onClick={() => onSelectTab(tab.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  onSelectTab(tab.id);
-                }
-              }}
             >
-              <span className={styles.tabTitle}>{tab.title}</span>
+              <button
+                type="button"
+                role="tab"
+                id={`sidebar-tab-${tab.id}`}
+                aria-selected={isActive}
+                aria-controls={`sidebar-panel-${tab.id}`}
+                tabIndex={isActive ? 0 : -1}
+                className={styles.tabButton}
+              >
+                <span className={styles.tabTitle}>{tab.title}</span>
+              </button>
               <button
                 type="button"
                 className={styles.closeButton}
-                aria-label="关闭"
+                aria-label={`关闭 ${tab.title}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   onCloseTab(tab.id);

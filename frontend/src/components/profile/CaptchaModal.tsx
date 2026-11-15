@@ -10,7 +10,14 @@ interface CaptchaModalProps {
   sceneId: string;
 }
 
-// 人机验证弹窗。
+/**
+ * 人机验证弹窗。
+ *
+ * 关闭时用 `inert` 而不是只靠 opacity + pointer-events：后者挡不住键盘，
+ * Tab 仍能聚焦到里面的关闭按钮，读屏也会因为「焦点落在 aria-hidden 区域」
+ * 报错。`inert` 同时屏蔽鼠标、焦点与辅助技术，且不会卸载 iframe
+ * （阿里云 SDK 需要在挂载时初始化，反复卸载会重建 iframe）。
+ */
 export function CaptchaModal({ open, ready, onClose, sceneId }: CaptchaModalProps) {
   return (
     <div
@@ -19,6 +26,7 @@ export function CaptchaModal({ open, ready, onClose, sceneId }: CaptchaModalProp
         !open && 'pointer-events-none opacity-0'
       )}
       aria-hidden={!open}
+      inert={!open}
       onClick={open ? onClose : undefined}
     >
       <div

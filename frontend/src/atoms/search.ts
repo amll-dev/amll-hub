@@ -14,9 +14,13 @@ export interface CommittedSearch {
 export const searchQueryAtom = atom('');
 /** 当前搜索 Tab（歌曲各字段 + 用户） */
 export const searchTabAtom = atom<SearchTab>('all');
-/** 是否已进入搜索模式（控制页面切换；基于"是否已发起过搜索"而非 query 非空） */
-export const searchHasQueryAtom = atom(false);
 /** 当前页码（1-based） */
 export const searchPageAtom = atom(1);
 /** 已提交的搜索 */
 export const searchCommittedAtom = atom<CommittedSearch | null>(null);
+/**
+ * 是否已进入搜索模式（控制页面切换；基于"是否已发起过搜索"而非 query 非空）。
+ * 由 `searchCommittedAtom` 派生：两处手写同步只要漏一处，首页就会停在
+ * 结果页但结果为空。
+ */
+export const searchHasQueryAtom = atom((get) => get(searchCommittedAtom) !== null);

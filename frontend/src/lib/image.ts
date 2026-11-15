@@ -1,6 +1,12 @@
 import imageCompression from 'browser-image-compression';
 
-const PASSTHROUGH_TYPES = new Set(['image/svg+xml', 'image/gif']);
+/** 只放行 GIF：canvas 重绘会丢掉动图帧，SVG 则一律拒绝（见 compressAvatar / compressBanner） */
+const PASSTHROUGH_TYPES = new Set(['image/gif']);
+
+/** 解码后的像素上限。createImageBitmap 按原始尺寸分配内存，
+ *  10000×10000 的解码结果约 400MB，足够把标签页卡死；超限直接拒绝。
+ */
+const MAX_DECODE_PIXELS = 40_000_000;
 
 /** 头像目标：正方形边长与体积上限 */
 const AVATAR_SIZE = 512;
@@ -73,7 +79,7 @@ function replaceExt(name: string, ext: string): string {
 
 /**
  * 按目标宽高比居中裁切、按 zoom 放大，再压缩为 WebP。
- * 无法解码时原样返回。SVG 是否放行由调用方决定。
+ * SVG 由调用方决定是否放行；其余无法解码的情况原样返回。
  */
 async function compressCropped(file: File, zoom: number, opts: CropCompressOptions): Promise<File> {
   if (opts.passthrough && PASSTHROUGH_TYPES.has(file.type)) return file;
@@ -89,6 +95,12 @@ async function compressCropped(file: File, zoom: number, opts: CropCompressOptio
   const sw = 'naturalWidth' in bitmap ? bitmap.naturalWidth : bitmap.width;
   const sh = 'naturalHeight' in bitmap ? bitmap.naturalHeight : bitmap.height;
   if (!sw || !sh) return file;
+  // 抛错而不是原样返回：这类图上传上去后端也压不动/渲染不动，越早拒绝反馈越明确
+  if (sw * sh > MAX_DECODE_PIXELS) {
+    // 先释放已经解码出来的大位图再抛：否则这块内存要等 GC，用户可能连续重试几次
+    if ('close' in bitmap) bitmap.close();
+    throw new Error('图片分辨率过高（超过 4000 万像素），请先缩小后再上传');
+  }
 
   // 先按目标比例铺满，超出目标比例时改按高度铺满
   const targetRatio = opts.width / opts.height;
@@ -145,6 +157,10 @@ async function compressCropped(file: File, zoom: number, opts: CropCompressOptio
 /**
  * 把头像图裁成居中正方形、按 zoom 放大后压缩为新的 File。
  *
+ * - SVG 直接抛错：同源 SVG 可执行脚本，与 compressBanner 保持一致，
+ *   不能因为头像上传入口校验宽松就原样放行
+ * - GIF 原样返回（重绘会丢帧，且动图头像本身无裁切意义）
+ *
  * @param file 原始图片
  * @param zoom 放大倍数，1 表示按最短边铺满正方形
  * @returns 压缩后的 File；无法处理时原样返回入参
@@ -155,6 +171,7 @@ export async function compressAvatar(
   options: CompressAvatarOptions = {}
 ): Promise<File> {
   const { size = AVATAR_SIZE, maxSizeMB = AVATAR_MAX_SIZE_MB } = options;
+  if (file.type === 'image/svg+xml') throw new Error('不支持 SVG 格式');
   return compressCropped(file, zoom, {
     width: size,
     height: size,

@@ -1,5 +1,5 @@
 import { useAtomValue, useSetAtom } from 'jotai';
-import { type FC, type KeyboardEvent, type MouseEvent, useCallback, useContext } from 'react';
+import { type KeyboardEvent, memo, type MouseEvent, useCallback, useContext } from 'react';
 import { audioEngine } from '$/modules/audio/audio-engine.ts';
 import type { WordSegment } from '$/modules/segmentation/utils/segment-processing.ts';
 import { displayRomanizationInSyncAtom } from '$/modules/settings/states/index.ts';
@@ -20,7 +20,7 @@ interface LyricWordSegmentProps {
   onBlur: (id: string) => void;
 }
 
-export const LyricWordSegment: FC<LyricWordSegmentProps> = ({
+export const LyricWordSegment = memo(function LyricWordSegment({
   lineId,
   segment,
   lineStartTime,
@@ -29,7 +29,7 @@ export const LyricWordSegment: FC<LyricWordSegmentProps> = ({
   onPointerLeave,
   onFocus,
   onBlur,
-}) => {
+}: LyricWordSegmentProps) {
   const setSelectedWordId = useSetAtom(selectedWordIdAtom);
   const setTimelineDrag = useSetAtom(timelineDragAtom);
   const { zoom, scrollLeft, scrollContainerRef } = useContext(SpectrogramContext);
@@ -136,4 +136,4 @@ export const LyricWordSegment: FC<LyricWordSegmentProps> = ({
       )}
     </div>
   );
-};
+});

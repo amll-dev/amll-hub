@@ -34,7 +34,7 @@ func (h *NotFoundHandler) GetRanking(c *gin.Context) {
 		days = 7
 	}
 
-	limit := -1 // -1 表示返回全部
+	limit := -1 // -1 表示返回全部（repo 层仍受 maxRankingLimit 硬上限约束）
 	if limitStr != "all" {
 		limit, err = strconv.Atoi(limitStr)
 		if err != nil || limit < 1 {
@@ -42,7 +42,13 @@ func (h *NotFoundHandler) GetRanking(c *gin.Context) {
 		}
 	}
 
-	total, items, err := h.svc.GetRanking(ctx, days, platform, limit)
+	// 服务端真分页：offset 默认 0，负数归零
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if offset < 0 {
+		offset = 0
+	}
+
+	total, items, err := h.svc.GetRanking(ctx, days, platform, limit, offset)
 	if err != nil {
 		logrus.WithError(err).Error("get not-found ranking failed")
 		pkg.InternalError(c, "查询排行榜失败")
@@ -53,6 +59,8 @@ func (h *NotFoundHandler) GetRanking(c *gin.Context) {
 		"total":          total,
 		"returned":       len(items),
 		"requestedLimit": limitStr,
+		"limit":          limit,
+		"offset":         offset,
 		"days":           days,
 		"items":          items,
 	})

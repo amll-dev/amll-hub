@@ -45,7 +45,7 @@ export function PlaylistPanel() {
             <div className="flex items-center gap-2">
               <ListMusic className="h-4 w-4 text-ink-2" />
               <h3 className="text-sm font-semibold text-foreground">播放列表</h3>
-              <span className="rounded-full bg-surface-2/60 px-1.5 py-0.5 text-[10px] text-ink-3">
+              <span className="rounded-full bg-surface-2/60 px-1.5 py-0.5 text-[11px] text-ink-3">
                 {playlist.length}
               </span>
             </div>
@@ -84,7 +84,10 @@ export function PlaylistPanel() {
                 {playlist.map((item, idx) => {
                   const isCurrent = idx === currentIndex;
                   return (
-                    <li key={`${item.songId}-${idx}`} ref={isCurrent ? currentItemRef : undefined}>
+                    <li
+                      key={item.uid ?? item.songId}
+                      ref={isCurrent ? currentItemRef : undefined}
+                    >
                       <div
                         className={`group flex items-center gap-2 px-3 py-2 transition-colors ${
                           isCurrent ? 'bg-primary-tint' : 'hover:bg-surface-2/60'

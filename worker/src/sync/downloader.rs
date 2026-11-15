@@ -4,17 +4,28 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use aws_sdk_s3::Client as S3Client;
+use bytes::Bytes;
 use tokio::sync::Semaphore;
 
 use crate::app::AppState;
 use crate::sync::index_parser::IndexEntry;
 
 /// 单个下载任务结果
+///
+/// `bytes` 用 `bytes::Bytes`（引用计数）而不是 `Vec<u8>`：zip 路径下取切片、clone
+/// 给上传、放进 DownloadResult 全是零拷贝，避免「全量解压 + 每任务克隆 + 上传复制」三份并存。
 #[derive(Debug)]
 pub struct DownloadResult {
     pub raw_lyric_file: String,
-    pub bytes: Vec<u8>,
+    pub bytes: Bytes,
     pub entry: IndexEntry,
+}
+
+/// zip 解压后的共享字节池：所有文件内容连续放在 `data` 里，`index` 只存 (offset, len)。
+/// 相比 `HashMap<String, Vec<u8>>`，全量只占 1 份内存，取用/上传都是零拷贝切片。
+struct ZipBlob {
+    data: Bytes,
+    index: HashMap<String, (usize, usize)>,
 }
 
 /// 等待全部下载任务完成并收集成功结果（panic 的任务仅告警）
@@ -98,11 +109,13 @@ pub async fn download_and_upload_from_zip(
 ) -> Result<Vec<DownloadResult>> {
     let total = entries.len();
 
-    // 在阻塞线程中解压并构建 HashMap<basename, bytes>
-    let files_map = tokio::task::spawn_blocking(move || -> Result<HashMap<String, Vec<u8>>> {
+    // 阻塞线程中解压到单个连续字节池：全量只占 1 份内存，
+    // 不再为每个文件分配一个 Vec<u8> 常驻，也不再在任务里 clone 出第二份。
+    let zip_blob = tokio::task::spawn_blocking(move || -> Result<ZipBlob> {
         let cursor = std::io::Cursor::new(zip_bytes);
         let mut archive = zip::ZipArchive::new(cursor).context("open zip archive")?;
-        let mut map = HashMap::new();
+        let mut data: Vec<u8> = Vec::new();
+        let mut index = HashMap::new();
         for i in 0..archive.len() {
             let mut file = archive
                 .by_index(i)
@@ -120,17 +133,21 @@ pub async fn download_and_upload_from_zip(
             if basename.is_empty() {
                 continue;
             }
-            let mut buf = Vec::with_capacity(file.size() as usize);
-            file.read_to_end(&mut buf)
+            let offset = data.len();
+            file.read_to_end(&mut data)
                 .with_context(|| format!("read zip entry {}", name))?;
-            map.insert(basename, buf);
+            let len = data.len() - offset;
+            index.insert(basename, (offset, len));
         }
-        Ok(map)
+        Ok(ZipBlob {
+            data: Bytes::from(data),
+            index,
+        })
     })
     .await
     .context("zip extract task")??;
 
-    let files_map = Arc::new(files_map);
+    let zip_blob = Arc::new(zip_blob);
     let semaphore = Arc::new(Semaphore::new(app.cfg.worker.concurrency));
     let on_progress = Arc::new(on_progress);
     let on_failure = Arc::new(on_failure);
@@ -146,12 +163,13 @@ pub async fn download_and_upload_from_zip(
         let app = app.clone();
         let on_progress = on_progress.clone();
         let on_failure = on_failure.clone();
-        let files_map = files_map.clone();
+        let zip_blob = zip_blob.clone();
         handles.push(tokio::spawn(async move {
             let _permit = permit;
 
-            let bytes = match files_map.get(&raw) {
-                Some(b) => b.clone(),
+            // Bytes::slice 是零拷贝，共享底层字节池
+            let bytes = match zip_blob.index.get(&raw) {
+                Some(&(offset, len)) => zip_blob.data.slice(offset..offset + len),
                 None => {
                     let err = anyhow::anyhow!("file not found in zip: {}", raw);
                     on_failure(&entry, err);
@@ -168,7 +186,8 @@ pub async fn download_and_upload_from_zip(
             }
 
             let key = format!("raw-lyrics/{}", raw);
-            match upload_to_minio(&app.s3, &app.cfg.minio.bucket, &key, &bytes, "application/xml; charset=utf-8").await {
+            // Bytes::clone 是引用计数，零拷贝，不再 copy_from_slice 复制第三份
+            match upload_bytes(&app.s3, &app.cfg.minio.bucket, &key, bytes.clone(), "application/xml; charset=utf-8").await {
                 Ok(_) => {
                     on_progress(cur, total, &raw);
                     Some(DownloadResult {
@@ -197,19 +216,40 @@ async fn download_one(
     raw: &str,
     _entry: &IndexEntry,
     github_cfg: &crate::config::GitHubConfig,
-) -> Result<Vec<u8>> {
-    let bytes = crate::sync::github::download_raw_bytes(http, url, github_cfg).await?;
+) -> Result<Bytes> {
+    let vec = crate::sync::github::download_raw_bytes(http, url, github_cfg).await?;
 
-    if bytes.is_empty() {
+    if vec.is_empty() {
         anyhow::bail!("downloaded file is empty: {}", raw);
     }
 
+    let bytes = Bytes::from(vec);
     let key = format!("raw-lyrics/{}", raw);
-    upload_to_minio(s3, bucket, &key, &bytes, "application/xml; charset=utf-8").await?;
+    // Bytes::clone 零拷贝
+    upload_bytes(s3, bucket, &key, bytes.clone(), "application/xml; charset=utf-8").await?;
     Ok(bytes)
 }
 
-/// 上传对象到 MinIO 指定 key（
+/// 上传 ByteStream（Bytes 版，零拷贝）
+async fn upload_bytes(
+    s3: &S3Client,
+    bucket: &str,
+    key: &str,
+    body: Bytes,
+    content_type: &str,
+) -> Result<()> {
+    s3.put_object()
+        .bucket(bucket)
+        .key(key)
+        .body(body.into())
+        .content_type(content_type)
+        .send()
+        .await
+        .with_context(|| format!("上传对象到 MinIO: {}", key))?;
+    Ok(())
+}
+
+/// 上传对象到 MinIO 指定 key（保留 &[u8] 签名，索引文件 / 迁移路径仍走这里）
 pub async fn upload_to_minio(
     s3: &S3Client,
     bucket: &str,
@@ -217,13 +257,5 @@ pub async fn upload_to_minio(
     bytes: &[u8],
     content_type: &str,
 ) -> Result<()> {
-    s3.put_object()
-        .bucket(bucket)
-        .key(key)
-        .body(bytes::Bytes::copy_from_slice(bytes).into())
-        .content_type(content_type)
-        .send()
-        .await
-        .with_context(|| format!("上传对象到 MinIO: {}", key))?;
-    Ok(())
+    upload_bytes(s3, bucket, key, Bytes::copy_from_slice(bytes), content_type).await
 }

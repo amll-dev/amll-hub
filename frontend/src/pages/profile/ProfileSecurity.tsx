@@ -6,14 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, Loader2, Mail, Phone } from 'lucide-react';
 import { z } from 'zod';
-import {
-  editCodeAtom,
-  editMsgAtom,
-  editTargetAtom,
-  editValueAtom,
-  pwdMsgAtom,
-  type EditTarget,
-} from '@/atoms/profileForm';
+import { pwdMsgAtom, type FormMsg } from '@/atoms/profileForm';
 import { useAuth } from '@/hooks/useAuth';
 import { useCountdown } from '@/hooks/useCountdown';
 import { api } from '@/lib/api';
@@ -56,6 +49,18 @@ type PasswordValues = z.infer<typeof passwordSchema>;
 
 /** 单个联系方式 / 密码的修改流程阶段 */
 type Stage = 'idle' | 'verify' | 'edit';
+
+/** 联系方式编辑目标 */
+type ContactTarget = 'email' | 'phone';
+
+/** 每个联系方式各自独立的编辑态 */
+interface ContactEdit {
+  value: string;
+  code: string;
+  msg: FormMsg;
+}
+
+const emptyContactEdit = (): ContactEdit => ({ value: '', code: '', msg: null });
 
 /**
  * 账号安全
@@ -111,56 +116,54 @@ function ProfileSecurityContent() {
   const pwdSaving = passwordMutation.isPending;
 
   // ===== 联系方式 =====
-  const [editTarget, setEditTarget] = useAtom(editTargetAtom);
-  const [editValue, setEditValue] = useAtom(editValueAtom);
-  const [editCode, setEditCode] = useAtom(editCodeAtom);
-  const [editMsg, setEditMsg] = useAtom(editMsgAtom);
+  // 邮箱 / 手机号各自持有独立的编辑值、验证码与反馈。
+  // 原先共用一份 atom state，两块同时进编辑态时输入值串台、提交目标错位。
+  const [emailEdit, setEmailEdit] = useState<ContactEdit>(emptyContactEdit);
+  const [phoneEdit, setPhoneEdit] = useState<ContactEdit>(emptyContactEdit);
+  const getEdit = (target: ContactTarget): ContactEdit =>
+    target === 'email' ? emailEdit : phoneEdit;
+  const patchEdit = (target: ContactTarget, patch: Partial<ContactEdit>) => {
+    if (target === 'email') setEmailEdit((prev) => ({ ...prev, ...patch }));
+    else setPhoneEdit((prev) => ({ ...prev, ...patch }));
+  };
   const editCountdown = useCountdown();
   const { needCaptcha, captchaType, requestCaptcha, closeCaptcha, reportResult } = useCaptcha();
 
-  const startEdit = (target: Exclude<EditTarget, null>) => {
-    setEditTarget(target);
-    setEditValue('');
-    setEditCode('');
+  const startEdit = (target: ContactTarget) => {
+    patchEdit(target, emptyContactEdit());
     editCountdown.reset();
-    setEditMsg(null);
   };
 
-  const cancelEdit = () => {
-    setEditTarget(null);
-    setEditValue('');
-    setEditCode('');
+  const cancelEdit = (target: ContactTarget) => {
+    patchEdit(target, emptyContactEdit());
     editCountdown.reset();
-    setEditMsg(null);
-    if (editTarget) setStage(editTarget, 'idle');
+    setStage(target, 'idle');
   };
 
   const sendEditCodeMutation = useMutation({
-    mutationFn: (token: string) => {
-      if (!editTarget) throw new Error('未选择修改项');
-      return api.sendCode({
-        checkType: editTarget,
-        dest: editValue.trim(),
+    mutationFn: ({ target, token }: { target: ContactTarget; token: string }) =>
+      api.sendCode({
+        checkType: target,
+        dest: getEdit(target).value.trim(),
         // method 必须是 reset：Casdoor 在 reset 分支才会把验证码关联到「当前登录用户」，
         // 之后由 reset-email-or-phone 用新地址校验并落库
         method: 'reset',
         captchaType,
         captchaToken: token,
-      });
-    },
-    onMutate: () => setEditMsg(null),
+      }),
+    onMutate: ({ target }) => patchEdit(target, { msg: null }),
     onSuccess: () => {
       editCountdown.start(60);
       reportResult(true);
       closeCaptcha();
     },
-    onError: (e: Error) => {
+    onError: (e: Error, { target }) => {
       const msg = e.message || '验证码发送失败';
       // 只有人机验证本身没通过才保留弹窗；其余（未配短信服务、频率限制等）
       // 直接展示后端给出的真实原因并关掉弹窗
       if (msg.includes('人机验证')) reportResult(false);
       else {
-        setEditMsg({ ok: false, text: msg });
+        patchEdit(target, { msg: { ok: false, text: msg } });
         reportResult(true);
         closeCaptcha();
       }
@@ -170,54 +173,53 @@ function ProfileSecurityContent() {
 
   // 点击发送验证码：先检查新地址是否已被占用
   const checkUserMutation = useMutation({
-    mutationFn: () => {
-      if (!editTarget) throw new Error('未选择修改项');
-      return api.checkUser({ checkType: editTarget, dest: editValue.trim(), method: 'signup' });
+    mutationFn: (target: ContactTarget) =>
+      api.checkUser({ checkType: target, dest: getEdit(target).value.trim(), method: 'signup' }),
+    onMutate: (target) => patchEdit(target, { msg: null }),
+    onSuccess: (_data, target) => {
+      if (needCaptcha) requestCaptcha((token) => sendEditCodeMutation.mutate({ target, token }));
+      else sendEditCodeMutation.mutate({ target, token: '' });
     },
-    onMutate: () => setEditMsg(null),
-    onSuccess: () => {
-      if (needCaptcha) requestCaptcha((token) => sendEditCodeMutation.mutate(token));
-      else sendEditCodeMutation.mutate('');
-    },
-    onError: (e: Error) => {
+    onError: (e: Error, target) => {
       const msg = e.message || '校验失败';
       if (msg.includes('已存在')) {
-        setEditMsg({
-          ok: false,
-          text: editTarget === 'phone' ? '该手机号已注册' : '该邮箱已注册',
+        patchEdit(target, {
+          msg: { ok: false, text: target === 'phone' ? '该手机号已注册' : '该邮箱已注册' },
         });
       } else {
-        setEditMsg({ ok: false, text: msg });
+        patchEdit(target, { msg: { ok: false, text: msg } });
       }
     },
   });
 
-  const handleSendEditCode = () => {
-    if (!editTarget || !editValue.trim()) {
-      setEditMsg({ ok: false, text: `请输入${editTarget === 'phone' ? '手机号' : '邮箱'}` });
+  const handleSendEditCode = (target: ContactTarget) => {
+    if (!getEdit(target).value.trim()) {
+      patchEdit(target, {
+        msg: { ok: false, text: `请输入${target === 'phone' ? '手机号' : '邮箱'}` },
+      });
       return;
     }
-    checkUserMutation.mutate();
+    checkUserMutation.mutate(target);
   };
 
   const saveEditMutation = useMutation({
-    mutationFn: () => {
-      if (!editTarget) throw new Error('未选择修改项');
-      return editTarget === 'email'
-        ? api.updateProfile({ email: editValue.trim(), code: editCode.trim() })
-        : api.updateProfile({ phone: editValue.trim(), phoneCode: editCode.trim() });
+    mutationFn: (target: ContactTarget) => {
+      const { value, code } = getEdit(target);
+      return target === 'email'
+        ? api.updateProfile({ email: value.trim(), code: code.trim() })
+        : api.updateProfile({ phone: value.trim(), phoneCode: code.trim() });
     },
-    onMutate: () => setEditMsg(null),
-    onSuccess: () => {
+    onMutate: (target) => patchEdit(target, { msg: null }),
+    onSuccess: (_data, target) => {
       // 先给反馈再刷新：refreshUser / identity 都要走一次 Casdoor 往返，
       // await 完才提示会让「修改」按钮看起来卡住。
-      setEditMsg({ ok: true, text: '修改成功' });
-      setTimeout(cancelEdit, 1000);
+      patchEdit(target, { msg: { ok: true, text: '修改成功' } });
+      setTimeout(() => cancelEdit(target), 1000);
       refreshUser();
       queryClient.invalidateQueries({ queryKey: queryKeys.identity });
     },
-    onError: (e: Error) => {
-      setEditMsg({ ok: false, text: e.message || '修改失败' });
+    onError: (e: Error, target) => {
+      patchEdit(target, { msg: { ok: false, text: e.message || '修改失败' } });
       queryClient.invalidateQueries({ queryKey: queryKeys.identity });
     },
   });
@@ -235,8 +237,9 @@ function ProfileSecurityContent() {
    * 单个联系方式的整块内容：只读 / 验证 / 修改 三态。
    * 关键点：验证通过后 onVerified 直接把阶段推进到 edit，不跳页。
    */
-  const renderContactRow = (target: 'email' | 'phone', label: string, Icon: typeof Mail) => {
+  const renderContactRow = (target: ContactTarget, label: string, Icon: typeof Mail) => {
     const stage = stages[target];
+    const edit = getEdit(target);
     const readOnlyValue = target === 'email' ? user.email || '未绑定' : user.phone || '未绑定';
 
     return (
@@ -291,16 +294,16 @@ function ProfileSecurityContent() {
           <div className="space-y-2">
             <Input
               type="text"
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
+              value={edit.value}
+              onChange={(e) => patchEdit(target, { value: e.target.value })}
               placeholder={target === 'email' ? '请输入新邮箱' : '请输入新号码'}
               className={fieldClass}
             />
             <div className="flex gap-2">
               <Input
                 type="text"
-                value={editCode}
-                onChange={(e) => setEditCode(e.target.value)}
+                value={edit.code}
+                onChange={(e) => patchEdit(target, { code: e.target.value })}
                 placeholder={target === 'email' ? '新邮箱收到的验证码' : '新号码收到的验证码'}
                 inputMode="numeric"
                 className={`${fieldClass} flex-1`}
@@ -308,8 +311,8 @@ function ProfileSecurityContent() {
               <Button
                 type="button"
                 variant="outline"
-                disabled={editCountdown.running || editSendingCode || !editValue.trim()}
-                onClick={handleSendEditCode}
+                disabled={editCountdown.running || editSendingCode || !edit.value.trim()}
+                onClick={() => handleSendEditCode(target)}
                 className="h-11 shrink-0 px-4 font-medium text-primary"
               >
                 {editSendBtnLabel}
@@ -319,19 +322,19 @@ function ProfileSecurityContent() {
               <Button
                 type="button"
                 {...buttonTap}
-                onClick={() => saveEditMutation.mutate()}
+                onClick={() => saveEditMutation.mutate(target)}
                 disabled={editSaving}
               >
                 {editSaving && <Loader2 className="h-4 w-4 animate-spin" />}
                 {editSaving ? '提交中…' : '修改'}
               </Button>
-              <Button type="button" variant="secondary" onClick={cancelEdit}>
+              <Button type="button" variant="secondary" onClick={() => cancelEdit(target)}>
                 取消
               </Button>
             </div>
-            {editMsg && (
-              <p className={`text-sm ${editMsg.ok ? 'text-success' : 'text-error'}`}>
-                {editMsg.text}
+            {edit.msg && (
+              <p className={`text-sm ${edit.msg.ok ? 'text-success' : 'text-error'}`}>
+                {edit.msg.text}
               </p>
             )}
           </div>

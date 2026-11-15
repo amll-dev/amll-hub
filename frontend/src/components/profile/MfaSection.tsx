@@ -9,6 +9,7 @@ import type { MfaSetupStart, MfaStatus, MfaStatusItem } from '@/lib/auth';
 import { useCountdown } from '@/hooks/useCountdown';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
   AlertDialog,
@@ -70,6 +71,8 @@ export function MfaSection() {
   });
   const methods = statusQuery.data?.methods ?? [];
   const enabledCount = methods.filter((m) => m.enabled).length;
+  // 维护期间后端返回 setupEnabled=false：只禁止新开启，已开启的仍允许关闭
+  const setupEnabled = statusQuery.data?.setupEnabled !== false;
 
   /** 立即改写本地缓存，让开关状态先于接口返回刷新 */
   const patchStatus = (updater: (methods: MfaStatusItem[]) => MfaStatusItem[]) => {
@@ -228,11 +231,49 @@ export function MfaSection() {
   const setupLabel = MFA_META.find((m) => m.type === setup?.mfaType)?.label ?? '';
 
   return (
-    <SectionCard
-      icon={<ShieldCheck />}
-      title="多因素认证"
-      description="开启后，登录时除密码外还需要第二重验证。"
-    >
+    <SectionCard icon={<ShieldCheck />} title="多因素认证">
+      {/* 总开关：开启默认走身份验证器 App；具体因子可在下方单独管理 */}
+      <div className="mb-3 flex items-center justify-between gap-4 rounded-lg border border-line bg-surface-2/40 p-4">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+            二次认证
+            <span
+              className={cn(
+                'rounded px-1.5 py-0.5 text-[11px] font-medium',
+                enabledCount > 0
+                  ? 'bg-success/10 text-success'
+                  : 'bg-surface-2 text-ink-3'
+              )}
+            >
+              {enabledCount > 0 ? '已开启' : '未开启'}
+            </span>
+          </p>
+          <p className="mt-0.5 text-xs text-ink-3">
+            {setupEnabled
+              ? '开启后，登录时除密码外还需要第二重验证；默认使用身份验证器 App。'
+              : '二次认证功能维护中，暂不可开启；已开启的用户仍可关闭。'}
+          </p>
+        </div>
+        <Switch
+          checked={enabledCount > 0}
+          disabled={
+            statusQuery.isLoading ||
+            statusQuery.isError ||
+            startMutation.isPending ||
+            disableMutation.isPending ||
+            (enabledCount === 0 && !setupEnabled)
+          }
+          onCheckedChange={(checked) => {
+            if (checked) {
+              if (!setupEnabled) return;
+              startMutation.mutate('app');
+            } else {
+              setConfirmDisable(true);
+            }
+          }}
+        />
+      </div>
+
       <div className="space-y-3">
         {MFA_META.map((meta) => {
           const item = methods.find((m) => m.mfaType === meta.type);
@@ -251,7 +292,7 @@ export function MfaSection() {
                   <p className="flex items-center gap-2 text-sm font-medium text-foreground">
                     {meta.label}
                     {enabled && item?.isPreferred && (
-                      <span className="rounded bg-primary-soft px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                      <span className="rounded bg-primary-soft px-1.5 py-0.5 text-[11px] font-medium text-primary">
                         首选
                       </span>
                     )}
@@ -284,13 +325,13 @@ export function MfaSection() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={startMutation.isPending}
+                    disabled={startMutation.isPending || !setupEnabled}
                     onClick={() => startMutation.mutate(meta.type)}
                   >
                     {startMutation.isPending && startMutation.variables === meta.type ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : null}
-                    开启
+                    {setupEnabled ? '开启' : '维护中'}
                   </Button>
                 )}
               </div>
@@ -298,21 +339,6 @@ export function MfaSection() {
           );
         })}
       </div>
-
-      {enabledCount > 0 && (
-        <div className="mt-4 flex items-center justify-between gap-4 border-t border-line pt-4">
-          <p className="text-xs text-ink-3">关闭后，登录将不再要求第二重验证。</p>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="shrink-0 text-error hover:text-error"
-            onClick={() => setConfirmDisable(true)}
-          >
-            关闭多因素认证
-          </Button>
-        </div>
-      )}
 
       {startMutation.isError && msg && (
         <p className={cn('mt-3 text-sm', msg.ok ? 'text-success' : 'text-error')}>{msg.text}</p>
@@ -326,6 +352,7 @@ export function MfaSection() {
               <h3 className="text-lg font-semibold text-foreground">{setupLabel}已开启</h3>
               <p className="text-sm text-ink-2">
                 请保存下面的恢复码。设备丢失或无法获取验证码时，可用它关闭多因素认证。
+                恢复码只显示这一次，且每个只能用一次。
               </p>
               <div className="flex items-center gap-2 rounded-md border border-line bg-surface-2 p-3">
                 <code className="min-w-0 flex-1 break-all font-mono text-sm text-foreground">

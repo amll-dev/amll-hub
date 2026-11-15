@@ -2,6 +2,7 @@ import { useAtom } from 'jotai';
 import { useImmerAtom } from 'jotai-immer';
 import { Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useConfirmedAction } from '$/hooks/useConfirmedAction';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -59,6 +60,7 @@ export const VocalTagsEditor = () => {
   const [editingValue, setEditingValue] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [newTagValue, setNewTagValue] = useState('');
+  const confirmAction = useConfirmedAction();
 
   const vocalTags = lyricLines.vocalTags ?? [];
   const artistNames = useMemo(() => {
@@ -99,26 +101,42 @@ export const VocalTagsEditor = () => {
                   <Button
                     variant="secondary"
                     className="text-error"
-                    onClick={() => {
-                      setLyricLines((draft) => {
-                        draft.lyricLines.forEach((line) => {
-                          line.vocal = [];
-                        });
-                      });
-                    }}
+                    onClick={() =>
+                      confirmAction({
+                        title: '清空逐行演唱者分配？',
+                        description: '只清除每行的分配，演唱者标签保留；操作无法撤销。',
+                        source: 'VocalTagsEditor',
+                        successTitle: '已清空分配',
+                        run: () => {
+                          setLyricLines((draft) => {
+                            draft.lyricLines.forEach((line) => {
+                              line.vocal = [];
+                            });
+                          });
+                        },
+                      })
+                    }
                   >
                     清空分配
                   </Button>
                   <Button
                     variant="destructive"
-                    onClick={() => {
-                      setLyricLines((draft) => {
-                        draft.vocalTags = [];
-                        draft.lyricLines.forEach((line) => {
-                          line.vocal = [];
-                        });
-                      });
-                    }}
+                    onClick={() =>
+                      confirmAction({
+                        title: '清空全部演唱者标签？',
+                        description: '演唱者标签与逐行分配都会被删除，且无法撤销。',
+                        source: 'VocalTagsEditor',
+                        successTitle: '已清空演唱者标签',
+                        run: () => {
+                          setLyricLines((draft) => {
+                            draft.vocalTags = [];
+                            draft.lyricLines.forEach((line) => {
+                              line.vocal = [];
+                            });
+                          });
+                        },
+                      })
+                    }
                   >
                     <Trash2 className="size-4" />
                     清空

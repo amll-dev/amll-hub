@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useAtom } from 'jotai';
 import { useForm } from 'react-hook-form';
@@ -45,6 +45,16 @@ export function ProfileInfo() {
     resolver: zodResolver(profileSchema),
     defaultValues: { displayName: user?.displayName ?? '' },
   });
+  // 直链进入时首帧 user 还没加载，defaultValues 会被定死为空串。
+  // user 就绪后回填一次；只在首次就绪时 reset，避免之后 refreshUser 覆盖用户正在编辑的昵称。
+  const userLoadedRef = useRef(false);
+  const { reset } = profileForm;
+  useEffect(() => {
+    if (user && !userLoadedRef.current) {
+      userLoadedRef.current = true;
+      reset({ displayName: user.displayName ?? '' });
+    }
+  }, [user, reset]);
 
   const avatarMutation = useMutation({
     // 本地先裁成居中正方形并压缩
@@ -103,7 +113,7 @@ export function ProfileInfo() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,image/avif"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 // 先弹预览框确认构图，确认后才压缩上传

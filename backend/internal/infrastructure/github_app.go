@@ -93,7 +93,7 @@ func (c *GitHubAppClient) installationToken(ctx context.Context) (string, error)
 		return "", fmt.Errorf("read token response: %w", err)
 	}
 	if resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("create installation token failed: status=%d body=%s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("create installation token failed: status=%d body=%s", resp.StatusCode, truncateStr(string(body), 200))
 	}
 
 	var tokenResp struct {
@@ -105,7 +105,7 @@ func (c *GitHubAppClient) installationToken(ctx context.Context) (string, error)
 		return "", fmt.Errorf("decode token response: %w", err)
 	}
 	if tokenResp.Token == "" {
-		return "", fmt.Errorf("installation token empty, body=%s", string(body))
+		return "", fmt.Errorf("installation token empty, body=%s", truncateStr(string(body), 200))
 	}
 
 	c.cachedToken = tokenResp.Token

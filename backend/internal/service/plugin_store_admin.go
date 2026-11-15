@@ -60,11 +60,24 @@ func (s *PluginStoreService) AdminDeleteVersion(ctx context.Context, operator *P
 		}
 		return err
 	}
-	if err := s.versions.Delete(ctx, nil, versionID); err != nil {
-		return err
-	}
-	remaining, err := s.versions.CountBySHA(ctx, v.SHA256)
-	if err != nil {
+	// 删除与计数必须在同一事务内，并先锁住同 sha 的版本行，否则并发删除
+	// 两个共用同一 artifact 的版本时，双方都会看到对方尚未提交的删除，
+	// 各自得到 remaining>0，对象永远没人删。
+	var remaining int64
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.versions.LockBySHA(ctx, tx, v.SHA256); err != nil {
+			return err
+		}
+		if err := s.versions.Delete(ctx, tx, versionID); err != nil {
+			return err
+		}
+		n, err := s.versions.CountBySHA(ctx, tx, v.SHA256)
+		if err != nil {
+			return err
+		}
+		remaining = n
+		return nil
+	}); err != nil {
 		return err
 	}
 	if remaining == 0 {
@@ -94,8 +107,16 @@ func (s *PluginStoreService) AdminDeletePlugin(ctx context.Context, operator *Pl
 	for _, v := range versions {
 		shas = append(shas, v.SHA256)
 	}
+	// 评论与评分只按 plugin_key 关联，没有外键级联；不在这里一起删掉，
+	// 同名重建的插件会直接继承旧评论和平均分（包括已下架插件的差评）。
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.versions.DeleteByPluginID(ctx, tx, pluginID); err != nil {
+			return err
+		}
+		if err := s.comments.DeleteByPluginKey(ctx, tx, plugin.PluginKey); err != nil {
+			return err
+		}
+		if err := s.ratings.DeleteByPluginKey(ctx, tx, plugin.PluginKey); err != nil {
 			return err
 		}
 		return s.plugins.Delete(ctx, tx, pluginID)
@@ -103,7 +124,7 @@ func (s *PluginStoreService) AdminDeletePlugin(ctx context.Context, operator *Pl
 		return err
 	}
 	for _, sha := range shas {
-		if remaining, err := s.versions.CountBySHA(ctx, sha); err == nil && remaining == 0 {
+		if remaining, err := s.versions.CountBySHA(ctx, nil, sha); err == nil && remaining == 0 {
 			if err := s.files.DeleteArtifact(ctx, sha); err != nil {
 				logrus.WithError(err).Warn("delete plugin artifact failed")
 			}

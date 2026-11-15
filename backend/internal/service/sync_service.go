@@ -17,6 +17,12 @@ import (
 	"gorm.io/gorm"
 )
 
+// 与 Worker 约定的平台映射重建标记：老库升级后需要跑一次修复
+const (
+	platformMappingsRebuildKey     = "platform_mappings_rebuild"
+	platformMappingsRebuildVersion = "v2"
+)
+
 // SyncService 同步触发与状态查询
 type SyncService struct {
 	cfg          *config.Config
@@ -74,7 +80,12 @@ func (s *SyncService) TriggerSync(ctx context.Context, triggeredBy string) (*Tri
 	}
 	lastSyncedAt, _ := s.syncRepo.GetLastSyncedAt(ctx)
 
-	if localCommit != "" && localCommit == remoteCommit {
+	// 平台映射重建尚未完成时，即使 commit 一致也要让 Worker 跑一次：
+	// 旧库的唯一约束会把多版本共享的平台 ID 收敛到一首歌上。
+	rebuildState, _ := s.syncRepo.GetStateValue(ctx, platformMappingsRebuildKey)
+	needsMappingsRebuild := rebuildState != platformMappingsRebuildVersion
+
+	if localCommit != "" && localCommit == remoteCommit && !needsMappingsRebuild {
 		return &TriggerSyncResult{
 			Status:           "up_to_date",
 			Message:          "当前已为最新版本",

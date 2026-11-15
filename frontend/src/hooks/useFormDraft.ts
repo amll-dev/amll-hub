@@ -26,23 +26,42 @@ export function useFormDraft<T>(key: string, debounceMs = 500) {
   });
 
   const timer = useRef<number | null>(null);
+  // 最后一次 set 的值。T 本身可能是 null，所以用单独的 pending 标记区分「尚未修改」。
+  const lastRef = useRef<T | null>(null);
+  const pendingRef = useRef(false);
+
+  const flush = useCallback(() => {
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+    if (!pendingRef.current) return;
+    pendingRef.current = false;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(lastRef.current));
+    } catch {
+      // 存储满/隐私模式：草稿保存失败不影响主流程
+    }
+  }, [storageKey]);
 
   const set = useCallback(
     (next: T) => {
+      lastRef.current = next;
+      pendingRef.current = true;
       if (timer.current !== null) window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => {
-        try {
-          localStorage.setItem(storageKey, JSON.stringify(next));
-        } catch {
-          // 存储满/隐私模式：草稿保存失败不影响主流程
-        }
-      }, debounceMs);
+      timer.current = window.setTimeout(flush, debounceMs);
     },
-    [storageKey, debounceMs]
+    [flush, debounceMs]
   );
 
   const clearDraft = useCallback(() => {
-    if (timer.current !== null) window.clearTimeout(timer.current);
+    // 先清 pending，否则提交成功后卸载组件会把旧草稿又写回去。
+    if (timer.current !== null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+    pendingRef.current = false;
+    lastRef.current = null;
     try {
       localStorage.removeItem(storageKey);
     } catch {
@@ -50,12 +69,8 @@ export function useFormDraft<T>(key: string, debounceMs = 500) {
     }
   }, [storageKey]);
 
-  // 卸载时把未落盘的最后一次修改立即写入
-  useEffect(() => {
-    return () => {
-      if (timer.current !== null) window.clearTimeout(timer.current);
-    };
-  }, []);
+  // 卸载时把未落盘的最后一次修改立即写入，而不是只把计时器丢掉。
+  useEffect(() => flush, [flush]);
 
   return { restored, set, clearDraft };
 }

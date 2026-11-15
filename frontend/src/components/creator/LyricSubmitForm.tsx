@@ -33,6 +33,7 @@ import { RevisionDiffPreview } from '@/components/creator/RevisionDiffPreview';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { UnrearrangedToggle } from '@/components/submission/UnrearrangedToggle';
+import { ValidationErrors } from '@/components/submission/ValidationErrors';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 // 从 TTML 元数据自动推断语言代码（模块级常量，保持引用稳定）
@@ -132,6 +133,10 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     null
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // 缓存「已上传成功但投稿创建失败」的 TTML。重试时直接复用同一个 fileName，
+  // 不再上传第二份，避免每次重试都在 MinIO 里新增一个无引用对象（孤儿越积越多）。
+  // 单个孤儿的最终回收需要后端 tempKey + TTL 清理任务配合，前端无法删除对象。
+  const uploadedTtmlRef = useRef<{ file: File; fileName: string } | null>(null);
 
   // 已自动识别的语言（仅用于提示文案）；用户手动调整后清空
   const [autoLangs, setAutoLangs] = useState<string[]>([]);
@@ -301,7 +306,15 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   // 上传文件并创建投稿（status: pending=提交审核 / draft=存草稿）
   const submitMutation = useMutation({
     mutationFn: async (params: { file: File; status: 'pending' | 'draft' }) => {
-      const { fileName } = await api.uploadTtml(params.file, params.file.name);
+      let fileName: string;
+      const cached = uploadedTtmlRef.current;
+      if (cached && cached.file === params.file) {
+        // 上次上传成功但 createSubmission 失败，复用已上传的对象，不重复上传
+        fileName = cached.fileName;
+      } else {
+        ({ fileName } = await api.uploadTtml(params.file, params.file.name));
+        uploadedTtmlRef.current = { file: params.file, fileName };
+      }
       // 元数据两种模式都从 /validate 的结果取；解析不到才退回文件名
       const title = validation?.metadata?.title?.[0] ?? params.file.name.replace(/\.[^.]+$/, '');
       const allLangs = [...languages, ...otherLangs];
@@ -386,6 +399,8 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   const reset = () => {
     // 让在途的本地解析 / 校验结果作废
     loadSeqRef.current++;
+    // 投稿已成功结束（或用户主动重选），清掉 TTML 上传缓存
+    uploadedTtmlRef.current = null;
     setFile(null);
     setValidation(null);
     setValidateError('');
@@ -687,11 +702,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
                 <AlertTitle>{isUnrearranged ? '格式校验未通过' : '校验未通过'}</AlertTitle>
                 <AlertDescription>
                   {validation.parseError && <p className="text-xs">{validation.parseError}</p>}
-                  {validation.errors.map((err, i) => (
-                    <p key={i} className="text-xs">
-                      • {err}
-                    </p>
-                  ))}
+                  <ValidationErrors errors={validation.errors} />
                 </AlertDescription>
               </Alert>
             )}

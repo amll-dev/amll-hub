@@ -1,6 +1,28 @@
 package service
 
-import "errors"
+import (
+	"errors"
+	"unicode/utf8"
+)
+
+// upstreamErrBodyLimit 上游响应体拼进 error 时的最大字节数。
+// 上游正常返回几百字节 JSON；但网关 502 / HTML 错误页可能是 MB 级，
+// 而这类 error 会被 logrus.WithError 打成一条日志 —— 按条数轮转的话
+// 一条就能吃掉整个文件配额，后续日志全被挤掉。
+const upstreamErrBodyLimit = 512
+
+// truncateBody 截断上游响应体（仅用于拼进 error）。
+// 按 UTF-8 rune 边界回退，避免把中文错误页截出半个字符。
+func truncateBody(b []byte, limit int) string {
+	if len(b) <= limit {
+		return string(b)
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(b[cut]) {
+		cut--
+	}
+	return string(b[:cut]) + "...(truncated)"
+}
 
 // 通用typed error
 
@@ -28,6 +50,9 @@ var ErrMfaSetupRequired = errors.New("mfa setup required")
 // ErrMfaOperationFailed MFA 管理操作被 Casdoor 拒绝
 var ErrMfaOperationFailed = errors.New("mfa operation failed")
 
+// ErrMfaSetupDisabled 二次认证新开启已暂时关闭
+var ErrMfaSetupDisabled = errors.New("mfa setup disabled")
+
 // ErrPasswordUpdateRequired 登录前需要先修改密码
 var ErrPasswordUpdateRequired = errors.New("password update required")
 
@@ -45,6 +70,12 @@ var ErrUserNotFound = errors.New("user not found")
 
 // ErrInvalidInput 输入参数非法（业务层校验失败）
 var ErrInvalidInput = errors.New("invalid input")
+
+// ErrAvatarTooLarge 头像超过大小上限
+var ErrAvatarTooLarge = errors.New("avatar too large")
+
+// ErrAvatarFormatUnsupported 头像格式不在白名单内（SVG 等）
+var ErrAvatarFormatUnsupported = errors.New("avatar format unsupported")
 
 // ErrUpstreamUnavailable 上游服务不可用或返回错误
 // 用于 NCM API / Meilisearch / GitHub API / 在线搜索 provider 等外部依赖失败

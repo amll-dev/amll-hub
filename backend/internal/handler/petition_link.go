@@ -55,8 +55,28 @@ func (h *PetitionLinkHandler) Match(c *gin.Context) {
 	pkg.OK(c, gin.H{"items": items})
 }
 
+// canManage 判断用户是否为审核员/管理员
+func (h *PetitionLinkHandler) canManage(ctx context.Context, name string) bool {
+	if h.reviewers != nil {
+		if ok, err := h.reviewers.IsReviewer(ctx, name); err == nil && ok {
+			return true
+		}
+	}
+	if h.admins != nil {
+		if ok, err := h.admins.IsAdmin(ctx, name); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
 // List GET /api/v1/submissions/:id/petitions
 func (h *PetitionLinkHandler) List(c *gin.Context) {
+	user := currentUser(c)
+	if user == nil {
+		pkg.Unauthorized(c)
+		return
+	}
 	id, ok := parseID(c)
 	if !ok {
 		return
@@ -64,10 +84,10 @@ func (h *PetitionLinkHandler) List(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	items, err := h.svc.ListBySubmission(ctx, id)
+	// 把调用者身份传进 service：可见范围 = 本人 + 审核员/管理员，越权返回 404。
+	items, err := h.svc.ListBySubmission(ctx, id, user.Name, h.canManage(ctx, user.Name))
 	if err != nil {
-		logrus.WithError(err).Error("list petition links failed")
-		pkg.InternalError(c, "查询关联请愿失败")
+		writeSubmissionErr(c, err)
 		return
 	}
 	pkg.OK(c, gin.H{"items": items})
@@ -93,17 +113,7 @@ func (h *PetitionLinkHandler) Unbind(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	canManage := false
-	if h.reviewers != nil {
-		if ok, err := h.reviewers.IsReviewer(ctx, user.Name); err == nil && ok {
-			canManage = true
-		}
-	}
-	if !canManage && h.admins != nil {
-		if ok, err := h.admins.IsAdmin(ctx, user.Name); err == nil && ok {
-			canManage = true
-		}
-	}
+	canManage := h.canManage(ctx, user.Name)
 
 	if err := h.svc.Unbind(ctx, id, requestID, user.Name, canManage); err != nil {
 		switch {

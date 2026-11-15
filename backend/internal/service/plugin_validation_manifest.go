@@ -30,17 +30,9 @@ var overrideEntryPattern = regexp.MustCompile(`^(?:[a-zA-Z0-9_-][a-zA-Z0-9._-]*/
 
 var pluginEntryFile = regexp.MustCompile(`\.(m?js)$`)
 
-// manifestStringSlice 读取 manifest[path] 中的字符串数组，path 用点分隔
-func manifestStringSlice(manifest map[string]any, path string) []string {
-	var node any = manifest
-	for _, key := range strings.Split(path, ".") {
-		m, ok := node.(map[string]any)
-		if !ok {
-			return nil
-		}
-		node = m[key]
-	}
-	arr, ok := node.([]any)
+// manifestStringSlice 读取 manifest[key] 中的字符串数组
+func manifestStringSlice(manifest map[string]any, key string) []string {
+	arr, ok := manifest[key].([]any)
 	if !ok {
 		return nil
 	}
@@ -148,76 +140,95 @@ func validatePluginManifest(manifest map[string]any) []PluginIssue {
 		issues = append(issues, PluginIssue{Path: "/manifest/license", Message: "must contain at most 128 characters"})
 	}
 
-	if overrides, ok := manifest["overrides"].([]any); ok {
-		if len(overrides) > 32 {
-			issues = append(issues, PluginIssue{Path: "/manifest/overrides", Message: "must contain at most 32 items"})
-		}
-		declared := make(map[string]struct{}, len(overrides))
-		for i, item := range overrides {
-			m, ok := item.(map[string]any)
-			if !ok {
-				issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/overrides/%d", i), Message: "expected type object"})
-				continue
+	// overrides / dependencies / scope 都是可选字段，但一旦出现就必须是声明
+	// 的类型：类型断言失败直接跳过整段校验会让 {"dependencies": {...}} 这类
+	// manifest 通过审核（对照 capabilities 的处理）。
+	if raw, exists := manifest["overrides"]; exists {
+		overrides, ok := raw.([]any)
+		if !ok {
+			issues = append(issues, PluginIssue{Path: "/manifest/overrides", Message: "expected type array"})
+		} else {
+			if len(overrides) > 32 {
+				issues = append(issues, PluginIssue{Path: "/manifest/overrides", Message: "must contain at most 32 items"})
 			}
-			target, _ := m["pluginId"].(string)
-			if !pluginIDPattern.MatchString(target) {
-				issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/overrides/%d/pluginId", i), Message: "must match the plugin id pattern"})
+			declared := make(map[string]struct{}, len(overrides))
+			for i, item := range overrides {
+				m, ok := item.(map[string]any)
+				if !ok {
+					issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/overrides/%d", i), Message: "expected type object"})
+					continue
+				}
+				target, _ := m["pluginId"].(string)
+				if !pluginIDPattern.MatchString(target) {
+					issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/overrides/%d/pluginId", i), Message: "must match the plugin id pattern"})
+				}
+				// 两边都缺失时 target 与 id 都是空串，不加前置判断会误报自引用
+				if id != "" && target == id {
+					issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/overrides/%d/pluginId", i), Message: "override cannot target itself"})
+				}
+				overrideKind, _ := m["kind"].(string)
+				if overrideKind != "localization" && overrideKind != "icons" {
+					issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/overrides/%d/kind", i), Message: "value is not in the allowed enum"})
+				}
+				entry, _ := m["entry"].(string)
+				if !overrideEntryPattern.MatchString(entry) {
+					issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/overrides/%d/entry", i), Message: "must be a canonical package-relative JSON path"})
+				}
+				key := fmt.Sprintf("%s|%s|%s", target, overrideKind, entry)
+				if _, dup := declared[key]; dup {
+					issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/overrides/%d", i), Message: "duplicate override declaration"})
+				}
+				declared[key] = struct{}{}
 			}
-			if target == id {
-				issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/overrides/%d/pluginId", i), Message: "override cannot target itself"})
-			}
-			overrideKind, _ := m["kind"].(string)
-			if overrideKind != "localization" && overrideKind != "icons" {
-				issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/overrides/%d/kind", i), Message: "value is not in the allowed enum"})
-			}
-			entry, _ := m["entry"].(string)
-			if !overrideEntryPattern.MatchString(entry) {
-				issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/overrides/%d/entry", i), Message: "must be a canonical package-relative JSON path"})
-			}
-			key := fmt.Sprintf("%s|%s|%s", target, overrideKind, entry)
-			if _, dup := declared[key]; dup {
-				issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/overrides/%d", i), Message: "duplicate override declaration"})
-			}
-			declared[key] = struct{}{}
 		}
 	}
 
-	if deps, ok := manifest["dependencies"].([]any); ok {
-		if len(deps) > 16 {
-			issues = append(issues, PluginIssue{Path: "/manifest/dependencies", Message: "must contain at most 16 items"})
-		}
-		depIDs := make(map[string]struct{}, len(deps))
-		for i, item := range deps {
-			m, ok := item.(map[string]any)
-			if !ok {
-				issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/dependencies/%d", i), Message: "expected type object"})
-				continue
+	if raw, exists := manifest["dependencies"]; exists {
+		deps, ok := raw.([]any)
+		if !ok {
+			issues = append(issues, PluginIssue{Path: "/manifest/dependencies", Message: "expected type array"})
+		} else {
+			if len(deps) > 16 {
+				issues = append(issues, PluginIssue{Path: "/manifest/dependencies", Message: "must contain at most 16 items"})
 			}
-			depID, _ := m["id"].(string)
-			if !pluginIDPattern.MatchString(depID) {
-				issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/dependencies/%d/id", i), Message: "must match the plugin id pattern"})
-			}
-			if depID == id {
-				issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/dependencies/%d/id", i), Message: "must not depend on itself"})
-			}
-			if _, dup := depIDs[depID]; dup {
-				issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/dependencies/%d/id", i), Message: "duplicate dependency id"})
-			}
-			depIDs[depID] = struct{}{}
-			rng, _ := m["version"].(string)
-			if strings.TrimSpace(rng) == "" {
-				issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/dependencies/%d/version", i), Message: "must be a non-empty semver range"})
-			} else if _, err := semver.NewConstraint(rng); err != nil {
-				issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/dependencies/%d/version", i), Message: "must be a non-empty semver range"})
+			depIDs := make(map[string]struct{}, len(deps))
+			for i, item := range deps {
+				m, ok := item.(map[string]any)
+				if !ok {
+					issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/dependencies/%d", i), Message: "expected type object"})
+					continue
+				}
+				depID, _ := m["id"].(string)
+				if !pluginIDPattern.MatchString(depID) {
+					issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/dependencies/%d/id", i), Message: "must match the plugin id pattern"})
+				}
+				// 同上：id 缺失时不要凭空报「不能依赖自己」
+				if id != "" && depID == id {
+					issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/dependencies/%d/id", i), Message: "must not depend on itself"})
+				}
+				if _, dup := depIDs[depID]; dup {
+					issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/dependencies/%d/id", i), Message: "duplicate dependency id"})
+				}
+				depIDs[depID] = struct{}{}
+				rng, _ := m["version"].(string)
+				if strings.TrimSpace(rng) == "" {
+					issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/dependencies/%d/version", i), Message: "must be a non-empty semver range"})
+				} else if _, err := semver.NewConstraint(rng); err != nil {
+					issues = append(issues, PluginIssue{Path: fmt.Sprintf("/manifest/dependencies/%d/version", i), Message: "must be a non-empty semver range"})
+				}
 			}
 		}
 	}
 
 	if kind == "theme" {
-		scope, ok := manifest["scope"].(map[string]any)
+		raw, exists := manifest["scope"]
+		scope, ok := raw.(map[string]any)
+		if exists && !ok {
+			issues = append(issues, PluginIssue{Path: "/manifest/scope", Message: "expected type object"})
+		}
 		if ok {
 			target, _ := scope["pluginId"].(string)
-			if target == id {
+			if id != "" && target == id {
 				issues = append(issues, PluginIssue{Path: "/manifest/scope/pluginId", Message: "scoped theme cannot target itself"})
 			}
 			hasRequired := false
@@ -256,7 +267,12 @@ func validatePluginManifest(manifest map[string]any) []PluginIssue {
 						continue
 					}
 					value, _ := m[key.path].(string)
-					if !strings.HasPrefix(value, prefix) {
+					if value == "" {
+						issues = append(issues, PluginIssue{
+							Path:    fmt.Sprintf("/manifest/contributes/%s/%d/%s", key.field, i, key.path),
+							Message: "required property is missing",
+						})
+					} else if !strings.HasPrefix(value, prefix) {
 						issues = append(issues, PluginIssue{
 							Path:    fmt.Sprintf("/manifest/contributes/%s/%d/%s", key.field, i, key.path),
 							Message: "must start with " + prefix,
@@ -265,13 +281,12 @@ func validatePluginManifest(manifest map[string]any) []PluginIssue {
 				}
 			}
 			themeParts, _ := contributes["themeParts"].([]any)
-			for i, item := range themeParts {
+			for _, item := range themeParts {
 				part, _ := item.(string)
-				if !strings.HasPrefix(part, prefix) || len(part) == len(prefix) {
+				if part == "" || !strings.HasPrefix(part, prefix) || len(part) == len(prefix) {
 					issues = append(issues, PluginIssue{Path: "/manifest/contributes/themeParts", Message: "theme parts must use the pluginId. prefix and a non-empty name"})
 					break
 				}
-				_ = i
 			}
 		}
 	}

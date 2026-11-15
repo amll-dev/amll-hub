@@ -36,6 +36,16 @@ func (r *PluginRatingRepo) Upsert(ctx context.Context, pluginKey, username strin
 	`, pluginKey, username, score).Error
 }
 
+// DeleteByPluginKey 删除某个插件的全部评分，需与插件删除放在同一事务
+func (r *PluginRatingRepo) DeleteByPluginKey(ctx context.Context, tx *gorm.DB, pluginKey string) error {
+	if tx == nil {
+		tx = r.db.WithContext(ctx)
+	}
+	return tx.WithContext(ctx).
+		Where("plugin_key = ?", pluginKey).
+		Delete(&model.PluginRating{}).Error
+}
+
 // GetUserScore 查询用户对插件的评分；未评分返回 0
 func (r *PluginRatingRepo) GetUserScore(ctx context.Context, pluginKey, username string) (int, error) {
 	if username == "" {

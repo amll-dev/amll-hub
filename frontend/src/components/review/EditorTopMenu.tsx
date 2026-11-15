@@ -1,6 +1,7 @@
 import { atom, useAtom, useAtomValue, useSetAtom, useStore } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
-import { type ComponentProps, useCallback } from 'react';
+import { type ComponentProps, useCallback, useState } from 'react';
+import { BackgroundDialog } from './BackgroundDialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,12 +21,12 @@ import {
   timeShiftDialogAtom,
 } from '$/states/dialogs.ts';
 import {
-  keyRedoAtom,
-  keySelectAllAtom,
-  keySelectInvertedAtom,
-  keyUndoAtom,
-  keyUnselectAllAtom,
-} from '$/states/keybindings.ts';
+  cmdRedo,
+  cmdSelectAll,
+  cmdSelectInverted,
+  cmdUndo,
+  cmdUnselectAll,
+} from '$/modules/keyboard/commands';
 import {
   lyricLinesAtom,
   redoLyricLinesAtom,
@@ -62,11 +63,11 @@ function EditMenu() {
   const setUndo = useSetAtom(undoLyricLinesAtom);
   const setRedo = useSetAtom(redoLyricLinesAtom);
 
-  const [undoKey] = useAtom(keyUndoAtom);
-  const [redoKey] = useAtom(keyRedoAtom);
-  const [selectAllKey] = useAtom(keySelectAllAtom);
-  const [unselectAllKey] = useAtom(keyUnselectAllAtom);
-  const [invertKey] = useAtom(keySelectInvertedAtom);
+  const [undoKey] = useAtom(cmdUndo.atom);
+  const [redoKey] = useAtom(cmdRedo.atom);
+  const [selectAllKey] = useAtom(cmdSelectAll.atom);
+  const [unselectAllKey] = useAtom(cmdUnselectAll.atom);
+  const [invertKey] = useAtom(cmdSelectInverted.atom);
 
   const undoDisabled = !useAtomValue(canUndoAtom);
   const redoDisabled = !useAtomValue(canRedoAtom);
@@ -135,6 +136,7 @@ function ToolMenu() {
   const setTimeShiftDialog = useSetAtom(timeShiftDialogAtom);
   const setAdvancedSegmentation = useSetAtom(advancedSegmentationDialogAtom);
   const setReduceStutter = useSetAtom(reduceStutterDialogAtom);
+  const [backgroundOpen, setBackgroundOpen] = useState(false);
   const onAutoSegment = useCallback(() => {
     editLyricLines((draft) => {
       draft.lyricLines = segmentLyricLines(draft.lyricLines, segmentationConfig);
@@ -185,34 +187,41 @@ function ToolMenu() {
   }, [setReduceStutter]);
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button type="button" className={triggerClass}>
-          工具
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>分词</DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuItem onSelect={onAutoSegment}>自动分词</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setAdvancedSegmentation(true)}>
-              高级分词...
-            </DropdownMenuItem>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>时间戳</DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            <DropdownMenuItem onSelect={onSyncLineTimestamps}>同步行时间戳</DropdownMenuItem>
-            <DropdownMenuItem onSelect={onReduceStutter}>消减卡顿</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setTimeShiftDialog(true)}>
-              平移时间...
-            </DropdownMenuItem>
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className={triggerClass}>
+            工具
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>分词</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuItem onSelect={onAutoSegment}>自动分词</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setAdvancedSegmentation(true)}>
+                高级分词...
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>时间戳</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuItem onSelect={onSyncLineTimestamps}>同步行时间戳</DropdownMenuItem>
+              <DropdownMenuItem onSelect={onReduceStutter}>消减卡顿</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setTimeShiftDialog(true)}>
+                平移时间...
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => setBackgroundOpen(true)}>
+            编辑器背景...
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <BackgroundDialog open={backgroundOpen} onOpenChange={setBackgroundOpen} />
+    </>
   );
 }
 

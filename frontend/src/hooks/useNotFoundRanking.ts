@@ -5,6 +5,7 @@ import type { NotFoundRankingResult } from '@/lib/types';
 
 interface UseNotFoundRankingParams {
   limit?: number | 'all';
+  offset?: number;
   days?: number;
   platform?: string;
 }
@@ -15,11 +16,11 @@ interface UseNotFoundRankingParams {
  * 竞态与去重由 Query 按 queryKey 处理，翻页/切参数期间保留旧数据（keepPreviousData）。
  */
 export function useNotFoundRanking(params: UseNotFoundRankingParams = {}) {
-  const { limit, days, platform } = params;
+  const { limit, offset, days, platform } = params;
 
   const { data, isPending, isFetching, error, refetch } = useQuery({
-    queryKey: queryKeys.notFoundRanking({ limit, days, platform }),
-    queryFn: () => api.getNotFoundRanking({ limit, days, platform }),
+    queryKey: queryKeys.notFoundRanking({ limit, offset, days, platform }),
+    queryFn: () => api.getNotFoundRanking({ limit, offset, days, platform }),
     placeholderData: keepPreviousData,
     staleTime: 60_000,
     select: (raw: NotFoundRankingResult) => ({

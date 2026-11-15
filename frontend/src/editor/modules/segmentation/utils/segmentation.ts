@@ -3,6 +3,7 @@
  */
 
 import { type LyricLine, type LyricWord, newLyricWord } from '$/types/ttml';
+import { segmentationLogger } from '../logger';
 import { CharType, type SegmentationConfig } from '../types';
 import {
   escapeRegExp,
@@ -77,8 +78,8 @@ function autoTokenize(text: string, config: SegmentationConfig): string[] {
   const graphemes = Array.from(text);
 
   for (const grapheme of graphemes) {
-    const firstChar = firstCodePoint(grapheme);
-    const currentCharType = getCharType(firstChar);
+    // graphemes 已按码点切分，无需再取首码点
+    const currentCharType = getCharType(grapheme);
 
     if (lastCharType !== null) {
       let shouldBreak = false;
@@ -263,38 +264,59 @@ function distributeTime(
     }));
   }
 
-  if (totalWeight <= 0) {
-    return [];
-  }
-
-  const durationPerWeight = totalDuration / totalWeight;
   const newWords: LyricWord[] = [];
-  let currentTokenStartMs = originalWord.startTime;
+  // 权重全为 0 时均分，绝不能返回空数组把整词丢掉
+  const evenSplit = totalWeight <= 0;
+  let accWeight = 0;
+  let prevEnd = originalWord.startTime;
 
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!;
-    const weight = weights[i] ?? 0;
-
-    const tokenDuration = Math.round(weight * durationPerWeight);
-    let tokenEndMs = currentTokenStartMs + tokenDuration;
-
+    let tokenEndMs: number;
     if (i === tokens.length - 1) {
+      // 最后一段强制对齐原词结尾，吸收全部舍入误差
       tokenEndMs = originalWord.endTime;
+    } else if (evenSplit) {
+      tokenEndMs = originalWord.startTime + Math.round(((i + 1) / tokens.length) * totalDuration);
+    } else {
+      // 累积取整：用累积权重的比例算边界，舍入误差不随 token 累积
+      accWeight += weights[i] ?? 0;
+      tokenEndMs = originalWord.startTime + Math.round((accWeight / totalWeight) * totalDuration);
     }
 
     newWords.push({
       ...newLyricWord(),
       word: token,
-      startTime: currentTokenStartMs,
+      startTime: prevEnd,
       endTime: tokenEndMs,
     });
-
-    if (tokenEndMs > currentTokenStartMs) {
-      currentTokenStartMs = tokenEndMs;
+    if (tokenEndMs > prevEnd) {
+      prevEnd = tokenEndMs;
     }
   }
 
   return newWords;
+}
+
+/**
+ * 保护词正则按 config 缓存：一次批量分词里 config 是稳定的，
+ * 没必要为每个词重新建 Set / 排序 / 编译正则。
+ */
+const protectedPatternCache = new WeakMap<SegmentationConfig, RegExp | null>();
+
+function getProtectedPattern(config: SegmentationConfig): RegExp | null {
+  if (protectedPatternCache.has(config)) {
+    return protectedPatternCache.get(config)!;
+  }
+  const protectedWords = new Set([...config.ignoreList, ...config.customRules.keys()]);
+  const sortedPatterns = Array.from(protectedWords)
+    .filter((k) => k.trim() !== '')
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp);
+  const pattern =
+    sortedPatterns.length > 0 ? new RegExp(`(${sortedPatterns.join('|')})`, 'g') : null;
+  protectedPatternCache.set(config, pattern);
+  return pattern;
 }
 
 /**
@@ -305,29 +327,15 @@ export function segmentWord(
   config: SegmentationConfig,
   context?: SegmentationContext
 ): LyricWord[] {
-  const protectedWords = new Set([...config.ignoreList, ...config.customRules.keys()]);
   const ctx = context || { isQuoteOpen: false };
+  const pattern = getProtectedPattern(config);
 
-  if (protectedWords.size === 0) {
+  if (!pattern) {
     const tokens = autoTokenize(word.word, config);
     if (tokens.length === 0) return [];
     const { finalTokens, finalWeights, totalWeight } = postProcess(tokens, config, ctx);
     return distributeTime(word, finalTokens, finalWeights, totalWeight);
   }
-
-  const sortedPatterns = Array.from(protectedWords)
-    .filter((k) => k.trim() !== '')
-    .sort((a, b) => b.length - a.length)
-    .map(escapeRegExp);
-
-  if (sortedPatterns.length === 0) {
-    const tokens = autoTokenize(word.word, config);
-    if (tokens.length === 0) return [];
-    const { finalTokens, finalWeights, totalWeight } = postProcess(tokens, config, ctx);
-    return distributeTime(word, finalTokens, finalWeights, totalWeight);
-  }
-
-  const pattern = new RegExp(`(${sortedPatterns.join('|')})`, 'g');
 
   const parts = word.word.split(pattern);
 
@@ -388,6 +396,24 @@ export function segmentLyricLines(
     for (const word of line.words) {
       const segments = segmentWord(word, config, context);
       newWords.push(...segments);
+    }
+
+    // 自动分词只应重排词边界，不许让歌词文本变短或变长。
+    // 软连字符是 hyphenator 插入的、不属于原文，比较时忽略。
+    const beforeText = line.words
+      .map((w) => w.word)
+      .join('')
+      .replace(/\u00AD/g, '');
+    const afterText = newWords
+      .map((w) => w.word)
+      .join('')
+      .replace(/\u00AD/g, '');
+    if (beforeText !== afterText) {
+      segmentationLogger.warn('分词前后歌词文本不一致，已回退该行', {
+        before: beforeText,
+        after: afterText,
+      });
+      return line;
     }
 
     return {

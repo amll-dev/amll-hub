@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { useAtom } from 'jotai';
-import { marked } from 'marked';
 import { Download, Loader2, MessageSquare } from 'lucide-react';
 import {
   renderReviewReport,
@@ -8,6 +7,7 @@ import {
 } from '@/editor/modules/review/services/report-service/render-service';
 import type { ReviewReport } from '@/editor/modules/review/services/report-service/types';
 import type { ReviewAction } from '@/lib/types';
+import { renderMarkdown } from '@/components/submission/shared';
 import {
   reviewActionAtom,
   reviewManualNoteAtom,
@@ -69,10 +69,17 @@ export function EditorSaveDialog({
     return `${autoReportMd}\n\n---\n\n${note}`;
   }, [autoReportMd, manualNote]);
 
+  /**
+   * 预览 HTML。
+   *
+   * 报告里拼着投稿者提交的歌词正文，而 marked 默认透传内联 HTML——直接 parse
+   * 等于让投稿者用 `<img onerror>` 在审核员的浏览器里执行脚本（token 在 localStorage）。
+   * 统一走 renderMarkdown：先 escapeHtml，再 marked，最后 DOMPurify 兜底。
+   */
   const previewHtml = useMemo(() => {
     if (!hasAutoContent && !manualNote.trim()) return '';
     if (!finalReportMd) return '';
-    return marked.parse(finalReportMd, { async: false }) as string;
+    return renderMarkdown(finalReportMd);
   }, [finalReportMd, hasAutoContent, manualNote]);
 
   const structured = useMemo(

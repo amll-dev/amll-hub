@@ -10,7 +10,7 @@
  */
 
 import { atom } from 'jotai';
-import { atomWithStorage } from 'jotai/utils';
+import { atomWithStorage, selectAtom } from 'jotai/utils';
 import { REDO, UNDO, withHistory } from 'jotai-history';
 import { enableMapSet } from 'immer';
 import { uid } from 'uid';
@@ -21,7 +21,7 @@ import {
 } from '$/modules/review/services/operation-log-service';
 import type { ReviewReport } from '$/modules/review/services/report-service/types';
 import type { ReviewStructuredSnapshot } from '$/modules/review/services/structured-snapshot';
-import type { TTMLLyric } from '../types/ttml';
+import type { TTMLLyric, TTMLVocalTag } from '../types/ttml';
 
 /**
  * 启用 Immer 的 Map/Set 插件 —— **必须在任何 atom 写入之前**执行。
@@ -76,6 +76,87 @@ export const lyricLinesAtom = atom({
 } as TTMLLyric);
 
 /**
+ * 只读派生层：把对「整棵歌词树」的订阅拆成组件各自需要的切片。
+ *
+ * lyricLinesAtom 是 Immer atom，任何一行改动都会产生新的顶层对象；直接
+ * useAtomValue(lyricLinesAtom) 的组件（尤其是 200 个行组件）会全部重渲染、memo 失效。
+ * 下面的派生 atom 读整树、但只暴露「相关且稳定」的值：Jotai 用 Object.is 比较
+ * 派生结果，字段没变就不通知订阅者。写入语义完全不变（仍写 lyricLinesAtom）。
+ */
+
+/** vocalTags 缺省时复用的稳定引用，避免 `?? []` 每次派生都产生新数组。 */
+const EMPTY_VOCAL_TAGS: TTMLVocalTag[] = [];
+
+/** 演唱者标签：只在 vocalTags 本身变化时改变引用，行组件据此决定是否重渲染。 */
+export const vocalTagsAtom = atom((get) => get(lyricLinesAtom).vocalTags ?? EMPTY_VOCAL_TAGS);
+
+/** 是否定义了 Agent：行组件只用它判断「该行缺 agent 是否告警」，布尔值天然稳定。 */
+export const hasAgentsAtom = atom((get) => (get(lyricLinesAtom).agents?.length ?? 0) > 0);
+
+export interface LineTimelineEntry {
+  id: string;
+  startTime: number;
+  endTime: number;
+}
+
+const lineTimelineEqual = (a: LineTimelineEntry[], b: LineTimelineEntry[]) =>
+  a.length === b.length &&
+  a.every((entry, i) => {
+    const other = b[i];
+    return (
+      other !== undefined &&
+      entry.id === other.id &&
+      entry.startTime === other.startTime &&
+      entry.endTime === other.endTime
+    );
+  });
+
+/** 行时间轴：音频进度条只需 id 与起止时间；改歌词文字（不动时间）时保持旧引用。 */
+export const lineTimelineAtom = selectAtom(
+  lyricLinesAtom,
+  (s): LineTimelineEntry[] =>
+    s.lyricLines.map((line) => ({
+      id: line.id,
+      startTime: line.startTime,
+      endTime: line.endTime,
+    })),
+  lineTimelineEqual
+);
+
+export interface OutlineLine {
+  id: string;
+  text: string;
+  isBG: boolean;
+  isDuet: boolean;
+}
+
+const outlineLinesEqual = (a: OutlineLine[], b: OutlineLine[]) =>
+  a.length === b.length &&
+  a.every((line, i) => {
+    const other = b[i];
+    return (
+      other !== undefined &&
+      line.id === other.id &&
+      line.text === other.text &&
+      line.isBG === other.isBG &&
+      line.isDuet === other.isDuet
+    );
+  });
+
+/** 大纲行：预先拼好文本（原来渲染时对每行 words.join），文本/标记不变则引用不变。 */
+export const outlineLinesAtom = selectAtom(
+  lyricLinesAtom,
+  (s): OutlineLine[] =>
+    s.lyricLines.map((line) => ({
+      id: line.id,
+      text: line.words.map((w) => w.word).join(''),
+      isBG: line.isBG,
+      isDuet: line.isDuet,
+    })),
+  outlineLinesEqual
+);
+
+/**
  * @description 当前项目的唯一标识符
  *
  * - 打开应用和新建文件时会生成一个随机的 UUID
@@ -122,44 +203,56 @@ export const lastSavedTimeAtom = atom<number | null>(null);
 
 export const undoableLyricLinesAtom = withHistory(lyricLinesAtom, 256);
 
-export const savedLyricBaselineAtom = atom<string | null>(null);
+/**
+ * 保存时记下的 lyricLinesAtom 对象引用。
+ *
+ * lyricLinesAtom 是 Immer / withHistory atom，任何一行写入都会产生新的顶层对象，
+ * 因此脏检查可以退化成 O(1) 的引用比较，不必再对整份 TTMLLyric 做 JSON.stringify。
+ * 原来 isDirtyAtom 与 markLyricLinesSavedAtom 各序列化一次，
+ * 逐字编辑 / 拖拽时间轴时每帧都要分配数十 KB 的字符串。
+ * 撤销回到保存点时引用一致，也会被正确判定为「不脏」。
+ */
+export const savedLyricBaselineAtom = atom<TTMLLyric | null>(null);
 
 export const markLyricLinesSavedAtom = atom(null, (get, set) => {
-  set(savedLyricBaselineAtom, JSON.stringify(get(lyricLinesAtom)));
+  set(savedLyricBaselineAtom, get(lyricLinesAtom));
 });
 
 export const isDirtyAtom = atom((get) => {
   const baseline = get(savedLyricBaselineAtom);
   if (baseline === null) return false;
-  return JSON.stringify(get(lyricLinesAtom)) !== baseline;
+  return get(lyricLinesAtom) !== baseline;
 });
 export const reviewOperationLogAtom = atom<ReviewOperationRecord[]>([]);
 export const reviewOperationRedoStackAtom = atom<ReviewOperationRecord[]>([]);
 
 const cloneLyric = (data: TTMLLyric): TTMLLyric => JSON.parse(JSON.stringify(data)) as TTMLLyric;
 
-const areLyricsEqual = (left: TTMLLyric, right: TTMLLyric) =>
-  JSON.stringify(left) === JSON.stringify(right);
+/** 歌词状态指纹：只在压栈 / 撤销时各算一次，用来 O(n) 判断「这一步是不是 review 操作」 */
+const lyricStateHash = (data: TTMLLyric) => JSON.stringify(data);
 
-const doesOperationTransformLyric = (
-  before: TTMLLyric,
-  after: TTMLLyric,
-  operation: ReviewOperationRecord
-) => {
-  const replayed = cloneLyric(before);
+/**
+ * 判断 `state` 是否就是该操作执行前的状态。
+ *
+ * 旧实现是「深拷贝 before → 回放操作 → 与 after 做两次 stringify 比较」，
+ * 1000 行歌词下每次撤销要 15–30ms，手感发钝。入栈时记指纹后只剩两次
+ * stringify，且不用再回放整个操作。没有指纹的旧记录回退到回放比较。
+ */
+const isStateBeforeOperation = (state: TTMLLyric, operation: ReviewOperationRecord) => {
+  if (operation.beforeStateHash) return operation.beforeStateHash === lyricStateHash(state);
+  const replayed = cloneLyric(state);
   applyReviewOperation(replayed, operation);
-  return areLyricsEqual(replayed, after);
+  return JSON.stringify(replayed) === JSON.stringify(state);
 };
 
 export const undoLyricLinesAtom = atom(null, (get, set) => {
-  const beforeUndo = get(lyricLinesAtom);
   const operations = get(reviewOperationLogAtom);
   const lastOperation = operations[operations.length - 1];
   set(undoableLyricLinesAtom, UNDO);
   if (!lastOperation) return;
 
   const afterUndo = get(lyricLinesAtom);
-  if (!doesOperationTransformLyric(afterUndo, beforeUndo, lastOperation)) return;
+  if (!isStateBeforeOperation(afterUndo, lastOperation)) return;
 
   set(reviewOperationLogAtom, operations.slice(0, -1));
   set(reviewOperationRedoStackAtom, (prev) => [...prev, lastOperation]);
@@ -171,8 +264,7 @@ export const redoLyricLinesAtom = atom(null, (get, set) => {
   set(undoableLyricLinesAtom, REDO);
   if (!nextOperation) return;
 
-  const afterRedo = get(lyricLinesAtom);
-  if (!doesOperationTransformLyric(beforeRedo, afterRedo, nextOperation)) return;
+  if (!isStateBeforeOperation(beforeRedo, nextOperation)) return;
 
   set(reviewOperationLogAtom, (prev) => [...prev, nextOperation]);
   set(reviewOperationRedoStackAtom, redoStack.slice(0, -1));
@@ -251,8 +343,10 @@ export type ReviewSnapshot = {
   originalTtml: string;
 };
 export const reviewFreezeAtom = atom<ReviewSnapshot | null>(null);
-export const pushReviewOperationAtom = atom(null, (_get, set, operation: ReviewOperationRecord) => {
-  set(reviewOperationLogAtom, (prev) => [...prev, operation]);
+export const pushReviewOperationAtom = atom(null, (get, set, operation: ReviewOperationRecord) => {
+  // 调用方都是「先 push 再写 lyricLines」，所以此刻读到的就是操作前的状态
+  const beforeStateHash = lyricStateHash(get(lyricLinesAtom));
+  set(reviewOperationLogAtom, (prev) => [...prev, { ...operation, beforeStateHash }]);
   set(reviewOperationRedoStackAtom, []);
 });
 export type ReviewReportDraft = {

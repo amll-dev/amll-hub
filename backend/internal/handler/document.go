@@ -8,6 +8,7 @@ import (
 
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
+	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
 	"github.com/gin-gonic/gin"
 	logrus "github.com/sirupsen/logrus"
@@ -77,23 +78,85 @@ func queryInt(c *gin.Context, key string, fallback int) int {
 	return v
 }
 
+// maxPublicDocs 是公开文档列表一次最多返回的条数，防止前端误用拉爆内存。
+// 文档量级通常几十到一两百，1000 足够覆盖。
+const maxPublicDocs = 1000
+
+// clampDocPaging 与 repository.normalizePage 保持同一口径（默认 20、上限 50）。
+// 响应里回显的是这里算出来的实际值：原样回显请求的 pageSize 会让前端按
+// total/pageSize 算出偏少的页数，翻到后面直接空白。
+func clampDocPaging(page, size int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 20
+	}
+	if size > 50 {
+		size = 50
+	}
+	return page, size
+}
+
 // ListPublic GET /api/v1/docs
 func (h *DocumentHandler) ListPublic(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	items, total, err := h.svc.ListPublic(
-		ctx,
-		strings.TrimSpace(c.Query("group")),
-		strings.TrimSpace(c.Query("q")),
+	group := strings.TrimSpace(c.Query("group"))
+	q := strings.TrimSpace(c.Query("q"))
+	page, pageSize := clampDocPaging(
 		queryInt(c, "page", 1),
 		queryInt(c, "pageSize", queryInt(c, "limit", 100)),
 	)
+
+	items, total, err := h.svc.ListPublic(ctx, group, q, page, pageSize)
 	if err != nil {
 		writeDocErr(c, err, "list documents failed")
 		return
 	}
-	pkg.OK(c, gin.H{"items": items, "total": total})
+
+	if c.Query("page") == "" && total > int64(len(items)) {
+		items, err = h.collectPublicRest(ctx, group, q, items, total)
+		if err != nil {
+			writeDocErr(c, err, "list documents failed")
+			return
+		}
+	}
+	pkg.OK(c, gin.H{"items": items, "total": total, "page": page, "pageSize": pageSize})
+}
+
+// collectPublicRest 从第 2 页起继续拉取公开文档，直到取满 total 或达到 maxPublicDocs 上限。
+func (h *DocumentHandler) collectPublicRest(
+	ctx context.Context, group, q string, first []repository.DocumentListRow, total int64,
+) ([]repository.DocumentListRow, error) {
+	items := first
+	// repo 每页最多 50 条，固定按 50 翻页即可
+	for page := 2; int64(len(items)) < total && len(items) < maxPublicDocs; page++ {
+		rows, _, err := h.svc.ListPublic(ctx, group, q, page, 50)
+		if err != nil {
+			return nil, err
+		}
+		if len(rows) == 0 {
+			break
+		}
+		items = append(items, rows...)
+	}
+	return items, nil
+}
+
+// ListNav GET /api/v1/docs/nav
+// 精简导航接口：只返回 id/slug/title/updatedAt，不分页，供首页、侧栏与上下篇使用。
+func (h *DocumentHandler) ListNav(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
+	defer cancel()
+
+	items, err := h.svc.ListNav(ctx)
+	if err != nil {
+		writeDocErr(c, err, "list document nav failed")
+		return
+	}
+	pkg.OK(c, gin.H{"items": items})
 }
 
 // GetPublic GET /api/v1/docs/:slug
@@ -119,30 +182,37 @@ func (h *DocumentHandler) ListManage(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
+	page, pageSize := clampDocPaging(
+		queryInt(c, "page", 1),
+		queryInt(c, "pageSize", queryInt(c, "limit", 20)),
+	)
 	items, total, err := h.svc.ListManage(
 		ctx,
 		strings.TrimSpace(c.Query("status")),
 		strings.TrimSpace(c.Query("group")),
 		strings.TrimSpace(c.Query("q")),
-		queryInt(c, "page", 1),
-		queryInt(c, "pageSize", queryInt(c, "limit", 20)),
+		page,
+		pageSize,
 	)
 	if err != nil {
 		writeDocErr(c, err, "list documents for manage failed")
 		return
 	}
-	pkg.OK(c, gin.H{"items": items, "total": total})
+	pkg.OK(c, gin.H{"items": items, "total": total, "page": page, "pageSize": pageSize})
 }
 
 // docPayload 创建/更新请求体
+//
+// SortOrder / Content 用指针，才能区分「没传这个字段」和「传了 0 / 空串」：
+// PUT 只带 `{"status":"draft"}` 时应当保持原正文，而不是把整篇文档清空。
 type docPayload struct {
-	Slug      string `json:"slug"`
-	Title     string `json:"title"`
-	Group     string `json:"group"`
-	Status    string `json:"status"`
-	SortOrder int    `json:"sortOrder"`
-	Content   string `json:"content"`
-	Note      string `json:"note"`
+	Slug      string  `json:"slug"`
+	Title     string  `json:"title"`
+	Group     string  `json:"group"`
+	Status    string  `json:"status"`
+	SortOrder *int    `json:"sortOrder"`
+	Content   *string `json:"content"`
+	Note      string  `json:"note"`
 }
 
 func (p docPayload) toInput() service.DocumentInput {
@@ -212,6 +282,11 @@ func (h *DocumentHandler) Update(c *gin.Context) {
 
 // Delete DELETE /api/v1/manage/docs/:id
 func (h *DocumentHandler) Delete(c *gin.Context) {
+	actor := currentUser(c)
+	if actor == nil {
+		pkg.Unauthorized(c)
+		return
+	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {
 		pkg.BadRequest(c, "文档 id 非法")
@@ -221,7 +296,8 @@ func (h *DocumentHandler) Delete(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	if err := h.svc.Delete(ctx, id); err != nil {
+	// 软删除要记操作人，所以这里必须带上 currentUser
+	if err := h.svc.Delete(ctx, id, actor); err != nil {
 		writeDocErr(c, err, "delete document failed")
 		return
 	}
@@ -255,14 +331,18 @@ func (h *DocumentHandler) UploadMarkdown(c *gin.Context) {
 	}
 
 	docID, _ := strconv.ParseInt(c.PostForm("docId"), 10, 64)
-	sortOrder, _ := strconv.Atoi(c.PostForm("sortOrder"))
 	in := service.DocumentInput{
-		Slug:      strings.TrimSpace(c.PostForm("slug")),
-		Title:     strings.TrimSpace(c.PostForm("title")),
-		Group:     strings.TrimSpace(c.PostForm("group")),
-		Status:    strings.TrimSpace(c.PostForm("status")),
-		SortOrder: sortOrder,
-		Note:      strings.TrimSpace(c.PostForm("note")),
+		Slug:   strings.TrimSpace(c.PostForm("slug")),
+		Title:  strings.TrimSpace(c.PostForm("title")),
+		Group:  strings.TrimSpace(c.PostForm("group")),
+		Status: strings.TrimSpace(c.PostForm("status")),
+		Note:   strings.TrimSpace(c.PostForm("note")),
+	}
+	// 表单不带 sortOrder 时留空（新建走默认 0，覆盖上传保持原排序）
+	if raw := strings.TrimSpace(c.PostForm("sortOrder")); raw != "" {
+		if n, convErr := strconv.Atoi(raw); convErr == nil {
+			in.SortOrder = &n
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
@@ -318,12 +398,13 @@ func (h *DocumentHandler) ListRevisions(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	items, total, err := h.svc.ListRevisions(ctx, id, queryInt(c, "page", 1), queryInt(c, "pageSize", 20))
+	page, pageSize := clampDocPaging(queryInt(c, "page", 1), queryInt(c, "pageSize", 20))
+	items, total, err := h.svc.ListRevisions(ctx, id, page, pageSize)
 	if err != nil {
 		writeDocErr(c, err, "list document revisions failed")
 		return
 	}
-	pkg.OK(c, gin.H{"items": items, "total": total})
+	pkg.OK(c, gin.H{"items": items, "total": total, "page": page, "pageSize": pageSize})
 }
 
 // GetRevision GET /api/v1/manage/docs/:id/revisions/:revId

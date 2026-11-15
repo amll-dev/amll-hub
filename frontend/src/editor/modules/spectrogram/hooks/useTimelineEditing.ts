@@ -1,4 +1,4 @@
-import { useAtomValue, useSetAtom } from 'jotai';
+import { atom, useAtomValue, useSetAtom } from 'jotai';
 import { useSetImmerAtom } from 'jotai-immer';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -22,7 +22,17 @@ export function useTimelineEditing(scrollLeft: number, zoom: number) {
   const rawLyricLines = useAtomValue(lyricLinesAtom);
   const setRequestFocus = useSetAtom(requestFocusAtom);
   const [pendingStartTime, setPendingStartTime] = useState<number | null>(null);
-  const hoverTimeMs = useAtomValue(spectrogramHoverTimeMsAtom);
+  // 只有「编辑结束时间」时才需要跟随 hover 时间；其余场景派生 atom 返回常量 0，
+  // Jotai 用 Object.is 比较，值不变就不通知订阅者，避免每次 mousemove 都让这个 hook
+  // （以及调用它的 AudioSpectrogram）重渲染。
+  const hoverTimeMsAtom = useMemo(
+    () =>
+      atom((get) =>
+        get(editingTimeFieldAtom)?.field === 'endTime' ? get(spectrogramHoverTimeMsAtom) : 0
+      ),
+    []
+  );
+  const hoverTimeMs = useAtomValue(hoverTimeMsAtom);
 
   const referenceStartTime = useMemo(() => {
     if (pendingStartTime !== null) return pendingStartTime;

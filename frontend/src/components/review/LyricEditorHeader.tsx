@@ -174,7 +174,7 @@ export function LyricEditorHeader({
             {statusBadge && (
               <span
                 className={cn(
-                  'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
+                  'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium',
                   statusBadge.className
                 )}
                 title="投稿状态"
@@ -216,7 +216,8 @@ export function LyricEditorHeader({
           size="sm"
           onClick={onSave}
           disabled={saving}
-          title={isCreator ? '提交修改并重新进入审核队列' : '提交审核结果（Enter）'}
+          data-editor-save
+          title={isCreator ? '提交修改并重新进入审核队列' : '提交审核结果（Ctrl+S）'}
         >
           {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
           {isCreator ? '提交修改' : '提交'}

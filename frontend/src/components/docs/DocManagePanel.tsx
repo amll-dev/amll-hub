@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { FilePlus2, FileText, PencilLine, Trash2, Upload } from 'lucide-react';
@@ -48,18 +48,29 @@ export function DocManagePanel({
   const [status, setStatus] = useState('');
   const [group, setGroup] = useState('');
   const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
   const [page, setPage] = useState(1);
   const [uploadOpen, setUploadOpen] = useState(false);
 
+  // 搜索框防抖，避免每敲一个字都换 queryKey 触发一次全表 ILIKE
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQ(q), 200);
+    return () => window.clearTimeout(timer);
+  }, [q]);
+
   const { data, isLoading } = useQuery({
-    queryKey: queryKeys.docManage({ status, group, q, page }),
-    queryFn: () => api.docs.manageList({ status, group, q, page, pageSize: 20 }),
+    queryKey: queryKeys.docManage({ status, group, q: debouncedQ, page }),
+    queryFn: () => api.docs.manageList({ status, group, q: debouncedQ, page, pageSize: 20 }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.docs.remove(id),
     onSuccess: () => {
+      // 删掉本页最后一条时 totalPages 会减少、分页器整体消失，
+      // 但 page 还停在原来的数字 → 列表空白且无法回到上一页
+      const removedLastOnPage = (data?.items.length ?? 0) === 1 && page > 1;
       void queryClient.invalidateQueries({ queryKey: ['docs'] });
+      if (removedLastOnPage) setPage(page - 1);
       toast.success('文档已删除');
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : '删除失败'),
@@ -180,7 +191,7 @@ export function DocManagePanel({
                             <AlertDialogHeader>
                               <AlertDialogTitle>删除「{item.title}」？</AlertDialogTitle>
                               <AlertDialogDescription>
-                                文档与全部历史版本都会被删除，无法恢复。
+                                文档将从列表与站点中移除，历史版本仍保留在数据库中。
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -234,9 +245,11 @@ function DocUploadDialog({
   const [form, setForm] = useState(emptyUpload);
   const [file, setFile] = useState<File | null>(null);
 
+  // 覆盖目标要能搜：文档超过 50 篇后，只列前 50 条会让第 51 篇之后的目标选不到
+  const [docQuery, setDocQuery] = useState('');
   const { data: docList } = useQuery({
-    queryKey: queryKeys.docManage({ status: '', group: '', q: '', page: 1 }),
-    queryFn: () => api.docs.manageList({ pageSize: 50 }),
+    queryKey: queryKeys.docManage({ status: '', group: '', q: docQuery, page: 1 }),
+    queryFn: () => api.docs.manageList({ q: docQuery, pageSize: 50 }),
     enabled: open,
   });
 
@@ -297,6 +310,12 @@ function DocUploadDialog({
           {form.mode === 'overwrite' ? (
             <div className="space-y-1.5">
               <Label>目标文档</Label>
+              <Input
+                value={docQuery}
+                onChange={(e) => setDocQuery(e.target.value)}
+                placeholder="搜索标题或 slug"
+                className="h-10"
+              />
               <DocSelect
                 className="h-10"
                 value={form.docId}

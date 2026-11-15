@@ -138,64 +138,52 @@ self.onmessage = async (e: MessageEvent) => {
 
   const totalSamples = pcm.length;
 
-  const acquireLockAndInit = async () => {
-    const rootDir = await navigator.storage.getDirectory();
-    const fileHandle = await rootDir.getFileHandle('audio_cache.pcm', {
-      create: true,
-    });
+  /**
+   * 波形峰值与 BPM 都是纯内存计算，完全不依赖 OPFS，必须排在
+   * `createSyncAccessHandle()` 之前。原来二者串行且前置依赖 OPFS，
+   * 一旦 OPFS 不可用（Safari 无 createSyncAccessHandle、隐私模式
+   * navigator.storage 抛错、配额满、文件被占用），波形 + BPM 会一起连坐失效。
+   */
+  computePeaks(pcm, totalSamples);
+  rendererPort?.postMessage({ type: 'PEAKS_FINALIZE' });
 
-    opfsAccessHandle = await fileHandle.createSyncAccessHandle();
-    opfsAccessHandle.truncate(0);
+  let bpmResult: BpmAnalysisResult | null = null;
+  let calculationTime = 0;
+  let bpmErrorMsg: string | null = null;
 
-    // 波形与 PCM 落盘可以并行：峰值是纯计算，不必等写完
-    computePeaks(pcm, totalSamples);
+  if (totalSamples > 0) {
+    try {
+      const wasmInstance = await getBpmWasm();
+      const analyzer = new BpmAnalyzer(totalSamples, { sampleRate });
 
-    let bpmResult: BpmAnalysisResult | null = null;
-    let calculationTime = 0;
-    let bpmErrorMsg: string | null = null;
+      /**
+       * `byte_capacity` 是**字节**数，`pcm.byteLength` 也是字节数 ——
+       * 两者同单位，可以直接取小。换成 `pcm.length`（帧数）会白读 4 倍，
+       * 越界到 wasm 内存里别人的区域。
+       */
+      const copyBytes = Math.min(pcm.byteLength, analyzer.byte_capacity);
+      const copySamples = Math.floor(copyBytes / 4);
 
-    if (totalSamples > 0) {
-      try {
-        const wasmInstance = await getBpmWasm();
-        const analyzer = new BpmAnalyzer(totalSamples, { sampleRate });
+      new Uint8Array(wasmInstance.memory.buffer, analyzer.byte_ptr, copyBytes).set(
+        new Uint8Array(pcm.buffer, pcm.byteOffset, copyBytes)
+      );
 
-        /**
-         * `byte_capacity` 是**字节**数，`pcm.byteLength` 也是字节数 ——
-         * 两者同单位，可以直接取小。换成 `pcm.length`（帧数）会白读 4 倍，
-         * 越界到 wasm 内存里别人的区域。
-         */
-        const copyBytes = Math.min(pcm.byteLength, analyzer.byte_capacity);
-        const copySamples = Math.floor(copyBytes / 4);
+      analyzer.set_length(copySamples);
 
-        new Uint8Array(wasmInstance.memory.buffer, analyzer.byte_ptr, copyBytes).set(
-          new Uint8Array(pcm.buffer, pcm.byteOffset, copyBytes)
-        );
+      const startTime = performance.now();
+      bpmResult = analyzer.analyze();
+      calculationTime = performance.now() - startTime;
 
-        analyzer.set_length(copySamples);
-
-        const startTime = performance.now();
-        bpmResult = analyzer.analyze();
-        calculationTime = performance.now() - startTime;
-
-        analyzer.free();
-      } catch (bpmErr) {
-        console.error('[Analyzer] BPM calculation failed:', bpmErr);
-        bpmErrorMsg = getErrorMessage(bpmErr);
-      }
+      analyzer.free();
+    } catch (bpmErr) {
+      console.error('[Analyzer] BPM calculation failed:', bpmErr);
+      bpmErrorMsg = getErrorMessage(bpmErr);
     }
+  }
 
-    // PCM 落盘：频谱 worker 之后要按帧随机读这块区域。
-    // 一次 write 写完 —— 原来的 1MB 分批缓冲是为了配合 ffmpeg 逐帧解码，
-    // 现在整段 PCM 已在内存里，没有分批的必要。
-    if (opfsAccessHandle) {
-      opfsAccessHandle.write(pcm, { at: 0 });
-      opfsAccessHandle.flush();
-      opfsAccessHandle.close();
-      opfsAccessHandle = null;
-    }
-
-    rendererPort?.postMessage({ type: 'PEAKS_FINALIZE' });
-
+  /** 主线程收到 ANALYZE_DONE / ANALYZE_ERROR 会立刻 terminate 本 worker，
+   *  所以结果消息必须在 OPFS 写入到达终态后再发，不能提前。 */
+  const postResult = () => {
     if (bpmResult) {
       const { bpm, anchorTick, confidence, ticks } = bpmResult;
       self.postMessage({
@@ -215,8 +203,39 @@ self.onmessage = async (e: MessageEvent) => {
     }
   };
 
+  const closeOpfsHandle = () => {
+    if (opfsAccessHandle) {
+      try {
+        opfsAccessHandle.close();
+      } catch {
+        // handle 可能已关闭，忽略
+      }
+      opfsAccessHandle = null;
+    }
+  };
+
+  // 只有频谱瓦片需要 OPFS（随机读）。这段尽力而为，任何失败都只影响频谱，
+  // 波形与 BPM 结果照常投递。
+  const acquireLockAndInit = async () => {
+    const rootDir = await navigator.storage.getDirectory();
+    const fileHandle = await rootDir.getFileHandle('audio_cache.pcm', {
+      create: true,
+    });
+
+    opfsAccessHandle = await fileHandle.createSyncAccessHandle();
+    opfsAccessHandle.truncate(0);
+    // PCM 落盘：频谱 worker 之后要按帧随机读这块区域。
+    // 一次 write 写完 —— 原来的 1MB 分批缓冲是为了配合 ffmpeg 逐帧解码，
+    // 现在整段 PCM 已在内存里，没有分批的必要。
+    opfsAccessHandle.write(pcm, { at: 0 });
+    opfsAccessHandle.flush();
+    opfsAccessHandle.close();
+    opfsAccessHandle = null;
+  };
+
   try {
     await acquireLockAndInit();
+    postResult();
   } catch (err) {
     /**
      * 拿不到 OPFS 写锁：频谱 worker 正持有同一个文件的 sync handle。
@@ -232,23 +251,23 @@ self.onmessage = async (e: MessageEvent) => {
       opfsChannel.onmessage = async (e) => {
         if (e.data === 'OPFS_RELEASED') {
           opfsChannel.onmessage = null;
-          await acquireLockAndInit();
+          try {
+            await acquireLockAndInit();
+          } catch (retryErr) {
+            console.warn('[Analyzer] OPFS 让位后仍无法写入，频谱瓦片将不可用:', retryErr);
+            closeOpfsHandle();
+          }
+          postResult();
         }
       };
       opfsChannel.postMessage('DEMAND_LOCK');
       return;
     }
 
-    console.error('[Analyzer] Init Failed:', err);
-
-    if (opfsAccessHandle) {
-      opfsAccessHandle.close();
-      opfsAccessHandle = null;
-    }
-
-    self.postMessage({
-      type: 'ANALYZE_ERROR',
-      payload: { error: getErrorMessage(err) },
-    });
+    // 其它 OPFS 失败（不支持 / 隐私模式 / 配额 / 占用）：只降级频谱，
+    // 日志带上原始错误对象，便于定位真正原因；波形与 BPM 不受影响。
+    console.warn('[Analyzer] OPFS 不可用，频谱瓦片将降级（波形与 BPM 不受影响）:', err);
+    closeOpfsHandle();
+    postResult();
   }
 };

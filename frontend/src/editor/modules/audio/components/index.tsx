@@ -29,15 +29,15 @@ import {
 import { AuditionKeyBinding } from '$/modules/keyboard/components/AuditionKeyBinding';
 import { AudioSpectrogram } from '$/modules/spectrogram/components/AudioSpectrogram';
 import {
-  keyPlaybackRateDownAtom,
-  keyPlaybackRateResetAtom,
-  keyPlaybackRateUpAtom,
-  keyPlayPauseAtom,
-  keySeekBackwardAtom,
-  keySeekForwardAtom,
-  keyVolumeDownAtom,
-  keyVolumeUpAtom,
-} from '$/states/keybindings.ts';
+  cmdPlayPause,
+  cmdPlaybackRateDown,
+  cmdPlaybackRateReset,
+  cmdPlaybackRateUp,
+  cmdSeekBackward,
+  cmdSeekForward,
+  cmdVolumeDown,
+  cmdVolumeUp,
+} from '$/modules/keyboard/commands';
 import { locateActionAtom, lyricLinesAtom } from '$/states/main.ts';
 import { openTabAtom } from '$/states/sidebar.ts';
 import { useKeyBindingAtom } from '$/utils/keybindings.ts';
@@ -46,38 +46,70 @@ import { msToTimestamp } from '@/lib/format';
 const AudioPlaybackKeyBinding = memo(() => {
   const store = useStore();
 
-  useKeyBindingAtom(keyPlayPauseAtom, () => {
-    if (audioEngine.musicPlaying) audioEngine.pauseMusic();
-    else audioEngine.resumeMusic();
-  }, []);
+  useKeyBindingAtom(
+    cmdPlayPause.atom,
+    () => {
+      if (audioEngine.musicPlaying) audioEngine.pauseMusic();
+      else audioEngine.resumeMusic();
+    },
+    []
+  );
 
-  useKeyBindingAtom(keySeekForwardAtom, () => {
-    audioEngine.seekMusic(Math.min(audioEngine.musicCurrentTime + 5, audioEngine.musicDuration));
-  }, []);
+  useKeyBindingAtom(
+    cmdSeekForward.atom,
+    () => {
+      audioEngine.seekMusic(Math.min(audioEngine.musicCurrentTime + 5, audioEngine.musicDuration));
+    },
+    []
+  );
 
-  useKeyBindingAtom(keySeekBackwardAtom, () => {
-    audioEngine.seekMusic(Math.max(audioEngine.musicCurrentTime - 5, 0));
-  }, []);
+  useKeyBindingAtom(
+    cmdSeekBackward.atom,
+    () => {
+      audioEngine.seekMusic(Math.max(audioEngine.musicCurrentTime - 5, 0));
+    },
+    []
+  );
 
-  useKeyBindingAtom(keyVolumeUpAtom, () => {
-    store.set(volumeAtom, (v) => Math.min(1, v + 0.1));
-  }, [store]);
+  useKeyBindingAtom(
+    cmdVolumeUp.atom,
+    () => {
+      store.set(volumeAtom, (v) => Math.min(1, v + 0.1));
+    },
+    [store]
+  );
 
-  useKeyBindingAtom(keyVolumeDownAtom, () => {
-    store.set(volumeAtom, (v) => Math.max(0, v - 0.1));
-  }, [store]);
+  useKeyBindingAtom(
+    cmdVolumeDown.atom,
+    () => {
+      store.set(volumeAtom, (v) => Math.max(0, v - 0.1));
+    },
+    [store]
+  );
 
-  useKeyBindingAtom(keyPlaybackRateUpAtom, () => {
-    store.set(playbackRateAtom, (v) => Math.min(4, v + 0.25));
-  }, [store]);
+  useKeyBindingAtom(
+    cmdPlaybackRateUp.atom,
+    () => {
+      store.set(playbackRateAtom, (v) => Math.min(4, v + 0.25));
+    },
+    [store]
+  );
 
-  useKeyBindingAtom(keyPlaybackRateDownAtom, () => {
-    store.set(playbackRateAtom, (v) => Math.max(0.25, v - 0.25));
-  }, [store]);
+  useKeyBindingAtom(
+    cmdPlaybackRateDown.atom,
+    () => {
+      store.set(playbackRateAtom, (v) => Math.max(0.25, v - 0.25));
+    },
+    [store]
+  );
 
-  useKeyBindingAtom(keyPlaybackRateResetAtom, () => {
-    store.set(playbackRateAtom, 1);
-  }, [store]);
+  useKeyBindingAtom(
+    cmdPlaybackRateReset.atom,
+    () => {
+      store.set(playbackRateAtom, 1);
+    },
+    [store]
+  );
 
   return null;
 });

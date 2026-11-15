@@ -239,25 +239,44 @@ func (s *AnnouncementService) sendMails(
 	sent, failed, skipped := 0, 0, 0
 	fields := logrus.Fields{"announcement_id": id}
 
-	for i, username := range users {
+	// 先解析邮箱，再用一个 SMTP 连接批量投递，避免 N 个收件人做 N 次 TCP/TLS/AUTH 握手。
+	targets := make([]string, 0, len(users))
+	targetUsers := make([]string, 0, len(users))
+	for _, username := range users {
 		email, err := s.emails.Resolve(ctx, username)
 		if err != nil {
 			// 查询邮箱失败按跳过处理：不阻断整批发送
 			skipped++
 			logrus.WithError(err).WithFields(fields).WithField("username", username).
 				Warn("resolve user email failed, skip announcement mail")
-		} else if email == "" {
+			continue
+		}
+		if email == "" {
 			skipped++
-		} else if err := s.sender.Send(ctx, email, subject, htmlBody, textBody); err != nil {
+			continue
+		}
+		targets = append(targets, email)
+		targetUsers = append(targetUsers, username)
+	}
+
+	batchErr := s.sender.SendBatch(ctx, targets, subject, htmlBody, textBody, func(i int, sendErr error) {
+		if sendErr != nil {
 			failed++
-			logrus.WithError(err).WithFields(fields).WithField("username", username).
+			logrus.WithError(sendErr).WithFields(fields).WithField("username", targetUsers[i]).
 				Warn("send announcement mail failed")
 		} else {
 			sent++
 		}
-
 		if (i+1)%announcementMailProgressStep == 0 {
 			s.writeProgress(ctx, id, sent, failed, skipped, false)
+		}
+	})
+	if batchErr != nil {
+		logrus.WithError(batchErr).WithFields(fields).Warn("announcement mail batch interrupted")
+		// dial / auth 阶段的连接级失败不会触发任何 onResult，补记未送达的数量，
+		// 保证 sent + failed + skipped 与收件人总数一致。
+		if unreported := len(targets) - sent - failed; unreported > 0 {
+			failed += unreported
 		}
 	}
 

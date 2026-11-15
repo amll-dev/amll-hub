@@ -61,7 +61,6 @@ export function useSearchContext(): SearchContextValue {
   const hasQuery = useAtomValue(searchHasQueryAtom);
   const [page, setPageState] = useAtom(searchPageAtom);
   const committed = useAtomValue(searchCommittedAtom);
-  const [, setHasQuery] = useAtom(searchHasQueryAtom);
   const [, setCommitted] = useAtom(searchCommittedAtom);
   const navigate = useNavigate();
   const location = useLocation();
@@ -101,13 +100,11 @@ export function useSearchContext(): SearchContextValue {
     setPageState(1);
     window.scrollTo(0, 0);
     if (!trimmed) {
-      setHasQuery(false);
       setCommitted(null);
       return;
     }
-    setHasQuery(true);
     setCommitted({ q: trimmed, tab, page: 1 });
-  }, [query, tab, location.pathname, navigate, setPageState, setHasQuery, setCommitted]);
+  }, [query, tab, location.pathname, navigate, setPageState, setCommitted]);
 
   // 切换 Tab：立即按新字段重查（不等 debounce），回到第 1 页
   const setTab = useCallback(
@@ -140,8 +137,10 @@ export function useSearchContext(): SearchContextValue {
     page,
     setPage,
     pageSize: PAGE_SIZE,
-    hits: searchQuery.data?.hits ?? [],
-    totalHits: searchQuery.data?.totalHits ?? 0,
+    // 用户 Tab 下歌词搜索 query 被禁用，但 placeholderData 会保留上一页歌曲结果；
+    // 这里显式清空，避免 hits 在 user tab 下返回语义错误的数据。
+    hits: isUserTab ? [] : (searchQuery.data?.hits ?? []),
+    totalHits: isUserTab ? 0 : (searchQuery.data?.totalHits ?? 0),
     loading: searchQuery.isFetching,
     counts: countsQuery.data?.totals,
     userMore: countsQuery.data?.userMore ?? false,

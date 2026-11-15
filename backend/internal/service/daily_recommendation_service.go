@@ -38,6 +38,12 @@ const (
 	maxDailyRecCommentLen = 7000
 )
 
+// 每日推荐创建过程中的中间状态：记录已占住日期，封面还在转存。
+const (
+	dailyRecStatusPending  = "pending"
+	dailyRecStatusApproved = "approved"
+)
+
 // DailyRecommendationService 每日推荐服务
 type DailyRecommendationService struct {
 	repo   *repository.DailyRecommendationRepo
@@ -118,41 +124,98 @@ func (s *DailyRecommendationService) CreateRecommendation(ctx context.Context, s
 		return nil, invalidInput("日期格式错误，应为 YYYY-MM-DD")
 	}
 
-	// 检查日期是否已被占用
-	exists, err := s.repo.CheckDate(ctx, input.Date)
-	if err != nil {
-		return nil, fmt.Errorf("检查日期失败: %w", err)
-	}
-	if exists {
-		return nil, invalidInput("该日期已有推荐，请更换日期")
-	}
-
-	// 将临时封面转为正式
-	coverKey, err := s.promoteTemp(ctx, input.CoverTempKey)
-	if err != nil {
-		return nil, fmt.Errorf("转存封面失败: %w", err)
-	}
-	// 删除临时对象
-	_ = s.minio.RemoveObject(ctx, s.bucket, input.CoverTempKey, minio.RemoveObjectOptions{})
-
+	// 先组装记录：cover_key 留空，封面转存成功后回填；status 先 pending，
+	// 补上封面才算一条可公开展示的推荐。
 	rec := &model.DailyRecommendation{
 		Date:          model.DateOnly(parsedDate),
 		SongName:      songName,
 		Artist:        artist,
-		CoverKey:      coverKey,
+		CoverKey:      "",
 		NcmID:         ncmID,
 		QQID:          qqID,
 		Comment:       comment,
 		Submitter:     submitter,
 		SubmitterInfo: submitterInfo,
-		Status:        "approved",
+		Status:        dailyRecStatusPending,
 	}
 
+	// 检查日期是否已被占用。date 是全表 UNIQUE，这里必须与约束口径一致，
+	// 否则「待补封面的占位记录」会在插入时才撞唯一约束，变成 500。
+	existing, err := s.repo.GetByDateAny(ctx, input.Date)
+	if err != nil {
+		return nil, fmt.Errorf("检查日期失败: %w", err)
+	}
+	if existing != nil {
+		// 上一次转存封面失败留下的占位记录：同一提交人带新的 coverTempKey 重试时，
+		// 复用这条记录补封面，不必换日期、也不必重新填表。
+		if !s.canResume(existing, submitter) {
+			return nil, invalidInput("该日期已有推荐，请更换日期")
+		}
+		rec.ID = existing.ID
+		return s.attachCover(ctx, rec, input.CoverTempKey)
+	}
+
+	// 先插库，拿到 ID 并占住 date 的唯一约束。这样封面转存失败时提交不会整体作废，
+	// 用户可以带着原来的临时封面直接重试。
 	if err := s.repo.Create(ctx, rec); err != nil {
+		// 并发抢同一日期会撞唯一约束（23505）：可能是别人赢了，也可能是本提交的
+		// 重复点击。后者能复用自己刚插入的记录继续补封面。
+		if isUniqueViolation(err) {
+			again, getErr := s.repo.GetByDateAny(ctx, input.Date)
+			if getErr == nil && again != nil && s.canResume(again, submitter) {
+				rec.ID = again.ID
+				return s.attachCover(ctx, rec, input.CoverTempKey)
+			}
+			return nil, invalidInput("该日期已有推荐，请更换日期")
+		}
 		return nil, fmt.Errorf("创建推荐失败: %w", err)
 	}
 
+	return s.attachCover(ctx, rec, input.CoverTempKey)
+}
+
+// canResume 判断已有的占位记录是否可以被当前提交人继续补封面。
+func (s *DailyRecommendationService) canResume(rec *model.DailyRecommendation, submitter string) bool {
+	return rec.Submitter == submitter &&
+		rec.CoverKey == "" &&
+		rec.Status == dailyRecStatusPending
+}
+
+// attachCover 把临时封面转存为正式对象并回填到记录上。
+// 失败时记录保持 pending、cover_key 仍为空，临时对象也不删除，用户可带同一个
+// coverTempKey 重试；只有回填成功才删临时对象。
+func (s *DailyRecommendationService) attachCover(
+	ctx context.Context, rec *model.DailyRecommendation, coverTempKey string,
+) (*CreateDailyRecResult, error) {
+	coverKey, err := s.promoteTemp(ctx, coverTempKey)
+	if err != nil {
+		return nil, fmt.Errorf("转存封面失败: %w", err)
+	}
+
+	rec.CoverKey = coverKey
+	rec.Status = dailyRecStatusApproved
+	if err := s.repo.AttachCover(ctx, rec); err != nil {
+		// 回填失败：删掉刚转存的正式封面，避免成为没有引用的孤儿对象。
+		// 记录仍是 pending，用户可以再试一次。
+		_ = s.minio.RemoveObject(ctx, s.bucket, coverKey, minio.RemoveObjectOptions{})
+		return nil, fmt.Errorf("保存封面失败: %w", err)
+	}
+
+	// 回填成功后才删临时对象（失败不影响主流程）
+	_ = s.minio.RemoveObject(ctx, s.bucket, coverTempKey, minio.RemoveObjectOptions{})
+
 	return &CreateDailyRecResult{ID: rec.ID}, nil
+}
+
+// isUniqueViolation 判断是否为 PostgreSQL 唯一约束冲突（SQLSTATE 23505）。
+// daily_recommendations.date 是全表 UNIQUE，并发抢同一日期时第二个请求会撞上它。
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "23505") ||
+		strings.Contains(msg, "duplicate key value violates unique constraint")
 }
 
 // UploadTemp 上传图片到 MinIO 临时区，返回临时 key
@@ -366,7 +429,6 @@ func (s *DailyRecommendationService) promoteTemp(ctx context.Context, tempKey st
 		return "", fmt.Errorf("非法的临时 key: %s", tempKey)
 	}
 	ext := path.Ext(tempKey)
-	formalKey := fmt.Sprintf("%s%d-%d%s", DailyRecImagePrefix, time.Now().UnixNano(), len(tempKey), ext)
 
 	// 读取临时对象完整内容后重新上传，避免 CopyObject 可能的数据不完整
 	obj, err := s.minio.GetObject(ctx, s.bucket, tempKey, minio.GetObjectOptions{})
@@ -387,6 +449,9 @@ func (s *DailyRecommendationService) promoteTemp(ctx context.Context, tempKey st
 	if int64(len(content)) != info.Size {
 		return "", fmt.Errorf("临时对象内容不完整: 读取 %d 字节, 预期 %d 字节", len(content), info.Size)
 	}
+
+	// 文件名中的数字用真实字节数，与 UploadTemp 的命名约定保持一致
+	formalKey := fmt.Sprintf("%s%d-%d%s", DailyRecImagePrefix, time.Now().UnixNano(), len(content), ext)
 
 	_, err = s.minio.PutObject(ctx, s.bucket, formalKey, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
 		ContentType: imageContentType(ext),

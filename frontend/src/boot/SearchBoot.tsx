@@ -30,7 +30,6 @@ export function SearchBoot() {
   const query = useAtomValue(searchQueryAtom);
   const tab = useAtomValue(searchTabAtom);
   const hasQuery = useAtomValue(searchHasQueryAtom);
-  const [, setHasQuery] = useAtom(searchHasQueryAtom);
   const [, setPage] = useAtom(searchPageAtom);
   const [, setCommitted] = useAtom(searchCommittedAtom);
   const navigate = useNavigate();
@@ -49,7 +48,6 @@ export function SearchBoot() {
         window.scrollTo(0, 0);
       }
       hasQueryRef.current = false;
-      setHasQuery(false);
       setPage(1);
       setCommitted(null);
       return;
@@ -61,11 +59,10 @@ export function SearchBoot() {
       // 打断进行中的 layout 动画直接吸附终点（表现为搜索框瞬移）
       window.scrollTo(0, 0);
       hasQueryRef.current = true;
-      setHasQuery(true);
       setCommitted({ q: trimmed, tab, page: 1 });
     }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [query, tab, setHasQuery, setPage, setCommitted]);
+  }, [query, tab, setPage, setCommitted]);
 
   // 监听 query 变化：在非首页输入搜索词时，导航回首页展示结果
   const prevQuery = useRef<string | null>(null);

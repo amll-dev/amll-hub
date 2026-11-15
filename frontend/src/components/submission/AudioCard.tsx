@@ -3,10 +3,11 @@ import { UserAvatar } from '@/components/submission/UserAvatar';
 import { usePlayer } from '@/hooks/usePlayer';
 import type { SubmissionAudio, UserInfo } from '@/lib/types';
 
-/** 构建 MinIO 文件的可访问 URL */
+/** 构建 MinIO 文件的可访问 URL（路径段逐段编码，key 规则变化时也不会被 ? / # 截断） */
 function fileUrl(key?: string): string {
   if (!key) return '';
-  return `${import.meta.env.VITE_API_BASE ?? ''}/api/v1/uploads/file/${key}`;
+  const encoded = key.split('/').map(encodeURIComponent).join('/');
+  return `${import.meta.env.VITE_API_BASE ?? ''}/api/v1/uploads/file/${encoded}`;
 }
 
 /** 投稿者上传的音频卡片 */

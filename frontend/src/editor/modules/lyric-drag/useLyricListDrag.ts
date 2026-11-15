@@ -164,68 +164,112 @@ export const useLyricListDrag = ({
     [containerRef, stopAutoScroll]
   );
 
+  // 拖拽开始时一次性量好所有行的「容器内内容坐标」，pointermove 期间只扫这个数组，
+  // 不再每帧 querySelectorAll + 每行 getBoundingClientRect/getComputedStyle
+  const dragLayoutRef = useRef<{
+    items: {
+      absoluteIndex: number;
+      lineId: string | null;
+      contentTop: number;
+      height: number;
+      marginTop: number;
+      marginBottom: number;
+    }[];
+    containerGap: number;
+    containerPaddingTop: number;
+    minContentTop: number;
+    maxContentBottom: number;
+  } | null>(null);
+
+  const buildDragLayout = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return null;
+    const containerRect = container.getBoundingClientRect();
+    const containerStyle = window.getComputedStyle(container);
+    const containerPaddingTop = parseFloat(containerStyle.paddingTop) || 0;
+    const containerGap = parseFloat(containerStyle.rowGap || containerStyle.gap) || 0;
+    const scrollTop = container.scrollTop;
+
+    let minContentTop = Number.POSITIVE_INFINITY;
+    let maxContentBottom = Number.NEGATIVE_INFINITY;
+    const items = Array.from(container.querySelectorAll('[data-absolute-index]')).map((node) => {
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      // 视口坐标 → 容器内内容坐标（与 scrollTop 无关，滚动时无需重新量）
+      const contentTop = rect.top - containerRect.top + scrollTop - containerPaddingTop;
+      const height = rect.height;
+      minContentTop = Math.min(minContentTop, contentTop);
+      maxContentBottom = Math.max(maxContentBottom, contentTop + height);
+      return {
+        absoluteIndex: parseInt(node.getAttribute('data-absolute-index') || '0', 10),
+        lineId: node.getAttribute('data-line-id'),
+        contentTop,
+        height,
+        marginTop: parseFloat(style.marginTop) || 0,
+        marginBottom: parseFloat(style.marginBottom) || 0,
+      };
+    });
+    items.sort((a, b) => a.contentTop - b.contentTop);
+    return { items, containerGap, containerPaddingTop, minContentTop, maxContentBottom };
+  }, [containerRef]);
+
   const calculateTargetIndex = useCallback(
     (clientY: number) => {
       const container = containerRef.current;
       if (!container) return;
 
+      let layout = dragLayoutRef.current;
+      if (!layout) {
+        layout = buildDragLayout();
+        dragLayoutRef.current = layout;
+      }
+      if (!layout || layout.items.length === 0) return;
+
       const containerRect = container.getBoundingClientRect();
-      const items = Array.from(container.querySelectorAll('[data-absolute-index]'));
-      if (items.length === 0) return;
+      const contentY =
+        clientY - containerRect.top + container.scrollTop - layout.containerPaddingTop;
+
+      // 虚拟滚动（ViewportList）下滚动会增删/复用行节点，鼠标滚出缓存覆盖范围时重建一次
+      if (contentY < layout.minContentTop || contentY > layout.maxContentBottom) {
+        layout = buildDragLayout();
+        dragLayoutRef.current = layout;
+        if (!layout || layout.items.length === 0) return;
+      }
 
       let foundInsertIndex = -1;
       let targetY = 0;
       let showIndicator = true;
 
-      const computedContainerStyle = window.getComputedStyle(container);
-      const containerPaddingTop = parseFloat(computedContainerStyle.paddingTop) || 0;
-      const containerGap =
-        parseFloat(computedContainerStyle.rowGap || computedContainerStyle.gap) || 0;
-
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i]!;
-        const rect = item.getBoundingClientRect();
-        const itemAbsoluteIndex = parseInt(item.getAttribute('data-absolute-index') || '0', 10);
-
-        if (clientY >= rect.top && clientY <= rect.bottom) {
-          const lineId = item.getAttribute('data-line-id');
-          if (lineId && ctx.current.draggedIds.has(lineId)) {
-            showIndicator = false;
-            ctx.current.dropIndex = null;
-            break;
-          }
+      for (const item of layout.items) {
+        const bottom = item.contentTop + item.height;
+        if (
+          contentY >= item.contentTop &&
+          contentY <= bottom &&
+          item.lineId &&
+          ctx.current.draggedIds.has(item.lineId)
+        ) {
+          showIndicator = false;
+          ctx.current.dropIndex = null;
+          break;
         }
 
-        const mid = rect.top + rect.height / 2;
-        if (clientY < mid) {
-          foundInsertIndex = itemAbsoluteIndex;
-          const style = window.getComputedStyle(item);
-          const marginTop = parseFloat(style.marginTop) || 0;
-          targetY =
-            rect.top -
-            (marginTop + containerGap) / 2 -
-            containerRect.top +
-            container.scrollTop -
-            containerPaddingTop;
+        const mid = item.contentTop + item.height / 2;
+        if (contentY < mid) {
+          foundInsertIndex = item.absoluteIndex;
+          targetY = item.contentTop - (item.marginTop + layout.containerGap) / 2;
           break;
         }
       }
 
       if (foundInsertIndex === -1 && showIndicator) {
-        const lastItem = items[items.length - 1];
-        if (!lastItem) return;
-        const lastRect = lastItem.getBoundingClientRect();
-        const lastAbsoluteIndex = parseInt(lastItem.getAttribute('data-absolute-index') || '0', 10);
-        foundInsertIndex = lastAbsoluteIndex + 1;
-
-        const style = window.getComputedStyle(lastItem);
-        const marginBottom = parseFloat(style.marginBottom) || 0;
-        targetY =
-          lastRect.bottom +
-          (marginBottom + containerGap) / 2 -
-          containerRect.top +
-          container.scrollTop -
-          containerPaddingTop;
+        const lastItem = layout.items[layout.items.length - 1];
+        if (lastItem) {
+          foundInsertIndex = lastItem.absoluteIndex + 1;
+          targetY =
+            lastItem.contentTop +
+            lastItem.height +
+            (lastItem.marginBottom + layout.containerGap) / 2;
+        }
       }
 
       ctx.current.dropIndex = showIndicator && foundInsertIndex !== -1 ? foundInsertIndex : null;
@@ -237,7 +281,7 @@ export const useLyricListDrag = ({
         container.style.setProperty('--drop-indicator-display', 'none');
       }
     },
-    [containerRef]
+    [containerRef, buildDragLayout]
   );
 
   const handleKeyDown = useCallback(
@@ -274,12 +318,8 @@ export const useLyricListDrag = ({
         const draggedIds = handleDragStart(ctx.current.startLineId);
         ctx.current.draggedIds = draggedIds;
 
-        draggedIds.forEach((id) => {
-          document.querySelectorAll(`[data-line-id="${id}"]`).forEach((el) => {
-            el.setAttribute('data-is-dragged', 'true');
-          });
-        });
-
+        // data-is-dragged 现在由行组件的 React 属性驱动，不再 setAttribute 直改 DOM，
+        // 也省掉按 id 逐个 querySelectorAll 的全树扫描
         document.documentElement.style.setProperty('--drag-ghost-opacity', '1');
 
         setIsDraggingGlobal(true);
@@ -344,13 +384,9 @@ export const useLyricListDrag = ({
       document.documentElement.style.removeProperty('--drag-ghost-x');
       document.documentElement.style.removeProperty('--drag-ghost-y');
 
-      ctx.current.draggedIds.forEach((id) => {
-        document.querySelectorAll(`[data-line-id="${id}"]`).forEach((el) => {
-          el.removeAttribute('data-is-dragged');
-        });
-      });
       ctx.current.dropIndex = null;
       ctx.current.draggedIds = new Set();
+      dragLayoutRef.current = null;
       ctx.current.originalEvent = null;
       ctx.current.isCopyMode = false;
     },

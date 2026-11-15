@@ -28,11 +28,18 @@ export interface SearchTabsProps {
   userMore?: boolean;
 }
 
-/** 搜索结果页顶部的 Tab 行（下划线激活态 + 命中数徽章） */
+/**
+ * 搜索结果页顶部的 Tab 行（下划线激活态 + 命中数徽章）。
+ *
+ * 刻意**不用** `role="tablist"`：这 8 个按钮是「筛选项」，不是各自控制一个
+ * tabpanel。写了 tab 语义就得实现 roving tabindex + 方向键 + Home/End，
+ * 否则读屏会宣布「选项卡 1/8」而按方向键没反应——比不写 ARIA 更糟。
+ * 语义上更接近一组单选：用 aria-current 标记当前项。
+ */
 export function SearchTabs({ value, onChange, counts, userMore = false }: SearchTabsProps) {
   return (
     <div
-      role="tablist"
+      role="group"
       aria-label="搜索范围"
       className="flex items-center gap-6 overflow-x-auto border-b border-line [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
@@ -43,8 +50,7 @@ export function SearchTabs({ value, onChange, counts, userMore = false }: Search
           <button
             key={t.value}
             type="button"
-            role="tab"
-            aria-selected={active}
+            aria-current={active ? 'true' : undefined}
             onClick={() => onChange(t.value)}
             className={cn(
               'relative shrink-0 whitespace-nowrap pb-3 pt-1 text-sm font-medium transition-colors',

@@ -56,7 +56,7 @@ const makeCodeSchema = (codeType: 'phone' | 'email') =>
   });
 type CodeFormValues = z.infer<ReturnType<typeof makeCodeSchema>>;
 
-/** 扫码登录面板：申请票据 → 渲染二维码 → 轮询状态 → 确认后写入登录态 */
+/** MFA 因子中文名 */
 function mfaMethodLabel(type: string): string {
   switch (type) {
     case 'app':
@@ -70,6 +70,7 @@ function mfaMethodLabel(type: string): string {
   }
 }
 
+/** 扫码登录面板：申请票据 → 渲染二维码 → 轮询状态 → 确认后写入登录态 */
 function QrLoginPanel({ onSuccess }: { onSuccess: (r: LoginSuccess) => void }) {
   const [dataUrl, setDataUrl] = useState('');
 
@@ -1003,7 +1004,7 @@ export function AuthDialog() {
                           className="flex flex-col items-center gap-1 text-ink-3 transition-colors hover:text-primary"
                         >
                           <Github className="h-6 w-6" />
-                          <span className="text-[10px]">GitHub 登录</span>
+                          <span className="text-[11px]">GitHub 登录</span>
                         </a>
                         <button
                           type="button"
@@ -1017,7 +1018,7 @@ export function AuthDialog() {
                           }}
                         >
                           <Mail className="h-6 w-6" />
-                          <span className="text-[10px]">邮箱登录</span>
+                          <span className="text-[11px]">邮箱登录</span>
                         </button>
                       </div>
                     </div>

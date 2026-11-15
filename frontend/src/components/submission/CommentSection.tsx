@@ -153,12 +153,21 @@ export function CommentSection({
     target.kind === 'submission'
       ? queryKeys.submissionComments(target.id)
       : queryKeys.pluginComments(target.key);
+  // 插件评论接口按页返回（后端每页上限 50）。先用 20 条首屏，点「加载更多」
+  // 时扩大每页条数，避免热门插件一次拉回上千条评论。
+  const [pluginCommentPageSize, setPluginCommentPageSize] = useState(20);
+  const commentsQueryKey =
+    target.kind === 'plugin' ? ([...commentsKey, pluginCommentPageSize] as const) : commentsKey;
   const commentsQuery = useQuery({
-    queryKey: commentsKey,
-    queryFn: async (): Promise<CommentBase[]> =>
-      target.kind === 'submission'
-        ? api.listSubmissionComments(target.id)
-        : api.pluginStore.pluginComments(target.key),
+    queryKey: commentsQueryKey,
+    queryFn: async (): Promise<CommentBase[]> => {
+      if (target.kind === 'submission') return api.listSubmissionComments(target.id);
+      const res = await api.pluginStore.pluginComments(target.key, {
+        page: 1,
+        pageSize: pluginCommentPageSize,
+      });
+      return res.items;
+    },
     initialData: initialComments,
     staleTime: 15_000,
   });
@@ -169,8 +178,8 @@ export function CommentSection({
    * 由 onSettled 的 invalidate 拉服务端数据覆盖）。返回插入前列表供回滚。
    */
   const optimisticInsert = (content: string): CommentBase[] => {
-    void queryClient.cancelQueries({ queryKey: commentsKey });
-    const prev = queryClient.getQueryData<CommentBase[]>(commentsKey) ?? [];
+    void queryClient.cancelQueries({ queryKey: commentsQueryKey });
+    const prev = queryClient.getQueryData<CommentBase[]>(commentsQueryKey) ?? [];
     const author = user
       ? { username: user.name, displayName: user.displayName, avatar: user.avatar }
       : { username: '', displayName: '我', avatar: '' };
@@ -181,13 +190,13 @@ export function CommentSection({
       content,
       createdAt: new Date().toISOString(),
     };
-    queryClient.setQueryData<CommentBase[]>(commentsKey, [...prev, optimistic]);
+    queryClient.setQueryData<CommentBase[]>(commentsQueryKey, [...prev, optimistic]);
     return prev;
   };
 
   /** 失败回滚：恢复列表与输入框内容 */
   const rollback = (prevComments: CommentBase[], content: string) => {
-    queryClient.setQueryData(commentsKey, prevComments);
+    queryClient.setQueryData(commentsQueryKey, prevComments);
     setText(content);
     setMode('write');
   };
@@ -385,6 +394,19 @@ export function CommentSection({
           )
         )}
       </ul>
+
+      {/* 插件评论按页拉取，返回满一页才认为可能还有更多 */}
+      {target.kind === 'plugin' &&
+        comments.length >= pluginCommentPageSize &&
+        pluginCommentPageSize < 50 && (
+          <button
+            type="button"
+            onClick={() => setPluginCommentPageSize((size) => Math.min(50, size + 20))}
+            className="mb-3 w-full rounded-md border border-line py-1.5 text-xs text-ink-2 transition-colors hover:bg-surface-2 hover:text-foreground"
+          >
+            加载更多评论
+          </button>
+        )}
 
       {/* 快捷模板 */}
       {templates && (

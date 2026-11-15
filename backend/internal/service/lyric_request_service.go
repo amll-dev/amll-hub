@@ -300,6 +300,17 @@ func (s *LyricRequestService) Create(
 		if err := s.repo.IncRequestCount(ctx, existing.ID); err != nil {
 			return nil, fmt.Errorf("合并请愿失败: %w", err)
 		}
+		// 把本次提供的非 "0" 平台 ID 写回已有记录，补齐此前缺失的 ID：
+		// 否则用户补的 ID 会静默丢失，下一位只填该 ID 的用户仍会另建一条请愿。
+		updates := make(map[string]any, 4)
+		for col, val := range in.platformIDs() {
+			updates[col] = val
+		}
+		if len(updates) > 0 {
+			if err := s.repo.UpdateFields(ctx, existing.ID, updates); err != nil {
+				return nil, fmt.Errorf("合并请愿失败: %w", err)
+			}
+		}
 		if _, err := s.repo.AddSupportIfAbsent(ctx, existing.ID, user.Name, user.info()); err != nil {
 			return nil, fmt.Errorf("合并请愿失败: %w", err)
 		}
@@ -392,6 +403,12 @@ func (s *LyricRequestService) Withdraw(ctx context.Context, id int64, user *Lyri
 	}
 	if req.RequesterName != user.Name {
 		return ErrForbidden
+	}
+	// 与 Update 保持同一口径：已完成的请愿背后可能已有关联投稿与上线歌词，
+	// 物理删除会让 submission_petition_links 指向不存在的 request_id，
+	// 进而导致 HasApprovedSubmission 查不到、其它投稿解绑时把状态改错。
+	if req.Status != model.LyricRequestPending {
+		return invalidInput("已完成的请愿不能撤回")
 	}
 	return s.repo.Delete(ctx, id)
 }

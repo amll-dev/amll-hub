@@ -106,8 +106,6 @@ export class FFmpegAudioEngine extends TypedEventTarget<EngineEventMap> {
   private _analysisPcm: DecodedPcm | null = null;
 
   private timeupdateTimer: ReturnType<typeof setInterval> | null = null;
-  private loadReject: ((err: { code: EngineErrorCodeValue; message: string }) => void) | null =
-    null;
 
   constructor(config: EngineConfig) {
     super();
@@ -306,7 +304,18 @@ export class FFmpegAudioEngine extends TypedEventTarget<EngineEventMap> {
   /**
    * 主线程解码音频并装载到回放队列。
    */
-  public async loadFile(file: File): Promise<void> {
+  public async loadFile(file: File): Promise<'loaded' | 'aborted'> {
+    // SharedArrayBuffer 只在跨源隔离（COOP/COEP）下可用。缺隔离头时构造会抛
+    // SecurityError，若混进 Decode 分类会把「环境不支持」误报成「文件损坏」
+    // 这里前置检测并单独归类为 Unsupported，把提示指向部署配置。
+    const crossOriginIsolated =
+      (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true;
+    if (typeof SharedArrayBuffer === 'undefined' || !crossOriginIsolated) {
+      const message = '当前页面未启用跨源隔离（COOP/COEP），音频功能不可用';
+      this.handleError(EngineErrorCode.Unsupported, message);
+      throw new Error(message);
+    }
+
     if (!this._assetsPreloaded) {
       await this.preloadAssets();
     }
@@ -324,7 +333,7 @@ export class FFmpegAudioEngine extends TypedEventTarget<EngineEventMap> {
       await this.renderer.initialize(channels);
 
       if (this.loadSessionId !== currentSessionId) {
-        return;
+        return 'aborted';
       }
 
       this.sharedBuffer = allocateAudioQueueMemory(sampleRate, channels, this.queueConfig);
@@ -342,20 +351,20 @@ export class FFmpegAudioEngine extends TypedEventTarget<EngineEventMap> {
       );
 
       if (this.loadSessionId !== currentSessionId) {
-        return;
+        return 'aborted';
       }
 
       // ── 唯一的解码点：主线程 decodeAudioData ──
       const arrayBuffer = await file.arrayBuffer();
 
       if (this.loadSessionId !== currentSessionId) {
-        return;
+        return 'aborted';
       }
 
       const audioBuffer = await this.config.audioContext.decodeAudioData(arrayBuffer);
 
       if (this.loadSessionId !== currentSessionId) {
-        return;
+        return 'aborted';
       }
 
       /*
@@ -378,6 +387,7 @@ export class FFmpegAudioEngine extends TypedEventTarget<EngineEventMap> {
       this._cover = null;
       this._state = 'ready';
       this.dispatch('loadedmetadata');
+      return 'loaded';
     } catch (e) {
       const msg = getErrorMessage(e);
       this.handleError(EngineErrorCode.Decode, `Engine initialization failed: ${msg}`);
@@ -543,11 +553,6 @@ export class FFmpegAudioEngine extends TypedEventTarget<EngineEventMap> {
     this.stopTimeupdate();
     this._state = 'idle';
 
-    if (this.loadReject) {
-      this.loadReject({ code, message });
-      this.loadReject = null;
-    }
-
     this.dispatch('error', { code, message });
   }
 
@@ -601,14 +606,6 @@ export class FFmpegAudioEngine extends TypedEventTarget<EngineEventMap> {
     this._duration = 0;
     this.baseTime = 0;
     this._analysisPcm = null;
-
-    if (this.loadReject) {
-      this.loadReject({
-        code: EngineErrorCode.Aborted,
-        message: 'Loading aborted by subsequent operation',
-      });
-      this.loadReject = null;
-    }
   }
   //#endregion
 }

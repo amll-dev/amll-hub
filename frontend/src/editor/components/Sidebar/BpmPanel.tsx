@@ -1,6 +1,6 @@
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { AlertCircle, ArrowLeft, Info, RotateCcw, Timer, X } from 'lucide-react';
-import { type FC, useCallback, useId, useRef } from 'react';
+import { type FC, useCallback, useEffect, useId, useRef } from 'react';
 import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -13,7 +13,7 @@ import {
   hasSeenTapWindowTipAtom,
 } from '$/modules/audio/states';
 import { showBeatLinesAtom } from '$/modules/spectrogram/states';
-import { keySyncNextAtom } from '$/states/keybindings';
+import { cmdSyncNext } from '$/modules/keyboard/commands';
 import { useKeyBindingAtom } from '$/utils/keybindings';
 
 function formatCalculationTime(timeMs: number): string {
@@ -56,13 +56,20 @@ export const BpmPanel: FC = () => {
     engineState === 'ready' || engineState === 'playing' || engineState === 'paused';
 
   const initialBpmRef = useRef<typeof bpmState | null>(null);
-  if (
-    bpmState.status === 'completed' &&
-    initialBpmRef.current === null &&
-    bpmState.calculationTime > 0
-  ) {
-    initialBpmRef.current = bpmState;
-  }
+  const prevStatusRef = useRef(bpmState.status);
+  // 每次从「非 completed」进入 completed（换音频后重新分析完成）都刷新基准，
+  // 不再只在挂载时锁一次，避免重置时恢复上一首歌的 BPM。
+  // 写 ref 放进 effect，避免在 render 阶段产生副作用。
+  useEffect(() => {
+    if (
+      prevStatusRef.current !== 'completed' &&
+      bpmState.status === 'completed' &&
+      bpmState.calculationTime > 0
+    ) {
+      initialBpmRef.current = bpmState;
+    }
+    prevStatusRef.current = bpmState.status;
+  }, [bpmState]);
 
   const handleResetBpm = useCallback(() => {
     rawResetBpm();
@@ -73,7 +80,7 @@ export const BpmPanel: FC = () => {
   }, [rawResetBpm, resetTapTimes, setBpmState]);
 
   useKeyBindingAtom(
-    keySyncNextAtom,
+    cmdSyncNext.atom,
     (evt) => {
       if (!isKeyTapMode) return;
       triggerTap(undefined, evt.downTimeOffset);
@@ -243,7 +250,7 @@ export const BpmPanel: FC = () => {
                     }`}
                     onClick={() => triggerTap()}
                   >
-                    根据节拍按下 <KeyBinding kbdAtom={keySyncNextAtom} /> 或点击此处
+                    根据节拍按下 <KeyBinding kbdAtom={cmdSyncNext.atom} /> 或点击此处
                   </span>
                 </div>
               </div>

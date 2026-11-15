@@ -43,6 +43,7 @@ import {
 import { visualizeTimestampUpdateAtom } from '$/modules/settings/states/sync.ts';
 import {
   dragSourceAtom,
+  hasAgentsAtom,
   isDraggingGlobalAtom,
   lyricLinesAtom,
   selectedLinesAtom,
@@ -50,6 +51,7 @@ import {
   showEndTimeAsDurationAtom,
   ToolMode,
   toolModeAtom,
+  vocalTagsAtom,
 } from '$/states/main.ts';
 import { type LyricLine, newLyricLine, newLyricWord, type TTMLLyric } from '$/types/ttml.ts';
 import { containsRadicalChar } from '$/utils/detect-radical.ts';
@@ -288,13 +290,15 @@ export const LyricLineView: FC<{
     allowDrag?: boolean
   ) => void;
 }> = memo(({ lineAtom, lineIndex, playbackHighlightedLineId, onPointerDown }) => {
-  const lyricState = useAtomValue(lyricLinesAtom);
-  /*
-   * `?? []` 每次渲染都会产生**新的数组引用**，会让下面两个 useMemo
-   * 每帧都重算（vocalTagMap / vocalTagIds）。用 useMemo 把引用稳定住，
-   * 只有 `lyricState.vocalTags` 真的变了才换引用。
-   */
-  const vocalTags = useMemo(() => lyricState.vocalTags ?? [], [lyricState.vocalTags]);
+  // 只订阅派生值：vocalTags / 是否定义了 Agent / 下一行起始时间。
+  // 这些值在编辑其它行时保持不变，行组件便不再因整棵歌词树变化而重渲染。
+  const vocalTags = useAtomValue(vocalTagsAtom);
+  const hasAgents = useAtomValue(hasAgentsAtom);
+  const nextLineStartTimeAtom = useMemo(
+    () => atom((get) => get(lyricLinesAtom).lyricLines[lineIndex + 1]?.startTime),
+    [lineIndex]
+  );
+  const nextLineStartTime = useAtomValue(nextLineStartTimeAtom);
   const vocalTagMap = useMemo(() => {
     return new Map(vocalTags.map((tag) => [tag.key, tag.value]));
   }, [vocalTags]);
@@ -329,7 +333,6 @@ export const LyricLineView: FC<{
   const words = useAtomValue(wordsAtom);
   const lineSelected = useAtomValue(lineSelectedAtom);
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
-  const lyricLines = useAtomValue(lyricLinesAtom);
   const visualizeTimestampUpdate = useAtomValue(visualizeTimestampUpdateAtom);
   const showTimestamps = useAtomValue(showTimestampsAtom);
   const toolMode = useAtomValue(toolModeAtom);
@@ -365,12 +368,12 @@ export const LyricLineView: FC<{
       return false;
     }
     // 如果歌词没有定义任何 Agent，不需要警告
-    if (!lyricLines.agents || lyricLines.agents.length === 0) {
+    if (!hasAgents) {
       return false;
     }
     // 如果该行没有设置 Agent，显示警告
     return !line.agent;
-  }, [lyricLines.agents, line.agent, line.isBG]);
+  }, [hasAgents, line.agent, line.isBG]);
 
   const hasRadical = useMemo(() => {
     for (const word of line.words) {
@@ -455,8 +458,7 @@ export const LyricLineView: FC<{
 
   useEffect(() => {
     if (!endTimeLinked) return;
-    const nextLine = lyricLines.lyricLines[lineIndex + 1];
-    if (!nextLine) {
+    if (nextLineStartTime === undefined) {
       editLyricLines((state: Draft<TTMLLyric>) => {
         const targetLine = state.lyricLines[lineIndex];
         if (!targetLine) return;
@@ -464,13 +466,13 @@ export const LyricLineView: FC<{
       });
       return;
     }
-    if (nextLine.startTime === line.endTime) return;
+    if (nextLineStartTime === line.endTime) return;
     editLyricLines((state: Draft<TTMLLyric>) => {
       const targetLine = state.lyricLines[lineIndex + 1];
       if (!targetLine) return;
       targetLine.startTime = line.endTime;
     });
-  }, [endTimeLinked, editLyricLines, line.endTime, lineIndex, lyricLines]);
+  }, [endTimeLinked, editLyricLines, line.endTime, lineIndex, nextLineStartTime]);
 
   useEffect(() => {
     const linked = Boolean(line.endTimeLink);
@@ -490,7 +492,6 @@ export const LyricLineView: FC<{
     (evt: React.MouseEvent<HTMLButtonElement>) => {
       evt.preventDefault();
       evt.stopPropagation();
-      const nextLine = lyricLines.lyricLines[lineIndex + 1];
       if (endTimeLinked) {
         setEndTimeLinked(false);
         originalEndTimeRef.current = null;
@@ -516,10 +517,9 @@ export const LyricLineView: FC<{
         });
         return;
       }
-      // const nextLine = lyricLines.lyricLines[lineIndex + 1];
-      if (!nextLine) return;
+      if (nextLineStartTime === undefined) return;
       originalEndTimeRef.current = line.endTime;
-      originalNextStartTimeRef.current = nextLine?.startTime ?? null;
+      originalNextStartTimeRef.current = nextLineStartTime ?? null;
       editLyricLines((state: Draft<TTMLLyric>) => {
         const targetLine = state.lyricLines[lineIndex];
         if (!targetLine) return;
@@ -538,7 +538,7 @@ export const LyricLineView: FC<{
       });
       setEndTimeLinked(true);
     },
-    [editLyricLines, endTimeLinked, line.endTime, lineIndex, lyricLines]
+    [editLyricLines, endTimeLinked, line.endTime, lineIndex, nextLineStartTime]
   );
 
   return (

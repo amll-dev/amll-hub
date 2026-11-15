@@ -8,6 +8,7 @@ import {
   getGreenColor,
   getIcyBlueColor,
 } from '$/modules/spectrogram/utils/colors';
+import { uid } from 'uid';
 
 export const spectrogramGainAtom = atomWithStorage('settings_spectrogramGain', 3.0);
 export const spectrogramZoomAtom = atomWithStorage('settings_spectrogramZoomV2', 200);
@@ -42,9 +43,9 @@ export const selectedPaletteIdAtom = atomWithStorage<string>(
 );
 
 export const customPaletteStopsAtom = atomWithStorage<ColorStop[]>('settings_customPaletteStops', [
-  { id: crypto.randomUUID(), pos: 0.0, color: '#000000' },
-  { id: crypto.randomUUID(), pos: 0.5, color: '#ff0000' },
-  { id: crypto.randomUUID(), pos: 1.0, color: '#ffff00' },
+  { id: uid(), pos: 0.0, color: '#000000' },
+  { id: uid(), pos: 0.5, color: '#ff0000' },
+  { id: uid(), pos: 1.0, color: '#ffff00' },
 ]);
 
 export const currentPaletteAtom = atom((get) => {

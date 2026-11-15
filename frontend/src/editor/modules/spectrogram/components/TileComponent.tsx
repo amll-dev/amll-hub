@@ -35,7 +35,9 @@ export const TileComponent = memo(
           }
         }
       }
-    }, [bitmap, tileId]);
+      // React 重设 canvas 的 width/height 属性会让浏览器立刻清空画布，
+      // 所以尺寸变化也必须重跑绘制，否则瓦片会一直空白到下一张 bitmap 送达。
+    }, [bitmap, tileId, canvasWidth, height]);
 
     return (
       <canvas

@@ -300,6 +300,9 @@ export const AdvancedSegmentationDialog = memo(() => {
               <span className="text-sm text-foreground">标点时长权重:</span>
               <Input
                 type="number"
+                min={0}
+                step={0.1}
+                max={10}
                 value={punctuationWeight}
                 onChange={(e) => setPunctuationWeight(e.target.value)}
                 disabled={punctuationMode !== 'standalone'}

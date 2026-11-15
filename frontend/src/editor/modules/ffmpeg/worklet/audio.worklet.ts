@@ -17,6 +17,12 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
   private playbackFractional: number = 0.0;
   private lastSeekGeneration: number = 0;
   private inputChunkSize: number = 0;
+  /** process() 里复用的 wasm 内存视图，INIT 时预分配，避免音频线程每块 new */
+  private inputViews: Float32Array[] = [];
+  private outputViews: Float32Array[] = [];
+  private viewsBuffer: ArrayBufferLike | null = null;
+  /** INIT 可能因为编辑器重挂而连发两次；只让最后一次生效，避免两个 wasm 实例交错 */
+  private initSeq = 0;
 
   constructor() {
     super();
@@ -25,6 +31,7 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
       const data = event.data;
 
       if (data.type === 'INIT') {
+        const seq = ++this.initSeq;
         if (this.stProcessor) {
           this.stProcessor.free();
           this.stProcessor = null;
@@ -37,6 +44,10 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
           this.audioReader = createAudioReader(sharedBuffer);
 
           const wasmInstance = await initWasm({ module_or_path: wasmBytes });
+          // 等待 wasm 实例化期间可能又来了一条 INIT；旧实例的结果必须丢弃，
+          // 否则两条 INIT 会各自覆盖 wasmMemory / stProcessor / viewsBuffer，
+          // 留下指向已 detach buffer 的视图。
+          if (seq !== this.initSeq) return;
           this.wasmMemory = wasmInstance.memory;
 
           this.stProcessor = new SoundTouchProcessor(channels, sampleRate);
@@ -49,6 +60,7 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
           this.currentRate = rate;
 
           this.inputChunkSize = this.stProcessor.getInputChunkSize();
+          this.allocateViews();
 
           this.postEvent({
             type: 'INIT_DONE',
@@ -79,6 +91,9 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
         }
         this.wasmMemory = null;
         this.audioReader = null;
+        this.inputViews = [];
+        this.outputViews = [];
+        this.viewsBuffer = null;
       }
     };
 
@@ -89,19 +104,55 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
     this.port.postMessage(event);
   }
 
+  /**
+   * 预分配 wasm 内存上的 Float32Array 视图
+   * 输入视图长度即 inputChunkSize，输出视图长度即一个 worklet 块；
+   * process() 里只读改内容、复用这两个数组，不再每块 new。
+   */
+  private allocateViews(): void {
+    const memory = this.wasmMemory;
+    const processor = this.stProcessor;
+    if (!memory || !processor || this.inputChunkSize <= 0) return;
+    const buffer = memory.buffer;
+    this.inputViews = Array.from(
+      { length: this.channels },
+      (_, c) => new Float32Array(buffer, processor.getInputPtr(c), this.inputChunkSize)
+    );
+    this.outputViews = Array.from(
+      { length: this.channels },
+      (_, c) => new Float32Array(buffer, processor.getOutputPtr(c), WORKLET_BLOCK_SIZE)
+    );
+    this.viewsBuffer = buffer;
+  }
+
+  /**
+   * wasm memory 增长会 detach 旧 buffer，建在它上面的 inputViews / outputViews
+   * 会立刻失效：再往里 `Float32Array.set` 就抛
+   * "Cannot perform %TypedArray%.prototype.set on a detached ArrayBuffer"。
+   * AudioWorklet 里未捕获异常会直接终止该 processor，表现为无声且时间轴卡住。
+   */
+  private refreshViewsIfNeeded(): void {
+    const memory = this.wasmMemory;
+    if (!memory || this.viewsBuffer === memory.buffer) return;
+    this.allocateViews();
+  }
+
   process(
     _inputs: Float32Array[][],
     outputs: Float32Array[][],
     _parameters: Record<string, Float32Array>
   ): boolean {
     const output = outputs[0];
+    this.refreshViewsIfNeeded();
     if (
       !this.audioReader ||
       !this.stProcessor ||
       !this.wasmMemory ||
       this.inputChunkSize === 0 ||
       !output ||
-      !output[0]
+      !output[0] ||
+      this.inputViews.length !== this.channels ||
+      this.outputViews.length !== this.channels
     ) {
       this.fillSilence(output ?? [], WORKLET_BLOCK_SIZE);
       return true;
@@ -144,18 +195,19 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
         break;
       }
 
+      // processInput 可能让 wasm 扩容。上一轮扩容后旧视图已经 detach，
+      // 必须在这一次 readPartial 写入之前重建，否则异常会打死整个 worklet。
+      this.refreshViewsIfNeeded();
+
       const readAmount = Math.min(availableInSAB, this.inputChunkSize);
 
-      const wasmInputs: Float32Array[] = [];
-      for (let c = 0; c < this.channels; c++) {
-        const ptr = this.stProcessor.getInputPtr(c);
-        wasmInputs.push(new Float32Array(this.wasmMemory.buffer, ptr, readAmount));
-      }
-
-      const actualRead = this.audioReader.readPartial(wasmInputs, readAmount);
+      // 复用 INIT 时预分配的视图；readPartial 按 length 截断，不会越界写入
+      const actualRead = this.audioReader.readPartial(this.inputViews, readAmount);
 
       if (actualRead > 0) {
         this.stProcessor.processInput(actualRead);
+        // 扩容后立刻重建，下面取输出时用的 outputViews 也是同一块 wasm 内存
+        this.refreshViewsIfNeeded();
       } else {
         break;
       }
@@ -181,9 +233,9 @@ class FFmpegAudioProcessor extends AudioWorkletProcessor {
 
       const actualChannels = Math.min(this.channels, output.length);
       for (let c = 0; c < actualChannels; c++) {
-        const ptr = this.stProcessor.getOutputPtr(c);
-        const wasmOutput = new Float32Array(this.wasmMemory.buffer, ptr, extracted);
-        output[c]!.set(wasmOutput);
+        const view = this.outputViews[c];
+        // 复制整块（长度固定），超出的尾部随后由 fill(0, extracted) 清零，零分配
+        if (view) output[c]!.set(view);
       }
 
       const consumedSourceFrames = extracted * this.currentTempo * this.currentRate;

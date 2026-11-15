@@ -77,6 +77,11 @@ type casdoorResponse struct {
 	Sub    string          `json:"sub"`
 	Data   json.RawMessage `json:"data"`
 	Data2  json.RawMessage `json:"data2"`
+	// Code 部分 Casdoor 接口会返回的错误码，没有时为空。
+	// 供 ClassifyCasdoorErr 优先按码分类，避免依赖错误文案。
+	Code string `json:"code"`
+	// httpStatus 由各请求函数按实际响应填充，不参与 JSON 解析。
+	httpStatus int
 }
 
 // MfaProps Casdoor 多因素认证因子
@@ -190,8 +195,10 @@ func (c *CasdoorClient) doWithBasicAuthAndCookies(ctx context.Context, method, p
 
 	var cr casdoorResponse
 	if err := json.Unmarshal(raw, &cr); err != nil {
-		return nil, nil, fmt.Errorf("decode casdoor response: %w, body: %s", err, string(raw))
+		// 只保留状态码与长度，绝不把响应体拼进 error：登录响应可能含
+		return nil, nil, fmt.Errorf("decode casdoor response: %w, status_code: %d, body_len: %d", err, resp.StatusCode, len(raw))
 	}
+	cr.httpStatus = resp.StatusCode
 	respCookies := resp.Cookies()
 	if strings.HasPrefix(path, "/api/login") {
 		logrus.WithFields(logrus.Fields{
@@ -281,16 +288,18 @@ func (c *CasdoorClient) doWithCookieHeaderCore(ctx context.Context, method, path
 			"body":        truncateStr(string(raw), 200),
 		}).Info("casdoor non-json response")
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return &casdoorResponse{Status: "ok", Msg: ""}, merged, nil
+			return &casdoorResponse{Status: "ok", Msg: "", httpStatus: resp.StatusCode}, merged, nil
 		}
-		return &casdoorResponse{Status: "error", Msg: strings.TrimSpace(string(raw))}, merged, nil
+		// Msg 同样只保留截断前缀，避免整段响应体（可能含会话 / token）被上层记录
+		return &casdoorResponse{Status: "error", Msg: truncateStr(strings.TrimSpace(string(raw)), 200), httpStatus: resp.StatusCode}, merged, nil
 	}
+	cr.httpStatus = resp.StatusCode
 
 	return &cr, merged, nil
 }
 
 // doWithCookieHeader 直接按 Cookie 头发送会话（不带 Basic Auth）。
-// Casdoor 的 /api/login 二次验证、mfaAuth 发码、MFA 绑定 verify/enable 都依赖这份会话。
+// Casdoor 的 /api/login 二次验证、mfaAuth 发码等依赖这份会话。
 func (c *CasdoorClient) doWithCookieHeader(ctx context.Context, method, path string, body io.Reader, contentType string, cookies []*http.Cookie) (*casdoorResponse, []*http.Cookie, error) {
 	return c.doWithCookieHeaderCore(ctx, method, path, body, contentType, cookies, false)
 }
@@ -356,39 +365,163 @@ func (c *CasdoorClient) doRequest(req *http.Request) (*casdoorResponse, error) {
 
 	var cr casdoorResponse
 	if err := json.Unmarshal(raw, &cr); err != nil {
-		return nil, fmt.Errorf("decode casdoor response: %w, body: %s", err, string(raw))
+		// 同上：不把响应体拼进 error，避免敏感内容（含 token）进入日志。
+		return nil, fmt.Errorf("decode casdoor response: %w, status_code: %d, body_len: %d", err, resp.StatusCode, len(raw))
 	}
+	cr.httpStatus = resp.StatusCode
 	return &cr, nil
 }
 
-// ErrCasdoorUserNotFound Casdoor 侧明确表示用户不存在
+// ErrCasdoorUserNotFound Casdoor 侧明确表示用户不存在（HTTP 404 / 用户查询落空）
 var ErrCasdoorUserNotFound = errors.New("casdoor user not found")
 
-// isCasdoorNotFound 判断 Casdoor 的错误消息是否在表达「用户不存在」
-func isCasdoorNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, ErrCasdoorUserNotFound) {
-		return true
-	}
-	msg := strings.ToLower(err.Error())
-	for _, kw := range []string{"does not exist", "not found", "not exist", "不存在"} {
-		if strings.Contains(msg, kw) {
-			return true
-		}
-	}
-	return false
+// CasdoorError 结构化的 Casdoor 上游错误，携带 HTTP 状态码与响应里的错误码 /
+// status / msg，供上层按结构化字段分类，而不是对 err.Error() 做文案匹配。
+type CasdoorError struct {
+	HTTPStatus int
+	Code       string
+	Status     string
+	Msg        string
 }
 
-// checkStatus 检查 Casdoor 响应状态，失败返回错误
+func (e *CasdoorError) Error() string {
+	if e.Msg != "" {
+		return e.Msg
+	}
+	return "casdoor operation failed"
+}
+
+// CasdoorErrFlag 上游错误的语义类别，可组合（一个错误可同时命中多类）。
+type CasdoorErrFlag uint32
+
+const (
+	CasdoorErrFlagNone          CasdoorErrFlag = 0
+	CasdoorErrFlagNotFound      CasdoorErrFlag = 1 << 0  // 用户 / 资源不存在、未注册
+	CasdoorErrFlagAlreadyExists CasdoorErrFlag = 1 << 1  // 用户名 / 邮箱 / 手机已存在
+	CasdoorErrFlagCaptcha       CasdoorErrFlag = 1 << 2  // 人机验证失败
+	CasdoorErrFlagInvalidCode   CasdoorErrFlag = 1 << 3  // 验证码错误（通用）
+	CasdoorErrFlagCodeExpired   CasdoorErrFlag = 1 << 4  // 验证码已使用 / 过期
+	CasdoorErrFlagProviderSMS   CasdoorErrFlag = 1 << 5  // 短信 provider 未配置
+	CasdoorErrFlagProviderEmail CasdoorErrFlag = 1 << 6  // 邮件 provider 未配置
+	CasdoorErrFlagInvalidPhone  CasdoorErrFlag = 1 << 7  // 手机号格式 / 区号不被接受
+	CasdoorErrFlagInvalidInput  CasdoorErrFlag = 1 << 8  // 其它输入格式非法
+	CasdoorErrFlagUnauthorized  CasdoorErrFlag = 1 << 9  // Unauthorized operation
+	CasdoorErrFlagMfaSession    CasdoorErrFlag = 1 << 10 // MFA 会话丢失 / 未登录
+)
+
+// ClassifyCasdoorErr 把 Casdoor 上游错误归一成语义类别。
+// 优先用结构化字段（哨兵错误 / HTTP status / body 里的 code），上游不给码时才
+// 回退到文案匹配——整个项目只有这一处对 err.Error() 做 strings.Contains，
+// 业务函数只对这里的 flag 做判断（见 service.normalizeCasdoorErr）。
+func ClassifyCasdoorErr(err error) CasdoorErrFlag {
+	if err == nil {
+		return CasdoorErrFlagNone
+	}
+	if errors.Is(err, ErrCasdoorUserNotFound) {
+		return CasdoorErrFlagNotFound
+	}
+
+	var flags CasdoorErrFlag
+	var ce *CasdoorError
+	if errors.As(err, &ce) {
+		switch ce.HTTPStatus {
+		case http.StatusNotFound:
+			flags |= CasdoorErrFlagNotFound
+		case http.StatusConflict:
+			flags |= CasdoorErrFlagAlreadyExists
+		}
+		switch strings.ToLower(ce.Code) {
+		case "user_not_found", "not_found":
+			flags |= CasdoorErrFlagNotFound
+		case "user_exists", "already_exists", "user_already_exists":
+			flags |= CasdoorErrFlagAlreadyExists
+		case "invalid_code", "code_invalid":
+			flags |= CasdoorErrFlagInvalidCode
+		case "code_expired", "code_used":
+			flags |= CasdoorErrFlagCodeExpired
+		case "captcha_failed", "turing_test_failed":
+			flags |= CasdoorErrFlagCaptcha
+		}
+	}
+
+	// 文案回退：Casdoor 的发码 / 登录接口只给 msg 不给业务码，这里必须保留少量匹配。
+	// 优先取结构化错误里的上游 msg，避免包装前缀（如 "decode casdoor response"）
+	// 里的子串被误当成业务语义。
+	msgSource := err.Error()
+	if ce != nil && ce.Msg != "" {
+		msgSource = ce.Msg
+	}
+	msg := strings.ToLower(msgSource)
+	hasAny := func(kws ...string) bool {
+		for _, kw := range kws {
+			if strings.Contains(msg, kw) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// 只认「用户维度」的表述：connection not found / endpoint not found /
+	// application not found 这类传输或配置层错误不能算「账号不存在」，
+	// 否则 Casdoor 故障时会把用户引导去重新注册。
+	notFound := hasAny("user does not exist", "user doesn't exist", "user not found",
+		"no such user", "用户不存在", "用户未注册")
+	if notFound {
+		flags |= CasdoorErrFlagNotFound
+	}
+	// "the user does not exist" 也含 exist，先排除 not-found 再判「已存在」
+	if strings.Contains(msg, "already exists") ||
+		(strings.Contains(msg, "exist") && !notFound &&
+			hasAny("username", "phone", "email", "user", "already")) {
+		flags |= CasdoorErrFlagAlreadyExists
+	}
+	if hasAny("turing test failed", "captcha") {
+		flags |= CasdoorErrFlagCaptcha
+	}
+	if hasAny("already been used", "expired", "已失效") {
+		flags |= CasdoorErrFlagCodeExpired
+	}
+	// 不用裸 "code"：传输层错误串（"decode ..." / "status_code ..."）也含该子串
+	if hasAny("verification", "invalid code", "wrong code", "code is invalid", "验证码") {
+		flags |= CasdoorErrFlagInvalidCode
+	}
+	if hasAny("sms provider") {
+		flags |= CasdoorErrFlagProviderSMS
+	}
+	if hasAny("email provider") {
+		flags |= CasdoorErrFlagProviderEmail
+	}
+	if strings.Contains(msg, "unauthorized operation") {
+		flags |= CasdoorErrFlagUnauthorized | CasdoorErrFlagMfaSession
+	}
+	if hasAny("unknown authentication type", "expired user session", "please sign in first") {
+		flags |= CasdoorErrFlagMfaSession
+	}
+	if hasAny("phone number is invalid", "invalid in your region") ||
+		(strings.Contains(msg, "phone") && hasAny("invalid", "format")) {
+		flags |= CasdoorErrFlagInvalidPhone
+	}
+	if hasAny("invalid email", "is invalid") ||
+		(strings.Contains(msg, "phone") && hasAny("invalid", "format")) {
+		flags |= CasdoorErrFlagInvalidInput
+	}
+	return flags
+}
+
+// isCasdoorNotFound 判断 Casdoor 的错误是否在表达「用户不存在」
+func isCasdoorNotFound(err error) bool {
+	return ClassifyCasdoorErr(err)&CasdoorErrFlagNotFound != 0
+}
+
+// checkStatus 检查 Casdoor 响应状态，失败返回结构化错误
 func checkStatus(cr *casdoorResponse) error {
 	if cr.Status != "ok" {
-		msg := cr.Msg
-		if msg == "" {
-			msg = "casdoor operation failed"
+		return &CasdoorError{
+			HTTPStatus: cr.httpStatus,
+			Code:       cr.Code,
+			Status:     cr.Status,
+			Msg:        cr.Msg,
 		}
-		return errors.New(msg)
 	}
 	return nil
 }
@@ -438,7 +571,8 @@ func (c *CasdoorClient) LoginWithPassword(ctx context.Context, username, passwor
 		return nil, err
 	}
 
-	logrus.WithField("username", username).Info("casdoor /api/login (password) request")
+	// 登录是高频路径，且带账号标识；正常流程不需要日志留痕
+	logrus.WithField("username", username).Debug("casdoor /api/login (password) request")
 
 	cr, cookies, err := c.doWithBasicAuthAndCookies(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json")
 	if err != nil {
@@ -480,7 +614,7 @@ func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string) (*Ca
 		"type":    "login",
 		"dest":    dest,
 		"isEmail": isEmail,
-	}).Info("casdoor /api/login (code) request")
+	}).Debug("casdoor /api/login (code) request")
 
 	cr, cookies, err := c.doWithBasicAuthAndCookies(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json")
 	if err != nil {
@@ -518,7 +652,7 @@ func (c *CasdoorClient) VerifyMfaLogin(ctx context.Context, cookies []*http.Cook
 		"mfa_type":     mfaType,
 		"has_passcode": passcode != "",
 		"has_recovery": recoveryCode != "",
-	}).Info("casdoor /api/login (mfa) request")
+	}).Debug("casdoor /api/login (mfa) request")
 
 	// 二次验证只依赖第一次登录返回的会话 cookie
 	cr, merged, err := c.doWithCookieHeader(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json", cookies)
@@ -646,6 +780,9 @@ func (c *CasdoorClient) MfaSetupInitiate(ctx context.Context, owner, name, mfaTy
 }
 
 // MfaSetupVerify 校验 MFA 绑定验证码；返回的 cookie 需要传给 MfaSetupEnable。
+//
+// 必须同时带应用 Basic Auth 与 initiate 下发的会话 Cookie：部分 Casdoor 版本
+// 会在验码前先做访问控制，只带 Cookie 会返回「未授权的操作」（表现为验证码错误）。
 func (c *CasdoorClient) MfaSetupVerify(ctx context.Context, cookies []*http.Cookie, owner, name, mfaType, passcode, secret, dest, countryCode string) ([]*http.Cookie, error) {
 	form := url.Values{}
 	form.Set("owner", owner)
@@ -656,17 +793,24 @@ func (c *CasdoorClient) MfaSetupVerify(ctx context.Context, cookies []*http.Cook
 	form.Set("dest", dest)
 	form.Set("countryCode", countryCode)
 
-	cr, merged, err := c.doWithCookieHeader(ctx, "POST", "/api/mfa/setup/verify", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", cookies)
+	cr, merged, err := c.doWithBasicAuthWithCookieJar(ctx, "POST", "/api/mfa/setup/verify", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", cookies)
 	if err != nil {
 		return nil, err
 	}
 	if err := checkStatus(cr); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"casdoor_status": cr.Status,
+			"casdoor_code":   cr.Code,
+			"casdoor_msg":    cr.Msg,
+		}).Warn("casdoor mfa setup verify failed")
 		return nil, err
 	}
 	return merged, nil
 }
 
 // MfaSetupEnable 启用 MFA 因子。
+// recoveryCode 只支持单个值：Casdoor 侧用 Form.Get 读取，并以 []string{值} 落库，
+// 传多个值没有任何效果。
 func (c *CasdoorClient) MfaSetupEnable(ctx context.Context, cookies []*http.Cookie, owner, name, mfaType, secret, dest, countryCode, recoveryCode string) ([]*http.Cookie, error) {
 	form := url.Values{}
 	form.Set("owner", owner)
@@ -677,11 +821,16 @@ func (c *CasdoorClient) MfaSetupEnable(ctx context.Context, cookies []*http.Cook
 	form.Set("countryCode", countryCode)
 	form.Set("recoveryCodes", recoveryCode)
 
-	cr, merged, err := c.doWithCookieHeader(ctx, "POST", "/api/mfa/setup/enable", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", cookies)
+	cr, merged, err := c.doWithBasicAuthWithCookieJar(ctx, "POST", "/api/mfa/setup/enable", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", cookies)
 	if err != nil {
 		return nil, err
 	}
 	if err := checkStatus(cr); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"casdoor_status": cr.Status,
+			"casdoor_code":   cr.Code,
+			"casdoor_msg":    cr.Msg,
+		}).Warn("casdoor mfa setup enable failed")
 		return nil, err
 	}
 	return merged, nil
@@ -718,7 +867,7 @@ func (c *CasdoorClient) SetPreferredMfa(ctx context.Context, owner, name, mfaTyp
 func (c *CasdoorClient) GetUserByPhone(ctx context.Context, phone string) (*CasdoorUser, error) {
 	phone = strings.TrimSpace(phone)
 	if phone == "" {
-		return nil, fmt.Errorf("该手机号未注册")
+		return nil, ErrCasdoorUserNotFound
 	}
 	candidates := []string{phone}
 	bare := toBarePhone(phone)
@@ -751,7 +900,7 @@ func (c *CasdoorClient) GetUserByPhone(ctx context.Context, phone string) (*Casd
 	if lastErr != nil {
 		return nil, lastErr
 	}
-	return nil, fmt.Errorf("该手机号未注册")
+	return nil, ErrCasdoorUserNotFound
 }
 
 // toE164Phone 把号码补成 E.164（+86xxxxxxxxxxx），非数字字符原样返回
@@ -966,7 +1115,8 @@ func (c *CasdoorClient) Signup(ctx context.Context, req SignupRequest) error {
 			"error":       err,
 			"casdoor_msg": cr.Msg,
 		}).Warn("casdoor signup failed")
-		return errors.New(cr.Msg)
+		// 返回结构化错误（而非 errors.New(cr.Msg)），让上层能按 code / status 分类
+		return err
 	}
 	return nil
 }
@@ -1120,7 +1270,9 @@ func (c *CasdoorClient) GetUserByEmail(ctx context.Context, email string) (*Casd
 			return &users[i], nil
 		}
 	}
-	return nil, fmt.Errorf("该邮箱未注册")
+	// 空列表说明该邮箱没有匹配账号，用哨兵错误表达「不存在」，
+	// 让上层不必再靠中文文案猜语义。
+	return nil, ErrCasdoorUserNotFound
 }
 
 // updateUserRequest 更新用户请求体

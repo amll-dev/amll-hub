@@ -94,14 +94,22 @@ export function PluginSubmitForm({
     setDraft({ ...next, tags });
   };
 
+  // TagInput 粘贴「流行,摇滚」时会连续调用 onAdd，此刻组件还没重渲染、props.tags 是旧值，
+  // 直接用闭包里的 tags 累积会导致只剩最后一个标签。用 ref 记住最新一次结果。
+  const tagsRef = useRef(tags);
+  tagsRef.current = tags;
+
   const addTag = (tag: string) => {
-    const next = [...tags, tag];
+    if (tagsRef.current.includes(tag)) return;
+    const next = [...tagsRef.current, tag];
+    tagsRef.current = next;
     setTags(next);
     setDraft({ ...form, tags: next });
   };
 
   const removeTag = (tag: string) => {
-    const next = tags.filter((t) => t !== tag);
+    const next = tagsRef.current.filter((t) => t !== tag);
+    tagsRef.current = next;
     setTags(next);
     setDraft({ ...form, tags: next });
   };

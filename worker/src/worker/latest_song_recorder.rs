@@ -48,8 +48,12 @@ pub async fn record_latest_songs(app: &Arc<AppState>, repo: &Repository, history
         }
     };
 
-    // 查询同步窗口内新增的歌曲
-    let songs = match repo.query_new_songs_in_window(started_at, completed_at, 9).await {
+    // 查询同步窗口内新增的歌曲。上限复用 LATEST_SONGS_MAX：这里若另写一个字面量，
+    // 改常量时漏改就会「查 9 条、只保留 6 条」地静默不一致。
+    let songs = match repo
+        .query_new_songs_in_window(started_at, completed_at, LATEST_SONGS_MAX as u64)
+        .await
+    {
         Ok(s) => s,
         Err(e) => {
             warn!(error = %e, history_id, "latest_songs: query new songs failed");
@@ -78,16 +82,24 @@ pub async fn record_latest_songs(app: &Arc<AppState>, repo: &Repository, history
         let mut artist = String::new();
         let mut cover_url = String::new();
         let mut ncm_resolved = false;
-        if let Some(ref ncm) = ncm_id
-            && let Some((ncm_title, ncm_artist, ncm_cover)) =
-                ncm_api::fetch_song_meta(&app.http_client, &app.cfg.ncm.api_base, ncm).await
-        {
-            if !ncm_title.is_empty() {
-                title = ncm_title;
+        if let Some(ref ncm) = ncm_id {
+            match ncm_api::fetch_song_meta(&app.http_client, &app.cfg.ncm.api_base, ncm).await {
+                Ok(Some((ncm_title, ncm_artist, ncm_cover))) => {
+                    if !ncm_title.is_empty() {
+                        title = ncm_title;
+                    }
+                    artist = ncm_artist;
+                    cover_url = ncm_cover;
+                    ncm_resolved = true;
+                }
+                Ok(None) => {
+                    // 歌曲不存在：保持 songs 表的回退值，不写空标题
+                }
+                Err(e) => {
+                    // API 失败不能当成「查不到」静默写空标题，保留回退值并留痕
+                    warn!(error = %e, platform_id = %ncm, "latest_songs: 拉取网易云元数据失败");
+                }
             }
-            artist = ncm_artist;
-            cover_url = ncm_cover;
-            ncm_resolved = true;
         }
 
         // 网易云拿不到封面时，用 QQ 音乐元数据补封面；

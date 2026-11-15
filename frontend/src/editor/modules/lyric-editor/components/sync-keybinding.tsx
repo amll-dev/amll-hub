@@ -25,19 +25,19 @@ import {
   syncTimeOffsetAtom,
 } from '$/modules/settings/states/sync';
 import {
-  keyMoveNextLineAtom,
-  keyMoveNextWordAndPlayAtom,
-  keyMoveNextWordAtom,
-  keyMovePrevLineAtom,
-  keyMovePrevWordAndPlayAtom,
-  keyMovePrevWordAtom,
-  keyMoveLastWordAndPlayAtom,
-  keyMoveFirstWordAndPlayAtom,
-  keySyncEndAtom,
-  keySyncNextAltAtom,
-  keySyncNextAtom,
-  keySyncStartAtom,
-} from '$/states/keybindings.ts';
+  cmdMoveNextLine,
+  cmdMoveNextWordAndPlay,
+  cmdMoveNextWord,
+  cmdMovePrevLine,
+  cmdMovePrevWordAndPlay,
+  cmdMovePrevWord,
+  cmdMoveLastWordAndPlay,
+  cmdMoveFirstWordAndPlay,
+  cmdSyncEnd,
+  cmdSyncNextAlt,
+  cmdSyncNext,
+  cmdSyncStart,
+} from '$/modules/keyboard/commands';
 import { lyricLinesAtom, selectedLinesAtom, selectedWordsAtom } from '$/states/main.ts';
 import { type KeyBindingEvent, useKeyBinding, useKeyBindingAtom } from '$/utils/keybindings.ts';
 
@@ -87,7 +87,7 @@ const setUnitEndTime = (
 export const SyncKeyBinding: FC = () => {
   const store = useStore();
   const syncNextDualMode = useAtomValue(syncNextDualModeAtom);
-  const syncNextAltKeys = useAtomValue(keySyncNextAltAtom);
+  const syncNextAltKeys = useAtomValue(cmdSyncNextAlt.atom);
 
   const calcJudgeTime = useCallback(
     (evt: KeyBindingEvent) => {
@@ -172,65 +172,81 @@ export const SyncKeyBinding: FC = () => {
 
   // 移动打轴光标
 
-  useKeyBindingAtom(keyMoveNextLineAtom, () => {
-    const location = getCurrentLineLocation(store);
-    if (!location) return;
-    const lastLineIndex = Math.min(location.lines.length, location.lineIndex + 1);
-    const lastLine = location.lines[lastLineIndex];
-    if (!lastLine) return;
-    store.set(selectedLinesAtom, new Set([lastLine.id]));
-    const firstUnit = getFirstSynchronizableUnit(lastLine);
-    if (!firstUnit) {
-      store.set(selectedWordsAtom, new Set());
-    } else {
+  useKeyBindingAtom(
+    cmdMoveNextLine.atom,
+    () => {
+      const location = getCurrentLineLocation(store);
+      if (!location) return;
+      const lastLineIndex = Math.min(location.lines.length, location.lineIndex + 1);
+      const lastLine = location.lines[lastLineIndex];
+      if (!lastLine) return;
+      store.set(selectedLinesAtom, new Set([lastLine.id]));
+      const firstUnit = getFirstSynchronizableUnit(lastLine);
+      if (!firstUnit) {
+        store.set(selectedWordsAtom, new Set());
+      } else {
+        store.set(selectedWordsAtom, new Set([firstUnit.id]));
+      }
+    },
+    [store]
+  );
+
+  useKeyBindingAtom(
+    cmdMovePrevLine.atom,
+    () => {
+      const location = getCurrentLineLocation(store);
+      if (!location) return;
+      const lastLineIndex = Math.max(0, location.lineIndex - 1);
+      const lastLine = location.lines[lastLineIndex];
+      if (!lastLine) return;
+      store.set(selectedLinesAtom, new Set([lastLine.id]));
+      const firstUnit = getFirstSynchronizableUnit(lastLine);
+      if (!firstUnit) {
+        store.set(selectedWordsAtom, new Set());
+      } else {
+        store.set(selectedWordsAtom, new Set([firstUnit.id]));
+      }
+    },
+    [store]
+  );
+
+  useKeyBindingAtom(cmdMoveNextWord.atom, moveToNextWord, [store]);
+  useKeyBindingAtom(cmdMoveNextWordAndPlay.atom, moveToNextWordAndPlay, [store]);
+  useKeyBindingAtom(cmdMovePrevWord.atom, moveToPrevWord, [store]);
+  useKeyBindingAtom(cmdMovePrevWordAndPlay.atom, moveToPrevWordAndPlay, [store]);
+
+  useKeyBindingAtom(
+    cmdMoveLastWordAndPlay.atom,
+    () => {
+      const location = getCurrentLineLocation(store);
+      if (!location) return;
+      const lastUnit = getLastSynchronizableUnit(location.line);
+      if (!lastUnit) return;
+      store.set(selectedWordsAtom, new Set([lastUnit.id]));
+      store.set(selectedLinesAtom, new Set([location.line.id]));
+      audioEngine.seekMusic(getUnitStartTime(lastUnit) / 1000);
+    },
+    [store]
+  );
+
+  useKeyBindingAtom(
+    cmdMoveFirstWordAndPlay.atom,
+    () => {
+      const location = getCurrentLineLocation(store);
+      if (!location) return;
+      const firstUnit = getFirstSynchronizableUnit(location.line);
+      if (!firstUnit) return;
       store.set(selectedWordsAtom, new Set([firstUnit.id]));
-    }
-  }, [store]);
-
-  useKeyBindingAtom(keyMovePrevLineAtom, () => {
-    const location = getCurrentLineLocation(store);
-    if (!location) return;
-    const lastLineIndex = Math.max(0, location.lineIndex - 1);
-    const lastLine = location.lines[lastLineIndex];
-    if (!lastLine) return;
-    store.set(selectedLinesAtom, new Set([lastLine.id]));
-    const firstUnit = getFirstSynchronizableUnit(lastLine);
-    if (!firstUnit) {
-      store.set(selectedWordsAtom, new Set());
-    } else {
-      store.set(selectedWordsAtom, new Set([firstUnit.id]));
-    }
-  }, [store]);
-
-  useKeyBindingAtom(keyMoveNextWordAtom, moveToNextWord, [store]);
-  useKeyBindingAtom(keyMoveNextWordAndPlayAtom, moveToNextWordAndPlay, [store]);
-  useKeyBindingAtom(keyMovePrevWordAtom, moveToPrevWord, [store]);
-  useKeyBindingAtom(keyMovePrevWordAndPlayAtom, moveToPrevWordAndPlay, [store]);
-
-  useKeyBindingAtom(keyMoveLastWordAndPlayAtom, () => {
-    const location = getCurrentLineLocation(store);
-    if (!location) return;
-    const lastUnit = getLastSynchronizableUnit(location.line);
-    if (!lastUnit) return;
-    store.set(selectedWordsAtom, new Set([lastUnit.id]));
-    store.set(selectedLinesAtom, new Set([location.line.id]));
-    audioEngine.seekMusic(getUnitStartTime(lastUnit) / 1000);
-  }, [store]);
-
-  useKeyBindingAtom(keyMoveFirstWordAndPlayAtom, () => {
-    const location = getCurrentLineLocation(store);
-    if (!location) return;
-    const firstUnit = getFirstSynchronizableUnit(location.line);
-    if (!firstUnit) return;
-    store.set(selectedWordsAtom, new Set([firstUnit.id]));
-    store.set(selectedLinesAtom, new Set([location.line.id]));
-    audioEngine.seekMusic(getUnitStartTime(firstUnit) / 1000);
-  }, [store]);
+      store.set(selectedLinesAtom, new Set([location.line.id]));
+      audioEngine.seekMusic(getUnitStartTime(firstUnit) / 1000);
+    },
+    [store]
+  );
 
   // 记录时间戳（主要打轴按键）
 
   useKeyBindingAtom(
-    keySyncStartAtom,
+    cmdSyncStart.atom,
     (evt) => {
       const location = getCurrentLocation(store);
       if (!location) return;
@@ -335,7 +351,7 @@ export const SyncKeyBinding: FC = () => {
     },
     [store, moveToNextWord, calcJudgeTime]
   );
-  useKeyBindingAtom(keySyncNextAtom, onSyncNext, [store, onSyncNext]);
+  useKeyBindingAtom(cmdSyncNext.atom, onSyncNext, [store, onSyncNext]);
   useKeyBinding(syncNextDualMode ? syncNextAltKeys : [], onSyncNext, [
     store,
     syncNextDualMode,
@@ -343,7 +359,7 @@ export const SyncKeyBinding: FC = () => {
     onSyncNext,
   ]);
   useKeyBindingAtom(
-    keySyncEndAtom,
+    cmdSyncEnd.atom,
     (evt) => {
       const location = getCurrentLocation(store);
       if (!location) return;

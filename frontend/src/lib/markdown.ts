@@ -95,6 +95,24 @@ docsMarked.use({
   },
 });
 
+/** 告示块标题中文化（保留 marked-alert 生成的图标与结构） */
+const ALERT_TITLE_LABELS: Record<string, string> = {
+  Note: '提示',
+  Tip: '建议',
+  Important: '重要',
+  Warning: '警告',
+  Caution: '注意',
+};
+
+/** 把 `<p class="markdown-alert-title">…</p>` 里的英文 title 文本替换成中文 */
+function localizeAlertTitles(html: string): string {
+  return html.replace(
+    /(<p class="markdown-alert-title">(?:<svg[\s\S]*?<\/svg>)?)(Note|Tip|Important|Warning|Caution)(<\/p>)/g,
+    (_match, prefix: string, title: string, suffix: string) =>
+      `${prefix}${ALERT_TITLE_LABELS[title] ?? title}${suffix}`
+  );
+}
+
 /**
  * 文档正文渲染：与 `components/submission/shared.ts` 的 renderMarkdown 不同，
  * 这里允许原始 HTML（wiki 里有 <table style> / <ruby>），因此必须依赖
@@ -102,7 +120,9 @@ docsMarked.use({
 export function renderDocsMarkdown(text: string): string {
   if (!text) return '';
   try {
-    const html = docsMarked.parse(normalizeAlertMarkers(text)) as string;
+    const html = localizeAlertTitles(
+      docsMarked.parse(normalizeAlertMarkers(text)) as string
+    );
     return DOMPurify.sanitize(html, {
       USE_PROFILES: { html: true, svg: true, svgFilters: true },
       ADD_ATTR: [
@@ -142,11 +162,11 @@ function normalizeAlertMarkers(text: string): string {
   );
 }
 
-export function scrollToHash(hash: string): void {
+export function scrollToHash(hash: string, behavior: ScrollBehavior = 'smooth'): void {
   const id = safeDecode(hash.replace(/^#/, ''));
   if (!id) return;
   requestAnimationFrame(() => {
     const el = document.getElementById(id) ?? document.getElementById(id.toLowerCase());
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el?.scrollIntoView({ behavior, block: 'start' });
   });
 }

@@ -33,7 +33,7 @@ import type { LyricWord } from '$/types/ttml';
 import { ManualWordSplitter } from './ManualWordSplitter';
 
 export const SplitWordDialog = memo(() => {
-  const [splitWordDialog, splitWordDialogOpen] = useAtom(splitWordDialogAtom);
+  const [splitWordOpen, setSplitWordOpen] = useAtom(splitWordDialogAtom);
   const editingState = useAtomValue(editingWordStateAtom);
   const lyricLines = useAtomValue(lyricLinesAtom);
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
@@ -101,7 +101,7 @@ export const SplitWordDialog = memo(() => {
   ]);
 
   useEffect(() => {
-    if (!splitWordDialog) {
+    if (!splitWordOpen) {
       return;
     }
 
@@ -128,7 +128,7 @@ export const SplitWordDialog = memo(() => {
       setSplitIndices(new Set());
     }
   }, [
-    splitWordDialog,
+    splitWordOpen,
     editingState.lineIndex,
     editingState.wordIndex,
     lyricLines,
@@ -210,7 +210,7 @@ export const SplitWordDialog = memo(() => {
   ]);
 
   return (
-    <Dialog open={splitWordDialog} onOpenChange={splitWordDialogOpen}>
+    <Dialog open={splitWordOpen} onOpenChange={setSplitWordOpen}>
       <DialogContent>
         <DialogTitle>拆分单词</DialogTitle>
         <div className="flex flex-col gap-2">

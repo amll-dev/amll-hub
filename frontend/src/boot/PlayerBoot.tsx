@@ -248,6 +248,8 @@ export function PlayerBoot() {
   const activeSendRef = useRef<GainNode | null>(null);
   const standbySendRef = useRef<GainNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  // 音频图绑定失败后不再重试（见 ensureAudioContext）
+  const audioGraphFailedRef = useRef(false);
   const analyserRef = useRef<AnalyserNode | null>(null);
   // 用 ref 持有 audio，避免 effect 重建
   if (audioARef.current === null && typeof Audio !== 'undefined') {
@@ -312,6 +314,8 @@ export function PlayerBoot() {
   const transitionCleanupRef = useRef<number | null>(null);
   // 预加载请求编号
   const preloadReqIdRef = useRef(0);
+  // 主播放解析请求编号（连点切歌时丢弃迟到的旧响应）
+  const playReqIdRef = useRef(0);
   // 淡变期间挂起的预加载
   const pendingPreloadRef = useRef(false);
   // 上一曲即时混音加载进行中
@@ -320,6 +324,19 @@ export function PlayerBoot() {
   const currentTrailingSilenceRef = useRef(0);
   // timeupdate 驱动的交叉淡化检查
   const crossfadeCheckRef = useRef<(remaining: number) => void>(() => {});
+  // 本次转场上下文：play() 失败 / 新 active 报错时据此回滚普通加载路径。
+  // reqId 记录转场发起时的请求序号，回滚前比对，确保期间没有更新的请求被盖掉
+  const transitionCtxRef = useRef<{
+    el: HTMLAudioElement;
+    track: PlayerTrack;
+    quality: NcmQuality;
+    reqId: number;
+  } | null>(null);
+  // 回滚中的失败标记：同一次失败会同时触发 error 事件与 play() rejection，只处理一次。
+  // reqId 是回滚请求将占用的序号，期间出现更新的请求就说明不是这次失败的重放
+  const rollbackTargetRef = useRef<{ el: HTMLAudioElement; reqId: number } | null>(null);
+  // 转场失败回滚实现（依赖 resolveAndPlay，声明在其后赋值）
+  const rollbackTransitionRef = useRef<(el: HTMLAudioElement, cause: unknown) => void>(() => {});
 
   // 绑定 audio 事件
   useEffect(() => {
@@ -357,11 +374,21 @@ export function PlayerBoot() {
       if (e.target !== activeElRef.current) return;
       setPlaying(false);
     };
-    // standby 加载失败（如 URL 过期）：清空预加载，切歌时回退普通路径
+    // 两个元素都要认：转场交换角色后新 active 的错误不能被忽略
     const onError = (e: Event) => {
       const el = e.target as HTMLAudioElement;
-      if (el !== standbyElRef.current) return;
-      preloadedRef.current = null;
+      if (el === standbyElRef.current) {
+        // standby 加载失败（如 URL 过期）：清空预加载，切歌时回退普通路径
+        preloadedRef.current = null;
+        return;
+      }
+      if (el === activeElRef.current) {
+        // 无 src（close/abortTransition 后的 load()）不是播放失败，别误报
+        if (!el.getAttribute('src')) return;
+        // 转场失败（play() rejection 与 error 事件常成对触发）：回滚普通加载路径；
+        // 非转场场景或已回滚过，则只做提示 + 复位
+        rollbackTransitionRef.current(el, el.error ?? '音频加载失败');
+      }
     };
     for (const el of els) {
       el.addEventListener('timeupdate', onTime);
@@ -439,6 +466,9 @@ export function PlayerBoot() {
   // 初始化 AudioContext + AnalyserNode
   const [analyserReady, setAnalyserReady] = useState(false);
   const ensureAudioContext = useCallback(() => {
+    // createMediaElementSource 一旦绑定就无法解绑：绑定失败后每次重试都会
+    // InvalidStateError，交叉淡化和频谱永久失效且没有任何提示。失败一次就不再试。
+    if (audioGraphFailedRef.current) return;
     if (audioContextRef.current || !audioARef.current || !audioBRef.current) return;
     try {
       const Ctor =
@@ -493,8 +523,27 @@ export function PlayerBoot() {
       setAnalyserReady(true);
     } catch (e) {
       console.warn('[PlayerBoot] AudioContext 初始化失败，背景跳动与交叉淡化将不可用:', e);
+      if ((e as Error)?.name === 'InvalidStateError') audioGraphFailedRef.current = true;
     }
   }, []);
+
+  // 卸载清理：dev HMR 或上层 Layout 重挂载时，旧的两个 <audio> 还在播、
+  // 旧 AudioContext 不 close，表现为两首歌叠着响，且再没有引用能 pause。
+  useEffect(
+    () => () => {
+      audioARef.current?.pause();
+      audioBRef.current?.pause();
+      const ctx = audioContextRef.current;
+      audioContextRef.current = null;
+      analyserRef.current = null;
+      if (ctx && ctx.state !== 'closed') {
+        void ctx.close().catch(() => {
+          // 已经关掉 / 正在关闭时忽略
+        });
+      }
+    },
+    []
+  );
 
   const toggle = useCallback(() => {
     const audio = activeElRef.current;
@@ -502,15 +551,22 @@ export function PlayerBoot() {
     if (audio.paused) {
       ensureAudioContext();
       audioContextRef.current?.resume().catch(() => {});
-      audio.play().catch(() => setPlaying(false));
-      // 淡变中恢复
-      if (transitionRef.current) standbyElRef.current?.play().catch(() => {});
+      audio.play().catch((e) => {
+        setError(describePlayError(e));
+        setPlaying(false);
+      });
+      // 淡变中恢复：standby 出声失败也要反馈，别空 catch
+      if (transitionRef.current)
+        standbyElRef.current?.play().catch((e) => {
+          setError(describePlayError(e));
+          setPlaying(false);
+        });
     } else {
       audio.pause();
       // 淡变中暂停
       if (transitionRef.current) standbyElRef.current?.pause();
     }
-  }, [track, ensureAudioContext, setPlaying]);
+  }, [track, ensureAudioContext, setError, setPlaying]);
 
   // 静音式暂停
   const pause = useCallback(() => {
@@ -549,6 +605,8 @@ export function PlayerBoot() {
     try {
       const info = await api.parseNcmMusic(item.songId, qualityRef.current);
       if (reqId !== preloadReqIdRef.current) return;
+      // await 期间「上一曲即时混音」可能已占用 standby，放弃本次预加载
+      if (manualLoadRef.current) return;
       if (!info.url) {
         preloadedRef.current = null;
         return;
@@ -569,10 +627,13 @@ export function PlayerBoot() {
       if (ctx) {
         try {
           const res = await fetch(info.url);
+          if (manualLoadRef.current) return;
           const ab = await res.arrayBuffer();
           if (reqId !== preloadReqIdRef.current) return;
+          if (manualLoadRef.current) return;
           const decoded = await ctx.decodeAudioData(ab);
           if (reqId !== preloadReqIdRef.current) return;
+          if (manualLoadRef.current) return;
           const silence = detectSilence(decoded);
           leadingSilence = silence.leading;
           trailingSilence = silence.trailing;
@@ -580,6 +641,8 @@ export function PlayerBoot() {
           // 解码失败（格式/内存）：跳过静音检测
         }
       }
+      // 解码可能失败/被跳过，写 src 前最后复查一次，绝不覆盖即时混音占用的 standby
+      if (manualLoadRef.current) return;
       // preload='auto'：设置 src 后浏览器即开始缓冲
       standby.src = info.url;
       preloadedRef.current = {
@@ -624,6 +687,8 @@ export function PlayerBoot() {
       standbySendRef.current?.gain.setValueAtTime(0, ctx.currentTime);
     }
     transitionRef.current = false;
+    // 转场已被中止：旧转场的失败不应再触发回滚
+    transitionCtxRef.current = null;
     // 补执行淡变期间挂起的预加载
     if (pendingPreloadRef.current) {
       pendingPreloadRef.current = false;
@@ -691,7 +756,15 @@ export function PlayerBoot() {
           // 忽略 seek 失败，从头播放
         }
       }
-      standby.play().catch(() => {});
+      // 记录本次转场上下文：play() 失败 / 新 active 报错时据此回滚普通加载路径
+      transitionCtxRef.current = {
+        el: standby,
+        track: pre.track,
+        quality: pre.quality,
+        reqId: playReqIdRef.current,
+      };
+      // 转场 play 失败（URL 过期 / 编码不支持 / 音频焦点）：提示 + 回滚普通加载
+      standby.play().catch((e) => rollbackTransitionRef.current(standby, e));
 
       // 立即交换角色：此后事件与 UI 状态跟踪新曲目
       const oldEl = active;
@@ -736,6 +809,8 @@ export function PlayerBoot() {
           oldEl.removeAttribute('src');
           oldEl.load();
           transitionRef.current = false;
+          // 转场窗口结束：后续的报错走普通提示，不再回滚
+          transitionCtxRef.current = null;
           transitionCleanupRef.current = null;
           if (pendingPreloadRef.current) {
             pendingPreloadRef.current = false;
@@ -860,7 +935,7 @@ export function PlayerBoot() {
     ) => {
       if (!getToken()) {
         openLogin(undefined, '登录后即可播放音乐');
-        return;
+        return false;
       }
 
       const platform = opts.meta?.platform ?? 'ncm';
@@ -869,7 +944,7 @@ export function PlayerBoot() {
       const useQ = opts.q ?? quality;
       if (!isQQ && isUnplayableQuality(useQ)) {
         toast.error(DOLBY_HINT);
-        return;
+        return false;
       }
       setLoading(true);
       setError(null);
@@ -877,6 +952,9 @@ export function PlayerBoot() {
       abortTransition();
       ensureAudioContext();
       audioContextRef.current?.resume().catch(() => {});
+      // 连点切歌时给每次解析编号：迟到的旧响应必须整段丢弃，
+      // 否则会 setTrack 覆盖新歌，并用自己的 finally 关掉新请求的 loading。
+      const reqId = ++playReqIdRef.current;
       try {
         const info = isQQ
           ? await api.parseQmMusic(songId, qmLevel).then((m) => ({
@@ -890,6 +968,7 @@ export function PlayerBoot() {
               lines: qmToLyricLines(m.lyrics),
             }))
           : await api.parseNcmMusic(songId, useQ);
+        if (reqId !== playReqIdRef.current) return false;
         if (!info.url) {
           throw new Error('未能获取播放链接（可能无版权）');
         }
@@ -926,10 +1005,14 @@ export function PlayerBoot() {
             currentIndexRef.current = idx;
           }
         }
+        return true;
       } catch (e) {
-        setError(e instanceof Error ? e.message : '解析失败');
+        if (reqId === playReqIdRef.current) {
+          setError(e instanceof Error ? e.message : '解析失败');
+        }
+        return false;
       } finally {
-        setLoading(false);
+        if (reqId === playReqIdRef.current) setLoading(false);
       }
     },
     [
@@ -946,9 +1029,62 @@ export function PlayerBoot() {
     ]
   );
 
+  // 转场播放失败 → 回滚普通加载路径：重新解析（拿新鲜 URL）后在 active 元素上按常规方式播放。
+  // 回滚本身调用 resolveAndPlay，占一个新的 playReqId：期间用户再切歌，这次回滚的迟到响应仍被丢弃。
+  const rollbackTransition = useCallback(
+    (el: HTMLAudioElement, cause: unknown) => {
+      // 元素已不是 active（转场被中止 / 又换了角色）：这次失败已过期，不再提示
+      if (el !== activeElRef.current) return;
+      const err = cause as { name?: string } | null;
+      // AbortError：src 被替换 / pause 打断了 play()，不是真正的播放失败
+      if (err?.name === 'AbortError') return;
+      const ctx = transitionCtxRef.current;
+      const songId = ctx?.track.ncmSongId ?? '';
+      // 同一次失败常同时触发 error 事件与 play() rejection：回滚请求落地前只处理一次
+      const target = rollbackTargetRef.current;
+      if (target && target.el === el && playReqIdRef.current <= target.reqId) return;
+      // 自动播放被浏览器拦截是用户手势策略问题，换 URL 重试也没用
+      const blocked = err?.name === 'NotAllowedError';
+      const canRollback =
+        !!ctx &&
+        ctx.el === el &&
+        !!songId &&
+        !blocked &&
+        // 转场之后没有更新的请求，否则回滚会盖掉用户刚点的歌
+        ctx.reqId === playReqIdRef.current;
+      if (!canRollback || !ctx) {
+        setError(describePlayError(cause));
+        setPlaying(false);
+        return;
+      }
+      // 回滚请求会占用的序号：期间再出现更新的请求，说明用户已自己切歌
+      const marker = { el, reqId: playReqIdRef.current + 1 };
+      rollbackTargetRef.current = marker;
+      console.warn('[PlayerBoot] 转场播放失败，回滚普通加载路径:', cause);
+      // 复位播放态；回滚成功后由常规路径的 play 事件重新置 true
+      setPlaying(false);
+      const isQQ = ctx.track.platform === 'qq';
+      void resolveAndPlay(songId, {
+        meta: {
+          name: ctx.track.title,
+          artists: ctx.track.artists,
+          cover: ctx.track.cover,
+          platform: ctx.track.platform,
+          level: isQQ ? ctx.track.level : undefined,
+        },
+        q: isQQ ? undefined : ctx.quality,
+      }).then(() => {
+        // 回滚请求已落地（成功或失败）：解除去重，后续真实失败照常提示
+        if (rollbackTargetRef.current === marker) rollbackTargetRef.current = null;
+      });
+    },
+    [resolveAndPlay, setError, setPlaying]
+  );
+  rollbackTransitionRef.current = rollbackTransition;
+
   // 网易云解析页播放
   const playNcmSong = useCallback(
-    (
+    async (
       songId: string,
       meta: {
         name?: string;
@@ -961,7 +1097,9 @@ export function PlayerBoot() {
         /** QM 档位 */
         level?: string;
       }
-    ) => resolveAndPlay(songId, { meta }),
+    ) => {
+      await resolveAndPlay(songId, { meta });
+    },
     [resolveAndPlay]
   );
 
@@ -1016,12 +1154,13 @@ export function PlayerBoot() {
   const reloadWithQuality = useCallback(
     async (q: NcmQuality | QmQuality) => {
       if (!track) return;
-      // 记录当前进度，track 更新后恢复
+      // 记录当前进度，track 更新后由「切换曲目」effect 消费恢复
       pendingSeekRef.current = activeElRef.current?.currentTime ?? null;
 
       // QQ 曲目按 qm 档位重新解析，ncm 走全局音质
+      let ok: boolean;
       if (track.platform === 'qq') {
-        await resolveAndPlay(track.ncmSongId ?? '', {
+        ok = await resolveAndPlay(track.ncmSongId ?? '', {
           meta: {
             name: track.title,
             artists: track.artists,
@@ -1031,25 +1170,27 @@ export function PlayerBoot() {
             customTtml: track.customTtml,
           },
         });
-        return;
+      } else {
+        const ncmQuality = q as NcmQuality;
+        setQuality(ncmQuality);
+        ok = await resolveAndPlay(
+          track.ncmSongId ?? '',
+          track.hit
+            ? { hit: track.hit, q: ncmQuality }
+            : {
+                meta: {
+                  name: track.title,
+                  artists: track.artists,
+                  cover: track.cover,
+                  platform: track.platform,
+                },
+                q: ncmQuality,
+              }
+        );
       }
-
-      const ncmQuality = q as NcmQuality;
-      setQuality(ncmQuality);
-      await resolveAndPlay(
-        track.ncmSongId ?? '',
-        track.hit
-          ? { hit: track.hit, q: ncmQuality }
-          : {
-              meta: {
-                name: track.title,
-                artists: track.artists,
-                cover: track.cover,
-                platform: track.platform,
-              },
-              q: ncmQuality,
-            }
-      );
+      // resolveAndPlay 内部吞掉错误后正常返回：失败时 track 不更新，
+      // pendingSeek 不会被消费，残留会让下一首从中途开播 —— 清掉
+      if (!ok) pendingSeekRef.current = null;
     },
     [track, resolveAndPlay, setQuality]
   );
@@ -1195,6 +1336,8 @@ export function PlayerBoot() {
         return;
       }
       // 占用 standby，阻止预加载 effect 抢占；立即反馈 UI（解析+缓冲需 1-2s）
+      // 作废旧预加载：其 in-flight 结果不得覆盖本次 standby.src
+      ++preloadReqIdRef.current;
       manualLoadRef.current = true;
       try {
         const info = await api.parseNcmMusic(item.songId, qualityRef.current);
@@ -1273,12 +1416,17 @@ export function PlayerBoot() {
   const playAll = useCallback(
     (items: PlaylistItem[]) => {
       if (items.length === 0) return;
-      setPlaylist(items);
+      // 补稳定 uid：列表渲染用 uid 作 key，删中间条目时不会让后面所有项重挂
+      const normalized = items.map((item) => ({
+        ...item,
+        uid: item.uid ?? crypto.randomUUID(),
+      }));
+      setPlaylist(normalized);
       setCurrentIndex(0);
       // 立即同步 ref，避免 onEnd 在 state 更新前读到旧值
-      playlistRef.current = items;
+      playlistRef.current = normalized;
       currentIndexRef.current = 0;
-      const first = items[0];
+      const first = normalized[0];
       if (!first) return;
       void resolveAndPlay(first.songId, {
         meta: {

@@ -150,7 +150,7 @@ func (c *GithubOAuthClient) getJSON(ctx context.Context, accessToken, apiURL str
 		return fmt.Errorf("read github api response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("github api %s status=%d body=%s", apiURL, resp.StatusCode, string(body))
+		return fmt.Errorf("github api %s status=%d body=%s", apiURL, resp.StatusCode, truncateStr(string(body), 200))
 	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return fmt.Errorf("decode github api response: %w", err)

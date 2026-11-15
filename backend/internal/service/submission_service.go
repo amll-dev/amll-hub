@@ -964,8 +964,12 @@ func (s *SubmissionService) Close(ctx context.Context, user *SubmissionUser, id 
 	})
 }
 
-// AddComment 新增评论
-func (s *SubmissionService) AddComment(ctx context.Context, user *SubmissionUser, id int64, content string) error {
+// AddComment 新增评论。
+// 可见范围与 ListComments 一致：仅投稿者本人与审核员/管理员可评论；
+// 越权返回 ErrSubmissionNotFound（对外 404），不泄露投稿是否存在。
+func (s *SubmissionService) AddComment(
+	ctx context.Context, user *SubmissionUser, id int64, content string, isReviewer bool,
+) error {
 	if content == "" {
 		return errors.New("评论内容不能为空")
 	}
@@ -979,6 +983,9 @@ func (s *SubmissionService) AddComment(ctx context.Context, user *SubmissionUser
 			return ErrSubmissionNotFound
 		}
 		return err
+	}
+	if sub.Submitter != user.Name && !isReviewer {
+		return ErrSubmissionNotFound
 	}
 	c := &model.Comment{
 		SubmissionID: id,
@@ -1004,8 +1011,43 @@ func (s *SubmissionService) AddComment(ctx context.Context, user *SubmissionUser
 	return nil
 }
 
-// ListComments 评论列表
-func (s *SubmissionService) ListComments(ctx context.Context, id int64) ([]Comment, error) {
+// CanManageSubmission 判断用户是否为审核员或管理员，用于评论/关联等接口的可见范围判定。
+// 直接查库，避免依赖 handler 注入缓存实例；查询失败由调用方按 fail-closed 处理。
+func (s *SubmissionService) CanManageSubmission(ctx context.Context, username string) (bool, error) {
+	if username == "" {
+		return false, nil
+	}
+	var cnt int64
+	if err := s.db.WithContext(ctx).Model(&model.Reviewer{}).
+		Where("username = ?", username).Count(&cnt).Error; err != nil {
+		return false, err
+	}
+	if cnt > 0 {
+		return true, nil
+	}
+	if err := s.db.WithContext(ctx).Model(&model.Admin{}).
+		Where("username = ?", username).Count(&cnt).Error; err != nil {
+		return false, err
+	}
+	return cnt > 0, nil
+}
+
+// ListComments 评论列表。
+// 可见范围 = 投稿者本人 + 审核员/管理员；越权返回 ErrSubmissionNotFound
+// （对外 404，不泄露投稿是否存在），而不是 403。
+func (s *SubmissionService) ListComments(
+	ctx context.Context, id int64, viewer string, isReviewer bool,
+) ([]Comment, error) {
+	sub, err := s.subRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrSubmissionNotFound
+		}
+		return nil, err
+	}
+	if sub.Submitter != viewer && !isReviewer {
+		return nil, ErrSubmissionNotFound
+	}
 	comments, err := s.commentRepo.ListBySubmission(ctx, id)
 	if err != nil {
 		return nil, err

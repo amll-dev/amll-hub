@@ -194,7 +194,9 @@ class RomanDistributor {
       // 后缀匹配
       // 例，Token="tte", Expected="te" -> Buffer拿走"t", Anchor拿走"te"
       // 将 Token 切开，前半部分归 Buffer，后半部分归 Anchor
-      const splitIndex = originalToken.lastIndexOf(matchResult.expected);
+      // evaluateMatch 用小写做后缀匹配，这里也要在小写串上查找，
+      // 否则大写/首字母大写的 Token 会 lastIndexOf 失败、把多一个字符吞进前缀。
+      const splitIndex = originalToken.toLowerCase().lastIndexOf(matchResult.expected);
       const prefixPart = originalToken.slice(0, splitIndex);
 
       bufferTokens.push(prefixPart);

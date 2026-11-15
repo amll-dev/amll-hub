@@ -25,11 +25,21 @@ const navItems: NavItem[] = [
 
 /** 个人中心布局 */
 export function ProfileLayout() {
-  const { user, openLogin } = useAuth();
+  const { user, loading, openLogin } = useAuth();
   // 右侧内容区按 pathname 做 key，切换 tab 时整块替换并淡入。
   // 刻意不用 AnimatePresence mode="wait"：wait 要等旧内容 exit 播完才挂载新内容，
   // 内容一多被打断就会卡在空白（CreatorCenter 踩过同款坑）。
   const { pathname } = useLocation();
+
+  // 硬刷新 /profile 时 token 有值但 profile 还在拉，此时 user 仍是 null；
+  // 不判 loading 就会先闪一整页「请先登录」
+  if (loading) {
+    return (
+      <PageContainer className="flex justify-center py-32">
+        <Loader2 className="h-6 w-6 animate-spin text-ink-3" />
+      </PageContainer>
+    );
+  }
 
   if (!user) {
     return (

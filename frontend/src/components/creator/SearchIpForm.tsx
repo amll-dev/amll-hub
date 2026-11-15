@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { formatBytes } from '@/lib/format';
 import { buttonTap } from '@/lib/motion';
 import { buttonVariants } from '@/components/ui/button';
 import { useFormDraft } from '@/hooks/useFormDraft';
@@ -38,6 +39,18 @@ interface Group {
 }
 interface SearchIpData {
   groups: Record<string, Group>;
+}
+
+/** 收集 JSON 中引用的所有图片文件名（去重、忽略空值） */
+function collectReferencedImages(data: SearchIpData): string[] {
+  const names = new Set<string>();
+  for (const group of Object.values(data.groups)) {
+    if (group.pictures) names.add(group.pictures);
+    for (const m of group.members ?? []) {
+      if (m.pictures) names.add(m.pictures);
+    }
+  }
+  return [...names];
 }
 
 // 解析后的节点
@@ -172,6 +185,22 @@ export function SearchIpForm() {
       const first = list[0];
       if (first) uploadOne(first, replaceTarget);
     } else {
+      // uploadedImages 以文件名作 key，非替换模式下同名图会互相覆盖，
+      // 且先上传的 tempKey 变成无引用孤儿；重复文件名直接拒绝并提示。
+      const seen = new Set(Object.keys(uploadedImages));
+      const duplicates = new Set<string>();
+      for (const f of list) {
+        if (seen.has(f.name)) duplicates.add(f.name);
+        seen.add(f.name);
+      }
+      if (duplicates.size > 0) {
+        setSubmitMsg({
+          type: 'error',
+          text: `图片文件名重复：${[...duplicates].join('、')}，请重命名后再上传，或使用「替换」按钮`,
+        });
+        setReplaceTarget(null);
+        return;
+      }
       // 批量添加模式
       for (const f of list) uploadOne(f);
     }
@@ -219,6 +248,18 @@ export function SearchIpForm() {
       return;
     }
 
+    // JSON 里引用的图片必须都已成功上传，否则审核端会看到一堆「未上传」
+    const referenced = collectReferencedImages(parsedData);
+    const missing = referenced.filter((name) => !uploadedImages[name]?.tempKey);
+    if (missing.length > 0) {
+      const preview = missing.slice(0, 3).join('、');
+      setSubmitMsg({
+        type: 'error',
+        text: `还有 ${missing.length} 张 JSON 引用的图片未上传（${preview}${missing.length > 3 ? '…' : ''}），请补齐后再提交`,
+      });
+      return;
+    }
+
     // 构建 tempKeys 映射
     const tempKeys: Record<string, string> = {};
     for (const [fileName, item] of Object.entries(uploadedImages)) {
@@ -234,7 +275,24 @@ export function SearchIpForm() {
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target?.result as string) as SearchIpData;
-        if (!data.groups) throw new Error('缺少 groups 字段');
+        // 结构校验：只判断 groups 存在会在 buildMindNodes 里因 members/authors
+        // 缺失而抛错白屏，这里把结构错误转成可读的提示。
+        if (!data.groups || typeof data.groups !== 'object' || Array.isArray(data.groups)) {
+          throw new Error('groups 必须是对象');
+        }
+        for (const [name, group] of Object.entries(data.groups)) {
+          if (!group || typeof group !== 'object' || Array.isArray(group)) {
+            throw new Error(`分组「${name}」结构无效`);
+          }
+          if (!Array.isArray(group.members)) {
+            throw new Error(`分组「${name}」的 members 必须是数组`);
+          }
+          for (const m of group.members) {
+            if (!m || typeof m !== 'object' || !Array.isArray(m.authors)) {
+              throw new Error(`分组「${name}」的 members 缺少 authors 数组`);
+            }
+          }
+        }
         setParsedData(data);
         setParseError('');
       } catch (err) {
@@ -410,15 +468,15 @@ export function SearchIpForm() {
                     <div className="relative flex h-28 w-44 flex-col justify-between overflow-hidden rounded-lg bg-primary p-3 text-white">
                       <div className="flex items-start justify-between">
                         <FileText className="h-6 w-6" />
-                        <span className="flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-medium">
+                        <span className="flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-medium">
                           <Check className="h-3 w-3" />
                           上传完成
                         </span>
                       </div>
                       <div>
                         <p className="truncate text-xs font-semibold">{selectedFile.name}</p>
-                        <p className="mt-0.5 text-[10px] opacity-80">
-                          {(selectedFile.size / 1024).toFixed(1)} KB · JSON
+                        <p className="mt-0.5 text-[11px] opacity-80">
+                          {formatBytes(selectedFile.size)} · JSON
                         </p>
                       </div>
                     </div>
@@ -469,7 +527,7 @@ export function SearchIpForm() {
                           ? `已上传 ${Object.keys(uploadedImages).length} 张`
                           : '添加图片'}
                       </span>
-                      <span className="text-[10px] text-ink-3">点击或拖拽导入</span>
+                      <span className="text-[11px] text-ink-3">点击或拖拽导入</span>
                     </div>
                   </div>
 
@@ -492,7 +550,7 @@ export function SearchIpForm() {
                           上传列表（{1 + Object.keys(uploadedImages).length} 个文件）
                         </span>
                         {!uploadListCollapsed && (
-                          <span className="flex items-center gap-1 text-[10px] text-success">
+                          <span className="flex items-center gap-1 text-[11px] text-success">
                             <Check className="h-3 w-3" />
                             全部上传完成
                           </span>
@@ -513,8 +571,8 @@ export function SearchIpForm() {
                                 <span className="truncate text-sm font-medium text-foreground">
                                   {selectedFile.name}
                                 </span>
-                                <span className="shrink-0 text-[10px] text-ink-3">
-                                  {(selectedFile.size / 1024).toFixed(1)} KB
+                                <span className="shrink-0 text-[11px] text-ink-3">
+                                  {formatBytes(selectedFile.size)}
                                 </span>
                                 <span className="flex shrink-0 items-center gap-1 text-xs text-success">
                                   <Check className="h-3 w-3" />
@@ -554,8 +612,8 @@ export function SearchIpForm() {
                                   <span className="truncate text-sm font-medium text-foreground">
                                     {name}
                                   </span>
-                                  <span className="shrink-0 text-[10px] text-ink-3">
-                                    {(item.file.size / 1024).toFixed(1)} KB
+                                  <span className="shrink-0 text-[11px] text-ink-3">
+                                    {formatBytes(item.file.size)}
                                   </span>
                                   {item.uploading ? (
                                     <span className="shrink-0 text-xs text-ink-3">
@@ -575,7 +633,7 @@ export function SearchIpForm() {
                                   indicatorColor={item.error ? 'error' : 'success'}
                                 />
                                 {item.error && (
-                                  <p className="mt-1 text-[10px] text-error">{item.error}</p>
+                                  <p className="mt-1 text-[11px] text-error">{item.error}</p>
                                 )}
                               </div>
                               <button
@@ -636,7 +694,7 @@ export function SearchIpForm() {
                                     alt={group.name}
                                     loading="lazy"
                                     decoding="async"
-                                    className="h-10 max-w-[120px] w-auto rounded object-contain"
+                                    className="h-10 w-20 rounded object-contain"
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).style.display = 'none';
                                     }}
@@ -677,7 +735,7 @@ export function SearchIpForm() {
                                           alt={member.name}
                                           loading="lazy"
                                           decoding="async"
-                                          className="h-10 max-w-[120px] w-auto rounded object-contain"
+                                          className="h-10 w-20 rounded object-contain"
                                           onError={(e) => {
                                             (e.target as HTMLImageElement).style.display = 'none';
                                           }}
@@ -729,6 +787,7 @@ export function SearchIpForm() {
 
               {/* 底部操作按钮 */}
               <div className="mt-6 flex items-center justify-start gap-3 border-t border-line pt-6">
+                {/* 按产品口径：存草稿按钮暂保持现状（无 onClick），待草稿能力接入后再启用 */}
                 <motion.button
                   type="button"
                   {...buttonTap}

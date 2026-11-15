@@ -84,6 +84,11 @@ func (r *GithubMigrationRepo) ResetForRetry(ctx context.Context, id int64, reset
 		updates["cursor"] = nil
 		updates["total_prs"] = 0
 		updates["processed_prs"] = 0
+		// 从头重扫时旧计数必须一起归零：否则 Worker 继续累加，
+		// 「新建 + 跳过 + 失败」会超过 total_prs，进度条和统计自相矛盾。
+		updates["created_count"] = 0
+		updates["skipped_count"] = 0
+		updates["failed_count"] = 0
 	}
 	return r.db.WithContext(ctx).
 		Model(&model.GithubMigrationTask{}).

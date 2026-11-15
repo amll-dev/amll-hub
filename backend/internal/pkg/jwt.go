@@ -36,6 +36,28 @@ func SignJWT(claims *Claims, secret string, ttl time.Duration) (string, error) {
 	return token.SignedString([]byte(secret))
 }
 
+// UserTokenInput 签发站点 token 所需的用户身份字段
+type UserTokenInput struct {
+	Sub         string // "{org}/{name}"
+	Name        string
+	DisplayName string
+	Email       string
+	Avatar      string
+}
+
+// SignUserToken 按统一结构签发站点 JWT。
+// 密码登录、扫码登录、GitHub 绑定登录共用这一条路径，避免各处自行拼 Claims
+// 时漏填 iss/aud —— ParseJWT 会校验这两项，漏填的 token 会在鉴权时被拒。
+func SignUserToken(in UserTokenInput, secret string, ttl time.Duration) (string, error) {
+	return SignJWT(&Claims{
+		Sub:         in.Sub,
+		Name:        in.Name,
+		DisplayName: in.DisplayName,
+		Email:       in.Email,
+		Avatar:      in.Avatar,
+	}, secret, ttl)
+}
+
 // ParseJWT 解析并校验 JWT
 func ParseJWT(tokenStr string, secret string) (*Claims, error) {
 	claims := &Claims{}

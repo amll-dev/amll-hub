@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, Loader2, Mail, MessageSquare, type LucideIcon } from 'lucide-react';
 import { useCountdown } from '@/hooks/useCountdown';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { buttonTap } from '@/lib/motion';
 import { cn } from '@/lib/utils';
@@ -37,6 +37,9 @@ interface IdentityVerifyProps {
 }
 
 /** 身份验证面板 */
+/** 与后端 pkg.CodeCaptchaFailed 保持一致 */
+const CAPTCHA_FAILED_CODE = 4001;
+
 export function IdentityVerifyPanel({
   phone,
   email,
@@ -84,10 +87,13 @@ export function IdentityVerifyPanel({
       closeCaptcha();
     },
     onError: (e: Error) => {
-      const text = e.message || '验证码发送失败';
-      setMsg({ ok: false, text });
-      // 人机验证本身没通过时保留弹窗让用户重试
-      if (text.includes('人机验证')) reportResult(false);
+      setMsg({ ok: false, text: e.message || '验证码发送失败' });
+      // 人机验证本身没通过时保留弹窗让用户重试。
+      // 判断依据是后端稳定业务码，不是中文文案：文案一改（「人机验证失败」→
+      // 「验证码校验未通过」）这里就会永远走 else 分支，把失败当成功上报，
+      // 用户陷入「点验证码 → 弹人机 → 失败 → 弹窗关闭 → 再点」的循环。
+      const captchaFailed = e instanceof ApiError && e.code === CAPTCHA_FAILED_CODE;
+      if (captchaFailed) reportResult(false);
       else {
         reportResult(true);
         closeCaptcha();

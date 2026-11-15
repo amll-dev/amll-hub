@@ -129,7 +129,7 @@ export const ReviewTemplateSection = ({ open, onInsertTemplate }: ReviewTemplate
   };
 
   const handleSaveTemplate = async () => {
-    if (templateSaving) return;
+    if (templateSaving || templateLoading) return;
     const trimmedTitle = templateTitle.trim();
     const trimmedContent = templateContent.trim();
     if (!trimmedTitle || !trimmedContent) {
@@ -142,8 +142,11 @@ export const ReviewTemplateSection = ({ open, onInsertTemplate }: ReviewTemplate
     }
     setTemplateSaving(true);
     try {
+      // 直接从 IndexedDB 读当前列表再合并：加载未完成时 customTemplates 仍是 []，
+      // 直接基于它写回会静默清空用户此前保存的全部自定义模板。
+      const existing = await readCustomTemplates();
       const nextTemplates = [
-        ...customTemplates,
+        ...existing,
         {
           id: uid(),
           title: trimmedTitle,
@@ -172,7 +175,9 @@ export const ReviewTemplateSection = ({ open, onInsertTemplate }: ReviewTemplate
   };
 
   const handleDeleteTemplate = async (templateId: string) => {
-    const nextTemplates = customTemplates.filter((t) => t.id !== templateId);
+    if (templateSaving || templateLoading) return;
+    const existing = await readCustomTemplates();
+    const nextTemplates = existing.filter((t) => t.id !== templateId);
     setCustomTemplates(nextTemplates);
     await writeCustomTemplates(nextTemplates);
     setPushNotification({
@@ -190,7 +195,7 @@ export const ReviewTemplateSection = ({ open, onInsertTemplate }: ReviewTemplate
   };
 
   const handleUpdateTemplate = async () => {
-    if (templateSaving || !editingTemplateId) return;
+    if (templateSaving || templateLoading || !editingTemplateId) return;
     const trimmedTitle = templateTitle.trim();
     const trimmedContent = templateContent.trim();
     if (!trimmedTitle || !trimmedContent) {
@@ -203,7 +208,8 @@ export const ReviewTemplateSection = ({ open, onInsertTemplate }: ReviewTemplate
     }
     setTemplateSaving(true);
     try {
-      const nextTemplates = customTemplates.map((t) =>
+      const existing = await readCustomTemplates();
+      const nextTemplates = existing.map((t) =>
         t.id === editingTemplateId ? { ...t, title: trimmedTitle, content: trimmedContent } : t
       );
       setCustomTemplates(nextTemplates);
@@ -294,7 +300,7 @@ export const ReviewTemplateSection = ({ open, onInsertTemplate }: ReviewTemplate
               size="sm"
               variant="secondary"
               onClick={resetEditor}
-              disabled={templateSaving}
+              disabled={templateSaving || templateLoading}
             >
               取消
             </Button>
@@ -302,7 +308,7 @@ export const ReviewTemplateSection = ({ open, onInsertTemplate }: ReviewTemplate
               type="button"
               size="sm"
               onClick={editingTemplateId ? handleUpdateTemplate : handleSaveTemplate}
-              disabled={templateSaving}
+              disabled={templateSaving || templateLoading}
             >
               {editingTemplateId ? '更新模板' : '保存模板'}
             </Button>

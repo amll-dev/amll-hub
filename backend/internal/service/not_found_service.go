@@ -252,21 +252,25 @@ func (s *NotFoundService) CheckAndDeleteOnLyricResolved(ctx context.Context, pla
 		rowsAffected, platform, platformID)
 }
 
-// GetRanking 查询排行榜（带 Redis 缓存）
-func (s *NotFoundService) GetRanking(ctx context.Context, days int, platform string, limit int) (int64, []RankingItem, error) {
+// GetRanking 查询排行榜（带 Redis 缓存，支持服务端分页）
+func (s *NotFoundService) GetRanking(ctx context.Context, days int, platform string, limit, offset int) (int64, []RankingItem, error) {
 	if days > 7 {
 		days = 7
 	}
 	if days < 1 {
 		days = 7
 	}
+	if offset < 0 {
+		offset = 0
+	}
 
-	// 尝试缓存（仅当指定 limit 时缓存，避免不同参数缓存击穿）
+	// 尝试缓存（仅当指定 limit 时缓存，避免不同参数缓存击穿）；
+	// 分页后 offset 必须进 key，否则不同页会命中同一份缓存。
 	limitStr := "all"
 	if limit > 0 {
 		limitStr = strconv.Itoa(limit)
 	}
-	cacheKey := fmt.Sprintf("not_found:ranking:cache:%d:%s:%s", days, platform, limitStr)
+	cacheKey := fmt.Sprintf("not_found:ranking:cache:%d:%s:%s:%d", days, platform, limitStr, offset)
 
 	if s.redis != nil {
 		if cached, err := s.redis.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
@@ -276,7 +280,7 @@ func (s *NotFoundService) GetRanking(ctx context.Context, days int, platform str
 		}
 	}
 
-	total, repoItems, err := s.repo.GetRanking(ctx, days, platform, limit)
+	total, repoItems, err := s.repo.GetRanking(ctx, days, platform, limit, offset)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -346,7 +350,10 @@ func (s *NotFoundService) ListCloudMusicWhitelist(ctx context.Context, limit, of
 	return out, total, nil
 }
 
-// ClearWeekly 每周清空所有无歌词记录（保留白名单）
+// ClearWeekly 每周重置无歌词记录的「本周」维度（保留记录本身，保留白名单）
+//
+// 只把 request_count 与按日 IP 明细归零，不删行：删行会让存活行的
+// first_seen_at 必然落在本周，看板的「本周新增」就恒等于「总数」。
 func (s *NotFoundService) ClearWeekly(ctx context.Context) (int64, error) {
 	rows, err := s.repo.ClearWeekly(ctx)
 	if err != nil {
@@ -354,11 +361,11 @@ func (s *NotFoundService) ClearWeekly(ctx context.Context) (int64, error) {
 	}
 	// 清理排行榜缓存
 	s.clearRankingCache(ctx)
-	logrus.Infof("[not_found] weekly clear: deleted %d records", rows)
+	logrus.Infof("[not_found] weekly clear: reset %d records", rows)
 	return rows, nil
 }
 
-// StartWeeklyClearTask 启动每周清空定时任务
+// StartWeeklyClearTask 启动每周重置计数的定时任务
 func (s *NotFoundService) StartWeeklyClearTask(ctx context.Context) {
 	nextMonday := nextMonday()
 	duration := time.Until(nextMonday)

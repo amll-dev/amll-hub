@@ -87,22 +87,40 @@ func (r *LyricRequestRepo) GetByID(ctx context.Context, id int64) (*model.LyricR
 	return &req, nil
 }
 
-// FindByPlatformIDs 按平台 ID 查找已存在的请愿
+// FindByPlatformIDs 按平台 ID 查找「完全同一首歌」的已存在请愿。
+//
+// 原实现把各平台列用 OR 连接（ncm_id = ? OR qq_id = ? ...），只要撞上
+// 任意一个 ID 就取 id 最小的一条合并：在多平台 ID 场景下会把持有不同 ID
+// 的两条记录串号，且本次补齐的 ID 静默丢失。这里改为：
+//   - 各平台列用 AND 连接，要求已有记录在每个本次提供的 ID 上「兼容」：
+//     要么相等，要么该列为 '0'/NULL（尚未登记，可被补齐）；
+//   - 同时要求至少一个 ID 与已有记录精确相等，避免全 '0' 记录被误命中，
+//     也确保不同歌（如 ncm 冲突）不会因某个 ID 偶然相同而串号。
+//
+// 命中后由 service 层把本次非 "0" 的 ID 写回，完成平台 ID 补齐。
+// col 来自 platformIDs() 的固定列名白名单，非用户输入。
 func (r *LyricRequestRepo) FindByPlatformIDs(
 	ctx context.Context, ids map[string]string,
 ) (*model.LyricRequest, error) {
 	if len(ids) == 0 {
 		return nil, gorm.ErrRecordNotFound
 	}
-	conds := make([]string, 0, len(ids))
-	args := make([]any, 0, len(ids))
+	compat := make([]string, 0, len(ids))
+	overlap := make([]string, 0, len(ids))
+	compatArgs := make([]any, 0, len(ids))
+	overlapArgs := make([]any, 0, len(ids))
 	for col, val := range ids {
-		conds = append(conds, col+" = ?")
-		args = append(args, val)
+		compat = append(compat, "("+col+" = ? OR "+col+" = '0' OR "+col+" IS NULL)")
+		compatArgs = append(compatArgs, val)
+		overlap = append(overlap, col+" = ?")
+		overlapArgs = append(overlapArgs, val)
 	}
+	args := append(compatArgs, overlapArgs...)
+	where := "(" + strings.Join(compat, " AND ") + ") AND (" + strings.Join(overlap, " OR ") + ")"
+
 	var req model.LyricRequest
 	err := r.db.WithContext(ctx).
-		Where(strings.Join(conds, " OR "), args...).
+		Where(where, args...).
 		Order("id ASC").
 		First(&req).Error
 	if err != nil {
@@ -297,17 +315,24 @@ func (r *LyricRequestRepo) CountComments(
 	return out, nil
 }
 
-// ListComments 查询某条请愿的评论（按时间正序）
+// ListComments 查询某条请愿最新的 limit 条评论，返回时按时间正序。
+// 先 DESC + LIMIT 取最新，再在 Go 里反转，避免「前 300 条」导致新评论永远看不到。
 func (r *LyricRequestRepo) ListComments(
 	ctx context.Context, requestID int64, limit int,
 ) ([]model.LyricRequestComment, error) {
 	var comments []model.LyricRequestComment
 	err := r.db.WithContext(ctx).
 		Where("request_id = ?", requestID).
-		Order("created_at ASC, id ASC").
+		Order("created_at DESC, id DESC").
 		Limit(limit).
 		Find(&comments).Error
-	return comments, err
+	if err != nil {
+		return comments, err
+	}
+	for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
+		comments[i], comments[j] = comments[j], comments[i]
+	}
+	return comments, nil
 }
 
 // AddComment 新增评论
@@ -403,8 +428,11 @@ func (r *LyricRequestRepo) LatestSubmissionStatus(
 		RequestID int64
 		Status    string
 	}
+	// DISTINCT ON 让数据库只返回每个请愿最近的一条关联投稿，
+	// 否则一个请愿关联 N 条投稿就返回 N 行，Go 里再白白丢掉 N-1 行。
+	// ORDER BY 前缀必须与 DISTINCT ON 的列一致（Postgres 要求）。
 	err := r.db.WithContext(ctx).Raw(`
-		SELECT l.request_id, s.status
+		SELECT DISTINCT ON (l.request_id) l.request_id, s.status
 		FROM submission_petition_links l
 		JOIN submissions s ON s.id = l.submission_id
 		WHERE l.request_id IN (?)

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -86,7 +87,13 @@ func toViewResponse(parsed ttml.TTMLLyric, lineKeys []string) *LyricViewResponse
 	return resp
 }
 
-// extractTTMLLineKeys 按顺序提取 body 内每个 <p> 的 itunes:key
+// itunesKeyNamespace 是 amll-ttml 识别的 itunes:key 属性命名空间。
+// 未声明 xmlns 的 TTML 里，encoding/xml 会把前缀字面量 "itunes" 留在 Name.Space。
+const itunesKeyNamespace = "http://itunes.apple.com/lyric-ttml-internal"
+
+// extractTTMLLineKeys 按顺序提取 body 内每个带时间轴的【主歌词行】的 itunes:key。
+// 判定口径必须与 toViewResponse 对齐：后者只对非 BG 行推进 keyIdx，因此这里
+// 要跳过无 begin/end 的节点和 x-bg 背景行，否则从该行起 Key 锚点会整体错位。
 func extractTTMLLineKeys(ttmlText string) []string {
 	decoder := xml.NewDecoder(strings.NewReader(ttmlText))
 	keys := make([]string, 0)
@@ -106,18 +113,22 @@ func extractTTMLLineKeys(ttmlText string) []string {
 					continue
 				}
 				var key string
-				hasBegin, hasEnd := false, false
+				hasBegin, hasEnd, isBG := false, false, false
 				for _, attr := range t.Attr {
-					switch attr.Name.Local {
-					case "begin":
+					switch {
+					case attr.Name.Local == "begin":
 						hasBegin = true
-					case "end":
+					case attr.Name.Local == "end":
 						hasEnd = true
-					case "key":
+					case attr.Name.Local == "role" && strings.Contains(attr.Value, "x-bg"):
+						isBG = true
+					// amll-ttml 只认 itunes:key；无前缀/无命名空间的 key 不当作行锚点
+					case attr.Name.Local == "key" &&
+						(attr.Name.Space == "itunes" || attr.Name.Space == itunesKeyNamespace):
 						key = strings.TrimSpace(attr.Value)
 					}
 				}
-				if hasBegin && hasEnd {
+				if hasBegin && hasEnd && !isBG {
 					keys = append(keys, key)
 				}
 			}
@@ -155,6 +166,15 @@ func ExtractTTMLAuthorGithubID(content []byte) (int64, bool) {
 	return 0, false
 }
 
+// MaxViewLyricBytes 查看歌词时允许读入的最大字节数。
+// 5,000 行的 TTML 约 2MB，10MB 已经非常宽松；超过就是异常数据，
+// 应明确报错而不是截断后伪装成 XML 格式错误。
+const MaxViewLyricBytes = 10 << 20
+
+// ErrLyricTooLarge 歌词文件超过查看上限。
+// 单独用 sentinel 与「解析失败」区分，handler 才能返回 400 而不是笼统的 500。
+var ErrLyricTooLarge = errors.New("lyric file too large")
+
 // ViewLyric 解析 raw-lyrics 下的 TTML 文件为结构化歌词数据，
 // 供搜索页「查看歌词」使用。
 func (s *LyricsService) ViewLyric(ctx context.Context, filename string) (*LyricViewResponse, error) {
@@ -163,20 +183,31 @@ func (s *LyricsService) ViewLyric(ctx context.Context, filename string) (*LyricV
 		return nil, err
 	}
 
-	var content strings.Builder
+	var content []byte
 	err = s.StreamLyric(ctx, resolved.MinioPath, func(reader io.Reader) error {
-		_, err := io.Copy(&content, io.LimitReader(reader, 10*1024*1024))
-		return err
+		// 用 ReadTTMLLimited 而不是 io.Copy + LimitReader：后者会把超过上限的
+		// 文件静默切成半截，XML 解析器随后报 "unexpected EOF"，用户看到的是
+		// 「解析失败」这种无法归因的错误。真超限就该明确提示文件过大。
+		data, err := ReadTTMLLimited(reader, MaxViewLyricBytes)
+		if err != nil {
+			// ReadTTMLLimited 对超限返回 ErrInvalidInput，转成专用 sentinel 交给 handler 映射 400
+			if errors.Is(err, ErrInvalidInput) {
+				return fmt.Errorf("%w: 歌词文件超过 %dMB 上限", ErrLyricTooLarge, MaxViewLyricBytes>>20)
+			}
+			return err
+		}
+		content = data
+		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read lyric content: %w", err)
 	}
 
-	parsed, err := parseTTML(content.String())
+	parsed, err := parseTTML(string(content))
 	if err != nil {
 		return nil, fmt.Errorf("parse ttml: %w", err)
 	}
-	return toViewResponse(parsed, extractTTMLLineKeys(content.String())), nil
+	return toViewResponse(parsed, extractTTMLLineKeys(string(content))), nil
 }
 
 // ParseLyric 解析任意 TTML 文本为结构化歌词数据，

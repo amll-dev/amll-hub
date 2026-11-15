@@ -77,15 +77,19 @@ function diffValues(
   };
 }
 
-/** 把 TTMLLyric 的 metadata 压成 Map（同一个 key 出现多次时合并 value） */
+/**
+ * 把 TTMLLyric 的 metadata 压成 Map（同一个 key 出现多次时合并 value）。
+ *
+ * 合并去重：转制工具常见 `<meta key="artists">A</meta>` 写两次，
+ * 不去重会得到 ["A","A"]；新稿只有一条 ["A"] 时 `sameValues` 因长度不等判为
+ * 「有变化」，而 `diffValues` 用 Set 去重后增删都为空 —— 于是这个 key
+ * 一个 block 都不产出，审核报告里就「没有差异」。
+ */
 function toMetadataMap(lyric: TTMLLyric): Map<string, string[]> {
   const map = new Map<string, string[]>();
   for (const entry of lyric.metadata ?? []) {
-    const existing = map.get(entry.key) ?? [];
-    map.set(entry.key, [...existing, ...normalizeValues(entry)]);
-  }
-  for (const [key, values] of map) {
-    map.set(key, values.sort());
+    const merged = new Set([...(map.get(entry.key) ?? []), ...normalizeValues(entry)]);
+    map.set(entry.key, [...merged].sort());
   }
   return map;
 }
@@ -103,6 +107,8 @@ export const buildMetadataChanges = (freeze: TTMLLyric, staged: TTMLLyric): Revi
     if (sameValues(oldValues, newValues)) continue;
 
     const { removed, added } = diffValues(oldValues, newValues);
+    // 显式跳过空差异，比依赖下面两个 if 都不成立更清楚
+    if (added.length === 0 && removed.length === 0) continue;
     const label = getLabel(key);
 
     // 一个 key 同时有增有删时拆成两条 —— 语义单一，模板统一为

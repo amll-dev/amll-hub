@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { ChevronRight, Package } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -18,6 +18,8 @@ export function PluginSubmissionList({ onManage }: { onManage: (pluginKey: strin
   const pluginsQuery = useQuery({
     queryKey: queryKeys.myPlugins({ page: pluginPage, pageSize: PLUGIN_PAGE_SIZE }),
     queryFn: () => api.pluginStore.myPlugins({ page: pluginPage, pageSize: PLUGIN_PAGE_SIZE }),
+    // 翻页时保留上一页数据，否则 data 变 undefined → total=0 → 越界收敛把页打回第 1 页
+    placeholderData: keepPreviousData,
     staleTime: 15_000,
   });
 

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { triggerDownload } from '@/lib/blob-download';
 import { queryKeys } from '@/lib/query';
 import { LyricViewer } from '@/components/LyricViewer';
 import { LyricDetailSkeleton } from '@/components/ui/Skeleton';
@@ -184,8 +185,9 @@ function SubmissionDetailContent({
     };
 
     const heartbeat = async () => {
-      // 页面不可见时不再续约：超时后自动释放，回来时重新占用
-      if (!isCurrent() || document.visibilityState !== 'visible') return;
+      // 页面切到后台也要继续续约：审核员常见操作是开另一个标签页逐行核对 TTML，
+      // 一旦停止心跳，3 分钟后租约自动释放，回来时稿件可能已被别人抢走。
+      if (!isCurrent()) return;
       try {
         const { held, status } = await api.reviewHeartbeat(id);
         if (!isCurrent()) return;
@@ -280,12 +282,7 @@ function SubmissionDetailContent({
 
   const downloadTtml = () => {
     const blob = new Blob([ttml], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${detail?.title || 'lyric'}.ttml`;
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, `${detail?.title || 'lyric'}.ttml`);
   };
 
   // 各平台全部 ID（支持多 ID），优先从 metadata.platform_ids 读取
@@ -966,7 +963,7 @@ export function SubmissionDetailPage({
 
       {/* 底部提示 */}
       <footer className="flex items-center justify-center gap-2 border-t border-line py-4">
-        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-500">
           测试版
         </span>
         <span className="text-xs text-ink-3">测试版本，不代表最终品质</span>

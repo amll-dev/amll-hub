@@ -31,7 +31,7 @@ pub async fn consume_loop(
     channel: lapin::Channel,
     nf_queue_name: String,
     app: Arc<AppState>,
-    shutdown: Arc<tokio::sync::Notify>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Result<()> {
     let mut consumer = channel
         .basic_consume(
@@ -49,14 +49,16 @@ pub async fn consume_loop(
         "nf consumer started"
     );
 
-    let notified = shutdown.notified();
-    tokio::pin!(notified);
-
     let mut tasks: tokio::task::JoinSet<()> = tokio::task::JoinSet::new();
 
     loop {
+        // 每轮循环开头主动检查关闭状态，避免长任务期间到达的信号被漏掉。
+        if *shutdown.borrow() {
+            info!(queue = %nf_queue_name, "shutdown signal received, stopping nf consumer");
+            break;
+        }
         tokio::select! {
-            _ = &mut notified => {
+            _ = shutdown.changed() => {
                 info!(queue = %nf_queue_name, "shutdown signal received, stopping nf consumer");
                 break;
             }
@@ -174,8 +176,20 @@ pub async fn process_with_mode(
 ) -> Result<bool> {
     // 1. 检查白名单（Redis）
     let mut redis_conn = app.redis.clone();
-    if is_in_whitelist(&mut redis_conn, &msg.platform, &msg.platform_id).await? {
-        info!(platform = %msg.platform, platform_id = %msg.platform_id, "already in whitelist, skip");
+    if let Some(kind) = is_in_whitelist(&mut redis_conn, &msg.platform, &msg.platform_id).await? {
+        // 白名单命中也必须写库：回填只捞 category='not_found' 且 song_name='' 的记录，
+        // 只返回 true 不写库会让这批记录每轮重复占满配额、永远不收敛。
+        if let Err(e) = mark_whitelist_hit_pg(&app.db, msg, kind.as_category()).await {
+            warn!(error = %e, "白名单命中写回 category 失败");
+            // 写库失败不能算「已解决」，让回填至少打时间戳兜底
+            return Ok(false);
+        }
+        info!(
+            platform = %msg.platform,
+            platform_id = %msg.platform_id,
+            category = kind.as_category(),
+            "already in whitelist, synced to db"
+        );
         return Ok(true);
     }
 
@@ -208,7 +222,7 @@ pub async fn process_with_mode(
             if let Err(e) = upsert_whitelist_pg(
                 &app.db,
                 &WhitelistUpsert {
-                    table: "pure_music_whitelist",
+                    table: WhitelistTable::PureMusic,
                     platform: &msg.platform,
                     platform_id: &msg.platform_id,
                     song_name: &result.song_name,
@@ -228,7 +242,7 @@ pub async fn process_with_mode(
             if let Err(e) = upsert_whitelist_pg(
                 &app.db,
                 &WhitelistUpsert {
-                    table: "cloud_music_whitelist",
+                    table: WhitelistTable::CloudMusic,
                     platform: &msg.platform,
                     platform_id: &msg.platform_id,
                     song_name: &result.song_name,
@@ -264,6 +278,34 @@ pub async fn process_with_mode(
     Ok(!result.song_name.is_empty())
 }
 
+/// 白名单命中时把残留的 not_found 记录改成对应类别。
+/// 只动 category / updated_at，不覆盖已有的歌曲元数据；带 category='not_found'
+/// 条件避免把已正确分类的记录改回去。
+async fn mark_whitelist_hit_pg(
+    db: &DatabaseConnection,
+    msg: &NotFoundMessage,
+    category: &str,
+) -> Result<()> {
+    use sea_orm::ConnectionTrait;
+
+    let sql = r#"UPDATE not_found_requests
+        SET category = $1, updated_at = NOW()
+        WHERE platform = $2 AND platform_id = $3 AND category = 'not_found'"#;
+
+    db.execute(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DatabaseBackend::Postgres,
+        sql,
+        [
+            category.into(),
+            msg.platform.clone().into(),
+            msg.platform_id.clone().into(),
+        ],
+    ))
+    .await?;
+
+    Ok(())
+}
+
 /// 更新 not_found_requests 的 category 及歌曲元数据
 async fn update_category_pg(
     db: &DatabaseConnection,
@@ -296,10 +338,33 @@ async fn update_category_pg(
     Ok(())
 }
 
+/// 白名单目标表：SQL 用两段常量，避免用 format! 拼接标识符
+#[derive(Clone, Copy)]
+enum WhitelistTable {
+    PureMusic,
+    CloudMusic,
+}
+
+impl WhitelistTable {
+    fn insert_sql(self) -> &'static str {
+        match self {
+            Self::PureMusic => {
+                r#"INSERT INTO pure_music_whitelist (platform, platform_id, song_name, reason, detected_by)
+                   VALUES ($1, $2, $3, $4, $5)
+                   ON CONFLICT (platform, platform_id) DO NOTHING"#
+            }
+            Self::CloudMusic => {
+                r#"INSERT INTO cloud_music_whitelist (platform, platform_id, song_name, reason, detected_by)
+                   VALUES ($1, $2, $3, $4, $5)
+                   ON CONFLICT (platform, platform_id) DO NOTHING"#
+            }
+        }
+    }
+}
+
 /// 白名单表 upsert 参数
 struct WhitelistUpsert<'a> {
-    /// 目标表：pure_music_whitelist / cloud_music_whitelist
-    table: &'a str,
+    table: WhitelistTable,
     platform: &'a str,
     platform_id: &'a str,
     song_name: &'a str,
@@ -311,16 +376,9 @@ struct WhitelistUpsert<'a> {
 async fn upsert_whitelist_pg(db: &DatabaseConnection, p: &WhitelistUpsert<'_>) -> Result<()> {
     use sea_orm::ConnectionTrait;
 
-    let sql = format!(
-        r#"INSERT INTO {} (platform, platform_id, song_name, reason, detected_by)
-                 VALUES ($1, $2, $3, $4, $5)
-                 ON CONFLICT (platform, platform_id) DO NOTHING"#,
-        p.table
-    );
-
     db.execute(sea_orm::Statement::from_sql_and_values(
         sea_orm::DatabaseBackend::Postgres,
-        sql,
+        p.table.insert_sql(),
         [
             p.platform.into(),
             p.platform_id.into(),

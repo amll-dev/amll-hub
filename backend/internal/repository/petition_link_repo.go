@@ -36,22 +36,33 @@ func (r *PetitionLinkRepo) ExistingRequestIDs(
 	return out, nil
 }
 
-// BindMany 批量关联，返回本次新增的请愿 ID
+// BindMany 批量关联，返回本次新增的请愿 ID 与被忽略（超出单投稿上限）的数量。
+// limit 是「单投稿最多关联数」的累计上限：调用方只截本次入参会被分批发绕过，
+// 所以这里按已有行数算出剩余额度，超出部分直接丢弃并回传数量供上层提示。
 func (r *PetitionLinkRepo) BindMany(
-	ctx context.Context, submissionID int64, requestIDs []int64, actor string,
-) ([]int64, error) {
+	ctx context.Context, submissionID int64, requestIDs []int64, actor string, limit int,
+) ([]int64, int, error) {
 	if len(requestIDs) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 	existing, err := r.ExistingRequestIDs(ctx, submissionID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+	remaining := limit - len(existing)
+	if remaining < 0 {
+		remaining = 0
 	}
 
 	links := make([]model.PetitionLink, 0, len(requestIDs))
 	inserted := make([]int64, 0, len(requestIDs))
+	skipped := 0
 	for _, id := range requestIDs {
 		if existing[id] {
+			continue
+		}
+		if len(links) >= remaining {
+			skipped++
 			continue
 		}
 		existing[id] = true
@@ -63,12 +74,12 @@ func (r *PetitionLinkRepo) BindMany(
 		})
 	}
 	if len(links) == 0 {
-		return nil, nil
+		return nil, skipped, nil
 	}
 	if err := r.db.WithContext(ctx).Create(&links).Error; err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return inserted, nil
+	return inserted, skipped, nil
 }
 
 // ListBySubmission 查询某投稿的全部关联

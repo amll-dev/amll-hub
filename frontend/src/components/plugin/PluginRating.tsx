@@ -8,7 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
 import type { PluginDetailResult, PluginRatingSummary } from '@/lib/types';
 
-const STAR_COLOR = 'text-[#f0a63a]';
+const STAR_COLOR = 'text-warning';
 const EMPTY_STAR_COLOR = 'text-ink-3/35';
 
 /** 只读星级 */

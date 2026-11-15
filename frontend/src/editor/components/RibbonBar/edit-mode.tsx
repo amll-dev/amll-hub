@@ -111,108 +111,102 @@ function EditField<
     []
   );
 
-  const hasErrorAtom = useMemo(
-    () =>
-      atom((get) => {
-        if (fieldName !== 'startTime' && fieldName !== 'endTime') {
-          return false;
-        }
+  const [hasErrorAtom] = useState(() =>
+    atom((get) => {
+      if (fieldName !== 'startTime' && fieldName !== 'endTime') {
+        return false;
+      }
 
-        const selectedItems = get(itemAtom);
-        if (selectedItems.size === 0) return false;
+      const selectedItems = get(itemAtom);
+      if (selectedItems.size === 0) return false;
 
-        const lyricLines = get(lyricLinesAtom);
+      const lyricLines = get(lyricLinesAtom);
 
-        if (isWordField) {
-          const selectedWords = selectedItems;
-          for (const line of lyricLines.lyricLines) {
-            for (const word of line.words) {
-              if (selectedWords.has(word.id)) {
-                if (word.startTime > word.endTime) {
-                  return true;
-                }
-              }
-            }
-          }
-        } else {
-          const selectedLines = selectedItems;
-          for (const line of lyricLines.lyricLines) {
-            if (selectedLines.has(line.id)) {
-              if (line.startTime > line.endTime) {
+      if (isWordField) {
+        const selectedWords = selectedItems;
+        for (const line of lyricLines.lyricLines) {
+          for (const word of line.words) {
+            if (selectedWords.has(word.id)) {
+              if (word.startTime > word.endTime) {
                 return true;
               }
             }
           }
         }
-        return false;
-      }),
-    [fieldName, isWordField, itemAtom]
+      } else {
+        const selectedLines = selectedItems;
+        for (const line of lyricLines.lyricLines) {
+          if (selectedLines.has(line.id)) {
+            if (line.startTime > line.endTime) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    })
   );
   const hasError = useAtomValue(hasErrorAtom);
 
-  const currentValueAtom = useMemo(
-    () =>
-      atom((get) => {
-        const selectedItems = get(itemAtom);
-        const lyricLines = get(lyricLinesAtom);
-        if (selectedItems.size === 0) return undefined;
+  const [currentValueAtom] = useState(() =>
+    atom((get) => {
+      const selectedItems = get(itemAtom);
+      const lyricLines = get(lyricLinesAtom);
+      if (selectedItems.size === 0) return undefined;
 
-        if (isWordField) {
-          const selectedWords = selectedItems as Set<string>;
-          const values = new Set();
-          for (const line of lyricLines.lyricLines) {
-            for (const word of line.words) {
-              if (selectedWords.has(word.id)) {
-                values.add(word[fieldName as keyof LyricWord]);
-              }
-            }
-          }
-          if (values.size === 1) return formatter(values.values().next().value as L[F]);
-          return MULTIPLE_VALUES;
-        }
-        const selectedLines = selectedItems as Set<string>;
+      if (isWordField) {
+        const selectedWords = selectedItems as Set<string>;
         const values = new Set();
         for (const line of lyricLines.lyricLines) {
-          if (selectedLines.has(line.id)) {
-            values.add(line[fieldName as keyof LyricLine]);
+          for (const word of line.words) {
+            if (selectedWords.has(word.id)) {
+              values.add(word[fieldName as keyof LyricWord]);
+            }
           }
         }
         if (values.size === 1) return formatter(values.values().next().value as L[F]);
         return MULTIPLE_VALUES;
-      }),
-    [fieldName, formatter, isWordField, itemAtom]
+      }
+      const selectedLines = selectedItems as Set<string>;
+      const values = new Set();
+      for (const line of lyricLines.lyricLines) {
+        if (selectedLines.has(line.id)) {
+          values.add(line[fieldName as keyof LyricLine]);
+        }
+      }
+      if (values.size === 1) return formatter(values.values().next().value as L[F]);
+      return MULTIPLE_VALUES;
+    })
   );
   const currentValue = useAtomValue(currentValueAtom);
   const store = useStore();
-  const durationValueAtom = useMemo(
-    () =>
-      atom((get) => {
-        if (fieldName !== 'endTime') return undefined;
-        const selectedItems = get(itemAtom);
-        const lyricLines = get(lyricLinesAtom);
-        if (selectedItems.size === 0) return undefined;
-        const durations = new Set<number>();
-        if (isWordField) {
-          const selectedWords = selectedItems as Set<string>;
-          for (const line of lyricLines.lyricLines) {
-            for (const word of line.words) {
-              if (selectedWords.has(word.id)) {
-                durations.add(word.endTime - word.startTime);
-              }
-            }
-          }
-        } else {
-          const selectedLines = selectedItems as Set<string>;
-          for (const line of lyricLines.lyricLines) {
-            if (selectedLines.has(line.id)) {
-              durations.add(line.endTime - line.startTime);
+  const [durationValueAtom] = useState(() =>
+    atom((get) => {
+      if (fieldName !== 'endTime') return undefined;
+      const selectedItems = get(itemAtom);
+      const lyricLines = get(lyricLinesAtom);
+      if (selectedItems.size === 0) return undefined;
+      const durations = new Set<number>();
+      if (isWordField) {
+        const selectedWords = selectedItems as Set<string>;
+        for (const line of lyricLines.lyricLines) {
+          for (const word of line.words) {
+            if (selectedWords.has(word.id)) {
+              durations.add(word.endTime - word.startTime);
             }
           }
         }
-        if (durations.size === 1) return durations.values().next().value;
-        return MULTIPLE_VALUES;
-      }),
-    [fieldName, isWordField, itemAtom]
+      } else {
+        const selectedLines = selectedItems as Set<string>;
+        for (const line of lyricLines.lyricLines) {
+          if (selectedLines.has(line.id)) {
+            durations.add(line.endTime - line.startTime);
+          }
+        }
+      }
+      if (durations.size === 1) return durations.values().next().value;
+      return MULTIPLE_VALUES;
+    })
   );
   const durationValue = useAtomValue(durationValueAtom);
   const compareValue = useMemo(() => {
@@ -463,41 +457,39 @@ function CheckboxField<
   const editLyricLines = useSetImmerAtom(lyricLinesAtom);
   const store = useStore();
 
-  const currentValueAtom = useMemo(
-    () =>
-      atom((get) => {
-        const selectedItems = get(itemAtom);
-        const lyricLines = get(lyricLinesAtom);
-        if (selectedItems.size) {
-          if (isWordField) {
-            const selectedWords = selectedItems as Set<string>;
-            const values = new Set();
-            for (const line of lyricLines.lyricLines) {
-              for (const word of line.words) {
-                if (selectedWords.has(word.id)) {
-                  values.add(word[fieldName as keyof LyricWord]);
-                }
-              }
-            }
-            if (values.size === 1) return values.values().next().value as L[F];
-            return MULTIPLE_VALUES;
-          }
-          const selectedLines = selectedItems as Set<string>;
+  const [currentValueAtom] = useState(() =>
+    atom((get) => {
+      const selectedItems = get(itemAtom);
+      const lyricLines = get(lyricLinesAtom);
+      if (selectedItems.size) {
+        if (isWordField) {
+          const selectedWords = selectedItems as Set<string>;
           const values = new Set();
           for (const line of lyricLines.lyricLines) {
-            if (selectedLines.has(line.id)) {
-              values.add(line[fieldName as keyof LyricLine]);
+            for (const word of line.words) {
+              if (selectedWords.has(word.id)) {
+                values.add(word[fieldName as keyof LyricWord]);
+              }
             }
           }
           if (values.size === 1) return values.values().next().value as L[F];
           return MULTIPLE_VALUES;
         }
-        return undefined;
-      }),
-    [itemAtom, fieldName, isWordField]
+        const selectedLines = selectedItems as Set<string>;
+        const values = new Set();
+        for (const line of lyricLines.lyricLines) {
+          if (selectedLines.has(line.id)) {
+            values.add(line[fieldName as keyof LyricLine]);
+          }
+        }
+        if (values.size === 1) return values.values().next().value as L[F];
+        return MULTIPLE_VALUES;
+      }
+      return undefined;
+    })
   );
   const currentValue = useAtomValue(currentValueAtom);
-  const isDisabledAtom = useMemo(() => atom((get) => get(itemAtom).size === 0), [itemAtom]);
+  const [isDisabledAtom] = useState(() => atom((get) => get(itemAtom).size === 0));
   const isDisabledBase = useAtomValue(isDisabledAtom);
 
   const isDisabled = isDisabledBase;

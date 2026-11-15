@@ -1,10 +1,9 @@
 import type { TTMLLyric } from '$/types/ttml';
 import {
-  buildLineMap,
+  alignLyricLines,
   buildWordMap,
   computeDisplayNumbers,
   getDisplayNumber,
-  getLineNumber,
   getLineText,
   getWordText,
 } from './lyric-utils';
@@ -29,9 +28,10 @@ const compareWordOrder = (
 ) => a.lineNumber - b.lineNumber || Number(a.isBG) - Number(b.isBG) || a.wordIndex - b.wordIndex;
 
 export const buildEditReport = (freeze: TTMLLyric, staged: TTMLLyric) => {
-  const stagedLineMap = buildLineMap(staged.lyricLines);
-  const freezeDisplayMap = computeDisplayNumbers(freeze.lyricLines);
-  const stagedDisplayMap = computeDisplayNumbers(staged.lyricLines);
+  const displayMaps = {
+    freeze: computeDisplayNumbers(freeze.lyricLines),
+    staged: computeDisplayNumbers(staged.lyricLines),
+  };
   const wordTextChanges: WordChange[] = [];
   const wordAndRomanChanges: WordChange[] = [];
   const romanOnlyChanges: WordChange[] = [];
@@ -39,18 +39,15 @@ export const buildEditReport = (freeze: TTMLLyric, staged: TTMLLyric) => {
   const wordRemovals: WordPresenceChange[] = [];
   const lineChanges: LineChange[] = [];
   const blocks: ReviewReportBlock[] = [];
-  const matchedStagedLines = new Set<(typeof staged.lyricLines)[number]>();
+  // 行对齐由 lyric-utils 统一实现（id 优先、位置兜底），这里只消费结果
+  const aligned = alignLyricLines(freeze, staged, displayMaps);
+  const matchedStagedLines = new Set(
+    aligned
+      .map((item) => item.stagedLine)
+      .filter((line): line is (typeof staged.lyricLines)[number] => Boolean(line))
+  );
 
-  freeze.lyricLines.forEach((freezeLine, index) => {
-    // 优先按稳定 id 对齐；id 不存在或已被消费时再按位置兜底，避免插入/删除行后整段误报。
-    const foundStagedById = stagedLineMap.get(freezeLine.id);
-    const stagedById =
-      foundStagedById && !matchedStagedLines.has(foundStagedById) ? foundStagedById : undefined;
-    const fallbackLine = staged.lyricLines[index];
-    const stagedLine =
-      stagedById ??
-      (fallbackLine && !matchedStagedLines.has(fallbackLine) ? fallbackLine : undefined);
-    const lineNumber = getLineNumber(freezeLine, index, freezeDisplayMap, stagedDisplayMap);
+  for (const { freezeLine, stagedLine, lineNumber, isBG } of aligned) {
     if (!stagedLine) {
       blocks.push({
         id: createReviewReportBlockId('line-removed'),
@@ -60,10 +57,8 @@ export const buildEditReport = (freeze: TTMLLyric, staged: TTMLLyric) => {
         isBG: freezeLine.isBG ?? false,
         text: getLineText(freezeLine),
       });
-      return;
+      continue;
     }
-    matchedStagedLines.add(stagedLine);
-    const isBG = freezeLine.isBG ?? stagedLine.isBG ?? false;
     const oldTrans = freezeLine.translatedLyric ?? '';
     const newTrans = stagedLine.translatedLyric ?? '';
     const oldLineRoman = freezeLine.romanLyric ?? '';
@@ -167,7 +162,7 @@ export const buildEditReport = (freeze: TTMLLyric, staged: TTMLLyric) => {
         word: getWordText(stagedWord),
       });
     });
-  });
+  }
 
   staged.lyricLines.forEach((stagedLine, index) => {
     if (matchedStagedLines.has(stagedLine)) return;
@@ -175,7 +170,7 @@ export const buildEditReport = (freeze: TTMLLyric, staged: TTMLLyric) => {
       id: createReviewReportBlockId('line-added'),
       kind: 'lineAdded',
       enabled: true,
-      lineNumber: getDisplayNumber(stagedLine, index, stagedDisplayMap),
+      lineNumber: getDisplayNumber(stagedLine, index, displayMaps.staged),
       isBG: stagedLine.isBG ?? false,
       text: getLineText(stagedLine),
     });

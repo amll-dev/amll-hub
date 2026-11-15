@@ -31,6 +31,11 @@ const (
 	thumbMaxSize = 640
 	// thumbQuality JPEG 质量。缩略图尺寸小，82 已经肉眼看不出差别。
 	thumbQuality = 82
+
+	// maxThumbSourceBytes 生成缩略图时允许读入的原图上限。
+	// 正常上传路径已校验大小，超限只可能是历史脏数据；但一张 30000×30000 的 PNG
+	// 解码后要几百 MB，所以必须在这里截断，而不是把整个对象 ReadAll 进内存。
+	maxThumbSourceBytes = 16 << 20 // 16MB
 )
 
 // ThumbKey 由原图 key 推导缩略图 key。临时区（tmp/）与缩略图自身不生成缩略图。
@@ -99,9 +104,18 @@ func (s *DailyRecommendationService) buildThumb(ctx context.Context, srcKey, thu
 	}
 	defer obj.Close()
 
-	raw, err := io.ReadAll(obj)
+	// 多读 1 字节用于判断是否超限：LimitReader 静默截断会让后续解码报
+	// 「unexpected EOF」之类的误导性错误，这里要明确区分「太大」和「格式坏」。
+	raw, err := io.ReadAll(io.LimitReader(obj, maxThumbSourceBytes+1))
 	if err != nil {
 		return fmt.Errorf("读取原图内容失败: %w", err)
+	}
+	if len(raw) > maxThumbSourceBytes {
+		logrus.WithFields(logrus.Fields{
+			"key":   srcKey,
+			"limit": maxThumbSourceBytes,
+		}).Warn("daily rec thumbnail source exceeds limit, fallback to original")
+		return fmt.Errorf("原图超过缩略图生成上限 %d 字节", maxThumbSourceBytes)
 	}
 
 	// 标准库只带 jpeg / png / gif；webp 由 golang.org/x/image/webp 注册，

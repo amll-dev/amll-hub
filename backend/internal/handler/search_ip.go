@@ -89,7 +89,8 @@ func (h *SearchIPHandler) Create(c *gin.Context) {
 // UploadTemp POST /api/v1/search-ip/upload-temp
 // 上传单张图片到临时区，返回 { tempKey }
 func (h *SearchIPHandler) UploadTemp(c *gin.Context) {
-	if middleware.GetUserName(c) == "" {
+	username := middleware.GetUserName(c)
+	if username == "" {
 		pkg.Unauthorized(c)
 		return
 	}
@@ -114,7 +115,7 @@ func (h *SearchIPHandler) UploadTemp(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
-	tempKey, err := h.svc.UploadTemp(ctx, fh.Filename, content)
+	tempKey, err := h.svc.UploadTemp(ctx, username, fh.Filename, content)
 	if err != nil {
 		writeServiceErr(c, err, "upload temp image failed")
 		return
@@ -140,7 +141,7 @@ func (h *SearchIPHandler) List(c *gin.Context) {
 	defer cancel()
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	size, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	size := pkg.Clamp(pkg.ParseInt(c.Query("limit"), 20), 1, 200)
 
 	result, err := h.svc.ListBySubmitter(ctx, username, page, size)
 	if err != nil {
@@ -160,7 +161,7 @@ func (h *SearchIPHandler) ListAll(c *gin.Context) {
 	defer cancel()
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	size, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	size := pkg.Clamp(pkg.ParseInt(c.Query("limit"), 20), 1, 200)
 
 	result, err := h.svc.ListAll(ctx, status, page, size)
 	if err != nil {

@@ -1,39 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { Music } from 'lucide-react';
 import { api } from '@/lib/api';
 import { qmCoverProxy } from '@/lib/qm';
-import type { LatestSongItem } from '@/lib/types';
+import { queryKeys } from '@/lib/query';
 import { staggerContainer, whileInViewProps } from '@/lib/motion';
 import { EmptyState } from '@/components/ui/EmptyState';
 
 export function LatestEntries() {
-  const [items, setItems] = useState<LatestSongItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api
-      .getLatestSongs()
-      .then((data) => {
-        if (!cancelled) setItems(data ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setItems([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data, isPending, error, refetch } = useQuery({
+    queryKey: queryKeys.latestSongs,
+    queryFn: () => api.getLatestSongs(),
+    staleTime: 60_000,
+  });
+  const items = data ?? [];
 
   return (
     <motion.section {...whileInViewProps} variants={staggerContainer} className="min-w-0">
       <h2 className="mb-4 text-xl font-bold">最新收录</h2>
-      {loading ? (
+      {isPending ? (
         <ul className="space-y-1">
           {Array.from({ length: 5 }).map((_, i) => (
             <li key={i} className="flex animate-pulse items-center gap-3 rounded-md p-2">
@@ -46,6 +31,22 @@ export function LatestEntries() {
             </li>
           ))}
         </ul>
+      ) : error ? (
+        // 请求失败与「确实没有数据」是两种状态，不能都落到「暂无数据」
+        <EmptyState
+          icon={Music}
+          title="加载失败"
+          description="最新收录暂时无法加载"
+          action={
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="inline-flex h-9 items-center rounded-md border border-input bg-card px-4 text-sm text-ink-2 transition-colors hover:bg-surface-2"
+            >
+              重试
+            </button>
+          }
+        />
       ) : items.length === 0 ? (
         <EmptyState icon={Music} title="暂无数据" />
       ) : (

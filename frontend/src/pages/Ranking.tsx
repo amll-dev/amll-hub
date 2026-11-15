@@ -1,23 +1,19 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, Clock, Hash, Loader2, Music, Play } from 'lucide-react';
+import { Clock, Hash, Loader2, Music, Play } from 'lucide-react';
 import { useNotFoundRanking } from '@/hooks/useNotFoundRanking';
 import { usePlayer } from '@/hooks/usePlayer';
+import { formatRelativeTime } from '@/lib/format';
 import { qmCoverProxy } from '@/lib/qm';
 import { listItem, staggerContainer } from '@/lib/motion';
 import type { MusicPlatform, NotFoundRankingItem } from '@/lib/types';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-} from '@/components/ui/pagination';
+import { ListPagination } from '@/components/ui/list-pagination';
 import { SimpleTooltip } from '@/components/ui/tooltip';
 import { PageContainer } from '@/components/PageContainer';
 import { EmptyState } from '@/components/ui/EmptyState';
 
+// 服务端真分页：每页条数即请求 limit，offset 由页码推导，total 来自后端全量命中数
 const PAGE_SIZE = 20;
-const FETCH_LIMIT = 50;
 
 const DAYS_OPTIONS = [1, 3, 7] as const;
 
@@ -27,39 +23,26 @@ const btnBase =
 const btnIdle = 'border border-input bg-card text-ink-2 hover:border-primary hover:text-primary';
 const btnActive = 'bg-primary text-primary-foreground';
 
-/** 相对时间格式化（如“3 小时前”） */
-function formatRelativeTime(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return '';
-  const diff = Date.now() - t;
-  const min = Math.floor(diff / 60000);
-  if (min < 1) return '刚刚';
-  if (min < 60) return `${min} 分钟前`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} 小时前`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day} 天前`;
-  return new Date(iso).toLocaleString('zh-CN');
-}
-
 export function Ranking() {
   const [days, setDays] = useState<number>(7);
   const [page, setPage] = useState(1);
   const [notice, setNotice] = useState<string | null>(null);
 
   const { data, loading, error, refresh } = useNotFoundRanking({
-    limit: FETCH_LIMIT,
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
     days,
   });
 
-  // 用 useMemo 稳定 items 引用（`?? []` 每次渲染都会新建数组，导致 pageItems 缓存失效）
+  // 用 useMemo 稳定 items 引用；服务端已按 offset/limit 返回本页数据，无需前端切片
   const items = useMemo(() => data?.items ?? [], [data]);
   const total = data?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
-  const pageItems = useMemo(
-    () => items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [items, page]
-  );
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // 榜单每周清空或数据减少后，当前页可能越界，自动收回
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   // 切换过滤条件后回到第一页
   const changeDays = (d: number) => {
@@ -147,7 +130,7 @@ export function Ranking() {
             variants={staggerContainer}
             className="divide-y divide-line rounded-lg border border-line bg-card"
           >
-            {pageItems.map((item, idx) => {
+            {items.map((item, idx) => {
               const rank = (page - 1) * PAGE_SIZE + idx + 1;
               return (
                 <motion.li
@@ -156,7 +139,7 @@ export function Ranking() {
                   className="flex items-center gap-4 p-4 transition-colors hover:bg-surface-2"
                 >
                   <span
-                    className={`w-8 shrink-0 text-center text-2xl font-bold ${
+                    className={`min-w-8 shrink-0 text-center text-2xl font-bold tabular-nums ${
                       rank === 1 ? 'text-primary' : 'text-ink-3'
                     }`}
                   >
@@ -196,59 +179,17 @@ export function Ranking() {
 
           {/* 窄屏下的次数/时间 */}
 
-          {/* 分页 */}
-          {totalPages > 1 && (
-            <Pagination className="mt-8">
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationLink
-                    href="#ranking-anchor"
-                    aria-label="上一页"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      goPage(page - 1);
-                    }}
-                    className={page <= 1 ? 'pointer-events-none opacity-40' : ''}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </PaginationLink>
-                </PaginationItem>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                  <PaginationItem key={p}>
-                    <PaginationLink
-                      href="#ranking-anchor"
-                      isActive={p === page}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        goPage(p);
-                      }}
-                    >
-                      {p}
-                    </PaginationLink>
-                  </PaginationItem>
-                ))}
-                <PaginationItem>
-                  <PaginationLink
-                    href="#ranking-anchor"
-                    aria-label="下一页"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      goPage(page + 1);
-                    }}
-                    className={page >= totalPages ? 'pointer-events-none opacity-40' : ''}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </PaginationLink>
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          )}
+          {/* 分页：真分页下页数可能很多，改用带页码窗口收敛的通用分页条 */}
+          <ListPagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={goPage}
+            className="mt-8"
+          />
 
-          {total > items.length && (
-            <p className="mt-4 text-center text-xs text-ink-3">
-              仅显示前 {items.length} 条（共 {total.toLocaleString('zh-CN')} 条）
-            </p>
-          )}
+          <p className="mt-4 text-center text-xs text-ink-3">
+            共 {total.toLocaleString('zh-CN')} 首 · 第 {page} / {totalPages} 页
+          </p>
         </>
       )}
     </PageContainer>

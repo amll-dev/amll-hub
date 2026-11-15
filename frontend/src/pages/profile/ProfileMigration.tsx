@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { FileText, Github, Loader2, RefreshCw, Unlink, Upload } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
+import { formatDateTime } from '@/lib/format';
 import { queryKeys } from '@/lib/query';
 import { buttonTap } from '@/lib/motion';
 import { Badge } from '@/components/ui/badge';
@@ -19,13 +20,6 @@ const STATUS_LABEL: Record<GithubMigrationTask['status'], string> = {
   completed: '已完成',
   failed: '失败',
 };
-
-function formatTime(iso?: string): string {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '-';
-  return d.toLocaleString('zh-CN', { hour12: false });
-}
 
 /** 迁移进度明细 */
 function TaskProgress({
@@ -84,7 +78,7 @@ function TaskProgress({
       </dl>
 
       {task.completedAt && (
-        <p className="text-xs text-ink-3">完成于 {formatTime(task.completedAt)}</p>
+        <p className="text-xs text-ink-3">完成于 {formatDateTime(task.completedAt)}</p>
       )}
 
       {task.error && <p className="text-xs text-error">错误：{task.error}</p>}
@@ -216,7 +210,7 @@ export function ProfileMigration() {
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-foreground">{status.githubLogin}</p>
                 <p className="truncate text-xs text-ink-3">
-                  {status.githubEmail || '未公开邮箱'} · 绑定于 {formatTime(status.boundAt)}
+                  {status.githubEmail || '未公开邮箱'} · 绑定于 {formatDateTime(status.boundAt)}
                 </p>
               </div>
             </div>
@@ -289,7 +283,7 @@ export function ProfileMigration() {
             )}
             {currentTask.status === 'completed' && (
               <p className="text-xs text-ink-3">
-                数据截止到 {formatTime(currentTask.completedAt ?? currentTask.updatedAt)}。
+                数据截止到 {formatDateTime(currentTask.completedAt ?? currentTask.updatedAt)}。
                 如需同步此后更新的投稿，请点击「重新迁移」。
               </p>
             )}

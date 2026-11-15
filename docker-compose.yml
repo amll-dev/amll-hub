@@ -1,4 +1,8 @@
 # AMLL Hub infrastructure
+#
+# ⚠️ 仅供本地开发：所有基础设施端口都映射到宿主机，且凭据有默认值。
+#    不要把这个文件直接放到公网机器上——生产环境请只 expose 内网端口，
+#    并通过 .env 覆盖 DB_PASSWORD / MINIO_* / RABBITMQ_* / MEILISEARCH_API_KEY。
 services:
   postgres:
     image: postgres:15-alpine

@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,11 @@ const (
 	// DocsImagePrefix 文档图片，需在 handler 的匿名可读白名单里
 	DocsImagePrefix = "docs/"
 )
+
+// TempLyricsPrefix 临时 TTML 对象前缀：tg-lyrics/.tmp-<nano>-<fileName>。
+// 投稿保存事务成功后会被 Move 到正式 key；进程崩溃/中断时残留的对象
+// 由 job.TempObjectCleanupJob 按 TTL 回收。
+const TempLyricsPrefix = PendingLyricsPrefix + ".tmp-"
 
 // MaxProfileBannerSize 主页背景图大小上限（前端压缩后远小于此值）
 const MaxProfileBannerSize = 5 << 20
@@ -207,18 +213,64 @@ func sanitizeDocImagePath(relPath string) (string, string, error) {
 // validateDocImage 文档图片校验：SVG 单独判断（魔数嗅探不适用），其余走图片嗅探
 func validateDocImage(ext string, content []byte) error {
 	if ext == ".svg" {
-		if !looksLikeSVG(content) {
-			return invalidInput("SVG 内容无法识别")
-		}
-		return nil
+		return validateSVGContent(content)
 	}
 	return validateImageUpload("image"+ext, content)
 }
 
-// looksLikeSVG 粗筛 SVG：必须含 <svg 且不含 <script>（响应侧还会加 CSP sandbox）
-func looksLikeSVG(content []byte) bool {
-	text := strings.ToLower(string(content))
-	return strings.Contains(text, "<svg") && !strings.Contains(text, "<script")
+// validateSVGContent 按 XML 逐节点白名单校验文档 SVG。
+//
+// 真正兜住 XSS 的是 ServeFile 给 .svg 加的 CSP sandbox，但那是「两层里只有
+// 一层是真的」：一旦图片改走 CDN 直链、或新增一个不设响应头的文件服务，
+// 上传侧原来只看 <svg / <script 的粗筛就形同虚设（onload、<animate onbegin>、
+// foreignObject 里的 iframe 都能过）。这里让上传侧自己也站得住：
+// 拒绝事件属性、脚本/外链载体与 javascript:/data: 值，合法 SVG 不受影响。
+func validateSVGContent(content []byte) error {
+	decoder := xml.NewDecoder(bytes.NewReader(content))
+	seenRoot := false
+	for {
+		token, err := decoder.Token()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return invalidInput("SVG 内容无法解析")
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		name := strings.ToLower(start.Name.Local)
+		if !seenRoot {
+			if name != "svg" {
+				return invalidInput("SVG 缺少根元素")
+			}
+			seenRoot = true
+		}
+		switch name {
+		case "script", "foreignobject", "iframe", "object", "embed", "handler":
+			return invalidInput("SVG 含不允许的元素 %s", name)
+		}
+		for _, attr := range start.Attr {
+			attrName := strings.ToLower(attr.Name.Local)
+			value := strings.ToLower(strings.TrimSpace(attr.Value))
+			if strings.HasPrefix(attrName, "on") {
+				return invalidInput("SVG 含事件属性")
+			}
+			if strings.Contains(value, "javascript:") || strings.Contains(value, "expression(") || strings.HasPrefix(value, "data:") {
+				return invalidInput("SVG 含不安全的属性值")
+			}
+			// <use xlink:href> 的片段引用是合法且常见的；外部链接一律拒绝，
+			// 否则 SVG 可以自己拉起跨域请求或加载脚本载体。
+			if attrName == "href" && value != "" && !strings.HasPrefix(value, "#") {
+				return invalidInput("SVG 含外部链接")
+			}
+		}
+	}
+	if !seenRoot {
+		return invalidInput("SVG 内容无法识别")
+	}
+	return nil
 }
 
 // sanitizeObjectNameSegment 把用户名收敛成安全的 key 片段，
@@ -237,6 +289,29 @@ func sanitizeObjectNameSegment(name string) string {
 		return "user"
 	}
 	return string(out)
+}
+
+// TempObject 临时对象的最小描述，避免把 minio 类型泄漏到 job 层
+type TempObject struct {
+	Key          string
+	Size         int64
+	LastModified time.Time
+}
+
+// ListTempObjects 列出 TempLyricsPrefix 下的临时对象
+func (s *FileService) ListTempObjects(ctx context.Context) ([]TempObject, error) {
+	objCh := s.minio.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
+		Prefix:    TempLyricsPrefix,
+		Recursive: true,
+	})
+	out := make([]TempObject, 0, 16)
+	for obj := range objCh {
+		if obj.Err != nil {
+			return nil, fmt.Errorf("list temp objects: %w", obj.Err)
+		}
+		out = append(out, TempObject{Key: obj.Key, Size: obj.Size, LastModified: obj.LastModified})
+	}
+	return out, nil
 }
 
 // Exists 检查对象是否存在

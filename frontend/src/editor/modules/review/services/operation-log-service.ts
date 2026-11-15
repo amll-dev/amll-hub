@@ -16,6 +16,13 @@ type ReviewOperationBase = {
   id: string;
   kind: ReviewOperationKind;
   createdAt: string;
+  /**
+   * 入栈时歌词状态的指纹（见 `states/main.ts` 的 `lyricStateHash`）。
+   *
+   * 撤销时用它 O(n) 比对「刚撤销掉的是不是这一步 review 操作」，
+   * 替代原来「深拷贝 + 回放 + 两次 stringify」的做法。
+   */
+  beforeStateHash?: string;
 };
 
 export type ReviewTimeShiftOperation = ReviewOperationBase & {
@@ -145,8 +152,6 @@ export const createReviewLineTimingOperation = (options: {
 
 const cloneLyric = (data: TTMLLyric): TTMLLyric => JSON.parse(JSON.stringify(data)) as TTMLLyric;
 
-const shiftTime = (value: number, offsetMs: number) => Math.max(0, value + offsetMs);
-
 export const applyReviewTimeShiftOperation = (
   lyric: TTMLLyric,
   operation: ReviewTimeShiftOperation
@@ -154,19 +159,32 @@ export const applyReviewTimeShiftOperation = (
   const targetLineIds = new Set(operation.targetLineIds);
   if (targetLineIds.size === 0 || operation.offsetMs === 0) return lyric;
 
+  const { offsetMs } = operation;
+
   lyric.lyricLines.forEach((line) => {
     if (!targetLineIds.has(line.id)) return;
 
-    line.startTime = shiftTime(line.startTime, operation.offsetMs);
-    line.endTime = shiftTime(line.endTime, operation.offsetMs);
+    // 偏移量在行级别夹一次：提前时最多提前到该行最早的时间点，
+    // 整行所有字段共用同一个 offset，行时长 / 词时长都不会被压扁。
+    let minStart = line.startTime;
+    line.words.forEach((word) => {
+      minStart = Math.min(minStart, word.startTime);
+      word.ruby?.forEach((rubyWord) => {
+        minStart = Math.min(minStart, rubyWord.startTime);
+      });
+    });
+    const appliedOffset = offsetMs < 0 ? Math.max(offsetMs, -minStart) : offsetMs;
+
+    line.startTime += appliedOffset;
+    line.endTime += appliedOffset;
 
     line.words.forEach((word) => {
-      word.startTime = shiftTime(word.startTime, operation.offsetMs);
-      word.endTime = shiftTime(word.endTime, operation.offsetMs);
+      word.startTime += appliedOffset;
+      word.endTime += appliedOffset;
 
       word.ruby?.forEach((rubyWord) => {
-        rubyWord.startTime = shiftTime(rubyWord.startTime, operation.offsetMs);
-        rubyWord.endTime = shiftTime(rubyWord.endTime, operation.offsetMs);
+        rubyWord.startTime += appliedOffset;
+        rubyWord.endTime += appliedOffset;
       });
     });
   });

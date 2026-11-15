@@ -87,7 +87,7 @@ export function Header() {
               className="h-8 w-8 shrink-0 rounded-md object-contain"
             />
             <span className="text-lg font-bold tracking-tight">AMLL Hub</span>
-            <span className="absolute inset-x-0 top-full mt-0.5 whitespace-nowrap text-center text-[9px] leading-none text-ink-3">
+            <span className="absolute inset-x-0 top-full mt-0.5 whitespace-nowrap text-center text-[11px] leading-none text-ink-3">
               测试版本，不代表最终品质
             </span>
           </Link>
@@ -190,42 +190,47 @@ export function Header() {
             onClick={() => setMenuOpen((v) => !v)}
             className="flex h-9 w-9 items-center justify-center rounded-md text-ink-2 hover:bg-surface-2 md:hidden"
             aria-label="菜单"
+            aria-expanded={menuOpen}
+            aria-controls="header-mobile-nav"
           >
             {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </motion.div>
       </div>
 
-      {menuOpen && (
-        <motion.nav
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.25, ease: [0.2, 0.8, 0.2, 1] }}
-          className="overflow-hidden border-t border-line md:hidden"
-        >
-          <div className="flex flex-col gap-1 px-6 py-3">
-            {navItems.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                onClick={(e) => {
-                  setMenuOpen(false);
-                  if (item.requireLogin && !user) {
-                    e.preventDefault();
-                    openLogin(item.to);
-                    return;
-                  }
-                  window.scrollTo(0, 0);
-                }}
-                className="rounded-md px-3 py-2 text-sm text-ink-2 transition-colors hover:bg-surface-2 hover:text-primary"
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        </motion.nav>
-      )}
+      <AnimatePresence initial={false}>
+        {menuOpen && (
+          <motion.nav
+            id="header-mobile-nav"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.2, 0.8, 0.2, 1] }}
+            className="overflow-hidden border-t border-line md:hidden"
+          >
+            <div className="flex flex-col gap-1 px-6 py-3">
+              {navItems.map((item) => (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onClick={(e) => {
+                    setMenuOpen(false);
+                    if (item.requireLogin && !user) {
+                      e.preventDefault();
+                      openLogin(item.to);
+                      return;
+                    }
+                    window.scrollTo(0, 0);
+                  }}
+                  className="rounded-md px-3 py-2 text-sm text-ink-2 transition-colors hover:bg-surface-2 hover:text-primary"
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </motion.nav>
+        )}
+      </AnimatePresence>
     </motion.header>
   );
 }

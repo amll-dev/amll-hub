@@ -58,6 +58,26 @@
   user-select: none;
 }
 
+/* 真正的 role="tab" 元素：外观继承外层 tabItem，避免 button 默认样式 */
+.tabButton {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+.tabButton:focus-visible {
+  outline: 2px solid var(--accent-9);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
 .closeButton {
   display: inline-flex;
   align-items: center;

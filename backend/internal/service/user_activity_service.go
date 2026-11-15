@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -180,6 +181,9 @@ func (s *UserActivityService) getActivity(ctx context.Context, username string, 
 	for _, d := range dayMap {
 		days = append(days, *d)
 	}
+	// map 遍历顺序随机，直接输出会让前端的日历/热力图每天排列都不一样；
+	// 按日期升序固定下来，前端可以按顺序渲染，也便于测试断言。
+	sort.Slice(days, func(i, j int) bool { return days[i].Date < days[j].Date })
 
 	return &UserActivity{
 		Year:   year,

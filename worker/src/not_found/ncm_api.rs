@@ -234,14 +234,20 @@ pub async fn fetch_qm_song_detail(
 }
 
 /// 获取歌曲的展示元数据
+///
+/// 区分「API 失败」和「查不到」：`Err` 是 API 故障（调用方不能当成不存在而静默写空标题），
+/// `Ok(None)` 才是歌曲不存在，`Ok(Some(..))` 为正常查到。
 pub async fn fetch_song_meta(
     client: &reqwest::Client,
     api_base: &str,
     platform_id: &str,
-) -> Option<(String, String, String)> {
-    let meta = fetch_song_detail(client, api_base, platform_id).await.ok()?;
+) -> Result<Option<(String, String, String)>> {
+    let meta = fetch_song_detail(client, api_base, platform_id).await?;
+    if meta.name.is_empty() && meta.artists.is_empty() {
+        return Ok(None);
+    }
     let artist = meta.artists.join(" / ");
-    Some((meta.name, artist, meta.cover))
+    Ok(Some((meta.name, artist, meta.cover)))
 }
 
 /// 调用网易云歌词 API 检查是否纯音乐
@@ -280,6 +286,30 @@ fn is_pure_music_keyword(text: &str) -> bool {
         "无歌词",
     ];
     keywords.iter().any(|k| text_lower.contains(k))
+}
+
+/// 只检查 LRC 的元数据标签行（`[ti:]` / `[ar:]` 等）是否含纯音乐关键词。
+///
+/// 不能对整段歌词做 `contains`：正文唱到「伴奏」「纯音乐」「pure」会被误判为纯音乐，
+/// 结果写进 `pure_music_whitelist` 后这首歌会被永久跳过。正文时间戳行
+/// （`[00:12.34]...`）一律排除。
+fn lrc_metadata_indicates_pure_music(lrc: &str) -> bool {
+    lrc.lines().any(|line| {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix('[') else {
+            return false;
+        };
+        let Some(close) = rest.find(']') else {
+            return false;
+        };
+        let tag = &rest[..close];
+        let key = tag.split(':').next().unwrap_or("");
+        // 元数据标签的 key 是纯字母；正文时间戳以数字开头，必须排除。
+        if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphabetic()) {
+            return false;
+        }
+        is_pure_music_keyword(tag)
+    })
 }
 
 /// 解析单个歌曲并返回分类
@@ -347,7 +377,7 @@ pub async fn parse_and_categorize(
     };
 
     if let Some(ref lyric_text) = lyric
-        && is_pure_music_keyword(lyric_text)
+        && lrc_metadata_indicates_pure_music(lyric_text)
     {
         return Ok(ParseResult {
             category: ParseCategory::PureMusic,

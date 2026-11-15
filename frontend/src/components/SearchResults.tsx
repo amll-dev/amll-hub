@@ -330,14 +330,14 @@ export function SearchResults() {
                             return (
                               <span
                                 key={`team-${artistName}`}
-                                className="inline-flex h-10 shrink-0 items-center justify-center overflow-hidden rounded bg-surface-2"
+                                className="inline-flex h-10 w-16 shrink-0 items-center justify-center overflow-hidden rounded bg-surface-2"
                                 title={team.name}
                               >
                                 {team.logoKey && (
                                   <img
                                     src={api.searchIpImageUrl(team.logoKey)}
                                     alt={team.name}
-                                    className="h-full w-auto object-contain"
+                                    className="h-full w-full object-contain"
                                     onError={(e) => {
                                       (e.target as HTMLImageElement).style.display = 'none';
                                     }}
@@ -414,7 +414,7 @@ export function SearchResults() {
                       {platforms.map((p, idx) => (
                         <span
                           key={`${p.platform}-${p.id}-${idx}`}
-                          className="inline-flex items-center gap-0.5 rounded border border-line bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-3"
+                          className="inline-flex items-center gap-0.5 rounded border border-line bg-surface-2 px-1.5 py-0.5 text-[11px] text-ink-3"
                         >
                           <Hash className="h-2.5 w-2.5" />
                           {p.platform}:{p.id}

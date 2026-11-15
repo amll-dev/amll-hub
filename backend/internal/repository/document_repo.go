@@ -70,12 +70,13 @@ func (r *DocumentRepo) Create(ctx context.Context, tx *gorm.DB, d *model.Documen
 }
 
 // GetByID 按主键查询，未找到返回 (nil, nil)
+// 软删除的文档对所有读路径不可见，所以每条查询都带 deleted_at IS NULL。
 func (r *DocumentRepo) GetByID(ctx context.Context, tx *gorm.DB, id int64) (*model.Document, error) {
 	if tx == nil {
 		tx = r.db.WithContext(ctx)
 	}
 	var d model.Document
-	err := tx.Where("id = ?", id).First(&d).Error
+	err := tx.Where("id = ? AND deleted_at IS NULL", id).First(&d).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -88,7 +89,8 @@ func (r *DocumentRepo) GetByID(ctx context.Context, tx *gorm.DB, id int64) (*mod
 // GetByIDForUpdate 事务内加行锁查询
 func (r *DocumentRepo) GetByIDForUpdate(ctx context.Context, tx *gorm.DB, id int64) (*model.Document, error) {
 	var d model.Document
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&d).Error
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND deleted_at IS NULL", id).First(&d).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -101,7 +103,7 @@ func (r *DocumentRepo) GetByIDForUpdate(ctx context.Context, tx *gorm.DB, id int
 // GetBySlug 按 slug 查询，未找到返回 (nil, nil)
 func (r *DocumentRepo) GetBySlug(ctx context.Context, slug string) (*model.Document, error) {
 	var d model.Document
-	err := r.db.WithContext(ctx).Where("slug = ?", slug).First(&d).Error
+	err := r.db.WithContext(ctx).Where("slug = ? AND deleted_at IS NULL", slug).First(&d).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -119,14 +121,28 @@ func (r *DocumentRepo) UpdateFields(ctx context.Context, tx *gorm.DB, id int64, 
 	return tx.Model(&model.Document{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// Delete 硬删除文档
-func (r *DocumentRepo) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Where("id = ?", id).Delete(&model.Document{}).Error
+// SoftDelete 软删除文档：只写 deleted_at / deleted_by，保留正文与版本快照
+//
+// 不再真删，是因为 document_revisions 上的 ON DELETE CASCADE 会把历史版本一起抹掉，
+// 事后既查不到内容也查不到是谁删的。deleted_by 存操作人用户名（与 created_by /
+// updated_by 一致，本系统的用户 ID 是 Casdoor 的字符串 subject，没有数值主键）。
+func (r *DocumentRepo) SoftDelete(ctx context.Context, id int64, actor string) error {
+	return r.db.WithContext(ctx).Model(&model.Document{}).
+		Where("id = ? AND deleted_at IS NULL", id).
+		Updates(map[string]any{
+			"deleted_at": time.Now(),
+			"deleted_by": actor,
+		}).Error
 }
 
 // SlugExists 判断 slug 是否被其他文档占用
-func (r *DocumentRepo) SlugExists(ctx context.Context, slug string, excludeID int64) (bool, error) {
-	base := r.db.WithContext(ctx).Model(&model.Document{}).Where("slug = ?", slug)
+// tx 由调用方传入以便在事务内检查（与 UpdateFields 用同一个连接），nil 时用默认连接。
+// 软删除的文档不占 slug：它们的 slug 允许被新文档复用。
+func (r *DocumentRepo) SlugExists(ctx context.Context, tx *gorm.DB, slug string, excludeID int64) (bool, error) {
+	if tx == nil {
+		tx = r.db.WithContext(ctx)
+	}
+	base := tx.Model(&model.Document{}).Where("slug = ? AND deleted_at IS NULL", slug)
 	if excludeID > 0 {
 		base = base.Where("id <> ?", excludeID)
 	}
@@ -141,7 +157,7 @@ func (r *DocumentRepo) SlugExists(ctx context.Context, slug string, excludeID in
 func (r *DocumentRepo) List(ctx context.Context, q DocumentListQuery) ([]DocumentListRow, int64, error) {
 	page, size := normalizePage(q.Page, q.PageSize)
 
-	base := r.db.WithContext(ctx).Model(&model.Document{})
+	base := r.db.WithContext(ctx).Model(&model.Document{}).Where("deleted_at IS NULL")
 	if q.Group != "" {
 		base = base.Where("group_name = ?", q.Group)
 	}
@@ -235,7 +251,7 @@ func (r *DocumentRepo) ListAllPublished(ctx context.Context) ([]DocumentListRow,
 	err := r.db.WithContext(ctx).Model(&model.Document{}).
 		Select("id, slug, title, group_name, status, sort_order, "+
 			"length(content) AS size_bytes, updated_by, updated_at, published_at").
-		Where("status = ?", model.DocStatusPublished).
+		Where("status = ? AND deleted_at IS NULL", model.DocStatusPublished).
 		Order("sort_order ASC, id ASC").
 		Scan(&rows).Error
 	return rows, err

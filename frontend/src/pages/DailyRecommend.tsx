@@ -15,14 +15,17 @@ import { whileInViewProps } from '@/lib/motion';
 /** 校验是否为合法 YYYY-MM-DD 日期字符串 */
 function isValidDateKey(s: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
-  const t = new Date(s + 'T00:00:00');
-  return !isNaN(t.getTime());
+  const [year, month, day] = s.split('-').map(Number) as [number, number, number];
+  const t = new Date(year, month - 1, day);
+  // `new Date('2026-02-31')` 不报错，会滚到 3 月 3 日；
+  // 必须回读三个字段确认没有溢出，否则非法日期会静默通过校验。
+  return t.getFullYear() === year && t.getMonth() === month - 1 && t.getDate() === day;
 }
 
 export function DailyRecommend() {
   const today = useMemo(() => new Date(), []);
   const todayKey = formatDateKey(today);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // 优先从 URL ?date=YYYY-MM-DD 读取，回退到今天
   const initialDate = useMemo(() => {
@@ -92,7 +95,18 @@ export function DailyRecommend() {
               <DailyCalendar
                 recommendDates={recommendDates}
                 selectedDate={selectedDate}
-                onSelectDate={setSelectedDate}
+                onSelectDate={(next) => {
+                  setSelectedDate(next);
+                  // 回写 URL：刷新或复制链接时还停在同一天
+                  setSearchParams(
+                    (prev) => {
+                      const params = new URLSearchParams(prev);
+                      params.set('date', next);
+                      return params;
+                    },
+                    { replace: true }
+                  );
+                }}
               />
             </motion.div>
 

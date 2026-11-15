@@ -202,35 +202,26 @@ func (s *GithubBindService) GetBindInfo(ctx context.Context, token string) (*Git
 	}, nil
 }
 
-// BindLogin 用已有站点账号登录并绑定
+// BindLogin 用已有站点账号完成登录（含 MFA），绑定由 CompleteBind 在拿到 JWT 后完成
+//
+// 这里必须走 auth.Login 而不是 LoginSkippingMfa：第三方 OAuth 凭证属于 GitHub 账号，
+// 不是站点账号的第二因子。用密码登录站点账号时，该账号的 MFA 必须照常校验。
 func (s *GithubBindService) BindLogin(ctx context.Context, req GithubBindLoginRequest) (*LoginResult, error) {
-	payload, err := s.loadBindPayload(ctx, req.Token)
-	if err != nil {
+	// 先确认票据有效，避免用户输完密码才发现票据过期
+	if _, err := s.loadBindPayload(ctx, req.Token); err != nil {
 		return nil, err
 	}
-
-	// 绑定即登录
-	result, err := s.auth.LoginSkippingMfa(ctx, req.Account, req.Password)
-	if err != nil {
-		return nil, err
+	result, err := s.auth.Login(ctx, req.Account, req.Password)
+	if errors.Is(err, ErrMfaSetupRequired) {
+		// 走到这里说明账号还没有任何 MFA 因子，只是组织策略要求先绑定。
+		// 此时没有任何第二因子可校验，而绑定页也进不去安全设置，按第三方登录的既有约定放行，
+		// 否则用户会卡死在绑定页。
+		return s.auth.LoginSkippingMfa(ctx, req.Account, req.Password)
 	}
-	username := result.User.Name
-
-	binding := &model.UserGithubBinding{
-		Username:     username,
-		GithubID:     payload.GithubID,
-		GithubLogin:  payload.GithubLogin,
-		GithubEmail:  payload.GithubEmail,
-		GithubAvatar: payload.GithubAvatar,
-	}
-	if err := s.createBinding(ctx, binding); err != nil {
-		return nil, err
-	}
-	s.rdb.Del(ctx, githubBindPrefix+req.Token)
-	return result, nil
+	return result, err
 }
 
-// BindRegister 注册新站点账号并绑定
+// BindRegister 注册新站点账号并登录（绑定由 CompleteBind 在拿到 JWT 后完成）
 func (s *GithubBindService) BindRegister(ctx context.Context, req GithubBindRegisterRequest) (*LoginResult, error) {
 	payload, err := s.loadBindPayload(ctx, req.Token)
 	if err != nil {
@@ -239,19 +230,10 @@ func (s *GithubBindService) BindRegister(ctx context.Context, req GithubBindRegi
 	if err := s.auth.Register(ctx, req.RegisterRequest); err != nil {
 		return nil, err
 	}
+	// 刚由本服务创建的新账号此刻不可能已有 MFA 因子，
+	// 用 SkippingMfa 是为了放行 Casdoor 的「必须先设置 MFA」策略，避免注册完卡在绑定页
 	result, err := s.auth.LoginSkippingMfa(ctx, req.Username, req.Password)
 	if err != nil {
-		return nil, err
-	}
-
-	binding := &model.UserGithubBinding{
-		Username:     result.User.Name,
-		GithubID:     payload.GithubID,
-		GithubLogin:  payload.GithubLogin,
-		GithubEmail:  payload.GithubEmail,
-		GithubAvatar: payload.GithubAvatar,
-	}
-	if err := s.createBinding(ctx, binding); err != nil {
 		return nil, err
 	}
 
@@ -267,8 +249,36 @@ func (s *GithubBindService) BindRegister(ctx context.Context, req GithubBindRegi
 		}
 	}
 
-	s.rdb.Del(ctx, githubBindPrefix+req.Token)
+	// 不在这里写绑定：由前端拿到 JWT 后调 CompleteBind，
+	// 与「已有账号绑定」走同一条路径，避免两处逻辑漂移
 	return result, nil
+}
+
+// CompleteBind 已登录用户用绑定票据完成 GitHub 关联
+//
+// 调用方必须已经持有有效 JWT（username 从 JWT 取），票据本身不足以绑定，
+// 这样「未绑定 GitHub 的人猜不到别人的票据」和「票据泄露但没登录」都不成立。
+func (s *GithubBindService) CompleteBind(ctx context.Context, bindToken, username string) error {
+	if bindToken == "" || username == "" {
+		return ErrInvalidInput
+	}
+	payload, err := s.loadBindPayload(ctx, bindToken)
+	if err != nil {
+		return err
+	}
+	binding := &model.UserGithubBinding{
+		Username:     username,
+		GithubID:     payload.GithubID,
+		GithubLogin:  payload.GithubLogin,
+		GithubEmail:  payload.GithubEmail,
+		GithubAvatar: payload.GithubAvatar,
+	}
+	if err := s.createBinding(ctx, binding); err != nil {
+		// 失败时保留票据，用户可在 15 分钟内解绑后重试
+		return err
+	}
+	s.rdb.Del(ctx, githubBindPrefix+bindToken)
+	return nil
 }
 
 // GetBinding 查询某站点用户的绑定（未绑定返回 nil, nil）
@@ -335,23 +345,24 @@ func (s *GithubBindService) createBinding(ctx context.Context, b *model.UserGith
 }
 
 // issueJWT 为已绑定用户签发站点 JWT
+//
+// 已绑定不代表账号仍有效：middleware.Auth 只验签名、不回查 Casdoor，
+// 所以这里必须确认站点账号仍然可用。否则 Casdoor 侧被禁用/删除的账号，
+// 只要 user_github_bindings 那行还在，就能拿到一张 24 小时有效的免检 token。
 func (s *GithubBindService) issueJWT(ctx context.Context, username string) (string, error) {
-	claims := &pkg.Claims{
-		Sub:  s.org + "/" + username,
-		Name: username,
+	profile, err := s.auth.GetProfile(ctx, s.org+"/"+username)
+	if err != nil {
+		logrus.WithError(err).WithField("username", username).
+			Warn("github login: 站点账号不可用，拒绝签发 token")
+		return "", fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
-	// 尽量取 Casdoor 资料补全展示字段；失败则退化为 GitHub 绑定信息
-	if profile, err := s.auth.GetProfile(ctx, s.org+"/"+username); err == nil {
-		claims.DisplayName = profile.DisplayName
-		claims.Email = profile.Email
-		claims.Avatar = profile.Avatar
-	} else if b, err := s.repo.GetByUsername(ctx, username); err == nil && b != nil {
-		logrus.WithField("username", username).Debug("fallback to github binding info for claims")
-		claims.DisplayName = b.GithubLogin
-		claims.Email = b.GithubEmail
-		claims.Avatar = b.GithubAvatar
-	}
-	token, err := pkg.SignJWT(claims, s.jwtSecret, s.jwtTTL)
+	token, err := pkg.SignUserToken(pkg.UserTokenInput{
+		Sub:         s.org + "/" + username,
+		Name:        username,
+		DisplayName: profile.DisplayName,
+		Email:       profile.Email,
+		Avatar:      profile.Avatar,
+	}, s.jwtSecret, s.jwtTTL)
 	if err != nil {
 		return "", fmt.Errorf("签发 token 失败: %w", err)
 	}

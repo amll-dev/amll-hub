@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -20,80 +20,71 @@ func NewNotFoundRepo(db *gorm.DB) *NotFoundRepo {
 	return &NotFoundRepo{db: db}
 }
 
-// UpsertNotFound 插入或累加无歌词记录
-// - 新记录：INSERT with category='not_found'
-// - 已存在：request_count + 1, last_seen_at = NOW(), 追加 daily_requests[today].ip
-// 返回 (是否新增, 当前 count, err)
+// maxRankingLimit 排行榜硬上限，limit 缺省/过大时不把整表读进内存
+const maxRankingLimit = 100
+
+// UpsertNotFound 插入或累加无歌词记录。
+//
+// 使用单条 INSERT ... ON CONFLICT (platform, platform_id) DO UPDATE，由数据库
+// 原子完成「是否新 IP」「计数自增」「daily_requests JSONB 追加/去重」，替代原先
+// 「读整行 → Go 改 JSON → 写回」：后者在并发下会重复 +1（计数虚高）并用各自
+// 读到的旧 JSON 相互覆盖（IP 名单丢失）。
+//
+// daily_requests 结构为 {"YYYY-MM-DD": ["ip", ...]}：
+//   - 用 @> 判断当天数组是否已含该 IP，已含则计数不加、数组不追加；
+//   - 用 jsonb_set + || 原子追加，不读旧值到内存。
+//
+// 返回 (是否新增记录, 当前累计次数, err)；RETURNING (xmax = 0) 区分
+// 本次是 INSERT（新记录）还是 ON CONFLICT UPDATE（已存在）。
 func (r *NotFoundRepo) UpsertNotFound(ctx context.Context, platform, platformID, clientIP string) (bool, int, error) {
 	today := time.Now().Format("2006-01-02")
 
-	// 1. 先查询是否存在
-	var existing model.NotFoundRequest
-	err := r.db.WithContext(ctx).
-		Where("platform = ? AND platform_id = ?", platform, platformID).
-		First(&existing).Error
-
-	if err == nil {
-		// 已存在：追加 IP 到 daily_requests[today]（如果未存在）
-		daily := existing.DailyRequests
-		if daily == nil {
-			daily = model.DailyRequests{}
-		}
-		ips := daily[today]
-		alreadyLogged := false
-		for _, ip := range ips {
-			if ip == clientIP {
-				alreadyLogged = true
-				break
-			}
-		}
-		if !alreadyLogged {
-			ips = append(ips, clientIP)
-			daily[today] = ips
-		}
-
-		// 即使同 IP 已记录，也要更新 last_seen_at（仅当未记录时才 +1 count）
-		updates := map[string]any{
-			"last_seen_at":   time.Now(),
-			"daily_requests": daily,
-		}
-		if !alreadyLogged {
-			updates["request_count"] = gorm.Expr("request_count + 1")
-		}
-
-		if err := r.db.WithContext(ctx).Model(&existing).Updates(updates).Error; err != nil {
-			return false, 0, fmt.Errorf("update not_found: %w", err)
-		}
-		newCount := existing.RequestCount
-		if !alreadyLogged {
-			newCount++
-		}
-		return false, newCount, nil
+	initialDaily, err := json.Marshal(model.DailyRequests{today: {clientIP}})
+	if err != nil {
+		return false, 0, fmt.Errorf("marshal daily_requests: %w", err)
 	}
+	ipArray, err := json.Marshal([]string{clientIP})
+	if err != nil {
+		return false, 0, fmt.Errorf("marshal client ip: %w", err)
+	}
+	ipJSON := string(ipArray)
 
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, 0, fmt.Errorf("query not_found: %w", err)
-	}
+	const q = `
+INSERT INTO not_found_requests
+    (platform, platform_id, request_count, first_seen_at, last_seen_at,
+     daily_requests, first_request_ip, category, created_at, updated_at)
+VALUES (?, ?, 1, NOW(), NOW(), ?::jsonb, ?, ?, NOW(), NOW())
+ON CONFLICT (platform, platform_id) DO UPDATE SET
+    last_seen_at = NOW(),
+    updated_at   = NOW(),
+    request_count = not_found_requests.request_count +
+        (CASE WHEN COALESCE(not_found_requests.daily_requests -> ?, '[]'::jsonb) @> ?::jsonb
+              THEN 0 ELSE 1 END),
+    daily_requests =
+        CASE WHEN COALESCE(not_found_requests.daily_requests -> ?, '[]'::jsonb) @> ?::jsonb
+             THEN not_found_requests.daily_requests
+             ELSE jsonb_set(
+                 not_found_requests.daily_requests,
+                 ARRAY[?],
+                 COALESCE(not_found_requests.daily_requests -> ?, '[]'::jsonb) || ?::jsonb
+             )
+        END
+RETURNING (xmax = 0) AS inserted, request_count`
 
-	// 2. 新建记录
-	record := model.NotFoundRequest{
-		Platform:       platform,
-		PlatformID:     platformID,
-		RequestCount:   1,
-		FirstSeenAt:    time.Now(),
-		LastSeenAt:     time.Now(),
-		DailyRequests:  model.DailyRequests{today: {clientIP}},
-		FirstRequestIP: clientIP,
-		Category:       model.CategoryNotFound,
+	var res struct {
+		Inserted     bool `gorm:"column:inserted"`
+		RequestCount int  `gorm:"column:request_count"`
 	}
-	if err := r.db.WithContext(ctx).Create(&record).Error; err != nil {
-		// 并发情况下可能另一个请求先创建了，降级为更新
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return r.UpsertNotFound(ctx, platform, platformID, clientIP)
-		}
-		return false, 0, fmt.Errorf("create not_found: %w", err)
+	err = r.db.WithContext(ctx).Raw(q,
+		platform, platformID, string(initialDaily), clientIP, model.CategoryNotFound,
+		today, ipJSON, // request_count 的 IP 去重判断
+		today, ipJSON, // daily_requests 的 IP 去重判断
+		today, today, ipJSON, // jsonb_set 当天数组追加
+	).Scan(&res).Error
+	if err != nil {
+		return false, 0, fmt.Errorf("upsert not_found: %w", err)
 	}
-	return true, 1, nil
+	return res.Inserted, res.RequestCount, nil
 }
 
 // FindByPlatform 查询单条记录
@@ -116,11 +107,24 @@ func (r *NotFoundRepo) DeleteByPlatform(ctx context.Context, platform, platformI
 	return result.RowsAffected, result.Error
 }
 
-// ClearWeekly 每周清空所有 category='not_found' 的记录
+// ClearWeekly 每周重置「本周」维度：把 category='not_found' 的请求计数与按日 IP 明细清零，
+// 记录本身保留。
+//
+// 原来是直接 DELETE 全表，于是存活行的 first_seen_at 必然落在本周内，
+// 看板的「本周新增」永远等于「总数」，两个指标都没意义。保留行后
+// first_seen_at 才有跨周含义（UpsertNotFound 只在 INSERT 时写它，冲突不覆盖），
+// 排行榜依旧按 last_seen_at + 每周归零的 request_count 只看本周热度，行为不变。
+//
+// 代价：未解决的记录不再每周消失，表会持续增长（"总数" 语义变为累计去重歌曲数）。
+// 需要控制体量时应该另加归档任务，而不是回到「删光重来」。
 func (r *NotFoundRepo) ClearWeekly(ctx context.Context) (int64, error) {
 	result := r.db.WithContext(ctx).
+		Model(&model.NotFoundRequest{}).
 		Where("category = ?", model.CategoryNotFound).
-		Delete(&model.NotFoundRequest{})
+		Updates(map[string]any{
+			"request_count":  0,
+			"daily_requests": gorm.Expr("'{}'::jsonb"),
+		})
 	return result.RowsAffected, result.Error
 }
 
@@ -139,14 +143,18 @@ type RankingItem struct {
 	Category     string    `json:"category"`
 }
 
-// GetRanking 查询排行榜
-// days 最大 7（因为每周清空）；limit <= 0 或 > total 时返回全部
-func (r *NotFoundRepo) GetRanking(ctx context.Context, days int, platform string, limit int) (int64, []RankingItem, error) {
+// GetRanking 查询排行榜（服务端真分页）
+// days 最大 7（只统计近 7 天仍有请求的记录，对应每周重置的计数窗口）；limit 缺省/过大时最多返回 maxRankingLimit 条；
+// total 始终是符合条件的全量命中数，items 为 [offset, offset+limit) 区间。
+func (r *NotFoundRepo) GetRanking(ctx context.Context, days int, platform string, limit, offset int) (int64, []RankingItem, error) {
 	if days > 7 {
 		days = 7
 	}
 	if days < 1 {
 		days = 7
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	startTime := time.Now().AddDate(0, 0, -days)
 
@@ -165,16 +173,19 @@ func (r *NotFoundRepo) GetRanking(ctx context.Context, days int, platform string
 		return 0, nil, fmt.Errorf("count ranking: %w", err)
 	}
 
-	// 计算实际返回数量
-	returnLimit := int(total)
+	// limit 缺省/过大时不再退化为「返回整表」：设硬上限，且只取展示所需列，
+	// 避免把每行 daily_requests 的大 JSON 一并读进内存后再丢弃。
+	returnLimit := maxRankingLimit
 	if limit > 0 && limit < returnLimit {
 		returnLimit = limit
 	}
 
 	var items []RankingItem
 	err := query.
+		Select("id, platform, platform_id, song_name, artists, cover, album, request_count, first_seen_at, last_seen_at, category").
 		Order("request_count DESC").
 		Limit(returnLimit).
+		Offset(offset).
 		Find(&items).Error
 	if err != nil {
 		return 0, nil, fmt.Errorf("query ranking: %w", err)
@@ -351,8 +362,10 @@ func (r *NotFoundRepo) GetStats(ctx context.Context) (*StatsResult, error) {
 		return nil, err
 	}
 
+	// 记录不再每周删除，平台分布与 Top10 必须显式限定在本周窗口内，
+	// 否则会把几个月前、本周零请求（request_count 已归零）的记录也算进来。
 	if err := r.db.WithContext(ctx).Model(&model.NotFoundRequest{}).
-		Where("category = ?", model.CategoryNotFound).
+		Where("category = ? AND last_seen_at >= ?", model.CategoryNotFound, weekStart).
 		Select("platform, COUNT(*) as count").
 		Group("platform").
 		Order("count DESC").
@@ -361,7 +374,7 @@ func (r *NotFoundRepo) GetStats(ctx context.Context) (*StatsResult, error) {
 	}
 
 	if err := r.db.WithContext(ctx).Model(&model.NotFoundRequest{}).
-		Where("category = ?", model.CategoryNotFound).
+		Where("category = ? AND last_seen_at >= ?", model.CategoryNotFound, weekStart).
 		Order("request_count DESC").
 		Limit(10).
 		Find(&stats.Top10).Error; err != nil {

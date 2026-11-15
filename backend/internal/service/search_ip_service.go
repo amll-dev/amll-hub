@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -127,8 +128,9 @@ func (s *SearchIPService) CreateSubmission(ctx context.Context, submitter string
 	imageCount := 0
 
 	// promote 将临时 key 复制为正式 key，并删除临时对象
+	// 传入当前登录用户，promoteTemp 只认领该用户自己目录下的临时对象
 	promote := func(fileName, tempKey string) (string, error) {
-		formalKey, err := s.promoteTemp(ctx, fileName, tempKey)
+		formalKey, err := s.promoteTemp(ctx, submitter, fileName, tempKey)
 		if err != nil {
 			return "", err
 		}
@@ -236,13 +238,23 @@ func (s *SearchIPService) CreateSubmission(ctx context.Context, submitter string
 	}, nil
 }
 
-// UploadTemp 上传图片到 MinIO 临时区，返回临时 key
-func (s *SearchIPService) UploadTemp(ctx context.Context, fileName string, content []byte) (string, error) {
+// searchIPTempOwnerPrefix 返回某个用户专属的临时目录前缀。
+// 用 hex 无损编码用户名，既避免 '/' 等字符破坏路径层级，也避免不同用户名被规整成同一段。
+func searchIPTempOwnerPrefix(userID string) string {
+	return SearchIPTempPrefix + hex.EncodeToString([]byte(userID)) + "/"
+}
+
+// UploadTemp 上传图片到 MinIO 临时区，返回临时 key。
+// 临时对象按登录用户分目录存放，promoteTemp 据此校验归属，防止认领他人的临时文件。
+func (s *SearchIPService) UploadTemp(ctx context.Context, userID, fileName string, content []byte) (string, error) {
+	if userID == "" {
+		return "", fmt.Errorf("未登录用户不能上传临时图片")
+	}
 	if err := validateImageUpload(fileName, content); err != nil {
 		return "", err
 	}
 	ext := strings.ToLower(path.Ext(fileName))
-	key := fmt.Sprintf("%s%d-%d%s", SearchIPTempPrefix, time.Now().UnixNano(), len(content), ext)
+	key := fmt.Sprintf("%s%d-%d%s", searchIPTempOwnerPrefix(userID), time.Now().UnixNano(), len(content), ext)
 	_, err := s.minio.PutObject(ctx, s.bucket, key, bytes.NewReader(content), int64(len(content)), minio.PutObjectOptions{
 		ContentType: imageContentType(ext),
 	})
@@ -252,9 +264,10 @@ func (s *SearchIPService) UploadTemp(ctx context.Context, fileName string, conte
 	return key, nil
 }
 
-// promoteTemp 将临时对象复制为正式对象，返回正式 key
-func (s *SearchIPService) promoteTemp(ctx context.Context, fileName, tempKey string) (string, error) {
-	if !strings.HasPrefix(tempKey, SearchIPTempPrefix) {
+// promoteTemp 将临时对象复制为正式对象，返回正式 key。
+// 只接受当前用户自己目录下的临时 key，避免客户端提交他人的 tempKey 完成越权认领。
+func (s *SearchIPService) promoteTemp(ctx context.Context, userID, fileName, tempKey string) (string, error) {
+	if userID == "" || !strings.HasPrefix(tempKey, searchIPTempOwnerPrefix(userID)) {
 		return "", fmt.Errorf("非法的临时 key: %s", tempKey)
 	}
 	ext := path.Ext(fileName)

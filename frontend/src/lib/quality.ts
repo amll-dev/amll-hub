@@ -19,7 +19,6 @@ const KEYWORD_RULES: [RegExp, NcmQuality][] = [
   [/臻音|jyeffect|spatial/i, 'jyeffect'],
   [/hi-?res| hires|解析度/i, 'hires'],
   [/无损|lossless|\bsq\b|\bflac\b/i, 'lossless'],
-  [/母带|jymaster/i, 'jymaster'],
   [/极高|exhigh|hq/i, 'exhigh'],
   [/标准|standard/i, 'standard'],
 ];

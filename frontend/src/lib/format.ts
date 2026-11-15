@@ -85,7 +85,16 @@ function trimZero(v: number): string {
 /** 毫秒 -> `mm:ss`（音频时长，非法值返回 `--:--`） */
 export function formatDuration(ms: number | null | undefined): string {
   if (!Number.isFinite(ms) || (ms as number) <= 0) return '--:--';
-  const total = Math.floor((ms as number) / 1000);
+  return formatDurationSeconds((ms as number) / 1000);
+}
+
+/**
+ * 秒 -> `mm:ss`（接口里以秒为单位返回的时长，非法值返回 `--:--`）。
+ * 与 `formatDuration`（毫秒）单位不同，命名上必须区分，别再同名。
+ */
+export function formatDurationSeconds(seconds: number | null | undefined): string {
+  if (!Number.isFinite(seconds) || (seconds as number) <= 0) return '--:--';
+  const total = Math.floor(seconds as number);
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${String(s).padStart(2, '0')}`;

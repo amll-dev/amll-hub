@@ -2,10 +2,12 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // DailyRecommendationRepo 每日推荐数据访问
@@ -21,6 +23,37 @@ func NewDailyRecommendationRepo(db *gorm.DB) *DailyRecommendationRepo {
 // Create 创建每日推荐
 func (r *DailyRecommendationRepo) Create(ctx context.Context, rec *model.DailyRecommendation) error {
 	return r.db.WithContext(ctx).Create(rec).Error
+}
+
+// GetByDateAny 按日期查询记录（不区分状态），未找到返回 (nil, nil)。
+// 创建流程用它识别「已存在但还没补上封面」的占位记录。
+func (r *DailyRecommendationRepo) GetByDateAny(ctx context.Context, date string) (*model.DailyRecommendation, error) {
+	var rec model.DailyRecommendation
+	err := r.db.WithContext(ctx).Where("date = ?", date).First(&rec).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &rec, nil
+}
+
+// AttachCover 回填封面并把占位记录转正（封面转存成功后调用）。
+// 同时写入本次提交的正文内容，重试时改过的表单不会丢。
+func (r *DailyRecommendationRepo) AttachCover(ctx context.Context, rec *model.DailyRecommendation) error {
+	return r.db.WithContext(ctx).Model(&model.DailyRecommendation{}).
+		Where("id = ?", rec.ID).
+		Updates(map[string]any{
+			"song_name":      rec.SongName,
+			"artist":         rec.Artist,
+			"cover_key":      rec.CoverKey,
+			"ncm_id":         rec.NcmID,
+			"qq_id":          rec.QQID,
+			"comment":        rec.Comment,
+			"submitter_info": rec.SubmitterInfo,
+			"status":         rec.Status,
+		}).Error
 }
 
 // ListApproved 查询所有已通过的推荐（按日期倒序）
@@ -52,11 +85,13 @@ func (r *DailyRecommendationRepo) GetLatestApproved(ctx context.Context) (*model
 	return &rec, err
 }
 
-// CheckDate 检查日期是否已被占用（返回 true 表示已存在）
+// CheckDate 检查日期是否已被占用（返回 true 表示已存在）。
+// daily_recommendations.date 是全表 UNIQUE，这里也按全表判断：
+// 只过滤 approved 会把「待补封面的占位记录」漏掉，等到插入时才撞唯一约束。
 func (r *DailyRecommendationRepo) CheckDate(ctx context.Context, date string) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&model.DailyRecommendation{}).
-		Where("date = ? AND status = ?", date, "approved").
+		Where("date = ?", date).
 		Count(&count).Error
 	return count > 0, err
 }
@@ -97,9 +132,13 @@ func (r *DailyRecommendationRepo) GetLikeStatus(ctx context.Context, recID int64
 func (r *DailyRecommendationRepo) ToggleLike(ctx context.Context, recID int64, username string) (bool, int, error) {
 	var liked bool
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 确认推荐存在
+		// 锁住推荐行，把同一推荐上的点赞串行化。
+		// 否则「查有没有赞 → 插入」在并发双击时会同时读到 0，第二个事务撞
+		// uq_daily_rec_like 唯一约束并返回 500。加锁后第二个事务会等第一个提交，
+		// 再读到「已赞」并按切换语义取消，双击的结果就是幂等的两次翻转。
 		var rec model.DailyRecommendation
-		if err := tx.First(&rec, recID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			First(&rec, recID).Error; err != nil {
 			return err
 		}
 

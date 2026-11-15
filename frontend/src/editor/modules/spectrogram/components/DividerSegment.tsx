@@ -18,9 +18,13 @@ interface DividerSegmentProps {
   segmentIndex: number;
   timeMs: number;
   lineStartTime: number;
+  lineEndTime: number;
   kind: BoundaryKind;
   visualState: BoundaryVisualState;
   isShared: boolean;
+  /** roving tabindex：一行只让一个边界进 Tab 序列 */
+  tabIndex: number;
+  onFocus: () => void;
 }
 
 const NUDGE_MS = 10;
@@ -31,9 +35,12 @@ export const DividerSegment: FC<DividerSegmentProps> = ({
   segmentIndex,
   timeMs,
   lineStartTime,
+  lineEndTime,
   kind,
   visualState,
   isShared,
+  tabIndex,
+  onFocus,
 }) => {
   const setTimelineDrag = useSetAtom(timelineDragAtom);
   const processedLines = useAtomValue(processedLyricLinesAtom);
@@ -98,9 +105,15 @@ export const DividerSegment: FC<DividerSegmentProps> = ({
       data-visual-state={visualState}
       onMouseDown={startDrag}
       onContextMenu={(e) => e.preventDefault()}
-      role="separator"
-      tabIndex={0}
-      aria-orientation="vertical"
+      // 时间轴上的边界本质是「可微调的数值」：用 slider 语义，
+      // separator 配 aria-valuenow 是无效组合，读屏不会当控件处理。
+      role="slider"
+      tabIndex={tabIndex}
+      onFocus={onFocus}
+      aria-orientation="horizontal"
+      aria-label={`第 ${segmentIndex + 1} 个词边界`}
+      aria-valuemin={Math.round(lineStartTime)}
+      aria-valuemax={Math.round(lineEndTime)}
       aria-valuenow={timeMs}
       onKeyDown={handleKeyDown}
     />

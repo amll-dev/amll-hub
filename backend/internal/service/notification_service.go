@@ -404,26 +404,39 @@ func (s *NotificationService) sendPluginResultEmailAsync(
 	})
 }
 
-// StartCleanupTask 启动 90 天历史消息清理任务（P8）
+// StartCleanupTask 启动 90 天历史消息清理任务
 func (s *NotificationService) StartCleanupTask(ctx context.Context) {
 	pkg.GoSafe("notification-cleanup", func() {
 		interval := 24 * time.Hour
 		retention := 90 * 24 * time.Hour
+
+		cleanup := func() {
+			deleted, err := s.repo.DeleteOlderThan(ctx, time.Now().Add(-retention))
+			if err != nil {
+				logrus.WithError(err).Warn("notification cleanup failed")
+				return
+			}
+			if deleted > 0 {
+				logrus.WithField("deleted", deleted).Info("notification cleanup done")
+			}
+		}
+
+		// 纯 ticker 的首次触发要等满 24h；服务每天至少重启一次（滚动发布、容器重建）
+		// 时永远不会执行，保留策略形同不存在。启动 1 分钟后先跑一次，再进入每日循环。
+		// 用 Timer 而不是在构造函数里同步执行，既不阻塞启动，也能被 ctx 取消。
+		startup := time.NewTimer(time.Minute)
+		defer startup.Stop()
+
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
+			case <-startup.C:
+				cleanup()
 			case <-ticker.C:
-				deleted, err := s.repo.DeleteOlderThan(ctx, time.Now().Add(-retention))
-				if err != nil {
-					logrus.WithError(err).Warn("notification cleanup failed")
-					continue
-				}
-				if deleted > 0 {
-					logrus.WithField("deleted", deleted).Info("notification cleanup done")
-				}
+				cleanup()
 			}
 		}
 	})

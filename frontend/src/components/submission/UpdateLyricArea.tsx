@@ -3,11 +3,16 @@ import { useMutation } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { AlertTriangle, Check, FileText, Loader2, UploadCloud, X } from 'lucide-react';
 import { api } from '@/lib/api';
+import { formatBytes } from '@/lib/format';
 import { buttonTap } from '@/lib/motion';
 import { useUnrearrangedMode } from '@/hooks/useUnrearrangedMode';
 import type { TtmlValidationResult } from '@/lib/types';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { UnrearrangedToggle } from './UnrearrangedToggle';
+import { ValidationErrors } from './ValidationErrors';
+
+/** TTML 大小上限，与后端 MaxTTMLSize 保持一致：先拦再读文本，避免大文件卡死浏览器 */
+const MAX_TTML_SIZE = 2 * 1024 * 1024;
 
 export interface UpdateLyricAreaProps {
   submissionId: number;
@@ -76,6 +81,15 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
       setValidateError('请选择 .ttml 格式的文件');
       setFile(null);
       setValidation(null);
+      return;
+    }
+    // 大文件在读成字符串 / 发校验请求之前拦下，后端只会在请求到达后才拒绝
+    if (f.size > MAX_TTML_SIZE) {
+      setValidateError(`TTML 文件超过 2 MB 上限（当前 ${formatBytes(f.size)}），请更换文件`);
+      setFile(null);
+      setValidation(null);
+      setMsg(null);
+      if (inputRef.current) inputRef.current.value = '';
       return;
     }
     setFile(f);
@@ -176,11 +190,7 @@ export function UpdateLyricArea({ submissionId, onClose, onSuccess }: UpdateLyri
             {validation.parseError && (
               <p className="text-xs text-red-500">{validation.parseError}</p>
             )}
-            {validation.errors.map((err, i) => (
-              <p key={i} className="text-xs">
-                • {err}
-              </p>
-            ))}
+            <ValidationErrors errors={validation.errors} />
           </AlertDescription>
         </Alert>
       )}

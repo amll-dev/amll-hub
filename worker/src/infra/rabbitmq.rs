@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::{Context, Result};
 use lapin::{
     options::{BasicAckOptions, BasicConsumeOptions, BasicNackOptions, BasicPublishOptions,
@@ -67,7 +65,7 @@ pub async fn consume_loop<F, Fut>(
     channel: Channel,
     queue: String,
     consumer_tag: &str,
-    shutdown: Arc<tokio::sync::Notify>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
     handler: F,
 ) -> Result<()>
 where
@@ -88,11 +86,15 @@ where
 
     tracing::info!(queue = %queue, consumer_tag, "consumer started");
 
-    let notified = shutdown.notified();
-    tokio::pin!(notified);
     loop {
+        // 每轮循环开头主动检查关闭状态：watch 会保留最新值，即使信号在上一轮
+        // 处理长任务期间到达、错过了 select 里的唤醒，这里也能看到并收敛退出。
+        if *shutdown.borrow() {
+            tracing::info!(queue = %queue, "shutdown signal received, stopping consumer");
+            break;
+        }
         tokio::select! {
-            _ = &mut notified => {
+            _ = shutdown.changed() => {
                 tracing::info!(queue = %queue, "shutdown signal received, stopping consumer");
                 break;
             }

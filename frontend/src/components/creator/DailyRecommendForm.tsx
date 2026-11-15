@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { formatDateKey } from '@/lib/date';
 import { queryKeys } from '@/lib/query';
 import { insertMarkup, MARKUP_BUTTONS, parseMarkupText } from '@/lib/markup';
+import { formatBytes } from '@/lib/format';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
 import { useFormDraft } from '@/hooks/useFormDraft';
 import { MusicSearchPanel, type PickedSong } from '@/components/shared/MusicSearchPanel';
@@ -58,6 +59,14 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
     error: string;
   } | null>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  // 模拟上传进度的定时器：组件卸载时必须清掉，避免切页面后定时器继续 setState
+  const coverProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(
+    () => () => {
+      if (coverProgressTimerRef.current) clearInterval(coverProgressTimerRef.current);
+    },
+    []
+  );
   const [coverDragOver, setCoverDragOver] = useState(false);
   // 封面预览图加载状态
   const [coverImgLoaded, setCoverImgLoaded] = useState(false);
@@ -167,7 +176,15 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
     // 后端下载图片前端拿不到真实进度，按时间比例模拟进度爬升
     const startTime = Date.now();
     const minDuration = 900;
-    const progressTimer = setInterval(() => {
+    const clearProgressTimer = () => {
+      if (coverProgressTimerRef.current) {
+        clearInterval(coverProgressTimerRef.current);
+        coverProgressTimerRef.current = null;
+      }
+    };
+    // 开始新一轮前先清掉可能残留的定时器（卸载清理见上方 effect）
+    clearProgressTimer();
+    coverProgressTimerRef.current = setInterval(() => {
       setCover((prev) => {
         if (!prev || !prev.uploading) return prev;
         const elapsed = Date.now() - startTime;
@@ -182,10 +199,10 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
       if (elapsed < minDuration) {
         await new Promise((r) => setTimeout(r, minDuration - elapsed));
       }
-      clearInterval(progressTimer);
+      clearProgressTimer();
       setCover((prev) => (prev ? { ...prev, tempKey, uploading: false, progress: 100 } : prev));
     } catch (e) {
-      clearInterval(progressTimer);
+      clearProgressTimer();
       setCover((prev) =>
         prev
           ? {
@@ -489,10 +506,10 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
             <div className="flex items-start gap-4">
               <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-md border border-line">
                 {!coverImgLoaded && <div className="absolute inset-0 animate-pulse bg-surface-2" />}
+                {/* 远程 CDN 封面常不返回 CORS 头，不加 crossOrigin，否则预览直接加载失败 */}
                 <img
                   src={cover.url}
                   alt="封面预览"
-                  crossOrigin="anonymous"
                   onLoad={() => setCoverImgLoaded(true)}
                   onError={() => setCoverImgLoaded(true)}
                   className={`h-full w-full object-cover transition-opacity duration-300 ${
@@ -503,7 +520,7 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm text-foreground">{cover.file?.name ?? '封面图片'}</p>
                 {cover.file && (
-                  <p className="mt-1 text-xs text-ink-3">{Math.round(cover.file.size / 1024)} KB</p>
+                  <p className="mt-1 text-xs text-ink-3">{formatBytes(cover.file.size)}</p>
                 )}
                 <AnimatePresence mode="wait">
                   {cover.uploading ? (
@@ -681,6 +698,7 @@ export function DailyRecommendForm({ onSuccess }: { onSuccess?: (date: string) =
         variants={fadeUp}
         className="flex items-center justify-start gap-3 border-t border-line pt-6"
       >
+        {/* 按产品口径：存草稿按钮暂保持现状（无 onClick），待草稿能力接入后再启用 */}
         <motion.button
           type="button"
           {...buttonTap}

@@ -10,6 +10,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	logrus "github.com/sirupsen/logrus"
 )
 
@@ -55,6 +56,8 @@ type RouterDeps struct {
 	AdminCache    *middleware.AdminCache
 	JWTSecret     string
 	ServiceToken  string
+	// Redis 用于全站限流（为 nil 时跳过限流）
+	Redis *redis.Client
 }
 
 // New 构建并返回 Gin 引擎
@@ -133,6 +136,17 @@ func New(deps RouterDeps) *gin.Engine {
 		corsConfig.AllowAllOrigins = true
 	}
 	r.Use(cors.New(corsConfig))
+
+	// 全站限流：按 IP + 路径前缀分桶，配额见 middleware.DefaultRateLimitRules。
+	// RATE_LIMIT_ENABLED=false 可热重启关掉，不用回滚镜像。
+	if middleware.RateLimitEnabled() {
+		if os.Getenv("TRUSTED_PROXIES") == "" {
+			// 部署在 nginx / 网关后面却没配代理时，ClientIP 会全部变成代理的地址，
+			// 全站共用一个限流桶 —— 表现为「所有人一起被限流」，很难排查
+			logrus.Warn("限流已启用但 TRUSTED_PROXIES 为空：按直连地址取 IP。若部署在反向代理后面，请配置 TRUSTED_PROXIES")
+		}
+		r.Use(middleware.RateLimit(deps.Redis, middleware.DefaultRateLimitRules, deps.ServiceToken))
+	}
 
 	// HTTP gzip 压缩
 	r.Use(gzip.Gzip(gzip.DefaultCompression,
@@ -320,6 +334,7 @@ func New(deps RouterDeps) *gin.Engine {
 		docsPub.Use(middleware.OptionalAuth(jwtSecret))
 		{
 			docsPub.GET("", docH.ListPublic)
+			docsPub.GET("/nav", docH.ListNav)
 			docsPub.GET("/:slug", docH.GetPublic)
 		}
 
@@ -400,8 +415,9 @@ func New(deps RouterDeps) *gin.Engine {
 			sub.PUT("/users/me/profile", userProfileH.UpdateMe)
 			sub.POST("/users/me/banner", userProfileH.UploadBanner)
 
-			// GitHub 绑定解绑
+			// GitHub 绑定 / 解绑
 			sub.DELETE("/user/github/binding", authGithubH.Unbind)
+			sub.POST("/user/github/binding", authGithubH.CompleteBind)
 
 			// 投稿数据迁移（个人中心 → 数据迁移）
 			sub.GET("/migration/github/status", migrationH.Status)

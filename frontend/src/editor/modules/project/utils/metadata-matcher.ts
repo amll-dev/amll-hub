@@ -178,6 +178,40 @@ const buildLineTextFromTx = (line: string): string | null => {
   }
 };
 
+/**
+ * LRC / QRC / YRC 行首标签的元数据：`[ti:标题]`、`[ar:歌手]`、`[作词:某某]`。
+ *
+ * 只认**整行就是标签**的形式，避免把歌词正文里的冒号当成元数据；
+ * 纯数字 key（`[00:12.34]`）与 offset/by 这类控制标签直接跳过。
+ */
+const LRC_TAG_ALIASES: Record<string, string> = {
+  ti: 'musicName',
+  ar: 'artists',
+  al: 'album',
+};
+
+/** 与播放时间/编码相关、不属于歌词元数据的标签 */
+const LRC_IGNORED_TAGS = new Set(['by', 'offset', 're', 've', 'length', 'au', 'hash']);
+
+export const extractBracketMetadata = (lyric: string): Record<string, string[]> => {
+  const result: Record<string, string[]> = {};
+  for (const line of lyric.split(/\r?\n/)) {
+    const match = /^\s*\[([^:\]]{1,20}):([^\]]*)\]\s*$/.exec(line);
+    if (!match) continue;
+    const label = (match[1] ?? '').trim();
+    const value = (match[2] ?? '').trim();
+    if (!label || !value) continue;
+    if (/^\d+$/.test(label)) continue;
+    const lower = label.toLowerCase();
+    if (LRC_IGNORED_TAGS.has(lower)) continue;
+    const targetKey =
+      LRC_TAG_ALIASES[lower] ?? (songwriterLabels.has(label) ? 'songwriter' : findRuleKey(label));
+    if (!targetKey) continue;
+    (result[targetKey] ??= []).push(value);
+  }
+  return result;
+};
+
 export const extractLyricMetadata = (lyric: string): Record<string, string[]> => {
   const result: Record<string, string[]> = {};
   if (!lyric) return result;

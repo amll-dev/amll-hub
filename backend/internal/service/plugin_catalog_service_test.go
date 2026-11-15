@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/config"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
@@ -121,19 +120,8 @@ func TestCatalogDocumentShape(t *testing.T) {
 	}
 }
 
-func TestCatalogInvalidationClearsMemoryCache(t *testing.T) {
+func TestCatalogInvalidateWithoutRedisIsNoop(t *testing.T) {
 	s := NewPluginCatalogService(catalogTestConfig(), nil, nil)
-	s.mu.Lock()
-	s.body = []byte(`{"catalogVersion":0,"plugins":[]}`)
-	s.etag = "etag"
-	s.expireAt = time.Now().Add(time.Minute)
-	s.mu.Unlock()
-
+	// nil Redis 时不应 panic：缓存只剩 Redis 一条路径，没有可清的内存副本
 	s.Invalidate(context.Background())
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.body != nil || s.etag != "" {
-		t.Fatal("invalidate must clear the in-process cache")
-	}
 }

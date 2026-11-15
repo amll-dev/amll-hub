@@ -2,12 +2,12 @@ import { useStore } from 'jotai';
 import type { FC } from 'react';
 import { Button } from '@/components/ui/button';
 import {
-  keyMoveNextWordAtom,
-  keyMovePrevWordAtom,
-  keySyncEndAtom,
-  keySyncNextAtom,
-  keySyncStartAtom,
-} from '$/states/keybindings.ts';
+  cmdMoveNextWord,
+  cmdMovePrevWord,
+  cmdSyncEnd,
+  cmdSyncNext,
+  cmdSyncStart,
+} from '$/modules/keyboard/commands';
 import { forceInvokeKeyBindingAtom } from '$/utils/keybindings.ts';
 
 export const TouchSyncPanel: FC = () => {
@@ -19,10 +19,10 @@ export const TouchSyncPanel: FC = () => {
           variant="secondary"
           className="col-span-3 h-12 whitespace-nowrap px-0"
           onMouseDown={(evt) =>
-            forceInvokeKeyBindingAtom(store, keyMovePrevWordAtom, evt.nativeEvent)
+            forceInvokeKeyBindingAtom(store, cmdMovePrevWord.atom, evt.nativeEvent)
           }
           onTouchStart={(evt) =>
-            forceInvokeKeyBindingAtom(store, keyMovePrevWordAtom, evt.nativeEvent)
+            forceInvokeKeyBindingAtom(store, cmdMovePrevWord.atom, evt.nativeEvent)
           }
         >
           跳上词
@@ -32,10 +32,10 @@ export const TouchSyncPanel: FC = () => {
           variant="secondary"
           className="col-span-3 h-12 whitespace-nowrap px-0"
           onMouseDown={(evt) =>
-            forceInvokeKeyBindingAtom(store, keyMoveNextWordAtom, evt.nativeEvent)
+            forceInvokeKeyBindingAtom(store, cmdMoveNextWord.atom, evt.nativeEvent)
           }
           onTouchStart={(evt) =>
-            forceInvokeKeyBindingAtom(store, keyMoveNextWordAtom, evt.nativeEvent)
+            forceInvokeKeyBindingAtom(store, cmdMoveNextWord.atom, evt.nativeEvent)
           }
         >
           跳下词
@@ -43,9 +43,11 @@ export const TouchSyncPanel: FC = () => {
         <Button
           variant="secondary"
           className="col-span-2 h-12 whitespace-nowrap px-0"
-          onMouseDown={(evt) => forceInvokeKeyBindingAtom(store, keySyncStartAtom, evt.nativeEvent)}
+          onMouseDown={(evt) =>
+            forceInvokeKeyBindingAtom(store, cmdSyncStart.atom, evt.nativeEvent)
+          }
           onTouchStart={(evt) =>
-            forceInvokeKeyBindingAtom(store, keySyncStartAtom, evt.nativeEvent)
+            forceInvokeKeyBindingAtom(store, cmdSyncStart.atom, evt.nativeEvent)
           }
         >
           起始轴
@@ -53,16 +55,18 @@ export const TouchSyncPanel: FC = () => {
         <Button
           variant="secondary"
           className="col-span-2 h-12 whitespace-nowrap px-0"
-          onClick={(evt) => forceInvokeKeyBindingAtom(store, keySyncNextAtom, evt.nativeEvent)}
-          onTouchStart={(evt) => forceInvokeKeyBindingAtom(store, keySyncNextAtom, evt.nativeEvent)}
+          onClick={(evt) => forceInvokeKeyBindingAtom(store, cmdSyncNext.atom, evt.nativeEvent)}
+          onTouchStart={(evt) =>
+            forceInvokeKeyBindingAtom(store, cmdSyncNext.atom, evt.nativeEvent)
+          }
         >
           连续轴
         </Button>
         <Button
           variant="secondary"
           className="col-span-2 h-12 whitespace-nowrap px-0"
-          onMouseDown={(evt) => forceInvokeKeyBindingAtom(store, keySyncEndAtom, evt.nativeEvent)}
-          onTouchStart={(evt) => forceInvokeKeyBindingAtom(store, keySyncEndAtom, evt.nativeEvent)}
+          onMouseDown={(evt) => forceInvokeKeyBindingAtom(store, cmdSyncEnd.atom, evt.nativeEvent)}
+          onTouchStart={(evt) => forceInvokeKeyBindingAtom(store, cmdSyncEnd.atom, evt.nativeEvent)}
         >
           结束轴
         </Button>

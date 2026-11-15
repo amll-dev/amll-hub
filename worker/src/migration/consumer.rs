@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -26,6 +27,8 @@ const TTML_CONTENT_TYPE: &str = "application/ttml+xml";
 /// 关闭 PR：每批数量与批间隔
 const CLOSE_BATCH_SIZE: usize = 50;
 const CLOSE_BATCH_INTERVAL: Duration = Duration::from_secs(1);
+/// 排水消费者每丢弃多少条消息打一条 warn（避免日志爆量）
+const DRAIN_LOG_EVERY: u64 = 100;
 
 #[derive(Debug, Deserialize)]
 struct MigrationUserMessage {
@@ -216,7 +219,7 @@ pub async fn consume_user_loop(
     queue: String,
     app: Arc<AppState>,
     github_app: Arc<GithubAppClient>,
-    shutdown: Arc<tokio::sync::Notify>,
+    shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Result<()> {
     rabbitmq::consume_loop(
         channel,
@@ -429,8 +432,30 @@ async fn process_one_pr(
 
     // 定位并下载 TTML
     let files = api.list_pr_files(number).await?;
-    let (path, file_name) = mapper::find_ttml_file(&files)
-        .ok_or_else(|| anyhow::anyhow!("PR #{} 未找到 raw-lyrics/*.ttml 文件", number))?;
+    let ttml_files = mapper::find_ttml_files(&files);
+    // 一个 PR 提交多份歌词时只有第一份会被迁移：github_migrated_prs.pr_number
+    // 全局唯一，一个 PR 只能对应一条投稿。这里必须告警，否则其余几份会永久
+    // 静默丢失，作者永远等不到那几首。
+    if ttml_files.len() > 1 {
+        let names: Vec<&str> = ttml_files.iter().map(|(_, n)| n.as_str()).collect();
+        warn!(
+            pr_number = number,
+            count = ttml_files.len(),
+            files = ?names,
+            "PR 含多个 raw-lyrics/*.ttml，仅迁移第一个，其余不会迁移"
+        );
+    }
+    let (path, file_name) = ttml_files.into_iter().next().ok_or_else(|| {
+        // 把前 10 个文件名带进错误信息：日志能直接区分「文件太多被截断」
+        // 和「这个 PR 根本没改 TTML」
+        let sample: Vec<&str> = files.iter().take(10).map(|f| f.filename.as_str()).collect();
+        anyhow::anyhow!(
+            "PR #{} 未找到 raw-lyrics/*.ttml 文件（共 {} 个文件，前 10 个：{:?}）",
+            number,
+            files.len(),
+            sample
+        )
+    })?;
     let bytes = api.download_file(&path, &pr.head_sha).await?;
     let meta = mapper::parse_ttml_meta(&bytes, &pr.labels)?;
 
@@ -690,12 +715,49 @@ fn build_conclusion(
 
 // ===== migration.close_pr 消费者 =====
 
+/// 「排水丢弃」消费者：`MIGRATION_CLOSE_PR_ENABLED=false` 时使用
+///
+/// 队列在 init_rabbitmq 里照常声明，消息来源不会因为开关关闭而消失（切换开关时的
+/// 存量消息、旧版本 worker、将来 Go 侧的 PublishMigrationClosePr）。若开关为假时
+/// 仅跳过 spawn 消费者，禁用期间队列会无限堆积；等开关重新打开，消费者会把
+/// 积压消息一次性执行完，对 GitHub 打出一批突发请求，还会关掉用户早已手动
+/// 处理过的 PR。所以这里仍然消费并 ack（等价于丢弃），保持队列长期为空，
+/// 把「静默堆积」换成「持续丢弃 + 告警」。
+pub async fn drain_close_pr_loop(
+    channel: lapin::Channel,
+    queue: String,
+    shutdown: tokio::sync::watch::Receiver<bool>,
+) -> Result<()> {
+    let dropped = Arc::new(AtomicU64::new(0));
+    rabbitmq::consume_loop(
+        channel,
+        queue,
+        "ttml-migration-close-drain",
+        shutdown,
+        move |_delivery| {
+            let dropped = dropped.clone();
+            async move {
+                let n = dropped.fetch_add(1, Ordering::Relaxed) + 1;
+                // 第一条一定告警（说明禁用期间仍有投递），之后按阈值采样
+                if n == 1 || n % DRAIN_LOG_EVERY == 0 {
+                    warn!(
+                        dropped = n,
+                        "自动关闭 PR 已禁用，正在丢弃 migration.close_pr 消息"
+                    );
+                }
+                Ok(())
+            }
+        },
+    )
+    .await
+}
+
 pub async fn consume_close_pr_loop(
     channel: lapin::Channel,
     queue: String,
     app: Arc<AppState>,
     github_app: Arc<GithubAppClient>,
-    shutdown: Arc<tokio::sync::Notify>,
+    shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Result<()> {
     rabbitmq::consume_loop(
         channel,
@@ -751,10 +813,16 @@ async fn handle_close_message(
 
     for chunk in prs.chunks(CLOSE_BATCH_SIZE) {
         for pr in chunk {
+            // 关闭阶段只读库里记录的 state，不再逐条 GET /pulls/{n} 拉完整 PR 详情。
+            // state 为空（历史数据 / 列缺失）时按 open 兜底，PATCH 关闭本身是幂等的。
+            if pr.state.as_deref().is_some_and(|s| s != "open") {
+                continue;
+            }
             match close_one_pr(&api, pr.number, pr.file_name.as_deref(), &site_url).await {
                 Ok(true) => {
                     closed += 1;
                     store.add_closed_count(msg.task_id, 1).await?;
+                    store.mark_pr_closed(pr.number).await?;
                 }
                 Ok(false) => {}
                 Err(e) => {
@@ -789,11 +857,8 @@ async fn close_one_pr(
     file_name: Option<&str>,
     site_url: &str,
 ) -> Result<bool> {
-    let pr = api.get_pr(number).await?;
-    if pr.state != "open" {
-        return Ok(false);
-    }
-
+    // state 由 list_migrated_prs 从 github_migrated_prs.state 提供，调用方已过滤；
+    // 这里不再逐条 get_pr。PATCH state=closed 对已关闭 PR 幂等，可兜底实时状态变化。
     api.close_pr(number).await?;
 
     let comment = match file_name {

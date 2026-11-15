@@ -88,6 +88,20 @@ func (h *AdminHandler) AddReviewer(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
 	defer cancel()
 
+	// 只校验格式挡不住手滑：写错一个不存在的用户名会长期留在名单里，
+	// 而且该名字一旦被注册就自动获得审核权限。写库前先确认账号真实存在。
+	if h.users != nil {
+		exists, err := h.users.Exists(ctx, req.Username)
+		if err != nil {
+			writeUpstreamErr(c, err, "认证服务暂不可用，请稍后重试")
+			return
+		}
+		if !exists {
+			pkg.BadRequest(c, "该用户名不存在，请确认后重试")
+			return
+		}
+	}
+
 	if err := h.repo.Add(ctx, req.Username); err != nil {
 		logrus.WithError(err).Warn("add reviewer failed")
 		pkg.BadRequest(c, "添加审核员失败")

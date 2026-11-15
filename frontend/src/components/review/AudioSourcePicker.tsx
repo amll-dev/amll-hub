@@ -30,16 +30,18 @@ interface AudioSourcePickerProps {
 export function AudioSourcePicker({ sources, value, onConfirm }: AudioSourcePickerProps) {
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState(value);
-  // 只在本次会话首次出现多来源时自动弹出一次；之后由顶栏下拉切换，不再打扰。
-  const autoPromptedRef = useRef(false);
+  // 每个**投稿**只自动弹一次：标记绑在音源集合的指纹上，而不是一个 boolean。
+  // 审核员一晚上过 30 份投稿，共用同一个编辑器实例；用 boolean 的话只有第一份
+  // 会被提示，后面 29 份即使有第二个音源也不会弹，可能一直用错的那一个打轴。
+  const promptedKeyRef = useRef('');
 
   useEffect(() => {
-    if (autoPromptedRef.current) return;
-    if (sources.length > 1) {
-      autoPromptedRef.current = true;
-      setPicked(value);
-      setOpen(true);
-    }
+    if (sources.length <= 1) return;
+    const key = sources.map((source) => source.key).join('|');
+    if (promptedKeyRef.current === key) return;
+    promptedKeyRef.current = key;
+    setPicked(value);
+    setOpen(true);
   }, [sources, value]);
 
   if (sources.length <= 1) return null;
@@ -56,11 +58,11 @@ export function AudioSourcePicker({ sources, value, onConfirm }: AudioSourcePick
           </DialogDescription>
         </DialogHeader>
 
-        <RadioGroup className="gap-2">
+        <RadioGroup className="min-w-0 gap-2">
           {sources.map((source, index) => (
             <label
               key={source.key}
-              className="flex cursor-pointer items-center gap-3 rounded-md border border-line px-3 py-2 text-sm hover:bg-muted"
+              className="flex min-w-0 cursor-pointer items-center gap-3 rounded-md border border-line px-3 py-2 text-sm hover:bg-muted"
             >
               <Radio
                 name="audio-source"

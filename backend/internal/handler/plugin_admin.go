@@ -92,6 +92,8 @@ func (h *PluginAdminHandler) Status(c *gin.Context) {
 func (h *PluginAdminHandler) Audit(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	// 与仓库层使用同一套钳制，回显实际生效的 size，避免前端页数算少
+	page, pageSize = repository.NormalizePage(page, pageSize)
 	targetID, _ := strconv.ParseInt(c.Query("target_id"), 10, 64)
 	q := repository.PluginAuditQuery{
 		Page:       page,
@@ -129,6 +131,8 @@ func (h *PluginAdminHandler) Stats(c *gin.Context) {
 func (h *PluginAdminHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	// 与仓库层同一套钳制，回显实际生效的 size，避免前端按请求值算页数
+	page, pageSize = repository.NormalizePage(page, pageSize)
 	q := repository.PluginListQuery{
 		Page:     page,
 		PageSize: pageSize,

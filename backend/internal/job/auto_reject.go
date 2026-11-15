@@ -2,6 +2,7 @@ package job
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -55,6 +56,15 @@ func NewAutoRejectJob(
 	}
 }
 
+// autoRejectReason 用实际生效的等待时长生成自动拒绝理由。
+// 配置按天给（SUBMISSION_AUTO_REJECT_AFTER），不足一天时退回原始 duration 文案。
+func autoRejectReason(after time.Duration) string {
+	if days := int(after / (24 * time.Hour)); days > 0 {
+		return fmt.Sprintf("[系统自动处理] 超过%d天未修改，自动拒绝。", days)
+	}
+	return fmt.Sprintf("[系统自动处理] 超过%s未修改，自动拒绝。", after)
+}
+
 // Run 阻塞执行，每 interval 执行一次扫描，直到 ctx 取消
 func (j *AutoRejectJob) Run(ctx context.Context) {
 	runPeriodic(ctx, "auto-reject", logrus.Fields{"after": j.after.String()}, j.interval, j.runOnce)
@@ -62,6 +72,9 @@ func (j *AutoRejectJob) Run(ctx context.Context) {
 
 func (j *AutoRejectJob) runOnce(ctx context.Context) {
 	cutoff := time.Now().Add(-j.after)
+	// 理由文案必须跟着 SUBMISSION_AUTO_REJECT_AFTER 走：
+	// 硬编码「4天」时把配置改成 2 天，用户收到的理由仍是 4 天，属于误导。
+	reason := autoRejectReason(j.after)
 
 	var affected []model.Submission
 	err := j.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -77,7 +90,7 @@ func (j *AutoRejectJob) runOnce(ctx context.Context) {
 				Reviewer:     "system",
 				ReviewerInfo: model.UserInfo{Username: "system", DisplayName: "系统"},
 				Status:       model.StatusRejected,
-				Comment:      "[系统自动处理] 超过4天未修改，自动拒绝。",
+				Comment:      reason,
 			}
 			if err := j.historyRepo.Insert(ctx, tx, h); err != nil {
 				logrus.WithFields(logrus.Fields{

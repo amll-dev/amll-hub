@@ -46,6 +46,24 @@ async function initializeWasm() {
   await wasmInitialized;
 }
 
+/**
+ * OPFS 访问句柄的让位协议。
+ *
+ * 必须在模块初始化时注册一次：原来写在 `ctx.onmessage` 里，每收到一条消息
+ * 就重新赋值一遍，而且「是否响应 DEMAND_LOCK」取决于这个 worker 有没有
+ * 先收到过消息 —— 主线程在 INIT 之前就请求锁时会永远等不到回应。
+ */
+opfsChannel.onmessage = (e) => {
+  if (e.data === 'DEMAND_LOCK') {
+    if (opfsAccessHandle) {
+      opfsAccessHandle.close();
+      opfsAccessHandle = null;
+    }
+
+    opfsChannel.postMessage('OPFS_RELEASED');
+  }
+};
+
 ctx.onmessage = async (event) => {
   try {
     await initializeWasm();
@@ -60,17 +78,6 @@ ctx.onmessage = async (event) => {
   }
 
   const msg = event.data;
-
-  opfsChannel.onmessage = (e) => {
-    if (e.data === 'DEMAND_LOCK') {
-      if (opfsAccessHandle) {
-        opfsAccessHandle.close();
-        opfsAccessHandle = null;
-      }
-
-      opfsChannel.postMessage('OPFS_RELEASED');
-    }
-  };
 
   switch (msg.type) {
     case 'INIT':
@@ -132,7 +139,9 @@ ctx.onmessage = async (event) => {
 
       const totalSamples = Math.ceil(audioDuration * audioSampleRate);
 
-      if (startSample >= totalSamples) {
+      // 上下界都要检查：调用方目前保证 startTime >= 0，但这是隐式契约，
+      // 负偏移会让 byteOffset 变负、读到上一次的缓冲残留。
+      if (startSample < 0 || startSample >= totalSamples) {
         ctx.postMessage({
           type: 'ERROR',
           reqId,

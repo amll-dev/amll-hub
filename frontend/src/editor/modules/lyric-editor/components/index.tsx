@@ -14,15 +14,7 @@ import { atom, useAtomValue, useSetAtom } from 'jotai';
 import { splitAtom } from 'jotai/utils';
 import { useSetImmerAtom } from 'jotai-immer';
 import { focusAtom } from 'jotai-optics';
-import {
-  type FC,
-  forwardRef,
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-} from 'react';
+import { type FC, forwardRef, useCallback, useEffect, useMemo, useRef } from 'react';
 import { ViewportList, type ViewportListRef } from 'react-viewport-list';
 import {
   ContextMenu,
@@ -206,8 +198,6 @@ export const LyricLinesView: FC = forwardRef<HTMLDivElement>((_props, ref) => {
     disableDrag: toolMode !== ToolMode.Edit,
   });
 
-  useImperativeHandle(ref, () => viewElRef.current as HTMLDivElement, []);
-
   const innerView =
     editLyric.length === 0 ? (
       <div
@@ -234,7 +224,8 @@ export const LyricLinesView: FC = forwardRef<HTMLDivElement>((_props, ref) => {
             <ViewportList overscan={10} items={editLyric} ref={viewRef} viewportRef={viewElRef}>
               {(lineAtom, i) => (
                 <LyricLineView
-                  key={`${lineAtom}`}
+                  // 行在虚拟列表里的位置就是身份；用 atom.toString() 只是实现细节
+                  key={i}
                   lineAtom={lineAtom}
                   lineIndex={i}
                   playbackHighlightedLineId={playbackHighlightedLineId}

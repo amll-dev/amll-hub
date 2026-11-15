@@ -147,6 +147,33 @@ func (h *AuthGithubHandler) BindRegister(c *gin.Context) {
 	pkg.OK(c, result)
 }
 
+// CompleteBind POST /api/v1/user/github/binding
+// 已登录用户用绑定票据完成 GitHub 关联
+func (h *AuthGithubHandler) CompleteBind(c *gin.Context) {
+	username := middleware.GetUserName(c)
+	if username == "" {
+		pkg.Unauthorized(c)
+		return
+	}
+
+	var req struct {
+		Token string `json:"token" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.BadRequest(c, "缺少绑定凭证")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultTimeout)
+	defer cancel()
+
+	if err := h.svc.CompleteBind(ctx, req.Token, username); err != nil {
+		writeGithubErr(c, err)
+		return
+	}
+	pkg.OKWithMsg(c, nil, "已绑定 GitHub")
+}
+
 // Unbind DELETE /api/v1/user/github/binding
 func (h *AuthGithubHandler) Unbind(c *gin.Context) {
 	username := middleware.GetUserName(c)

@@ -11,7 +11,12 @@ const RETRY_BASE_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
 /// 下载重试退避上限
 const RETRY_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// 带指数退避的无限重试包装：不成功不返回，阻断流程直到下载成功
+/// 单次下载的最大尝试次数。必须有限：否则 GitHub 仓库改名 / token 失效这类
+/// 永久故障会让 `run()` 永不返回，上层 consumer 的 SYNC_MAX_ATTEMPTS 也形同虚设，
+/// 消息永远进不了 DLQ。
+const DOWNLOAD_MAX_ATTEMPTS: u32 = 5;
+
+/// 带指数退避的有界重试：耗尽后把错误交回上层，由上层决定是重试还是进 DLQ
 async fn with_retry<T, F, Fut>(ctx: &str, f: F) -> Result<T>
 where
     F: Fn() -> Fut,
@@ -27,13 +32,18 @@ where
                 return Ok(v);
             }
             Err(e) => {
+                if attempt >= DOWNLOAD_MAX_ATTEMPTS {
+                    warn!(ctx, attempt, error = %e, "下载重试次数耗尽，向上层返回失败");
+                    return Err(e.context(format!("{ctx} 连续失败 {attempt} 次")));
+                }
                 let delay = (RETRY_BASE_DELAY * 2u32.saturating_pow(attempt - 1)).min(RETRY_MAX_DELAY);
                 warn!(
                     ctx,
                     attempt,
+                    max_attempts = DOWNLOAD_MAX_ATTEMPTS,
                     delay_secs = delay.as_secs(),
                     error = %e,
-                    "下载失败，无限重试直到成功"
+                    "下载失败，准备重试"
                 );
                 tokio::time::sleep(delay).await;
                 attempt += 1;

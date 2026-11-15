@@ -8,10 +8,21 @@ import { DragGhostRenderer } from '@/editor/modules/lyric-drag/DragGhostRenderer
 import { SyncKeyBinding } from '@/editor/modules/lyric-editor/components/sync-keybinding.tsx';
 import { TouchSyncPanel } from '@/editor/modules/lyric-editor/components/TouchSyncPanel/index.tsx';
 import { AutosaveManager } from '@/editor/modules/project/autosave/AutosaveManager.tsx';
+import { EditorKeyBindings } from '@/editor/modules/keyboard/components/EditorKeyBindings.tsx';
 import { showTouchSyncPanelAtom } from '@/editor/modules/settings/states/sync.ts';
 import { ToolMode, toolModeAtom } from '@/editor/states/main.ts';
 import { MetadataEditor } from '@/editor/modules/project/modals/MetadataEditor.tsx';
+import {
+  customBackgroundBlurAtom,
+  customBackgroundBrightnessAtom,
+  customBackgroundImageAtom,
+  customBackgroundImageInitAtom,
+  customBackgroundMaskAtom,
+  customBackgroundOpacityAtom,
+} from '@/editor/modules/settings/states/custom-background.ts';
 import { AdvancedSegmentationDialog } from '@/editor/modules/segmentation/components/AdvancedSegmentation.tsx';
+import { SplitWordDialog } from '@/editor/modules/segmentation/components/split-word.tsx';
+import { ReplaceWordDialog } from '@/editor/modules/lyric-editor/tools/ReplaceWordDialog.tsx';
 import { TimeShiftDialog } from '@/editor/modules/lyric-editor/tools/TimeShift.tsx';
 import { ConfirmDialog } from '@/editor/components/ConfirmDialog.tsx';
 import { ReduceStutterDialog } from '@/editor/components/ReduceStutterDialog.tsx';
@@ -21,6 +32,34 @@ import './editor-theme.css';
 
 const LyricLinesView = lazy(() => import('@/editor/modules/lyric-editor/components'));
 const AudioControls = lazy(() => import('@/editor/modules/audio/components/index.tsx'));
+
+/** 自定义背景：铺在工作台最底层，参数全部来自设置面板 */
+function CustomBackgroundLayer() {
+  const image = useAtomValue(customBackgroundImageAtom);
+  const opacity = useAtomValue(customBackgroundOpacityAtom);
+  const mask = useAtomValue(customBackgroundMaskAtom);
+  const blur = useAtomValue(customBackgroundBlurAtom);
+  const brightness = useAtomValue(customBackgroundBrightnessAtom);
+  const init = useSetAtom(customBackgroundImageInitAtom);
+
+  // 启动时从 IndexedDB 读回自定义背景（只跑一次）
+  useEffect(() => {
+    void init();
+  }, [init]);
+
+  if (!image) return null;
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      <img
+        src={image}
+        alt=""
+        className="h-full w-full object-cover"
+        style={{ opacity, filter: `blur(${blur}px) brightness(${brightness})` }}
+      />
+      {mask > 0 && <div className="absolute inset-0 bg-background" style={{ opacity: mask }} />}
+    </div>
+  );
+}
 
 export function EditorWorkbench({ textOnly = false }: { textOnly?: boolean }) {
   const toolMode = useAtomValue(toolModeAtom);
@@ -49,11 +88,13 @@ export function EditorWorkbench({ textOnly = false }: { textOnly?: boolean }) {
   return (
     <EditorTheme>
       <AutosaveManager />
+      <EditorKeyBindings textOnly={textOnly} />
       {!textOnly && toolMode === ToolMode.Sync && <SyncKeyBinding />}
       <div
-        className="flex h-full flex-col overflow-hidden"
+        className="relative flex h-full flex-col overflow-hidden"
         style={{ background: 'var(--color-panel)' }}
       >
+        <CustomBackgroundLayer />
         <RibbonBar />
 
         <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
@@ -102,6 +143,8 @@ export function EditorWorkbench({ textOnly = false }: { textOnly?: boolean }) {
       <MetadataEditor />
       {/* 顶栏「工具」菜单几个菜单项只是置位 atom，缺了这些渲染者就会点了没反应 */}
       <AdvancedSegmentationDialog />
+      <SplitWordDialog />
+      <ReplaceWordDialog />
       <TimeShiftDialog />
       <ConfirmDialog />
       <ReduceStutterDialog />

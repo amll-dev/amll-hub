@@ -100,14 +100,23 @@ pub fn map_status(pr: &PrInfo, timeline: &[TimelineEvent], reviews: &[PrReview])
         };
     }
 
-    // 优先级 5：open 且当前带「待更新」标签 → need_revision
-    let revision_at = timeline
+    // 优先级 5：open 且「待更新」标签最后一次动作是「打上」→ need_revision
+    //
+    // GitHub 移除标签是 `unlabeled` 事件，不是 `labeled`。只看 labeled 会把
+    // 「打标签 → 作者改完 → 移除标签」误判成仍需修改；迁移状态是一次性冻结的，
+    // 这条错误不会被后续纠正。因此把 labeled / unlabeled 一起按时间收集，只看最后一个动作。
+    let last_revision_action = timeline
         .iter()
         .filter(|e| {
-            e.event == "labeled" && e.label.as_ref().is_some_and(|l| l.name == REVISION_LABEL)
+            (e.event == "labeled" || e.event == "unlabeled")
+                && e.label.as_ref().is_some_and(|l| l.name == REVISION_LABEL)
         })
-        .filter_map(|e| e.created_at)
-        .next_back();
+        .max_by_key(|e| e.created_at);
+
+    let revision_at = match last_revision_action {
+        Some(e) if e.event == "labeled" => e.created_at,
+        _ => None, // 最后一次是移除，或从未打过标签
+    };
 
     if let Some(revision_at) = revision_at {
         // 同步最后一次「要求修改」的审核意见，供详情页展示修改建议
@@ -155,19 +164,26 @@ fn last_decisive_review(reviews: &[PrReview]) -> Option<&PrReview> {
         .max_by_key(|r| r.submitted_at)
 }
 
-/// 从 PR 文件列表定位 `raw-lyrics/*.ttml`，返回 (仓库路径, 文件名)
-pub fn find_ttml_file(files: &[PrFile]) -> Option<(String, String)> {
-    files.iter().find_map(|f| {
-        let path = f.filename.trim();
-        if !path.starts_with("raw-lyrics/") || !path.ends_with(".ttml") {
-            return None;
-        }
-        let name = path.rsplit('/').next()?.to_string();
-        if name.is_empty() {
-            return None;
-        }
-        Some((path.to_string(), name))
-    })
+/// 从 PR 文件列表定位全部 `raw-lyrics/*.ttml`，按 PR 文件顺序返回 (仓库路径, 文件名)
+///
+/// 一个 PR 提交多份歌词是常见操作，但 `github_migrated_prs.pr_number` 全局唯一，
+/// 一个 PR 只能对应一条投稿，所以实际只会迁移第一个；这里返回全部是为了让调用方
+/// 能感知并告警（调用方取第一个），避免后几份静默丢失。
+pub fn find_ttml_files(files: &[PrFile]) -> Vec<(String, String)> {
+    files
+        .iter()
+        .filter_map(|f| {
+            let path = f.filename.trim();
+            if !path.starts_with("raw-lyrics/") || !path.ends_with(".ttml") {
+                return None;
+            }
+            let name = path.rsplit('/').next()?.to_string();
+            if name.is_empty() {
+                return None;
+            }
+            Some((path.to_string(), name))
+        })
+        .collect()
 }
 
 /// BCP-47 语言标签 → 站点语言代码（见 model.SubmissionLanguage）
@@ -267,12 +283,26 @@ pub struct ParsedTtmlMeta {
     pub ttml_author_github: String,
 }
 
+/// 迁移路径 TTML 大小上限（与 sync/ttml_parser.rs 口径一致）
+const MAX_TTML_BYTES: usize = 16 * 1024 * 1024;
+
 /// 解析 TTML 字节流（复用 ttml_processor，与 /validate 口径一致）
 pub fn parse_ttml_meta(bytes: &[u8], labels: &[String]) -> Result<ParsedTtmlMeta> {
     use ttml_processor::model::PlatformId;
 
-    let text = String::from_utf8_lossy(bytes);
-    let parsed = ttml_processor::parse_ttml(&text).context("解析 TTML 失败")?;
+    if bytes.len() > MAX_TTML_BYTES {
+        anyhow::bail!(
+            "TTML 超过 {} MB（实际 {} KB）",
+            MAX_TTML_BYTES / 1024 / 1024,
+            bytes.len() / 1024
+        );
+    }
+    // 非法编码（GBK / UTF-16 等）必须报错，不能用 from_utf8_lossy 静默替换成 U+FFFD，
+    // 否则标题、艺术家、歌词会以乱码入库且全程零报错。
+    let text = std::str::from_utf8(bytes).context(
+        "TTML 不是合法的 UTF-8，请确认文件编码（常见原因：Windows 下保存为 GBK/UTF-16）",
+    )?;
+    let parsed = ttml_processor::parse_ttml(text).context("解析 TTML 失败")?;
     let meta = parsed.metadata;
 
     let join = |v: Option<Vec<String>>| -> String {
@@ -500,6 +530,48 @@ mod tests {
     }
 
     #[test]
+    fn revision_label_removed_maps_to_pending() {
+        // 打标签 → 作者改完 → 移除标签：移除（unlabeled）是最后一个动作，应为 pending
+        let base = Utc::now();
+        let labeled = TimelineEvent {
+            event: "labeled".to_string(),
+            actor: None,
+            created_at: Some(base),
+            label: Some(RestLabel {
+                name: REVISION_LABEL.to_string(),
+            }),
+        };
+        let unlabeled = TimelineEvent {
+            event: "unlabeled".to_string(),
+            actor: None,
+            created_at: Some(base + chrono::Duration::minutes(10)),
+            label: Some(RestLabel {
+                name: REVISION_LABEL.to_string(),
+            }),
+        };
+        let m = map_status(&pr("open", false, "alice"), &[labeled, unlabeled], &[]);
+        assert_eq!(m.status, STATUS_PENDING);
+        assert!(m.revision_requested_at.is_none());
+    }
+
+    #[test]
+    fn revision_label_reapplied_maps_to_need_revision() {
+        // labeled → unlabeled → labeled：最后一次是打上，仍应为 need_revision
+        let base = Utc::now();
+        let mk = |event: &str, minutes: i64| TimelineEvent {
+            event: event.to_string(),
+            actor: None,
+            created_at: Some(base + chrono::Duration::minutes(minutes)),
+            label: Some(RestLabel {
+                name: REVISION_LABEL.to_string(),
+            }),
+        };
+        let timeline = vec![mk("labeled", 0), mk("unlabeled", 10), mk("labeled", 20)];
+        let m = map_status(&pr("open", false, "alice"), &timeline, &[]);
+        assert_eq!(m.status, STATUS_NEED_REVISION);
+    }
+
+    #[test]
     fn finds_ttml_in_raw_lyrics() {
         let files = vec![
             PrFile {
@@ -509,10 +581,33 @@ mod tests {
                 filename: "raw-lyrics/1700000000000-1-abcdefgh.ttml".to_string(),
             },
         ];
-        let (path, name) = find_ttml_file(&files).unwrap();
-        assert_eq!(path, "raw-lyrics/1700000000000-1-abcdefgh.ttml");
-        assert_eq!(name, "1700000000000-1-abcdefgh.ttml");
-        assert!(find_ttml_file(&[]).is_none());
+        let all = find_ttml_files(&files);
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].0, "raw-lyrics/1700000000000-1-abcdefgh.ttml");
+        assert_eq!(all[0].1, "1700000000000-1-abcdefgh.ttml");
+        assert!(find_ttml_files(&[]).is_empty());
+    }
+
+    #[test]
+    fn finds_all_ttml_files_in_one_pr() {
+        // 一个 PR 含 3 份 TTML：调用方需要感知，否则后两份会被静默丢弃
+        let files = vec![
+            PrFile {
+                filename: "raw-lyrics/a.ttml".to_string(),
+            },
+            PrFile {
+                filename: "metadata/index.jsonl".to_string(),
+            },
+            PrFile {
+                filename: "raw-lyrics/b.ttml".to_string(),
+            },
+            PrFile {
+                filename: "raw-lyrics/c.ttml".to_string(),
+            },
+        ];
+        let all = find_ttml_files(&files);
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0].1, "a.ttml");
     }
 
     #[test]

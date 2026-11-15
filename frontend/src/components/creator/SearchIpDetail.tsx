@@ -148,7 +148,7 @@ export function SearchIpDetail({
                       alt={groupName}
                       loading="lazy"
                       decoding="async"
-                      className="h-12 w-auto rounded bg-surface-2 object-contain"
+                      className="h-12 w-24 rounded bg-surface-2 object-contain"
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = 'none';
                       }}

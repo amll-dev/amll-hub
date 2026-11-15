@@ -420,6 +420,8 @@ function findProblems(lines: LyricLine[]): LineProblem[] {
         message: `第 ${label} 行结束时间早于开始时间`,
       });
     }
+    // 间隔行（`<p begin end></p>`）是合法且常见的：没有文本就没有「逐字时间轴」可缺
+    if (!line.text?.trim()) continue;
     if (!line.words?.length) {
       problems.push({
         lineIndex: i,

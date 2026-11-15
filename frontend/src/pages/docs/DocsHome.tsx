@@ -12,8 +12,9 @@ import { Skeleton } from '@/components/ui/Skeleton';
 /** 文档首页 */
 export function DocsHome() {
   const { data, isLoading } = useQuery({
-    queryKey: queryKeys.docList({}),
-    queryFn: () => api.docs.list({ pageSize: 50 }),
+    // 改走精简导航接口，一次返回全部已发布文档，不受 repository 每页 50 条上限影响
+    queryKey: queryKeys.docNav,
+    queryFn: () => api.docs.nav(),
   });
 
   const buckets = groupDocs(data?.items ?? []);

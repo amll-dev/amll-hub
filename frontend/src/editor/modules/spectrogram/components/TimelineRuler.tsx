@@ -9,7 +9,7 @@ export interface TimelineRulerHandle {
 const TICK_INTERVALS = [
   0.05, 0.1, 0.2, 0.5, 1, 2, 4, 8, 15, 30, 60, 120, 240, 480, 900, 1800,
 ] as const;
-/** 最小的刻度间隔（zoom 最高时用）。单独命名，避免 `arr[arr.length-1]` 的 undefined。 */
+/** 最大的刻度间隔（zoom 最低时用）。单独命名，避免 `arr[arr.length-1]` 的 undefined。 */
 const MIN_TICK_INTERVAL = 1800;
 
 interface TimelineRulerProps {

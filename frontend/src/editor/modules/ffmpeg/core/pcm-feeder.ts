@@ -94,7 +94,13 @@ export class PcmFeeder {
 
       const wait = this.writer.waitForSpaceAsync(MIN_SPACE_REQ_FRAMES);
       if (wait.async) {
-        if (!wait.promise) return;
+        if (!wait.promise) {
+          // 异步等待但没拿到 promise：退出循环时必须复位 running，
+          // 否则下一次 play() 看到 running === true 直接返回，pump 永远不再启动，
+          // 表现为「UI 显示播放中但没声音，只有 seek 才能恢复」。
+          this.running = false;
+          return;
+        }
         await wait.promise;
         if (!this.running || this.destroyed || session !== this.sessionId) {
           return;
@@ -128,7 +134,9 @@ export class PcmFeeder {
         return;
       }
       if (!drain.promise) {
-        // 既没排空也没给出 promise：等下一次 play() 重新驱动
+        // 既没排空也没给出 promise：等下一次 play() 重新驱动。
+        // 同样要先复位 running，否则 play() 会被自己的 running 判断挡掉。
+        this.running = false;
         return;
       }
       await drain.promise;
