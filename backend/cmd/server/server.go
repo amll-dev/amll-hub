@@ -93,6 +93,7 @@ func Run() {
 	commentRepo := repository.NewCommentRepo(db)
 	reportRepo := repository.NewReviewReportRepo(db)
 	reviewerRepo := repository.NewReviewerRepo(db)
+	recruitmentRepo := repository.NewReviewerRecruitmentRepo(db)
 	adminRepo := repository.NewAdminRepo(db)
 	notifRepo := repository.NewNotificationRepo(db)
 	announcementRepo := repository.NewAnnouncementRepo(db)
@@ -347,6 +348,10 @@ func Run() {
 	notifH := handler.NewNotificationHandler(notifSvc)
 	announcementH := handler.NewAnnouncementHandler(announcementSvc)
 	documentH := handler.NewDocumentHandler(documentSvc, reviewerCache, adminCache)
+	recruitmentSvc := service.NewReviewerRecruitmentService(recruitmentRepo)
+	submissionSvc.SetReviewerRecruitment(recruitmentSvc)
+	reviewSvc.SetReviewerRecruitment(recruitmentSvc)
+	recruitmentH := handler.NewReviewerRecruitmentHandler(recruitmentSvc)
 	userActivityH := handler.NewUserActivityHandler(userActivitySvc)
 	userProfileH := handler.NewUserProfileHandler(userProfileSvc)
 	userSearchH := handler.NewUserSearchHandler(userSearchSvc)
@@ -394,6 +399,7 @@ func Run() {
 		PluginReview: pluginReviewH,
 		PluginAdmin:  pluginAdminH,
 		Document:     documentH,
+		Recruitment:  recruitmentH,
 
 		ReviewerCache: reviewerCache,
 		AdminCache:    adminCache,

@@ -117,6 +117,11 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
   });
 
   const ctx = ctxQuery.data;
+  const recruitmentQuery = useQuery({
+    queryKey: ['reviewer-recruitment', 'progress', submissionId],
+    queryFn: () => api.reviewerRecruitment.progress(submissionId),
+    enabled: !isCreator && Number.isFinite(submissionId),
+  });
   const audios = useMemo(() => ctx?.audios ?? [], [ctx?.audios]);
   const ncmIds = useMemo(() => ctx?.ncmIds ?? [], [ctx?.ncmIds]);
   const qqIds = useMemo(() => ctx?.qqIds ?? [], [ctx?.qqIds]);
@@ -612,6 +617,7 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
           {effectiveReport && (
             <ReviewReportDialog
               mode={mode}
+              recruitment={Boolean(recruitmentQuery.data?.progress)}
               submitting={isCreator ? submitMutation.isPending : saveMutation.isPending}
               onSubmit={(input) => {
                 if (isCreator) {

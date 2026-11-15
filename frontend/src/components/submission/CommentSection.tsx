@@ -147,6 +147,9 @@ export function CommentSection({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const isRecruitment = target.kind === 'submission' && Boolean(
+    detail?.tags?.some((tag) => tag === '参与审核招募' || tag === '审核招募')
+  );
 
   // 评论列表
   const commentsKey =
@@ -272,6 +275,7 @@ export function CommentSection({
             : '审核完成',
       });
       onReviewed?.();
+      if (isRecruitment) void queryClient.invalidateQueries({ queryKey: ['reviewer-recruitment'] });
     },
     onError: (err, _action, ctx) => {
       // 评论可能已成功而审核失败：回滚临时项后 invalidate 拉回真实列表
@@ -307,9 +311,10 @@ export function CommentSection({
   const templates: { label: string; value: string }[] | null = isReviewer
     ? [
         {
-          label: '通过模板',
-          value:
-            '恭喜你，人工审核通过，你的贡献将会被更多人看到。感谢你对本项目的支持。欢迎下次投稿！',
+          label: isRecruitment ? '接受模板' : '通过模板',
+          value: isRecruitment
+            ? '已接受本次投稿，系统将在满足招募审核条件后自动通过。'
+            : '恭喜你，人工审核通过，你的贡献将会被更多人看到。感谢你对本项目的支持。欢迎下次投稿！',
         },
         {
           label: '需修改模板',
@@ -499,7 +504,9 @@ export function CommentSection({
       <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
         {(pluginReview || canReview) &&
           (pluginReview ? pluginActionKeys : submissionActionKeys).map((key) => {
-            const meta = ACTION_META[key];
+            const meta = isRecruitment && key === 'approve'
+              ? { ...ACTION_META[key], label: '接受', color: 'bg-blue-600 hover:bg-blue-700 text-white' }
+              : ACTION_META[key];
             const Icon = meta.icon;
             const label = pluginReview ? (pluginActionLabels[key] ?? meta.label) : meta.label;
             return (

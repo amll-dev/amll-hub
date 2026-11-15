@@ -60,7 +60,11 @@ type ReviewService struct {
 	notifier     Notifier
 	db           *gorm.DB
 	petitionSync func(ctx context.Context, submissionID int64) error
+	recruitment  *ReviewerRecruitmentService
 }
+
+// SetReviewerRecruitment connects recruitment counters to the review lifecycle.
+func (s *ReviewService) SetReviewerRecruitment(v *ReviewerRecruitmentService) { s.recruitment = v }
 
 // SetNotifier 注入通知服务（main 装配阶段调用）
 func (s *ReviewService) SetNotifier(n Notifier) {
@@ -136,6 +140,13 @@ func (s *ReviewService) Review(ctx context.Context, user *SubmissionUser, id int
 	case ActionRevision:
 		if err := s.simpleTransition(ctx, sub, model.StatusNeedRevision, comment, user, reviewerInfo, now, fromStatuses, true); err != nil {
 			return err
+		}
+		if s.recruitment != nil {
+			// A review conclusion with a non-empty comment is one modification
+			// entry; detailed editor reports add their entries in RevisionService.
+			if err := s.recruitment.RecordCorrections(s.db.WithContext(ctx), sub, 1); err != nil {
+				return err
+			}
 		}
 	case ActionMissingAudio:
 		if err := s.simpleTransition(ctx, sub, model.StatusMissingAudio, comment, user, reviewerInfo, now, fromStatuses, false); err != nil {
