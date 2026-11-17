@@ -44,7 +44,6 @@ import { AnnouncementPanel } from '@/components/review/AnnouncementPanel';
 import { DocManagePanel } from '@/components/docs/DocManagePanel';
 import { DocEditorPanel } from '@/components/docs/DocEditorPanel';
 import { ReviewerManagePanel } from '@/components/review/ReviewerManagePanel';
-import { RecruitmentProgressCard } from '@/components/recruitment/RecruitmentProgressCard';
 import { PluginReviewPanel } from '@/components/plugin/PluginReviewPanel';
 import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
 import { SubmissionListRows } from '@/components/submission/SubmissionListRows';
@@ -454,10 +453,7 @@ function HomeOverview() {
     q.error instanceof Error ? q.error.message : q.error ? '加载失败' : '';
 
   return (
-    <div className="col-start-1 row-start-1 grid min-h-0 gap-4 lg:grid-cols-2">
-      <div className="lg:col-span-2">
-        <RecruitmentProgressCard />
-      </div>
+    <div className="col-start-1 row-start-1 grid min-h-0 gap-4 lg:h-full lg:grid-cols-2 lg:grid-rows-2 lg:overflow-hidden">
       {/* 歌词审核 */}
       <HomePendingCard
         icon={FolderOpen}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertTriangle,
@@ -87,13 +87,6 @@ const SUBMIT_TYPES: { value: SubmissionType; label: string; description: string 
 /** 歌词投稿表单 */
 export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const recruitment = useQuery({
-    queryKey: ['reviewer-recruitment', 'active'],
-    queryFn: api.reviewerRecruitment.active,
-    refetchInterval: 30_000,
-  });
-  const [participate, setParticipate] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [validation, setValidation] = useState<TtmlValidationResult | null>(null);
   const [validateError, setValidateError] = useState('');
@@ -313,9 +306,6 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   // 上传文件并创建投稿（status: pending=提交审核 / draft=存草稿）
   const submitMutation = useMutation({
     mutationFn: async (params: { file: File; status: 'pending' | 'draft' }) => {
-      if (participate && !recruitment.data?.active) {
-        throw new Error('本期审核招募已结束，请取消参与审核招募后提交');
-      }
       let fileName: string;
       const cached = uploadedTtmlRef.current;
       if (cached && cached.file === params.file) {
@@ -348,10 +338,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
         languages: allLangs.length > 0 ? allLangs : undefined,
         ...unrearranged.submissionFields,
         ...revisionFields,
-        tags: [
-          ...tags.filter((tag) => tag !== '参与审核招募' && tag !== '审核招募'),
-          ...(participate && recruitment.data?.active ? ['参与审核招募'] : []),
-        ],
+        tags: tags.length > 0 ? tags : undefined,
         status: params.status,
         petitionIds: selectedPetitionIds.length > 0 ? selectedPetitionIds : undefined,
       });
@@ -370,7 +357,6 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     },
     onMutate: () => setSubmitMsg(null),
     onSuccess: (result, { status }) => {
-      void queryClient.invalidateQueries({ queryKey: ['reviewer-recruitment'] });
       reset();
       const warnings: string[] = [];
       if (result.audioFailures.length > 0) {
@@ -420,7 +406,6 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     setValidateError('');
     setTtmlText('');
     setSubmitType('new');
-    setParticipate(false);
     setTarget(null);
     setDiff(null);
     setDiffError('');
@@ -602,7 +587,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
               <button
                 key={type.value}
                 type="button"
-                disabled={submitting || (participate && type.value === 'revision')}
+                disabled={submitting}
                 onClick={() => setSubmitType(type.value)}
                 className={`rounded-md border px-4 py-3 text-left transition-colors disabled:opacity-60 ${
                   active
@@ -622,20 +607,6 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
             );
           })}
         </div>
-        {(recruitment.data?.active || participate) && (
-          <label className="mt-3 flex items-center gap-3 text-sm text-ink-2">
-            <Checkbox
-              checked={participate}
-              disabled={submitting}
-              onCheckedChange={(checked) => {
-                setParticipate(checked === true);
-                if (checked) setSubmitType('new');
-              }}
-            />
-            参与审核招募
-            <span className="text-xs text-ink-3">提交进入待审核队列后自动报名</span>
-          </label>
-        )}
       </motion.div>
 
       {/* 未重排开关 */}

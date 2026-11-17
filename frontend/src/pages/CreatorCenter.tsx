@@ -9,7 +9,7 @@ import {
   type ContentMainTab,
   type SubmitTab,
 } from '@/atoms/creatorCenter';
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -22,7 +22,6 @@ import {
   ScrollText,
   Search,
   Upload,
-  UserRoundPlus,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
@@ -31,25 +30,12 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { parseMarkupText } from '@/lib/markup';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
-import { RecruitmentProgress } from '@/components/recruitment/RecruitmentProgressCard';
-import { ReviewerRecruitmentPanel } from '@/components/recruitment/ReviewerRecruitmentPanel';
 import { NavItem } from '@/components/NavItem';
 import { PageContainer } from '@/components/PageContainer';
 import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
 import { statusMeta } from '@/components/submission/status';
 import { SubmissionListRows } from '@/components/submission/SubmissionListRows';
-import { Button, buttonVariants } from '@/components/ui/button';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+import { buttonVariants } from '@/components/ui/button';
 import { CardDetailSkeleton, ListSkeleton } from '@/components/ui/Skeleton';
 import { ListPagination } from '@/components/ui/list-pagination';
 import { LyricSubmitForm } from '@/components/creator/LyricSubmitForm';
@@ -509,27 +495,6 @@ function SearchIpList() {
 
 export function CreatorCenter() {
   const { user, openLogin } = useAuth();
-  const queryClient = useQueryClient();
-  const participation = useQuery({
-    queryKey: ['reviewer-recruitment', 'me', user?.name],
-    queryFn: api.reviewerRecruitment.me,
-    enabled: Boolean(user),
-    refetchInterval: 30_000,
-  });
-  const exitRecruitment = useMutation({
-    mutationFn: api.reviewerRecruitment.exit,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['reviewer-recruitment'] });
-    },
-  });
-  const canAccessRecruitment = Boolean(user?.isReviewer || user?.isAdmin);
-  const recruitment = useQuery({
-    queryKey: ['reviewer-recruitment', 'active'],
-    queryFn: api.reviewerRecruitment.active,
-    enabled: Boolean(participation.data?.member) && !canAccessRecruitment,
-    refetchInterval: 30_000,
-  });
-  const showRecruitmentProgress = !canAccessRecruitment && Boolean(participation.data?.member && recruitment.data?.active);
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -543,10 +508,6 @@ export function CreatorCenter() {
 
   // 离开页面时复位
   useEffect(() => () => resetCreatorCenter(), []);
-
-  useEffect(() => {
-    if (view === 'reviewer-recruitment' && !canAccessRecruitment) setView('home');
-  }, [view, canAccessRecruitment, setView]);
 
   // 支持 ?tab=lyrics|daily|search-ip|requests|plugins 直达对应投稿表单
   useEffect(() => {
@@ -767,72 +728,12 @@ export function CreatorCenter() {
               />
             )}
           </nav>
-          {canAccessRecruitment && (
-            <nav className="mt-6 space-y-1" aria-label="审核招募">
-              <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-ink-3">
-                审核招募
-              </p>
-              <NavItem
-                icon={<UserRoundPlus className="h-4 w-4" />}
-                label="审核招募"
-                active={view === 'reviewer-recruitment'}
-                onClick={() => {
-                  if (onRequestsRoute || editingId || onPluginsRoute) navigate('/creator');
-                  setView('reviewer-recruitment');
-                }}
-              />
-            </nav>
-          )}
-          {participation.data?.member && (
-            <div className="mt-6 px-3">
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" className="w-full" disabled={exitRecruitment.isPending}>
-                    退出审核招募
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>确认退出审核招募？</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      退出后将清除本期招募的参与进度，已提交的歌词仍会保留。再次参与将重新计数。
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>取消</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => exitRecruitment.mutate()}>
-                      确认退出
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-              {exitRecruitment.error && (
-                <p role="alert" className="mt-2 text-xs text-error">
-                  {exitRecruitment.error instanceof Error
-                    ? exitRecruitment.error.message
-                    : '退出失败，请重试'}
-                </p>
-              )}
-            </div>
-          )}
         </aside>
 
         {/* 主内容区：grid 重叠布局，新旧视图交叉淡入淡出 */}
         <main className="no-scrollbar grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-x-clip overflow-y-auto">
           <AnimatePresence>
-            {view === 'reviewer-recruitment' && canAccessRecruitment && (
-              <motion.div
-                key="reviewer-recruitment"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0, pointerEvents: 'none' }}
-                transition={{ duration: 0.15 }}
-                className="col-start-1 row-start-1 min-w-0 self-start rounded-lg border border-line bg-card p-6"
-              >
-                <ReviewerRecruitmentPanel />
-              </motion.div>
-            )}
-            {/* 首页 */}
+            {/* 首页占位 */}
             {view === 'home' && (
               <motion.div
                 key="home"
@@ -840,26 +741,15 @@ export function CreatorCenter() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className={showRecruitmentProgress
-                  ? 'col-start-1 row-start-1 min-w-0 self-start'
-                  : 'col-start-1 row-start-1 flex flex-col items-center justify-center rounded-lg border border-line bg-card p-12 text-center'}
+                className="col-start-1 row-start-1 flex flex-col items-center justify-center rounded-lg border border-line bg-card p-12 text-center"
               >
-                {showRecruitmentProgress && participation.data?.member && recruitment.data?.active ? (
-                  <RecruitmentProgress
-                    participantView
-                    data={{ active: recruitment.data.active, members: [participation.data.member] }}
-                  />
-                ) : (
-                  <>
-                    <LayoutDashboard className="mx-auto h-12 w-12 text-ink-3" />
-                    <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">
-                      创作中心首页
-                    </h2>
-                    <p className="mt-2 text-sm text-ink-3">
-                      欢迎来到创作中心，这里将展示你的创作数据概览
-                    </p>
-                  </>
-                )}
+                <LayoutDashboard className="mx-auto h-12 w-12 text-ink-3" />
+                <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">
+                  创作中心首页
+                </h2>
+                <p className="mt-2 text-sm text-ink-3">
+                  欢迎来到创作中心，这里将展示你的创作数据概览
+                </p>
               </motion.div>
             )}
 

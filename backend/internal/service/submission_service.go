@@ -212,10 +212,7 @@ type SubmissionService struct {
 	validate        *ValidateService
 	notifier        Notifier
 	db              *gorm.DB
-	recruitment     *ReviewerRecruitmentService
 }
-
-func (s *SubmissionService) SetReviewerRecruitment(v *ReviewerRecruitmentService) { s.recruitment = v }
 
 // SetNotifier 注入通知服务（main 装配阶段调用）
 func (s *SubmissionService) SetNotifier(n Notifier) {
@@ -349,11 +346,6 @@ func (s *SubmissionService) Create(ctx context.Context, user *SubmissionUser, in
 			if _, err := s.subRepo.MarkFirstSubmissionIfEligible(ctx, tx, sub); err != nil {
 				logrus.WithError(err).WithField("submission_id", sub.ID).
 					Warn("mark first submission failed")
-			}
-		}
-		if s.recruitment != nil {
-			if err := s.recruitment.Enroll(tx, sub); err != nil {
-				return err
 			}
 		}
 		return nil
