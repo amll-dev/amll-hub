@@ -31,6 +31,7 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { parseMarkupText } from '@/lib/markup';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
+import { RecruitmentProgress } from '@/components/recruitment/RecruitmentProgressCard';
 import { ReviewerRecruitmentPanel } from '@/components/recruitment/ReviewerRecruitmentPanel';
 import { NavItem } from '@/components/NavItem';
 import { PageContainer } from '@/components/PageContainer';
@@ -522,6 +523,13 @@ export function CreatorCenter() {
     },
   });
   const canAccessRecruitment = Boolean(user?.isReviewer || user?.isAdmin);
+  const recruitment = useQuery({
+    queryKey: ['reviewer-recruitment', 'active'],
+    queryFn: api.reviewerRecruitment.active,
+    enabled: Boolean(participation.data?.member) && !canAccessRecruitment,
+    refetchInterval: 30_000,
+  });
+  const showRecruitmentProgress = !canAccessRecruitment && Boolean(participation.data?.member && recruitment.data?.active);
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -819,12 +827,12 @@ export function CreatorCenter() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="col-start-1 row-start-1 min-w-0 rounded-lg border border-line bg-card p-6"
+                className="col-start-1 row-start-1 min-w-0 self-start rounded-lg border border-line bg-card p-6"
               >
                 <ReviewerRecruitmentPanel />
               </motion.div>
             )}
-            {/* 首页占位 */}
+            {/* 首页 */}
             {view === 'home' && (
               <motion.div
                 key="home"
@@ -832,15 +840,26 @@ export function CreatorCenter() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="col-start-1 row-start-1 flex flex-col items-center justify-center rounded-lg border border-line bg-card p-12 text-center"
+                className={showRecruitmentProgress
+                  ? 'col-start-1 row-start-1 min-w-0 self-start'
+                  : 'col-start-1 row-start-1 flex flex-col items-center justify-center rounded-lg border border-line bg-card p-12 text-center'}
               >
-                <LayoutDashboard className="mx-auto h-12 w-12 text-ink-3" />
-                <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">
-                  创作中心首页
-                </h2>
-                <p className="mt-2 text-sm text-ink-3">
-                  欢迎来到创作中心，这里将展示你的创作数据概览
-                </p>
+                {showRecruitmentProgress && participation.data?.member && recruitment.data?.active ? (
+                  <RecruitmentProgress
+                    participantView
+                    data={{ active: recruitment.data.active, members: [participation.data.member] }}
+                  />
+                ) : (
+                  <>
+                    <LayoutDashboard className="mx-auto h-12 w-12 text-ink-3" />
+                    <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">
+                      创作中心首页
+                    </h2>
+                    <p className="mt-2 text-sm text-ink-3">
+                      欢迎来到创作中心，这里将展示你的创作数据概览
+                    </p>
+                  </>
+                )}
               </motion.div>
             )}
 

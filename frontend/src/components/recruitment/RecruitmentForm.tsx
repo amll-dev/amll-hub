@@ -106,7 +106,7 @@ export function RecruitmentForm({
 
       <motion.section
         variants={fadeUp}
-        className="space-y-4 rounded-lg border border-line bg-card p-5 sm:p-6"
+        className="space-y-4 overflow-hidden rounded-lg border border-line bg-card p-5 sm:p-6"
       >
         <label
           htmlFor="recruitment-announcement"
@@ -129,7 +129,7 @@ export function RecruitmentForm({
 
       <motion.section
         variants={fadeUp}
-        className="rounded-lg border border-line bg-card p-5 sm:p-6"
+        className="overflow-hidden rounded-lg border border-line bg-card p-5 sm:p-6"
         aria-labelledby="recruitment-conditions-title"
       >
         <h3
@@ -194,7 +194,7 @@ export function RecruitmentForm({
         </div>
       </motion.section>
       {languageWarning && <p role="status" className="text-sm text-amber-600">单一语种投稿数应大于有效投稿数；当前填写仍可发布，将按有效投稿数作为完成标准。</p>}
-      <motion.section variants={fadeUp} className="space-y-4 rounded-lg border border-line bg-card p-5 sm:p-6">
+      <motion.section variants={fadeUp} className="space-y-4 overflow-hidden rounded-lg border border-line bg-card p-5 sm:p-6">
         <h3 className="text-base font-semibold text-foreground">结束条件</h3>
         <p className="text-sm text-ink-3">达到结束日期零时（北京时间）或完成招募的人数目标时，本期招募自动结束。至少填写一项。</p>
         <div className="grid gap-5 sm:grid-cols-2">
