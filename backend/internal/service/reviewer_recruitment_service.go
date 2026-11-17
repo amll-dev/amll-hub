@@ -409,6 +409,7 @@ func (s *ReviewerRecruitmentService) Progress(ctx context.Context, id int64, use
 // A transaction advisory lock covers that path as well, preventing withdrawal or another vote racing publication.
 func (s *ReviewerRecruitmentService) Accept(ctx context.Context, user *SubmissionUser, id int64, comment string, publish func(*gorm.DB, *model.Submission) error) (bool, error) {
 	handled := false
+	var publishErr error
 	err := s.repo.Transaction(ctx, func(tx *gorm.DB) error {
 		var sub model.Submission
 		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sub, id).Error; e != nil {
@@ -431,9 +432,10 @@ func (s *ReviewerRecruitmentService) Accept(ctx context.Context, user *Submissio
 			item.Version = version
 			item.Approvers = []string{}
 		}
-		if !slices.Contains(item.Approvers, user.Name) {
-			item.Approvers = append(item.Approvers, user.Name)
+		if slices.Contains(item.Approvers, user.Name) {
+			return nil
 		}
+		item.Approvers = append(item.Approvers, user.Name)
 		c := recruitmentForm(plan).Conditions
 		if len(item.Approvers) < c.ApprovalsPerSubmission {
 			m.Progress = encodeRecruitment(p)
@@ -447,7 +449,12 @@ func (s *ReviewerRecruitmentService) Accept(ctx context.Context, user *Submissio
 		}
 		// Publish on this transaction connection: state claim and counters roll back together on failure.
 		if e = publish(tx, &sub); e != nil {
-			return e
+			if !errors.Is(e, ErrApproveNeedsManualFix) {
+				return e
+			}
+			// GitHub has already accepted the file. Commit the approved state
+			// and counters, while still surfacing the storage repair error.
+			publishErr = e
 		}
 		item.Approved = true
 		item.Languages = sub.Languages
@@ -466,7 +473,10 @@ func (s *ReviewerRecruitmentService) Accept(ctx context.Context, user *Submissio
 		_, e = s.active(tx)
 		return e
 	})
-	return handled, err
+	if err != nil {
+		return handled, err
+	}
+	return handled, publishErr
 }
 
 // RecordCorrections belongs to the transaction that stores the review conclusion/report.

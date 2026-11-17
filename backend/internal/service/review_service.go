@@ -130,7 +130,29 @@ func (s *ReviewService) Review(ctx context.Context, user *SubmissionUser, id int
 
 	switch in.Action {
 	case ActionApprove:
-		if err := s.approve(ctx, sub, comment, user, reviewerInfo, now, fromStatuses); err != nil {
+		handled := false
+		if s.recruitment != nil {
+			handled, err = s.recruitment.Accept(ctx, user, id, comment, func(tx *gorm.DB, current *model.Submission) error {
+				// All database writes, including failure compensation, must use the
+				// recruitment transaction that already holds the submission lock.
+				txReview := *s
+				txReview.db = tx
+				txReview.subRepo = repository.NewSubmissionRepo(tx)
+				txReview.historyRepo = repository.NewReviewHistoryRepo(tx)
+				return txReview.approve(ctx, current, comment, user, reviewerInfo, now, fromStatuses)
+			})
+			if err != nil {
+				return err
+			}
+		}
+		if handled {
+			// Partial acceptance leaves the submission pending; publication sets
+			// it to approved. Notifications must see the persisted result.
+			sub, err = s.subRepo.GetByID(ctx, id)
+			if err != nil {
+				return err
+			}
+		} else if err := s.approve(ctx, sub, comment, user, reviewerInfo, now, fromStatuses); err != nil {
 			return err
 		}
 	case ActionReject:

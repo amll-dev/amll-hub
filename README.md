@@ -6,6 +6,18 @@
 
 <img src="https://repository-images.githubusercontent.com/1224275025/803c8329-baee-4113-beae-9c6ee1e6b3f7" width="120" alt="AMLLHub">
 
+## 本地开发
+
+配置根目录 `.env`（参考 `.env.example`），安装 Docker Compose、Go、Rust、Node.js 后，在项目根目录运行 `./dev.sh`。
+脚本会启动基础设施、编译并启动 Go API 和 Rust Worker，然后启动 Vite 开发服务器：<http://localhost:5173>。
+首次启动会安装缺失的前端依赖；已有的本地 MinIO、Casdoor 容器会被复用。
+
+- `./dev.sh status`：查看应用进程状态。
+- `./dev.sh logs`：持续查看日志（保存在 `.dev/`，Ctrl+C 退出查看）。
+- `./dev.sh stop`：停止应用进程，保留基础设施及数据。
+
+后端代码修改后运行 `./dev.sh stop && ./dev.sh` 重新编译启动；前端支持热更新。
+
 ## 架构
 
 用户层 React 19 + Vite + TypeScript
