@@ -159,6 +159,13 @@ export const queryKeys = {
   // 审核员管理
   reviewers: ['admin', 'reviewers'] as const,
 
+  // 审核招募（前缀 key 用于 WS 失效与写操作后的整体刷新）
+  recruitmentRoot: ['reviewer-recruitment'] as const,
+  recruitmentActive: ['reviewer-recruitment', 'active'] as const,
+  recruitmentDashboard: ['reviewer-recruitment', 'dashboard'] as const,
+  recruitmentMe: (username?: string) => ['reviewer-recruitment', 'me', username] as const,
+  recruitmentProgress: (id: number) => ['reviewer-recruitment', 'progress', id] as const,
+
   // 插件广场
   pluginList: (params: {
     page?: number;

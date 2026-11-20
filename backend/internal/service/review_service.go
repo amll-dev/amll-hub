@@ -60,7 +60,11 @@ type ReviewService struct {
 	notifier     Notifier
 	db           *gorm.DB
 	petitionSync func(ctx context.Context, submissionID int64) error
+	recruitment  *ReviewerRecruitmentService
 }
+
+// SetReviewerRecruitment connects recruitment counters to the review lifecycle.
+func (s *ReviewService) SetReviewerRecruitment(v *ReviewerRecruitmentService) { s.recruitment = v }
 
 // SetNotifier 注入通知服务（main 装配阶段调用）
 func (s *ReviewService) SetNotifier(n Notifier) {
@@ -126,7 +130,29 @@ func (s *ReviewService) Review(ctx context.Context, user *SubmissionUser, id int
 
 	switch in.Action {
 	case ActionApprove:
-		if err := s.approve(ctx, sub, comment, user, reviewerInfo, now, fromStatuses); err != nil {
+		handled := false
+		if s.recruitment != nil {
+			handled, err = s.recruitment.Accept(ctx, user, id, comment, func(tx *gorm.DB, current *model.Submission) error {
+				// All database writes, including failure compensation, must use the
+				// recruitment transaction that already holds the submission lock.
+				txReview := *s
+				txReview.db = tx
+				txReview.subRepo = repository.NewSubmissionRepo(tx)
+				txReview.historyRepo = repository.NewReviewHistoryRepo(tx)
+				return txReview.approve(ctx, current, comment, user, reviewerInfo, now, fromStatuses)
+			})
+			if err != nil {
+				return err
+			}
+		}
+		if handled {
+			// Partial acceptance leaves the submission pending; publication sets
+			// it to approved. Notifications must see the persisted result.
+			sub, err = s.subRepo.GetByID(ctx, id)
+			if err != nil {
+				return err
+			}
+		} else if err := s.approve(ctx, sub, comment, user, reviewerInfo, now, fromStatuses); err != nil {
 			return err
 		}
 	case ActionReject:
@@ -136,6 +162,15 @@ func (s *ReviewService) Review(ctx context.Context, user *SubmissionUser, id int
 	case ActionRevision:
 		if err := s.simpleTransition(ctx, sub, model.StatusNeedRevision, comment, user, reviewerInfo, now, fromStatuses, true); err != nil {
 			return err
+		}
+		if s.recruitment != nil {
+			// A review conclusion with a non-empty comment is one modification
+			// entry; detailed editor reports add their entries in RevisionService.
+			if err := s.recruitment.RecordCorrections(s.db.WithContext(ctx), sub, 1); err != nil {
+				return err
+			}
+			// 事务提交后再广播，避免客户端在落库前刷新到旧进度。
+			s.recruitment.NotifyChanged(ctx)
 		}
 	case ActionMissingAudio:
 		if err := s.simpleTransition(ctx, sub, model.StatusMissingAudio, comment, user, reviewerInfo, now, fromStatuses, false); err != nil {

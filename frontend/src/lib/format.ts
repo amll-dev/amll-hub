@@ -3,6 +3,14 @@
 /** 解析时间戳：支持 Date / 数字毫秒 / ISO 字符串，非法返回 null */
 function toDate(input: Date | number | string | null | undefined): Date | null {
   if (input === null || input === undefined || input === '') return null;
+  // 纯日期按本地零点解析，避免 new Date('YYYY-MM-DD') 按 UTC 解析后在负时区显示成前一天
+  if (typeof input === 'string') {
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input);
+    if (dateOnly) {
+      const d = new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]));
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+  }
   const d = input instanceof Date ? input : new Date(input);
   return Number.isNaN(d.getTime()) ? null : d;
 }

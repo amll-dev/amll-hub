@@ -51,6 +51,7 @@ type RouterDeps struct {
 	PluginReview *handler.PluginReviewHandler
 	PluginAdmin  *handler.PluginAdminHandler
 	Document     *handler.DocumentHandler
+	Recruitment  *handler.ReviewerRecruitmentHandler
 
 	ReviewerCache *middleware.ReviewerCache
 	AdminCache    *middleware.AdminCache
@@ -97,6 +98,7 @@ func New(deps RouterDeps) *gin.Engine {
 	pluginReviewH := deps.PluginReview
 	pluginAdminH := deps.PluginAdmin
 	docH := deps.Document
+	recruitmentH := deps.Recruitment
 	reviewerCache := deps.ReviewerCache
 	adminCache := deps.AdminCache
 	jwtSecret := deps.JWTSecret
@@ -339,9 +341,16 @@ func New(deps RouterDeps) *gin.Engine {
 		}
 
 		// 投稿模块
+		// 进行中的审核招募供首页 banner 使用（公开读取）
+		api.GET("/reviewer-recruitment/active", recruitmentH.Active)
 		sub := api.Group("")
 		sub.Use(middleware.Auth(jwtSecret))
 		{
+			recruit := sub.Group("/reviewer-recruitment")
+			recruit.GET("/me", recruitmentH.Me)
+			recruit.POST("/exit", recruitmentH.Exit)
+			recruit.GET("/:id/progress", recruitmentH.Progress)
+			sub.GET("/submissions/:id/recruitment", recruitmentH.Progress)
 			// 投稿 CRUD
 			sub.POST("/submissions", submissionH.Create)
 			sub.GET("/submissions", submissionH.List)
@@ -458,6 +467,8 @@ func New(deps RouterDeps) *gin.Engine {
 			manageGrp := sub.Group("/manage")
 			manageGrp.Use(middleware.RequireReviewerOrAdmin(reviewerCache, adminCache))
 			{
+				manageGrp.POST("/reviewer-recruitment", recruitmentH.Create)
+				manageGrp.GET("/reviewer-recruitment", recruitmentH.Dashboard)
 				manageGrp.GET("/announcements/audience", announcementH.Audience)
 				manageGrp.GET("/announcements", announcementH.List)
 				manageGrp.POST("/announcements", announcementH.Publish)

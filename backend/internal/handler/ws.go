@@ -162,7 +162,8 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 	var submissionID, requestID int64
 	var pluginKey string
 	isListPage := c.Query("listPage") == "true"
-	if !isListPage {
+	isRecruitment := c.Query("recruitment") == "true"
+	if !isListPage && !isRecruitment {
 		if idStr := c.Query("requestId"); idStr != "" {
 			id, err := strconv.ParseInt(idStr, 10, 64)
 			if err != nil || id <= 0 {
@@ -175,7 +176,7 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 		} else {
 			idStr := c.Query("submissionId")
 			if idStr == "" {
-				pkg.BadRequest(c, "submissionId、requestId、pluginKey 或 listPage 必填其一")
+				pkg.BadRequest(c, "submissionId、requestId、pluginKey、listPage 或 recruitment 必填其一")
 				return
 			}
 			id, err := strconv.ParseInt(idStr, 10, 64)
@@ -189,7 +190,9 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 
 	// 房间键
 	room := ""
-	if submissionID > 0 {
+	if isRecruitment {
+		room = ws.RecruitmentRoom()
+	} else if submissionID > 0 {
 		room = ws.SubmissionRoom(submissionID)
 	} else if requestID > 0 {
 		room = ws.RequestRoom(requestID)
@@ -205,7 +208,7 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 
 	// 关闭回调
 	onClose := func() {}
-	if room != "" && h.viewers != nil {
+	if !isRecruitment && room != "" && h.viewers != nil {
 		onClose = func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -218,7 +221,7 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 	//   2. 该投稿的投稿者本人（只看自己的）
 	// 其余登录用户照常连接、照常收状态变更，只是拿不到这两个字段。
 	canViewInternal := false
-	if h.rc != nil {
+	if !isRecruitment && h.rc != nil {
 		rcCtx, rcCancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 		ok, err := h.rc.IsReviewer(rcCtx, username)
 		rcCancel()
@@ -237,7 +240,12 @@ func (h *WSHandler) Viewers(c *gin.Context) {
 	}
 
 	// 创建客户端并注册到 hub
-	client := ws.NewClient(conn, h.hub, room, submissionID, username, claims.DisplayName, claims.Avatar, canViewInternal, onClose)
+	var client *ws.Client
+	if isRecruitment {
+		client = ws.NewRecruitmentClient(conn, h.hub, username)
+	} else {
+		client = ws.NewClient(conn, h.hub, room, submissionID, username, claims.DisplayName, claims.Avatar, canViewInternal, onClose)
+	}
 	h.hub.Register(client)
 
 	// 启动读写 goroutine

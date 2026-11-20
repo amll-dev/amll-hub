@@ -1,12 +1,14 @@
 import { motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
 import { FirstSubmissionBadge } from './FirstSubmissionBadge';
+import { RecruitmentBadge } from './RecruitmentBadge';
 import { RevisionBadge } from './RevisionBadge';
 import { UserAvatar } from './UserAvatar';
 import { UserDisplayName } from './UserDisplayName';
 import { langText, statusMeta } from './status';
 import { fadeUp } from '@/lib/motion';
 import { formatDateTime } from '@/lib/format';
+import { hasRecruitmentTag } from '@/lib/recruitment';
 import type { SubmissionListItem } from '@/lib/types';
 
 /**
@@ -48,6 +50,7 @@ export function SubmissionListRows({
                     {item.title || '未命名'}
                   </span>
                   {item.isFirstSubmission && <FirstSubmissionBadge />}
+                  {hasRecruitmentTag(item.tags) && <RecruitmentBadge />}
                   {item.submissionType === 'revision' && <RevisionBadge />}
                   <span className="shrink-0 text-xs text-ink-3">#{item.id}</span>
                 </div>

@@ -41,6 +41,8 @@ import { findValidationDocLink, stripValidationLinks } from '@/lib/validation';
 import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { useViewers } from '@/hooks/useViewers';
+import { useRecruitmentSync } from '@/hooks/useRecruitmentSync';
+import { useSubmissionRecruitmentProgress } from '@/hooks/useRecruitment';
 import { buildEditorAudioSources } from '@/lib/review/audio-sources';
 import { buildEditorSaveBundle, findInvalidWordTimings } from '@/lib/review/editor-save-bundle';
 import type { TTMLLyric } from '@/editor/types/ttml';
@@ -84,6 +86,8 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isCreator = mode === 'creator';
+  // 审核员视角展示招募进度，变更走 WS 推送
+  useRecruitmentSync(!isCreator);
 
   const [audioIndex, setAudioIndex] = useState(0);
 
@@ -117,6 +121,10 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
   });
 
   const ctx = ctxQuery.data;
+  const recruitmentQuery = useSubmissionRecruitmentProgress(
+    submissionId,
+    !isCreator && Number.isFinite(submissionId)
+  );
   const audios = useMemo(() => ctx?.audios ?? [], [ctx?.audios]);
   const ncmIds = useMemo(() => ctx?.ncmIds ?? [], [ctx?.ncmIds]);
   const qqIds = useMemo(() => ctx?.qqIds ?? [], [ctx?.qqIds]);
@@ -612,6 +620,7 @@ export function LyricEditorPage({ mode = 'review' }: { mode?: LyricEditorMode })
           {effectiveReport && (
             <ReviewReportDialog
               mode={mode}
+              recruitment={Boolean(recruitmentQuery.data?.progress)}
               submitting={isCreator ? submitMutation.isPending : saveMutation.isPending}
               onSubmit={(input) => {
                 if (isCreator) {

@@ -7,6 +7,62 @@ export interface ApiResponse<T> {
   data?: T;
 }
 
+export interface RecruitmentConditions {
+  validSubmissions: number;
+  approvalsPerSubmission: number;
+  revisionsPerSubmission: number;
+  submissionsPerLanguage: number;
+  maxAttempts: number;
+}
+export interface RecruitmentPayload {
+  id: string;
+  announcement: string;
+  languages: string[];
+  conditions: RecruitmentConditions;
+  endsOn?: string;
+  targetMembers?: number;
+}
+export interface ReviewerRecruitment extends RecruitmentPayload {
+  startsOn: string;
+  endedOn?: string;
+  status: 'active' | 'ending' | 'ended';
+  participantCount: number;
+  completedCount: number;
+}
+export interface ReviewerRecruitmentMember {
+  username: string;
+  userInfo: UserInfo;
+  validSubmissions: number;
+  requiredSubmissions: number;
+  attempts: number;
+  status: string;
+}
+export interface RecruitmentSubmission {
+  id: number;
+  title: string;
+  submitter: string;
+  status: SubmissionStatus;
+  approvals: number;
+  requiredApprovals: number;
+  revisions: number;
+}
+export interface RecruitmentDashboard {
+  active: ReviewerRecruitment | null;
+  history: ReviewerRecruitment[];
+  members: ReviewerRecruitmentMember[];
+  submissions: RecruitmentSubmission[];
+  team: UserInfo[];
+}
+export interface RecruitmentProgress {
+  conditions: RecruitmentConditions;
+  approvals: number;
+  requiredApprovals: number;
+  revisions: number;
+  validSubmissions: number;
+  requiredSubmissions: number;
+  status: string;
+}
+
 // 逐字歌词段（平台歌词 QRC/KRC）
 export interface OnlineSyllable {
   /** 毫秒（绝对时间） */
@@ -836,6 +892,8 @@ export type ReviewResult =
   | 'missing_audio'
   // 审核员已提交修订版 TTML，等投稿者确认（后端 model.NotifyResultRevised）
   | 'revised'
+  // 已完成本期审核招募（后端 model.NotifyResultRecruitmentCompleted）
+  | 'recruitment_completed'
   | 'closed';
 
 /** 跳转动作 */

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertTriangle,
@@ -18,9 +18,11 @@ import { queryKeys } from '@/lib/query';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
 import { useFormDraft } from '@/hooks/useFormDraft';
 import { useUnrearrangedMode } from '@/hooks/useUnrearrangedMode';
+import { useActiveRecruitment } from '@/hooks/useRecruitment';
 import { TagInput } from '@/components/ui/tag-input';
 import { detectLanguages, type LangCode } from '@/lib/lang-detect';
 import { detectAutoTags } from '@/lib/auto-tags';
+import { isRecruitmentTag, RECRUITMENT_TAG } from '@/lib/recruitment';
 import {
   buildDiffSnapshot,
   computeRevisionDiff,
@@ -87,6 +89,9 @@ const SUBMIT_TYPES: { value: SubmissionType; label: string; description: string 
 /** 歌词投稿表单 */
 export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const recruitment = useActiveRecruitment();
+  const [participate, setParticipate] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [validation, setValidation] = useState<TtmlValidationResult | null>(null);
   const [validateError, setValidateError] = useState('');
@@ -306,6 +311,9 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   // 上传文件并创建投稿（status: pending=提交审核 / draft=存草稿）
   const submitMutation = useMutation({
     mutationFn: async (params: { file: File; status: 'pending' | 'draft' }) => {
+      if (participate && !recruitment.data?.active) {
+        throw new Error('本期审核招募已结束，请取消参与审核招募后提交');
+      }
       let fileName: string;
       const cached = uploadedTtmlRef.current;
       if (cached && cached.file === params.file) {
@@ -338,7 +346,10 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
         languages: allLangs.length > 0 ? allLangs : undefined,
         ...unrearranged.submissionFields,
         ...revisionFields,
-        tags: tags.length > 0 ? tags : undefined,
+        tags: [
+          ...tags.filter((tag) => !isRecruitmentTag(tag)),
+          ...(participate && recruitment.data?.active ? [RECRUITMENT_TAG] : []),
+        ],
         status: params.status,
         petitionIds: selectedPetitionIds.length > 0 ? selectedPetitionIds : undefined,
       });
@@ -357,6 +368,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     },
     onMutate: () => setSubmitMsg(null),
     onSuccess: (result, { status }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.recruitmentRoot });
       reset();
       const warnings: string[] = [];
       if (result.audioFailures.length > 0) {
@@ -406,6 +418,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     setValidateError('');
     setTtmlText('');
     setSubmitType('new');
+    setParticipate(false);
     setTarget(null);
     setDiff(null);
     setDiffError('');
@@ -587,7 +600,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
               <button
                 key={type.value}
                 type="button"
-                disabled={submitting}
+                disabled={submitting || (participate && type.value === 'revision')}
                 onClick={() => setSubmitType(type.value)}
                 className={`rounded-md border px-4 py-3 text-left transition-colors disabled:opacity-60 ${
                   active
@@ -607,6 +620,31 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
             );
           })}
         </div>
+        {(recruitment.data?.active || participate) && (
+          <label
+            className={`mt-3 flex items-start gap-3 rounded-md border px-4 py-3 transition-colors ${
+              participate
+                ? 'border-teal-500/60 bg-teal-50 dark:border-teal-500/40 dark:bg-teal-950/30'
+                : 'border-line bg-surface-2 hover:border-teal-500/40 dark:hover:border-teal-500/50'
+            } ${submitting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+          >
+            <input
+              type="checkbox"
+              checked={participate}
+              disabled={submitting}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setParticipate(checked);
+                if (checked) setSubmitType('new');
+              }}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-teal-500 dark:accent-teal-400"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-foreground">参与审核招募</span>
+              <span className="mt-0.5 block text-xs text-ink-3">提交进入待审核队列后自动报名</span>
+            </span>
+          </label>
+        )}
       </motion.div>
 
       {/* 未重排开关 */}

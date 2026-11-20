@@ -7,6 +7,8 @@ export const statusMeta: Record<string, { label: string; className: string }> = 
   missing_audio: { label: '缺音频', className: 'bg-orange-100 text-orange-700' },
   revised: { label: '待投稿者确认', className: 'bg-purple-100 text-purple-700' },
   approved: { label: '已通过', className: 'bg-green-100 text-green-700' },
+  accepted: { label: '已接受', className: 'bg-teal-100 text-teal-700' },
+  adopted: { label: '确认使用', className: 'bg-green-100 text-green-700' },
   rejected: { label: '未通过', className: 'bg-red-100 text-red-700' },
   closed: { label: '已关闭', className: 'bg-surface-2 text-ink-3' },
 };

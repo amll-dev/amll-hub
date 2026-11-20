@@ -15,11 +15,12 @@ import (
 
 // 消息类型
 const (
-	TypeViewers       = "viewers"            // 观众列表更新
-	TypeSubmissionChg = "submission_changed" // 投稿状态变更（列表页订阅）
-	TypePluginChg     = "plugin_changed"     // 插件状态变更（插件详情页订阅）
-	TypeNotification  = "notification"       // 站内消息推送（按用户路由）
-	TypePing          = "ping"
+	TypeViewers        = "viewers"             // 观众列表更新
+	TypeSubmissionChg  = "submission_changed"  // 投稿状态变更（列表页订阅）
+	TypePluginChg      = "plugin_changed"      // 插件状态变更（插件详情页订阅）
+	TypeRecruitmentChg = "recruitment_changed" // 审核招募变更（登录页订阅）
+	TypeNotification   = "notification"        // 站内消息推送（按用户路由）
+	TypePing           = "ping"
 )
 
 // 消息频道（Redis Pub/Sub）
@@ -33,6 +34,7 @@ const (
 const (
 	ModeViewers       = "viewers"       // 观众/列表页连接（现有行为）
 	ModeNotifications = "notifications" // 站内消息连接（不接收 submission_changed）
+	ModeRecruitment   = "recruitment"   // 审核招募订阅（只收 recruitment_changed）
 )
 
 // Message WebSocket 推送消息
@@ -198,7 +200,7 @@ func (h *Hub) registerClient(c *Client) {
 	h.mu.Unlock()
 	// 注册成功后触发观众列表广播（此时客户端已在 map 中，不会漏算）
 	// 异步 + 去抖，避免 Redis RTT 卡住 Hub 主循环
-	if c.mode != ModeNotifications && c.room != "" {
+	if c.mode == ModeViewers && c.room != "" {
 		h.scheduleViewerNotify(c.room)
 	}
 }
@@ -233,7 +235,7 @@ func (h *Hub) unregisterClient(c *Client) {
 	room := c.room
 	h.mu.Unlock()
 	// 注销后触发观众列表广播（异步 + 去抖，与注册路径一致）
-	if room != "" {
+	if c.mode == ModeViewers && room != "" {
 		h.scheduleViewerNotify(room)
 	}
 }
@@ -449,6 +451,19 @@ func (h *Hub) PublishPluginChanged(ctx context.Context, pluginKey string, data a
 	return h.rdb.Publish(ctx, ChannelViewers, dataBytes).Err()
 }
 
+// PublishRecruitmentChanged 发布审核招募变更到招募房间（只做失效通知，不带业务数据）
+func (h *Hub) PublishRecruitmentChanged(ctx context.Context, data any) error {
+	dataBytes, err := json.Marshal(Message{
+		Type: TypeRecruitmentChg,
+		Room: RecruitmentRoom(),
+		Data: data,
+	})
+	if err != nil {
+		return err
+	}
+	return h.rdb.Publish(ctx, ChannelViewers, dataBytes).Err()
+}
+
 // SubmissionRoom 投稿房间键
 func SubmissionRoom(id int64) string { return "sub:" + strconv.FormatInt(id, 10) }
 
@@ -458,6 +473,9 @@ func RequestRoom(id int64) string { return "req:" + strconv.FormatInt(id, 10) }
 // PluginRoom 插件房间键
 func PluginRoom(key string) string { return "plugin:" + key }
 
+// RecruitmentRoom 审核招募房间键（所有登录用户共享）
+func RecruitmentRoom() string { return "recruitment" }
+
 // NewClient 创建客户端（观众/列表页连接；room 为空表示列表页）
 func NewClient(conn *websocket.Conn, hub *Hub, room string, submissionID int64, username, displayName, avatar string, canViewInternal bool, onClose func()) *Client {
 	return newClient(conn, hub, ModeViewers, room, submissionID, username, displayName, avatar, canViewInternal, onClose)
@@ -466,6 +484,11 @@ func NewClient(conn *websocket.Conn, hub *Hub, room string, submissionID int64, 
 // NewNotificationClient 创建站内消息客户端（按 username 分组路由）
 func NewNotificationClient(conn *websocket.Conn, hub *Hub, username string) *Client {
 	return newClient(conn, hub, ModeNotifications, "", 0, username, "", "", false, nil)
+}
+
+// NewRecruitmentClient 创建审核招募订阅客户端（所有登录用户加入同一房间）
+func NewRecruitmentClient(conn *websocket.Conn, hub *Hub, username string) *Client {
+	return newClient(conn, hub, ModeRecruitment, RecruitmentRoom(), 0, username, "", "", false, nil)
 }
 
 func newClient(conn *websocket.Conn, hub *Hub, mode, room string, submissionID int64, username, displayName, avatar string, canViewInternal bool, onClose func()) *Client {
