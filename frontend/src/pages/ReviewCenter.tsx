@@ -25,6 +25,7 @@ import {
   Search,
   Shield,
   ShieldCheck,
+  UsersRound,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
@@ -34,6 +35,7 @@ import { api } from '@/lib/api';
 import { openExternal } from '@/lib/navigation';
 import { queryKeys } from '@/lib/query';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
+import { useRecruitmentSync } from '@/hooks/useRecruitmentSync';
 import { NavItem } from '@/components/NavItem';
 import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
 import { ListSkeleton } from '@/components/ui/Skeleton';
@@ -44,6 +46,7 @@ import { AnnouncementPanel } from '@/components/review/AnnouncementPanel';
 import { DocManagePanel } from '@/components/docs/DocManagePanel';
 import { DocEditorPanel } from '@/components/docs/DocEditorPanel';
 import { ReviewerManagePanel } from '@/components/review/ReviewerManagePanel';
+import { ReviewerRecruitmentPanel } from '@/components/recruitment/ReviewerRecruitmentPanel';
 import { RecruitmentProgressCard } from '@/components/recruitment/RecruitmentProgressCard';
 import { PluginReviewPanel } from '@/components/plugin/PluginReviewPanel';
 import type { SubmissionListItem, SubmissionListResult } from '@/lib/types';
@@ -533,6 +536,8 @@ export function ReviewCenter() {
   const view = user && !user.isReviewer && viewState === 'home' ? 'announcement' : viewState;
   // 页面卸载时复位全部审核中心状态
   useEffect(() => () => resetReviewCenterState(), []);
+  // 审核招募变更由 WS 推送，登录后不再轮询
+  useRecruitmentSync(Boolean(user?.isReviewer || user?.isAdmin));
 
   if (!user) {
     return (
@@ -631,60 +636,79 @@ export function ReviewCenter() {
         {/* 左侧边栏 */}
         <aside className="hidden w-56 shrink-0 md:block">
           {/* 导航菜单 */}
-          <nav className="space-y-1">
-            <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-ink-3">
-              {user.isReviewer ? '审核管理' : '管理'}
-            </p>
+          <nav className="space-y-6">
+            <div>
+              <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-ink-3">
+                审核管理
+              </p>
+              <div className="space-y-1">
+                {user.isReviewer && (
+                  <NavItem
+                    icon={<Home className="h-4 w-4" />}
+                    label="首页"
+                    active={view === 'home'}
+                    onClick={() => setView('home')}
+                  />
+                )}
+                <NavItem
+                  icon={<Megaphone className="h-4 w-4" />}
+                  label="发布公告"
+                  active={view === 'announcement'}
+                  onClick={() => setView('announcement')}
+                />
+                <NavItem
+                  icon={<BookOpen className="h-4 w-4" />}
+                  label="文档管理"
+                  active={view === 'docs'}
+                  onClick={() => {
+                    setView('docs');
+                    setEditorTarget(null);
+                  }}
+                />
+                {(user.isReviewer || user.isAdmin) && (
+                  <NavItem
+                    icon={<UsersRound className="h-4 w-4" />}
+                    label="审核招募"
+                    active={view === 'recruitment'}
+                    onClick={() => setView('recruitment')}
+                  />
+                )}
+                {user.isAdmin && (
+                  <NavItem
+                    icon={<ShieldCheck className="h-4 w-4" />}
+                    label="审核员管理"
+                    active={view === 'reviewers'}
+                    onClick={() => setView('reviewers')}
+                  />
+                )}
+              </div>
+            </div>
             {user.isReviewer && (
-              <>
-                <NavItem
-                  icon={<Home className="h-4 w-4" />}
-                  label="首页"
-                  active={view === 'home'}
-                  onClick={() => setView('home')}
-                />
-                <NavItem
-                  icon={<FolderOpen className="h-4 w-4" />}
-                  label="歌词审核"
-                  active={view === 'content'}
-                  onClick={() => setView('content')}
-                />
-                <NavItem
-                  icon={<Search className="h-4 w-4" />}
-                  label="IP显示投稿"
-                  active={view === 'search-ip'}
-                  onClick={() => setView('search-ip')}
-                />
-                <NavItem
-                  icon={<Package className="h-4 w-4" />}
-                  label="插件审核"
-                  active={view === 'plugins'}
-                  onClick={() => setView('plugins')}
-                />
-              </>
-            )}
-            <NavItem
-              icon={<BookOpen className="h-4 w-4" />}
-              label="文档管理"
-              active={view === 'docs'}
-              onClick={() => {
-                setView('docs');
-                setEditorTarget(null);
-              }}
-            />
-            <NavItem
-              icon={<Megaphone className="h-4 w-4" />}
-              label="发布公告"
-              active={view === 'announcement'}
-              onClick={() => setView('announcement')}
-            />
-            {user.isAdmin && (
-              <NavItem
-                icon={<ShieldCheck className="h-4 w-4" />}
-                label="审核员管理"
-                active={view === 'reviewers'}
-                onClick={() => setView('reviewers')}
-              />
+              <div>
+                <p className="mb-2 px-3 text-xs font-medium uppercase tracking-wider text-ink-3">
+                  稿件审核
+                </p>
+                <div className="space-y-1">
+                  <NavItem
+                    icon={<FolderOpen className="h-4 w-4" />}
+                    label="歌词审核"
+                    active={view === 'content'}
+                    onClick={() => setView('content')}
+                  />
+                  <NavItem
+                    icon={<Search className="h-4 w-4" />}
+                    label="IP显示投稿"
+                    active={view === 'search-ip'}
+                    onClick={() => setView('search-ip')}
+                  />
+                  <NavItem
+                    icon={<Package className="h-4 w-4" />}
+                    label="插件审核"
+                    active={view === 'plugins'}
+                    onClick={() => setView('plugins')}
+                  />
+                </div>
+              </div>
             )}
           </nav>
         </aside>
@@ -750,6 +774,20 @@ export function ReviewCenter() {
               >
                 <h2 className="mb-4 text-xl font-bold tracking-tight text-foreground">插件审核</h2>
                 <PluginReviewPanel />
+              </motion.div>
+            )}
+
+            {/* 审核招募 */}
+            {view === 'recruitment' && (
+              <motion.div
+                key="recruitment"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, pointerEvents: 'none' }}
+                transition={{ duration: 0.15 }}
+                className="col-start-1 row-start-1 self-start rounded-lg border border-line bg-card p-6"
+              >
+                <ReviewerRecruitmentPanel />
               </motion.div>
             )}
 

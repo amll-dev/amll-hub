@@ -1045,7 +1045,8 @@ export const api = {
     },
     create(input: RecruitmentPayload): Promise<ReviewerRecruitment> {
       return request('/api/v1/manage/reviewer-recruitment', {
-        method: 'POST', body: JSON.stringify(input),
+        method: 'POST',
+        body: JSON.stringify(input),
       });
     },
     me(): Promise<{ member: ReviewerRecruitmentMember | null }> {

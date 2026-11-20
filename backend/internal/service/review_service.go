@@ -169,6 +169,8 @@ func (s *ReviewService) Review(ctx context.Context, user *SubmissionUser, id int
 			if err := s.recruitment.RecordCorrections(s.db.WithContext(ctx), sub, 1); err != nil {
 				return err
 			}
+			// 事务提交后再广播，避免客户端在落库前刷新到旧进度。
+			s.recruitment.NotifyChanged(ctx)
 		}
 	case ActionMissingAudio:
 		if err := s.simpleTransition(ctx, sub, model.StatusMissingAudio, comment, user, reviewerInfo, now, fromStatuses, false); err != nil {

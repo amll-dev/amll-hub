@@ -1,7 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
 import { Hero } from '@/components/Hero';
 import { TodayRecommend } from '@/components/TodayRecommend';
 import { LatestEntries } from '@/components/LatestEntries';
@@ -11,6 +9,7 @@ import { NotFoundRanking } from '@/components/NotFoundRanking';
 import { SearchResults } from '@/components/SearchResults';
 import { PageContainer } from '@/components/PageContainer';
 import { useSearchContext } from '@/hooks/useSearchContext';
+import { useActiveRecruitment } from '@/hooks/useRecruitment';
 
 /**
  * Hero 始终挂载（不再条件卸载），保证其内部 AnimatePresence 能正确处理
@@ -18,11 +17,7 @@ import { useSearchContext } from '@/hooks/useSearchContext';
  */
 export function Home() {
   const { hasQuery } = useSearchContext();
-  const recruitment = useQuery({
-    queryKey: ['reviewer-recruitment', 'active'],
-    queryFn: api.reviewerRecruitment.active,
-    refetchInterval: 30_000,
-  });
+  const recruitment = useActiveRecruitment({ refetchInterval: 30_000 });
 
   return (
     <>

@@ -341,6 +341,7 @@ func (s *SubmissionService) Create(ctx context.Context, user *SubmissionUser, in
 	}
 
 	// 事务写入
+	enrolled := false
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.subRepo.Create(ctx, tx, sub); err != nil {
 			return err
@@ -352,14 +353,19 @@ func (s *SubmissionService) Create(ctx context.Context, user *SubmissionUser, in
 			}
 		}
 		if s.recruitment != nil {
-			if err := s.recruitment.Enroll(tx, sub); err != nil {
+			joined, err := s.recruitment.Enroll(tx, sub)
+			if err != nil {
 				return err
 			}
+			enrolled = joined
 		}
 		return nil
 	})
 	if err != nil {
 		return 0, err
+	}
+	if enrolled && s.recruitment != nil {
+		s.recruitment.NotifyChanged(ctx)
 	}
 	return sub.ID, nil
 }

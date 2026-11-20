@@ -47,16 +47,20 @@ export function DatePicker({
   value,
   onChange,
   placeholder = '选择日期',
+  min,
   max,
   id,
   className,
   allowInput = false,
+  placement = 'bottom',
   'aria-invalid': ariaInvalid,
   'aria-describedby': ariaDescribedBy,
 }: {
   value: string;
   onChange: (dateKey: string) => void;
   placeholder?: string;
+  /** 可选下限（含当天），YYYY-MM-DD；早于该日的日子不可点 */
+  min?: string;
   /** 可选上限（含当天），YYYY-MM-DD；超出范围的日子不可点 */
   max?: string;
   id?: string;
@@ -64,6 +68,8 @@ export function DatePicker({
   className?: string;
   /** 允许直接键入日期（YYYY-MM-DD、YYYY/M/D 等），默认只能通过日历选择 */
   allowInput?: boolean;
+  /** 日历面板弹出方向：默认向下，靠近页面底部时改为向上 */
+  placement?: 'bottom' | 'top';
   'aria-invalid'?: boolean;
   'aria-describedby'?: string;
 }) {
@@ -149,10 +155,11 @@ export function DatePicker({
     setOpen(false);
   };
 
-  /** 提交手动输入：合法则回写，非法（含超出 max）则回退到当前已选日期 */
+  /** 提交手动输入：合法则回写，非法（含超出 min/max）则回退到当前已选日期 */
   const commitDraft = () => {
     const key = normalizeDateInput(draft);
-    if (key === null || (key !== '' && max && key > max)) {
+    const outOfRange = key !== null && key !== '' && ((!!min && key < min) || (!!max && key > max));
+    if (key === null || outOfRange) {
       setDraft(value);
       return;
     }
@@ -180,6 +187,8 @@ export function DatePicker({
   const displayText = selectedDate
     ? `${selectedDate.getFullYear()}年${selectedDate.getMonth() + 1}月${selectedDate.getDate()}日`
     : placeholder;
+  const todayDisabled = (!!min && todayKey < min) || (!!max && todayKey > max);
+  const opensUp = placement === 'top';
 
   return (
     <div ref={containerRef} className="relative">
@@ -208,7 +217,11 @@ export function DatePicker({
               const key = normalizeDateInput(e.target.value);
               setDraft(key ?? formatDateInput(e.target.value));
             }}
-            onFocus={() => setEditing(true)}
+            onFocus={() => {
+              setEditing(true);
+              setOpen(true);
+            }}
+            onClick={() => setOpen(true)}
             onBlur={() => {
               setEditing(false);
               commitDraft();
@@ -267,11 +280,13 @@ export function DatePicker({
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: -8, scale: 0.97 }}
+            initial={{ opacity: 0, y: opensUp ? 8 : -8, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.97 }}
+            exit={{ opacity: 0, y: opensUp ? 8 : -8, scale: 0.97 }}
             transition={{ duration: 0.18, ease: [0.2, 0.8, 0.2, 1] }}
-            className="absolute z-50 mt-2 w-[320px] rounded-lg border border-line bg-card p-3 shadow-lg"
+            className={`absolute z-50 w-[320px] rounded-lg border border-line bg-card p-3 shadow-lg ${
+              opensUp ? 'bottom-full mb-2' : 'top-full mt-2'
+            }`}
           >
             {/* 头部 */}
             <div className="mb-3 flex items-center justify-between">
@@ -318,7 +333,7 @@ export function DatePicker({
                         </AnimatePresence>
                         <ChevronDown className="h-3.5 w-3.5 text-ink-3" />
                       </motion.button>
-                      {value !== todayKey && (
+                      {value !== todayKey && !todayDisabled && (
                         <motion.button
                           type="button"
                           initial={{ opacity: 0, scale: 0.8 }}
@@ -388,8 +403,9 @@ export function DatePicker({
                     >
                       {Array.from({ length: 12 }, (_, i) => yearPageStart + i).map((year) => {
                         const isCurrent = year === currentMonth.getFullYear();
-                        // 整年都在上限之后才禁用，当年仍可选（月内日期会按 max 单独禁用）
-                        const disabled = !!max && `${year}-12-31` > max;
+                        // 整年都不在可选范围时才禁用，边界年份仍可选（月内日期单独禁用）
+                        const disabled =
+                          (!!max && `${year}-12-31` > max) || (!!min && `${year}-12-31` < min);
                         return (
                           <motion.button
                             key={year}
@@ -450,7 +466,8 @@ export function DatePicker({
                       className="grid grid-cols-7 gap-1"
                     >
                       {cells.map((cell, i) => {
-                        const disabled = !!max && cell.dateKey > max;
+                        const disabled =
+                          (!!min && cell.dateKey < min) || (!!max && cell.dateKey > max);
                         let cls =
                           'aspect-square flex items-center justify-center rounded-md text-xs cursor-pointer transition-colors';
                         if (cell.isOtherMonth) cls += ' text-ink-3 opacity-40';

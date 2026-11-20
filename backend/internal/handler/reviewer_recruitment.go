@@ -11,11 +11,34 @@ import (
 )
 
 type ReviewerRecruitmentHandler struct {
-	svc *service.ReviewerRecruitmentService
+	svc       *service.ReviewerRecruitmentService
+	reviewers *middleware.ReviewerCache
+	admins    *middleware.AdminCache
 }
 
-func NewReviewerRecruitmentHandler(s *service.ReviewerRecruitmentService) *ReviewerRecruitmentHandler {
-	return &ReviewerRecruitmentHandler{svc: s}
+func NewReviewerRecruitmentHandler(
+	s *service.ReviewerRecruitmentService,
+	reviewers *middleware.ReviewerCache,
+	admins *middleware.AdminCache,
+) *ReviewerRecruitmentHandler {
+	return &ReviewerRecruitmentHandler{svc: s, reviewers: reviewers, admins: admins}
+}
+
+// isStaff 审核员/管理员可以查看任意投稿的招募进度（编辑器审核报告使用）。
+func (h *ReviewerRecruitmentHandler) isStaff(c *gin.Context) bool {
+	ctx := c.Request.Context()
+	name := middleware.GetUserName(c)
+	if h.admins != nil {
+		if ok, err := h.admins.IsAdmin(ctx, name); err == nil && ok {
+			return true
+		}
+	}
+	if h.reviewers != nil {
+		if ok, err := h.reviewers.IsReviewer(ctx, name); err == nil && ok {
+			return true
+		}
+	}
+	return false
 }
 func recruitmentError(c *gin.Context, e error) {
 	if e == nil {
@@ -25,20 +48,15 @@ func recruitmentError(c *gin.Context, e error) {
 		pkg.Forbidden(c)
 		return
 	}
-	if errors.Is(e, service.ErrInvalidInput) {
-		pkg.BadRequest(c, "请求参数非法")
-		return
-	}
-	var v *service.ValidationError
-	if errors.As(e, &v) {
-		pkg.BadRequest(c, v.Message)
+	if errors.Is(e, service.ErrInvalidStatus) {
+		pkg.BadRequest(c, "当前状态不允许该操作")
 		return
 	}
 	if errors.Is(e, gorm.ErrRecordNotFound) {
 		pkg.NotFound(c, "招募不存在")
 		return
 	}
-	pkg.InternalError(c, "审核招募操作失败")
+	writeServiceErr(c, e, "reviewer recruitment failed")
 }
 func (h *ReviewerRecruitmentHandler) Active(c *gin.Context) {
 	p, e := h.svc.Active(c.Request.Context())
@@ -91,10 +109,10 @@ func (h *ReviewerRecruitmentHandler) Progress(c *gin.Context) {
 		pkg.BadRequest(c, "投稿 ID 无效")
 		return
 	}
-	p, e := h.svc.Progress(c.Request.Context(), id, middleware.GetUserName(c), false)
+	p, e := h.svc.Progress(c.Request.Context(), id, middleware.GetUserName(c), h.isStaff(c))
 	if e != nil {
 		recruitmentError(c, e)
 		return
 	}
-	pkg.OK(c, p)
+	pkg.OK(c, gin.H{"progress": p})
 }

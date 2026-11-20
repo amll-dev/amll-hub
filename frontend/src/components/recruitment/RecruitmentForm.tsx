@@ -9,10 +9,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
 import { langText } from '@/components/submission/status';
+import { DatePicker } from '@/components/DatePicker';
+import { formatDateKey } from '@/lib/date';
+import { RECRUITMENT_LANGUAGES } from '@/lib/recruitment';
 
 import { conditionFields, type RecruitmentDraft } from './types';
 
-const languageOptions = ['zh', 'en', 'ja', 'ko', 'others'] as const;
+const languageOptions = RECRUITMENT_LANGUAGES;
 
 export function RecruitmentForm({
   onCancel,
@@ -32,8 +35,16 @@ export function RecruitmentForm({
   const [endsOn, setEndsOn] = useState('');
   const [targetMembers, setTargetMembers] = useState('');
   const [endError, setEndError] = useState('');
+  const minEndsOn = (() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return formatDateKey(tomorrow);
+  })();
   const [counts, setCounts] = useState<Partial<RecruitmentDraft['conditions']>>({});
-  const languageWarning = counts.validSubmissions !== undefined && counts.submissionsPerLanguage !== undefined && counts.submissionsPerLanguage <= counts.validSubmissions;
+  const languageWarning =
+    counts.validSubmissions !== undefined &&
+    counts.submissionsPerLanguage !== undefined &&
+    counts.submissionsPerLanguage <= counts.validSubmissions;
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -54,7 +65,13 @@ export function RecruitmentForm({
     if (conditions.submissionsPerLanguage <= conditions.validSubmissions) {
       toast.warning('单一语种投稿数未大于有效投稿数，将按有效投稿数作为完成标准');
     }
-    onComplete({ announcement: announcement.trim(), languages, conditions, endsOn: endsOn || undefined, targetMembers: targetMembers ? Number(targetMembers) : undefined });
+    onComplete({
+      announcement: announcement.trim(),
+      languages,
+      conditions,
+      endsOn: endsOn || undefined,
+      targetMembers: targetMembers ? Number(targetMembers) : undefined,
+    });
   };
 
   const numericField = (field: (typeof conditionFields)[number]) => (
@@ -70,7 +87,12 @@ export function RecruitmentForm({
         max={1000000}
         step={1}
         required
-        onChange={(event) => setCounts((current) => ({ ...current, [field.key]: event.target.value === '' ? undefined : Number(event.target.value) }))}
+        onChange={(event) =>
+          setCounts((current) => ({
+            ...current,
+            [field.key]: event.target.value === '' ? undefined : Number(event.target.value),
+          }))
+        }
       />
     </div>
   );
@@ -102,7 +124,11 @@ export function RecruitmentForm({
         </Button>
       </div>
 
-      {error && <p role="alert" className="text-sm text-error">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-error">
+          {error}
+        </p>
+      )}
 
       <motion.section
         variants={fadeUp}
@@ -193,21 +219,60 @@ export function RecruitmentForm({
           {conditionFields.slice(1).map(numericField)}
         </div>
       </motion.section>
-      {languageWarning && <p role="status" className="text-sm text-amber-600">单一语种投稿数应大于有效投稿数；当前填写仍可发布，将按有效投稿数作为完成标准。</p>}
-      <motion.section variants={fadeUp} className="space-y-4 overflow-hidden rounded-lg border border-line bg-card p-5 sm:p-6">
+      {languageWarning && (
+        <p role="status" className="text-sm text-amber-600">
+          单一语种投稿数应大于有效投稿数；当前填写仍可发布，将按有效投稿数作为完成标准。
+        </p>
+      )}
+      <motion.section
+        variants={fadeUp}
+        className="space-y-4 rounded-lg border border-line bg-card p-5 sm:p-6"
+      >
         <h3 className="text-base font-semibold text-foreground">结束条件</h3>
-        <p className="text-sm text-ink-3">达到结束日期零时（北京时间）或完成招募的人数目标时，本期招募自动结束。至少填写一项。</p>
+        <p className="text-sm text-ink-3">
+          达到结束日期零时（北京时间）或完成招募的人数目标时，本期招募自动结束。至少填写一项。
+        </p>
         <div className="grid gap-5 sm:grid-cols-2">
           <div className="space-y-2">
-            <label htmlFor="recruitment-ends-on" className="text-sm font-medium">结束日期</label>
-            <Input id="recruitment-ends-on" type="date" value={endsOn} onChange={(event) => { setEndsOn(event.target.value); setEndError(''); }} />
+            <label htmlFor="recruitment-ends-on" className="text-sm font-medium">
+              结束日期
+            </label>
+            <DatePicker
+              id="recruitment-ends-on"
+              value={endsOn}
+              min={minEndsOn}
+              allowInput
+              placement="top"
+              placeholder="选择结束日期"
+              onChange={(next) => {
+                setEndsOn(next);
+                setEndError('');
+              }}
+            />
           </div>
           <div className="space-y-2">
-            <label htmlFor="recruitment-target-members" className="text-sm font-medium">招募人数</label>
-            <Input id="recruitment-target-members" type="number" min={1} max={1000000} step={1} value={targetMembers} onChange={(event) => { setTargetMembers(event.target.value); setEndError(''); }} />
+            <label htmlFor="recruitment-target-members" className="text-sm font-medium">
+              招募人数
+            </label>
+            <Input
+              id="recruitment-target-members"
+              type="number"
+              min={1}
+              max={1000000}
+              step={1}
+              value={targetMembers}
+              onChange={(event) => {
+                setTargetMembers(event.target.value);
+                setEndError('');
+              }}
+            />
           </div>
         </div>
-        {endError && <p role="alert" className="text-sm text-error">{endError}</p>}
+        {endError && (
+          <p role="alert" className="text-sm text-error">
+            {endError}
+          </p>
+        )}
       </motion.section>
     </motion.form>
   );

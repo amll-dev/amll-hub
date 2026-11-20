@@ -50,7 +50,7 @@ func TestRecruitmentReviewApproval(t *testing.T) {
 	if err := db.Create(&sub).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Transaction(func(tx *gorm.DB) error { return recruitment.Enroll(tx, &sub) }); err != nil {
+	if err := db.Transaction(func(tx *gorm.DB) error { _, err := recruitment.Enroll(tx, &sub); return err }); err != nil {
 		t.Fatal(err)
 	}
 	review := NewReviewService(repository.NewSubmissionRepo(db), repository.NewReviewHistoryRepo(db), nil, nil, nil, db)
@@ -130,7 +130,7 @@ func TestRecruitmentReviewApproval(t *testing.T) {
 	if err := db.Create(&other).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Transaction(func(tx *gorm.DB) error { return recruitment.Enroll(tx, &other) }); err != nil {
+	if err := db.Transaction(func(tx *gorm.DB) error { _, err := recruitment.Enroll(tx, &other); return err }); err != nil {
 		t.Fatal(err)
 	}
 	if err := review.Review(ctx, &SubmissionUser{Name: "reviewer1"}, other.ID, &ReviewInput{Action: ActionApprove}); err != nil {

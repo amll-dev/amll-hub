@@ -19,6 +19,8 @@ const (
 	NotifyResultClosed       = "closed"
 	// NotifyResultRevised 审核员已提交修订版 TTML，等投稿者确认
 	NotifyResultRevised = "revised"
+	// NotifyResultRecruitmentCompleted 已完成本期审核招募
+	NotifyResultRecruitmentCompleted = "recruitment_completed"
 )
 
 // Notification 站内消息

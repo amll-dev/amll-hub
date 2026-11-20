@@ -1,6 +1,9 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { formatDate } from '@/lib/format';
+import { queryKeys } from '@/lib/query';
+import { useRecruitmentDashboard } from '@/hooks/useRecruitment';
 import type { RecruitmentPayload } from '@/lib/types';
 import { RecruitmentProgress } from './RecruitmentProgressCard';
 import { AnimatePresence, motion, MotionConfig } from 'framer-motion';
@@ -13,23 +16,17 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { UserAvatar } from '@/components/submission/UserAvatar';
 
-export interface RecruitmentMember {
-  name: string;
-  displayName: string;
-  avatar?: string;
-}
-
 export function ReviewerRecruitmentPanel() {
   const [creating, setCreating] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: ['reviewer-recruitment', 'dashboard'], queryFn: api.reviewerRecruitment.dashboard, refetchInterval: 30_000 });
+  const query = useRecruitmentDashboard();
   const records = query.data?.history ?? [];
   const members = query.data?.team ?? [];
   const create = useMutation({
     mutationFn: (payload: RecruitmentPayload) => api.reviewerRecruitment.create(payload),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['reviewer-recruitment'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.recruitmentRoot });
       setCreating(false);
     },
   });
@@ -68,7 +65,13 @@ export function ReviewerRecruitmentPanel() {
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <h2 className="text-xl font-bold tracking-tight text-foreground">审核招募</h2>
                 <motion.div {...buttonTap}>
-                  <Button disabled={query.isPending || query.isError || Boolean(query.data?.active)} onClick={() => { create.reset(); setCreating(true); }}>
+                  <Button
+                    disabled={query.isPending || query.isError || Boolean(query.data?.active)}
+                    onClick={() => {
+                      create.reset();
+                      setCreating(true);
+                    }}
+                  >
                     <Plus />
                     发起招募
                   </Button>
@@ -76,7 +79,11 @@ export function ReviewerRecruitmentPanel() {
               </div>
 
               {query.isPending && <p className="text-sm text-ink-3">正在加载招募信息…</p>}
-              {query.error && <p role="alert" className="text-sm text-error">{query.error instanceof Error ? query.error.message : '加载招募信息失败'}</p>}
+              {query.error && (
+                <p role="alert" className="text-sm text-error">
+                  {query.error instanceof Error ? query.error.message : '加载招募信息失败'}
+                </p>
+              )}
               {query.data?.active && <RecruitmentProgress data={query.data} />}
 
               <motion.section
@@ -100,19 +107,19 @@ export function ReviewerRecruitmentPanel() {
                   <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {members.map((member) => (
                       <li
-                        key={member.name}
+                        key={member.username}
                         className="flex items-center gap-3 rounded-md border border-line bg-background p-4"
                       >
                         <UserAvatar
-                          name={member.displayName || member.name}
+                          name={member.displayName || member.username}
                           avatar={member.avatar}
                           size={40}
                         />
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium text-foreground">
-                            {member.displayName || member.name}
+                            {member.displayName || member.username}
                           </p>
-                          <p className="mt-1 truncate text-xs text-ink-3">@{member.name}</p>
+                          <p className="mt-1 truncate text-xs text-ink-3">@{member.username}</p>
                         </div>
                       </li>
                     ))}
@@ -153,7 +160,12 @@ export function ReviewerRecruitmentPanel() {
                                 {record.announcement.split('\n')[0]}
                               </p>
                               <p className="mt-1 text-xs text-ink-3">
-                                {record.startsOn.slice(0, 10)} 至 {record.endedOn?.slice(0, 10) || record.endsOn?.slice(0, 10) || '达到人数目标'}
+                                {formatDate(record.startsOn)} 至{' '}
+                                {record.endedOn
+                                  ? formatDate(record.endedOn)
+                                  : record.endsOn
+                                    ? formatDate(record.endsOn)
+                                    : '达到人数目标'}
                               </p>
                             </div>
                             <ChevronDown
@@ -174,7 +186,10 @@ export function ReviewerRecruitmentPanel() {
                                   <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink-2">
                                     {record.announcement}
                                   </p>
-                                  <p className="text-sm text-ink-3">完成 {record.completedCount} 人 · 参与 {record.participantCount} 人 · 招募目标 {record.targetMembers || '不限'} 人</p>
+                                  <p className="text-sm text-ink-3">
+                                    完成 {record.completedCount} 人 · 参与 {record.participantCount}{' '}
+                                    人 · 招募目标 {record.targetMembers || '不限'} 人
+                                  </p>
                                   <dl className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                                     <div>
                                       <dt className="text-xs text-ink-3">投稿语言</dt>
