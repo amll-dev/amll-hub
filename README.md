@@ -6,6 +6,17 @@
 
 <img src="https://repository-images.githubusercontent.com/1224275025/803c8329-baee-4113-beae-9c6ee1e6b3f7" width="120" alt="AMLLHub">
 
+## 本地开发
+
+配置根目录 `.env`（参考 `.env.example`），安装 Docker Compose、Go、Rust、Node.js 与 pnpm 后，按下面步骤启动：
+
+1. `docker compose up -d`：启动 PostgreSQL / Redis / MinIO / RabbitMQ / MeiliSearch。Casdoor 不在 compose 中，请按 `.env` 的 `CASDOOR_ENDPOINT` 连接到已有实例。
+2. `cd backend && make migrate-up && go run ./cmd/server`：执行数据库迁移并启动 Go API。
+3. `cd worker && cargo run`：启动 Rust Worker。
+4. `cd frontend && pnpm install && pnpm dev`：启动 Vite 开发服务器 <http://localhost:5173>。
+
+后端代码修改后重启 Go API；前端支持热更新。基础设施用 `docker compose down` 停止（加 `-v` 会同时删除数据卷）。
+
 ## 架构
 
 用户层 React 19 + Vite + TypeScript

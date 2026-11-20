@@ -1,4 +1,5 @@
 # Backend
+/.dev/
 /backend/server
 /backend/vendor/
 *.exe
@@ -51,3 +52,6 @@ pnpm-debug.log*
 *.jks
 *.keystore
 /android/keystore
+
+# dev
+dev.sh

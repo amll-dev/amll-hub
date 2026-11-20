@@ -53,6 +53,7 @@ const (
 )
 
 // activitySourcesSelf 四类活动的统一查询：归属人字段 + 时间字段 + 表名
+// adopted 是投稿者确认采用修订版，不算审核行为，统计时排除。
 const activitySourcesSelf = `
 	SELECT created_at AS day, 'lyric' AS type FROM submissions
 		WHERE submitter = ? AND status <> 'draft'
@@ -61,7 +62,7 @@ const activitySourcesSelf = `
 	UNION ALL
 	SELECT created_at, 'search_ip' FROM search_ip_submissions WHERE submitter = ?
 	UNION ALL
-	SELECT reviewed_at, 'review' FROM submission_review_history WHERE reviewer = ?
+	SELECT reviewed_at, 'review' FROM submission_review_history WHERE reviewer = ? AND status <> 'adopted'
 `
 
 // activitySourcesPublic 访客视角：三张投稿表且仅 approved（审核不属于公开贡献）
@@ -106,7 +107,7 @@ func earliestActivitySQL(scope activityScope) string {
 				SELECT MIN(created_at) AS t FROM submissions WHERE submitter = ?
 				UNION ALL SELECT MIN(created_at) FROM daily_recommendations WHERE submitter = ?
 				UNION ALL SELECT MIN(created_at) FROM search_ip_submissions WHERE submitter = ?
-				UNION ALL SELECT MIN(reviewed_at) FROM submission_review_history WHERE reviewer = ?
+				UNION ALL SELECT MIN(reviewed_at) FROM submission_review_history WHERE reviewer = ? AND status <> 'adopted'
 			)`
 }
 

@@ -9,7 +9,7 @@ import {
   type ContentMainTab,
   type SubmitTab,
 } from '@/atoms/creatorCenter';
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -30,12 +30,26 @@ import { api } from '@/lib/api';
 import { queryKeys } from '@/lib/query';
 import { parseMarkupText } from '@/lib/markup';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
+import { useActiveRecruitment, useRecruitmentMe } from '@/hooks/useRecruitment';
+import { useRecruitmentSync } from '@/hooks/useRecruitmentSync';
+import { RecruitmentProgress } from '@/components/recruitment/RecruitmentProgressCard';
 import { NavItem } from '@/components/NavItem';
 import { PageContainer } from '@/components/PageContainer';
 import { NotificationBellResponsive } from '@/components/notification/NotificationBellResponsive';
 import { statusMeta } from '@/components/submission/status';
 import { SubmissionListRows } from '@/components/submission/SubmissionListRows';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { CardDetailSkeleton, ListSkeleton } from '@/components/ui/Skeleton';
 import { ListPagination } from '@/components/ui/list-pagination';
 import { LyricSubmitForm } from '@/components/creator/LyricSubmitForm';
@@ -495,6 +509,21 @@ function SearchIpList() {
 
 export function CreatorCenter() {
   const { user, openLogin } = useAuth();
+  const queryClient = useQueryClient();
+  useRecruitmentSync(Boolean(user));
+  const participation = useRecruitmentMe(user?.name, Boolean(user));
+  const exitRecruitment = useMutation({
+    mutationFn: api.reviewerRecruitment.exit,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.recruitmentRoot });
+    },
+  });
+  const canAccessRecruitment = Boolean(user?.isReviewer || user?.isAdmin);
+  const recruitment = useActiveRecruitment({
+    enabled: Boolean(participation.data?.member) && !canAccessRecruitment,
+  });
+  const showRecruitmentProgress =
+    !canAccessRecruitment && Boolean(participation.data?.member && recruitment.data?.active);
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -728,12 +757,44 @@ export function CreatorCenter() {
               />
             )}
           </nav>
+          {participation.data?.member && (
+            <div className="mt-6 px-3">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" className="w-full" disabled={exitRecruitment.isPending}>
+                    退出审核招募
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>确认退出审核招募？</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      退出后将清除本期招募的参与进度，已提交的歌词仍会保留。再次参与将重新计数。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => exitRecruitment.mutate()}>
+                      确认退出
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              {exitRecruitment.error && (
+                <p role="alert" className="mt-2 text-xs text-error">
+                  {exitRecruitment.error instanceof Error
+                    ? exitRecruitment.error.message
+                    : '退出失败，请重试'}
+                </p>
+              )}
+            </div>
+          )}
         </aside>
 
         {/* 主内容区：grid 重叠布局，新旧视图交叉淡入淡出 */}
         <main className="no-scrollbar grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-x-clip overflow-y-auto">
           <AnimatePresence>
-            {/* 首页占位 */}
+            {/* 首页 */}
             {view === 'home' && (
               <motion.div
                 key="home"
@@ -741,15 +802,30 @@ export function CreatorCenter() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, pointerEvents: 'none' }}
                 transition={{ duration: 0.15 }}
-                className="col-start-1 row-start-1 flex flex-col items-center justify-center rounded-lg border border-line bg-card p-12 text-center"
+                className={
+                  showRecruitmentProgress
+                    ? 'col-start-1 row-start-1 min-w-0 self-start'
+                    : 'col-start-1 row-start-1 flex flex-col items-center justify-center rounded-lg border border-line bg-card p-12 text-center'
+                }
               >
-                <LayoutDashboard className="mx-auto h-12 w-12 text-ink-3" />
-                <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">
-                  创作中心首页
-                </h2>
-                <p className="mt-2 text-sm text-ink-3">
-                  欢迎来到创作中心，这里将展示你的创作数据概览
-                </p>
+                {showRecruitmentProgress &&
+                participation.data?.member &&
+                recruitment.data?.active ? (
+                  <RecruitmentProgress
+                    participantView
+                    data={{ active: recruitment.data.active, members: [participation.data.member] }}
+                  />
+                ) : (
+                  <>
+                    <LayoutDashboard className="mx-auto h-12 w-12 text-ink-3" />
+                    <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">
+                      创作中心首页
+                    </h2>
+                    <p className="mt-2 text-sm text-ink-3">
+                      欢迎来到创作中心，这里将展示你的创作数据概览
+                    </p>
+                  </>
+                )}
               </motion.div>
             )}
 

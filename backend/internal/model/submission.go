@@ -22,6 +22,12 @@ const (
 	StatusRevised = "revised"
 )
 
+// 审核历史中的特殊状态
+const (
+	// ReviewStatusAdopted 投稿者确认采用审核员的修订版
+	ReviewStatusAdopted = "adopted"
+)
+
 // 投稿提交类型枚举
 const (
 	// SubmissionTypeNew 新歌词提交

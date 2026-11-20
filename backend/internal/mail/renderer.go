@@ -58,6 +58,22 @@ type ReviewResultParams struct {
 	Year         int
 }
 
+// RecruitmentCompletedParams 招募完成邮件的数据
+type RecruitmentCompletedParams struct {
+	DisplayName string
+	Username    string
+	DetailURL   string
+	SiteURL     string
+	LogoURL     string
+	Subject     string
+	Headline    string
+	Lead        string
+	Tip         string
+	Preheader   string
+	ButtonText  string
+	Year        int
+}
+
 // resultStyle 各审核结果的文案与配色
 type resultStyle struct {
 	Label     string
@@ -232,6 +248,46 @@ func (r *Renderer) RenderReviewResult(p ReviewResultParams) (string, string, str
 	}
 	if err := r.textTmpl.ExecuteTemplate(&textBuf, "review_result.txt", p); err != nil {
 		return "", "", "", fmt.Errorf("render text: %w", err)
+	}
+	return p.Subject, htmlBuf.String(), textBuf.String(), nil
+}
+
+// RenderRecruitmentCompleted 渲染审核招募完成邮件。
+func (r *Renderer) RenderRecruitmentCompleted(p RecruitmentCompletedParams) (string, string, string, error) {
+	if p.Subject == "" {
+		p.Subject = subjectPrefix + "恭喜你完成本期审核招募"
+	}
+	if p.Headline == "" {
+		p.Headline = "恭喜你完成本期审核招募"
+	}
+	if p.Lead == "" {
+		p.Lead = "恭喜你，完成了本期审核招募，请耐心等待工作人员正式邀请您加入。"
+	}
+	if p.Tip == "" {
+		p.Tip = "工作人员会尽快与你联系，请留意站内消息和邮箱。"
+	}
+	if p.Preheader == "" {
+		p.Preheader = "恭喜你完成本期审核招募，请耐心等待正式邀请。"
+	}
+	if p.ButtonText == "" {
+		p.ButtonText = "查看招募进度"
+	}
+	if p.DisplayName == "" {
+		p.DisplayName = p.Username
+	}
+	if p.Year == 0 {
+		p.Year = time.Now().Year()
+	}
+	if p.LogoURL == "" && p.SiteURL != "" {
+		p.LogoURL = p.SiteURL + "/logo.png"
+	}
+
+	var htmlBuf, textBuf bytes.Buffer
+	if err := r.htmlTmpl.ExecuteTemplate(&htmlBuf, "recruitment_completed.html", p); err != nil {
+		return "", "", "", fmt.Errorf("render recruitment html: %w", err)
+	}
+	if err := r.textTmpl.ExecuteTemplate(&textBuf, "recruitment_completed.txt", p); err != nil {
+		return "", "", "", fmt.Errorf("render recruitment text: %w", err)
 	}
 	return p.Subject, htmlBuf.String(), textBuf.String(), nil
 }

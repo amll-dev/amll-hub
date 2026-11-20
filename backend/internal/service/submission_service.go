@@ -212,7 +212,10 @@ type SubmissionService struct {
 	validate        *ValidateService
 	notifier        Notifier
 	db              *gorm.DB
+	recruitment     *ReviewerRecruitmentService
 }
+
+func (s *SubmissionService) SetReviewerRecruitment(v *ReviewerRecruitmentService) { s.recruitment = v }
 
 // SetNotifier 注入通知服务（main 装配阶段调用）
 func (s *SubmissionService) SetNotifier(n Notifier) {
@@ -338,6 +341,7 @@ func (s *SubmissionService) Create(ctx context.Context, user *SubmissionUser, in
 	}
 
 	// 事务写入
+	enrolled := false
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.subRepo.Create(ctx, tx, sub); err != nil {
 			return err
@@ -348,10 +352,20 @@ func (s *SubmissionService) Create(ctx context.Context, user *SubmissionUser, in
 					Warn("mark first submission failed")
 			}
 		}
+		if s.recruitment != nil {
+			joined, err := s.recruitment.Enroll(tx, sub)
+			if err != nil {
+				return err
+			}
+			enrolled = joined
+		}
 		return nil
 	})
 	if err != nil {
 		return 0, err
+	}
+	if enrolled && s.recruitment != nil {
+		s.recruitment.NotifyChanged(ctx)
 	}
 	return sub.ID, nil
 }

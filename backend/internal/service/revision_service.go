@@ -394,7 +394,6 @@ func (s *RevisionService) AdoptRevision(ctx context.Context, user *SubmissionUse
 	// 修订版字段在 ClearRevision 后会被清空，先保存局部值
 	revFileKey := sub.RevisionFileKey
 	revReviewer := sub.RevisionReviewer
-	revReviewerInfo := userInfoOrEmpty(sub.RevisionReviewerInfo)
 
 	// 读取修订版并做服务端校验/重排；失败时保持 revised 状态
 	reader, err := s.files.Get(ctx, revFileKey)
@@ -455,13 +454,17 @@ func (s *RevisionService) AdoptRevision(ctx context.Context, user *SubmissionUse
 		}).Warn("delete original pending lyric after adopt failed")
 	}
 
-	// 采纳记录进审核历史
+	// 采纳记录进审核历史：操作者是投稿者本人
 	if err := s.historyRepo.Insert(ctx, nil, &model.ReviewHistory{
 		SubmissionID: sub.ID,
-		Reviewer:     revReviewer,
-		ReviewerInfo: revReviewerInfo,
-		Status:       model.StatusApproved,
-		Comment:      "投稿者确认采用审核员修订版",
+		Reviewer:     user.Name,
+		ReviewerInfo: model.UserInfo{
+			Username:    user.Name,
+			DisplayName: user.DisplayName,
+			Avatar:      user.Avatar,
+		},
+		Status:  model.ReviewStatusAdopted,
+		Comment: "投稿者确认采用审核员修订版",
 	}); err != nil {
 		logrus.WithError(err).Warn("insert adopt history failed")
 	}
@@ -796,13 +799,6 @@ func toJSONObject(m map[string]any) model.JSONObject {
 		return model.JSONObject{}
 	}
 	return model.JSONObject(m)
-}
-
-func userInfoOrEmpty(info *model.UserInfo) model.UserInfo {
-	if info == nil {
-		return model.UserInfo{}
-	}
-	return *info
 }
 
 // readAllString 读完整个 reader 并转成字符串

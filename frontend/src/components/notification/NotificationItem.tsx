@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import {
+  Award,
   CircleCheck,
   FileCheck,
   FilePlus2,
@@ -34,14 +35,17 @@ const reviewResultIcons: Record<ReviewResult, LucideIcon> = {
   // revised：审核员已改好，等投稿者确认 → 用 FileCheck（待采纳的文件）
   // ⚠️ 以前没这个键，会退化成通用的 ShieldCheck，看不出是哪种结果。
   revised: FileCheck,
+  recruitment_completed: Award,
   closed: TimerOff,
 };
 
-/** 取本条消息的图标：审核类按 result 细分，其余按 type */
+/** 取本条消息的图标：有细分结果时优先按结果，其次按类型 */
 function iconOf(message: Message): LucideIcon {
-  if (message.type === 'review' && message.result) {
-    return reviewResultIcons[message.result] ?? ShieldCheck;
+  if (message.result) {
+    const resultIcon = reviewResultIcons[message.result];
+    if (resultIcon) return resultIcon;
   }
+  if (message.type === 'review') return ShieldCheck;
   return typeIcons[message.type] ?? Megaphone;
 }
 
