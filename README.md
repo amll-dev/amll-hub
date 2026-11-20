@@ -8,15 +8,14 @@
 
 ## 本地开发
 
-配置根目录 `.env`（参考 `.env.example`），安装 Docker Compose、Go、Rust、Node.js 后，在项目根目录运行 `./dev.sh`。
-脚本会启动基础设施、编译并启动 Go API 和 Rust Worker，然后启动 Vite 开发服务器：<http://localhost:5173>。
-首次启动会安装缺失的前端依赖；已有的本地 MinIO、Casdoor 容器会被复用。
+配置根目录 `.env`（参考 `.env.example`），安装 Docker Compose、Go、Rust、Node.js 与 pnpm 后，按下面步骤启动：
 
-- `./dev.sh status`：查看应用进程状态。
-- `./dev.sh logs`：持续查看日志（保存在 `.dev/`，Ctrl+C 退出查看）。
-- `./dev.sh stop`：停止应用进程，保留基础设施及数据。
+1. `docker compose up -d`：启动 PostgreSQL / Redis / MinIO / RabbitMQ / MeiliSearch。Casdoor 不在 compose 中，请按 `.env` 的 `CASDOOR_ENDPOINT` 连接到已有实例。
+2. `cd backend && make migrate-up && go run ./cmd/server`：执行数据库迁移并启动 Go API。
+3. `cd worker && cargo run`：启动 Rust Worker。
+4. `cd frontend && pnpm install && pnpm dev`：启动 Vite 开发服务器 <http://localhost:5173>。
 
-后端代码修改后运行 `./dev.sh stop && ./dev.sh` 重新编译启动；前端支持热更新。
+后端代码修改后重启 Go API；前端支持热更新。基础设施用 `docker compose down` 停止（加 `-v` 会同时删除数据卷）。
 
 ## 架构
 

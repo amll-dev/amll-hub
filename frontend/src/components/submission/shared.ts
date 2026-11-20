@@ -181,6 +181,14 @@ export function buildActivityEntries(detail: SubmissionDetail): ActivityEntry[] 
         icon: FileCheck,
         actor,
       });
+    } else if (h.status === 'adopted') {
+      entries.push({
+        id: `review_${h.id}`,
+        timestamp: h.reviewedAt,
+        label: '确认使用修订版',
+        icon: Check,
+        actor,
+      });
     } else if (m) {
       entries.push({
         id: `review_${h.id}`,

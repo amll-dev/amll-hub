@@ -747,7 +747,13 @@ export const ReviewReportDialog = ({
                       key={key}
                       type="button"
                       size="sm"
-                      className={recruitment && key === 'approve' ? 'bg-blue-600 text-white hover:bg-blue-700' : action === key ? className : undefined}
+                      className={
+                        recruitment && key === 'approve'
+                          ? 'bg-blue-600 text-white hover:bg-blue-700'
+                          : action === key
+                            ? className
+                            : undefined
+                      }
                       variant={action === key ? 'default' : 'secondary'}
                       disabled={submitting}
                       onClick={() => {

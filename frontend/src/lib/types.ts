@@ -31,7 +31,7 @@ export interface ReviewerRecruitment extends RecruitmentPayload {
 }
 export interface ReviewerRecruitmentMember {
   username: string;
-  userInfo: { username: string; displayName: string; avatar: string };
+  userInfo: UserInfo;
   validSubmissions: number;
   requiredSubmissions: number;
   attempts: number;
@@ -51,7 +51,7 @@ export interface RecruitmentDashboard {
   history: ReviewerRecruitment[];
   members: ReviewerRecruitmentMember[];
   submissions: RecruitmentSubmission[];
-  team: { name: string; displayName: string; avatar?: string }[];
+  team: UserInfo[];
 }
 export interface RecruitmentProgress {
   conditions: RecruitmentConditions;
@@ -892,6 +892,8 @@ export type ReviewResult =
   | 'missing_audio'
   // 审核员已提交修订版 TTML，等投稿者确认（后端 model.NotifyResultRevised）
   | 'revised'
+  // 已完成本期审核招募（后端 model.NotifyResultRecruitmentCompleted）
+  | 'recruitment_completed'
   | 'closed';
 
 /** 跳转动作 */

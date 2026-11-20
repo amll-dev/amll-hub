@@ -43,6 +43,7 @@ import { formatDateTime } from '@/lib/format';
 import { usernameOf } from '@/lib/username';
 import { MetaItem } from '@/components/submission/MetaItem';
 import { FirstSubmissionBadge } from '@/components/submission/FirstSubmissionBadge';
+import { RecruitmentBadge } from '@/components/submission/RecruitmentBadge';
 import { RevisionBadge } from '@/components/submission/RevisionBadge';
 import { RevisionDiffPreview } from '@/components/creator/RevisionDiffPreview';
 import { UserDisplayName } from '@/components/submission/UserDisplayName';
@@ -55,6 +56,7 @@ import { NcmSongCard } from '@/components/submission/NcmSongCard';
 import { QmSongCard } from '@/components/submission/QmSongCard';
 import { AudioCard } from '@/components/submission/AudioCard';
 import { fadeUp, staggerContainer } from '@/lib/motion';
+import { hasRecruitmentTag, isRecruitmentTag } from '@/lib/recruitment';
 import type { SubmissionDetail, SubmissionAudio } from '@/lib/types';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -134,6 +136,8 @@ function SubmissionDetailContent({
   const petitionLinks = petitionsQuery.data?.items ?? [];
 
   const detail = detailQuery.data ?? null;
+  const isRecruitment = hasRecruitmentTag(detail?.tags);
+  const visibleTags = detail?.tags?.filter((tag) => !isRecruitmentTag(tag)) ?? [];
   const submitterName = usernameOf(detail?.submitter);
   const ttml = ttmlQuery.data ?? '';
   const loading = detailQuery.isPending;
@@ -353,6 +357,7 @@ function SubmissionDetailContent({
           <h1 className="flex flex-1 flex-wrap items-center gap-2 text-2xl font-bold text-foreground">
             <span className="min-w-0">{detail.title || '未命名'}</span>
             {detail.isFirstSubmission && <FirstSubmissionBadge size="md" />}
+            {isRecruitment && <RecruitmentBadge size="md" />}
             {detail.submissionType === 'revision' && <RevisionBadge size="md" />}
             <span className="text-base font-normal text-ink-3">#{detail.id}</span>
           </h1>
@@ -822,11 +827,11 @@ function SubmissionDetailContent({
                   </div>
                 </div>
               )}
-              {detail.tags && detail.tags.length > 0 && (
+              {visibleTags.length > 0 && (
                 <div>
                   <div className="text-xs text-ink-3">标签</div>
                   <div className="mt-1 flex flex-wrap gap-1.5">
-                    {detail.tags.map((t) => (
+                    {visibleTags.map((t) => (
                       <span
                         key={t}
                         className="inline-flex items-center rounded-full bg-primary-soft px-2.5 py-0.5 text-xs text-primary"

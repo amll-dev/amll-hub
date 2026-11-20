@@ -226,6 +226,72 @@ func (s *NotificationService) NotifyReviewResult(ctx context.Context, sub *model
 	return err
 }
 
+// NotifyRecruitmentCompleted 参募者完成本期招募时发送站内信与邮件。
+func (s *NotificationService) NotifyRecruitmentCompleted(
+	ctx context.Context,
+	user model.UserInfo,
+	_ *model.Submission,
+) error {
+	content := "恭喜你，完成了本期审核招募，请耐心等待工作人员正式邀请您加入。"
+	err := s.Notify(ctx, NotifyInput{
+		Username:    user.Username,
+		Type:        model.NotifyTypeSystem,
+		Result:      model.NotifyResultRecruitmentCompleted,
+		Title:       "恭喜你完成本期审核招募",
+		Content:     content,
+		ActionPath:  "/creator",
+		ActionLabel: "查看招募进度",
+	})
+	s.sendRecruitmentEmailAsync(ctx, user)
+	return err
+}
+
+// sendRecruitmentEmailAsync 异步发送招募完成邮件；失败只记日志。
+func (s *NotificationService) sendRecruitmentEmailAsync(
+	ctx context.Context,
+	user model.UserInfo,
+) {
+	if !s.sender.Enabled() {
+		return
+	}
+	fields := logrus.Fields{
+		"username": user.Username,
+		"result":   model.NotifyResultRecruitmentCompleted,
+	}
+	pkg.GoSafe("recruitment-completed-mail", func() {
+		c, cancel := pkg.DetachedTimeout(ctx, s.sender.Timeout()+10*time.Second)
+		defer cancel()
+
+		email, err := s.emails.Resolve(c, user.Username)
+		if err != nil {
+			logrus.WithError(err).WithFields(fields).Warn("resolve user email failed, skip recruitment mail")
+			return
+		}
+		if email == "" {
+			logrus.WithFields(fields).Warn("user has no email, skip recruitment mail")
+			return
+		}
+
+		subject, htmlBody, textBody, err := s.sender.RenderRecruitmentCompleted(
+			mail.RecruitmentCompletedParams{
+				DisplayName: user.DisplayName,
+				Username:    user.Username,
+				DetailURL:   s.site + "/creator",
+				SiteURL:     s.site,
+			},
+		)
+		if err != nil {
+			logrus.WithError(err).WithFields(fields).Warn("render recruitment mail failed")
+			return
+		}
+		if err := s.sender.Send(c, email, subject, htmlBody, textBody); err != nil {
+			logrus.WithError(err).WithFields(fields).Warn("send recruitment email failed")
+			return
+		}
+		logrus.WithFields(fields).Info("recruitment email sent")
+	})
+}
+
 // reviewResultMail 审核结果邮件的发送参数
 type reviewResultMail struct {
 	Fields   logrus.Fields

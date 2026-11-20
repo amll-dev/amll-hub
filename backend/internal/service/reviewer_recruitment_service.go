@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/model"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
+	"github.com/amll-dev/amll-hub/backend/internal/ws"
 	"github.com/google/uuid"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -86,15 +89,63 @@ type RecruitmentDashboard struct {
 	Submissions []RecruitmentSubmission `json:"submissions"`
 	Team        []model.UserInfo        `json:"team"`
 }
+
+// RecruitmentNotifier 招募完成通知（站内信/邮件由 NotificationService 实现）。
+type RecruitmentNotifier interface {
+	NotifyRecruitmentCompleted(ctx context.Context, user model.UserInfo, sub *model.Submission) error
+}
+
 type ReviewerRecruitmentService struct {
-	repo *repository.ReviewerRecruitmentRepo
+	repo      *repository.ReviewerRecruitmentRepo
+	reviewers *repository.ReviewerRepo
+	users     *UserSearchService
+	notifier  RecruitmentNotifier
+	hub       *ws.Hub
+
+	teamMu      sync.Mutex
+	teamCache   []model.UserInfo
+	teamCacheAt time.Time
 }
 
 func NewReviewerRecruitmentService(repo *repository.ReviewerRecruitmentRepo) *ReviewerRecruitmentService {
 	return &ReviewerRecruitmentService{repo: repo}
 }
 
+// SetTeamSources 注入审核团队与用户资料来源，用于仪表板的「当前审核团队」。
+func (s *ReviewerRecruitmentService) SetTeamSources(
+	reviewers *repository.ReviewerRepo,
+	users *UserSearchService,
+) {
+	s.reviewers = reviewers
+	s.users = users
+}
+
+// SetNotifier 注入招募完成通知。
+func (s *ReviewerRecruitmentService) SetNotifier(n RecruitmentNotifier) { s.notifier = n }
+
+// SetHub 注入 WebSocket hub，用于招募状态变更的实时失效通知。
+func (s *ReviewerRecruitmentService) SetHub(hub *ws.Hub) { s.hub = hub }
+
+// NotifyChanged 广播招募变更；只发失效信号，客户端收到后重新拉取。
+func (s *ReviewerRecruitmentService) NotifyChanged(ctx context.Context) {
+	if s.hub == nil {
+		return
+	}
+	if err := s.hub.PublishRecruitmentChanged(ctx, nil); err != nil {
+		logrus.WithError(err).Warn("publish recruitment changed failed")
+	}
+}
+
 var recruitmentZone = time.FixedZone("Asia/Shanghai", 8*60*60)
+
+// 审核团队资料缓存时长：新增/移除审核员后最多延迟这么久反映到仪表板。
+const teamCacheTTL = 5 * time.Minute
+
+// 招募可选的投稿语言；投稿语言不在前四项时统一归入 others。
+var (
+	recruitmentAllowedLanguages    = []string{"zh", "en", "ja", "ko", "others"}
+	recruitmentSubmissionLanguages = []string{"zh", "en", "ja", "ko"}
+)
 
 func recruitmentToday() string { return time.Now().In(recruitmentZone).Format("2006-01-02") }
 func recruitmentDate(s string) string {
@@ -122,59 +173,88 @@ func encodeRecruitment(p recruitmentProgress) model.JSONObject {
 	_ = json.Unmarshal(b, &data)
 	return data
 }
-func recruitmentValidation(message string) error { return &ValidationError{Message: message} }
-func (s *ReviewerRecruitmentService) active(tx *gorm.DB) (*model.ReviewerRecruitment, error) {
+func recruitmentEndDue(p *model.ReviewerRecruitment) bool {
+	return p.EndsOn != nil && recruitmentDate(*p.EndsOn) <= recruitmentToday() ||
+		p.TargetMembers > 0 && p.CompletedCount >= p.TargetMembers
+}
+func endRecruitment(tx *gorm.DB, p *model.ReviewerRecruitment) (bool, error) {
+	if !recruitmentEndDue(p) {
+		return false, nil
+	}
+	today := recruitmentToday()
+	p.Status = "ended"
+	p.EndedOn = &today
+	if err := tx.Model(p).Updates(map[string]any{"status": "ended", "ended_on": today}).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+func (s *ReviewerRecruitmentService) activeChanged(tx *gorm.DB) (*model.ReviewerRecruitment, bool, error) {
 	p, err := s.repo.Active(tx)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	if p.EndsOn != nil && recruitmentDate(*p.EndsOn) <= recruitmentToday() || p.TargetMembers > 0 && p.CompletedCount >= p.TargetMembers {
-		today := recruitmentToday()
-		p.Status = "ended"
-		p.EndedOn = &today
-		if err := tx.Model(p).Updates(map[string]any{"status": "ended", "ended_on": today}).Error; err != nil {
-			return nil, err
-		}
-		return nil, nil
+	ended, err := endRecruitment(tx, p)
+	if err != nil {
+		return nil, false, err
 	}
-	return p, nil
+	if ended {
+		return nil, true, nil
+	}
+	return p, false, nil
+}
+func (s *ReviewerRecruitmentService) active(tx *gorm.DB) (*model.ReviewerRecruitment, error) {
+	p, _, err := s.activeChanged(tx)
+	return p, err
 }
 func (s *ReviewerRecruitmentService) Tick(ctx context.Context) error {
-	return s.repo.Transaction(ctx, func(tx *gorm.DB) error { _, err := s.active(tx); return err })
+	changed := false
+	err := s.repo.Transaction(ctx, func(tx *gorm.DB) error {
+		var e error
+		_, changed, e = s.activeChanged(tx)
+		return e
+	})
+	if err != nil {
+		return err
+	}
+	if changed {
+		s.NotifyChanged(ctx)
+	}
+	return nil
 }
 func (s *ReviewerRecruitmentService) Create(ctx context.Context, user string, in RecruitmentInput) (*RecruitmentPlan, error) {
 	parsed, err := uuid.Parse(in.ID)
 	if err != nil || parsed.Version() != 4 {
-		return nil, recruitmentValidation("招募 ID 必须为 UUID v4")
+		return nil, invalidInput("招募 ID 必须为 UUID v4")
 	}
 	in.ID = parsed.String()
 	in.Announcement = strings.TrimSpace(in.Announcement)
 	if in.Announcement == "" || len([]rune(in.Announcement)) > 10000 || len(in.Languages) == 0 || len(in.Languages) > model.MaxLanguages {
-		return nil, recruitmentValidation("请填写公告并选择投稿语言")
+		return nil, invalidInput("请填写公告并选择投稿语言")
 	}
 	for _, l := range in.Languages {
-		if !slices.Contains([]string{"zh", "en", "ja", "ko", "others"}, l) {
-			return nil, recruitmentValidation("投稿语言无效")
+		if !slices.Contains(recruitmentAllowedLanguages, l) {
+			return nil, invalidInput("投稿语言无效")
 		}
 	}
 	c := in.Conditions
 	for _, n := range []int{c.ValidSubmissions, c.ApprovalsPerSubmission, c.SubmissionsPerLanguage, c.MaxAttempts} {
 		if n < 1 || n > 1000000 {
-			return nil, recruitmentValidation("招募计数须为 1 到 1000000 的整数")
+			return nil, invalidInput("招募计数须为 1 到 1000000 的整数")
 		}
 	}
 	if c.RevisionsPerSubmission < 0 || c.RevisionsPerSubmission > 1000000 || in.TargetMembers < 0 || in.TargetMembers > 1000000 {
 		return nil, ErrInvalidInput
 	}
 	if in.EndsOn == "" && in.TargetMembers == 0 {
-		return nil, recruitmentValidation("请设置结束日期或招募人数")
+		return nil, invalidInput("请设置结束日期或招募人数")
 	}
 	if in.EndsOn != "" {
 		if _, e := time.Parse("2006-01-02", in.EndsOn); e != nil || in.EndsOn <= recruitmentToday() {
-			return nil, recruitmentValidation("结束日期必须晚于今天（于当日 0 时结束）")
+			return nil, invalidInput("结束日期必须晚于今天（于当日 0 时结束）")
 		}
 	}
 	var out *RecruitmentPlan
@@ -194,7 +274,7 @@ func (s *ReviewerRecruitmentService) Create(ctx context.Context, user string, in
 			return e
 		}
 		if p != nil {
-			return recruitmentValidation("已有进行中的招募")
+			return invalidInput("已有进行中的招募")
 		}
 		b, _ := json.Marshal(in)
 		var form model.JSONObject
@@ -209,6 +289,9 @@ func (s *ReviewerRecruitmentService) Create(ctx context.Context, user string, in
 		out = s.planDTO(&record, 0)
 		return nil
 	})
+	if err == nil && out != nil {
+		s.NotifyChanged(ctx)
+	}
 	return out, err
 }
 func (s *ReviewerRecruitmentService) planDTO(p *model.ReviewerRecruitment, count int) *RecruitmentPlan {
@@ -229,8 +312,10 @@ func (s *ReviewerRecruitmentService) planDTO(p *model.ReviewerRecruitment, count
 }
 func (s *ReviewerRecruitmentService) Active(ctx context.Context) (*RecruitmentPlan, error) {
 	var out *RecruitmentPlan
+	ended := false
 	err := s.repo.Transaction(ctx, func(tx *gorm.DB) error {
-		p, e := s.active(tx)
+		p, wasEnded, e := s.activeChanged(tx)
+		ended = wasEnded
 		if e != nil || p == nil {
 			return e
 		}
@@ -241,6 +326,9 @@ func (s *ReviewerRecruitmentService) Active(ctx context.Context) (*RecruitmentPl
 		out = s.planDTO(p, int(count))
 		return nil
 	})
+	if err == nil && ended {
+		s.NotifyChanged(ctx)
+	}
 	return out, err
 }
 func recruitmentMemberDTO(m *model.ReviewerRecruitmentMember, p recruitmentProgress, c RecruitmentConditions) RecruitmentMember {
@@ -268,8 +356,10 @@ func recruitmentMemberDTO(m *model.ReviewerRecruitmentMember, p recruitmentProgr
 }
 func (s *ReviewerRecruitmentService) Me(ctx context.Context, user string) (*RecruitmentMember, error) {
 	var out *RecruitmentMember
+	ended := false
 	err := s.repo.Transaction(ctx, func(tx *gorm.DB) error {
-		plan, e := s.active(tx)
+		plan, wasEnded, e := s.activeChanged(tx)
+		ended = wasEnded
 		if e != nil || plan == nil {
 			return e
 		}
@@ -285,10 +375,13 @@ func (s *ReviewerRecruitmentService) Me(ctx context.Context, user string) (*Recr
 		out = &dto
 		return nil
 	})
+	if err == nil && ended {
+		s.NotifyChanged(ctx)
+	}
 	return out, err
 }
 func (s *ReviewerRecruitmentService) Exit(ctx context.Context, user string) error {
-	return s.repo.Transaction(ctx, func(tx *gorm.DB) error {
+	err := s.repo.Transaction(ctx, func(tx *gorm.DB) error {
 		p, e := s.active(tx)
 		if e != nil {
 			return e
@@ -298,9 +391,13 @@ func (s *ReviewerRecruitmentService) Exit(ctx context.Context, user string) erro
 		}
 		return tx.Where("recruitment_id = ? AND username = ?", p.ID, user).Delete(&model.ReviewerRecruitmentMember{}).Error
 	})
+	if err == nil {
+		s.NotifyChanged(ctx)
+	}
+	return err
 }
 func recruitmentTagged(tags []string) bool {
-	return slices.Contains(tags, model.RecruitmentTag) || slices.Contains(tags, "审核招募")
+	return slices.Contains(tags, model.RecruitmentTag)
 }
 func recruitmentVersion(sub *model.Submission) string {
 	if sub.FileUpdatedAt != nil {
@@ -310,56 +407,60 @@ func recruitmentVersion(sub *model.Submission) string {
 }
 
 // Enroll runs inside the submission transaction; drafts never create participation records.
-func (s *ReviewerRecruitmentService) Enroll(tx *gorm.DB, sub *model.Submission) error {
+// 返回值表示是否新增了报名记录，供事务提交后广播变更。
+func (s *ReviewerRecruitmentService) Enroll(tx *gorm.DB, sub *model.Submission) (bool, error) {
 	if !recruitmentTagged(sub.Tags) {
-		return nil
+		return false, nil
 	}
 	if err := s.repo.Lock(tx); err != nil {
-		return err
+		return false, err
 	}
 	p, err := s.active(tx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if p == nil {
-		return recruitmentValidation("当前没有进行中的审核招募")
+		return false, invalidInput("当前没有进行中的审核招募")
 	}
 	if sub.SubmissionType != model.SubmissionTypeNew {
-		return recruitmentValidation("审核招募只接受新歌词提交")
+		return false, invalidInput("审核招募只接受新歌词提交")
 	}
 	form := recruitmentForm(p)
 	for _, l := range sub.Languages {
 		code := l
-		if !slices.Contains([]string{"zh", "en", "ja", "ko"}, code) {
+		if !slices.Contains(recruitmentSubmissionLanguages, code) {
 			code = "others"
 		}
 		if !slices.Contains(form.Languages, code) {
-			return recruitmentValidation("投稿语言不符合本期招募条件")
+			return false, invalidInput("投稿语言不符合本期招募条件")
 		}
 	}
 	if sub.Status == model.StatusDraft {
-		return nil
+		return false, nil
 	}
 	var m model.ReviewerRecruitmentMember
 	err = tx.Where("recruitment_id = ? AND username = ?", p.ID, sub.Submitter).First(&m).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+		return false, err
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		m = model.ReviewerRecruitmentMember{RecruitmentID: p.ID, Username: sub.Submitter, UserInfo: sub.SubmitterInfo, JoinedAt: time.Now()}
 	}
 	progress := decodeRecruitment(&m)
 	if progress.Completed {
-		return recruitmentValidation("你已完成本期招募")
+		return false, invalidInput("你已完成本期招募")
 	}
 	for _, item := range progress.Submissions {
 		if item.ID == sub.ID {
-			return nil
+			return false, nil
 		}
 	}
 	progress.Submissions = append(progress.Submissions, recruitmentSubmission{ID: sub.ID, Version: recruitmentVersion(sub), Approvers: []string{}, Languages: sub.Languages})
 	m.Progress = encodeRecruitment(progress)
-	return tx.Save(&m).Error
+	if err := tx.Save(&m).Error; err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // locate uses the submission IDs stored with this enrollment, so withdrawn and previous attempts never count again.
@@ -410,6 +511,8 @@ func (s *ReviewerRecruitmentService) Progress(ctx context.Context, id int64, use
 func (s *ReviewerRecruitmentService) Accept(ctx context.Context, user *SubmissionUser, id int64, comment string, publish func(*gorm.DB, *model.Submission) error) (bool, error) {
 	handled := false
 	var publishErr error
+	var completedUser *model.UserInfo
+	var completedSub *model.Submission
 	err := s.repo.Transaction(ctx, func(tx *gorm.DB) error {
 		var sub model.Submission
 		if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&sub, id).Error; e != nil {
@@ -465,6 +568,10 @@ func (s *ReviewerRecruitmentService) Accept(ctx context.Context, user *Submissio
 			if e = tx.Model(plan).Update("completed_count", plan.CompletedCount).Error; e != nil {
 				return e
 			}
+			userInfo := m.UserInfo
+			completedUser = &userInfo
+			subCopy := sub
+			completedSub = &subCopy
 		}
 		m.Progress = encodeRecruitment(p)
 		if e = tx.Save(m).Error; e != nil {
@@ -476,35 +583,46 @@ func (s *ReviewerRecruitmentService) Accept(ctx context.Context, user *Submissio
 	if err != nil {
 		return handled, err
 	}
+	if handled {
+		s.NotifyChanged(ctx)
+	}
+	if completedUser != nil && completedSub != nil && s.notifier != nil {
+		if e := s.notifier.NotifyRecruitmentCompleted(ctx, *completedUser, completedSub); e != nil {
+			logrus.WithError(e).WithField("submission_id", completedSub.ID).Warn("notify recruitment completed failed")
+		}
+	}
 	return handled, publishErr
 }
 
 // RecordCorrections belongs to the transaction that stores the review conclusion/report.
-func (s *ReviewerRecruitmentService) RecordCorrections(tx *gorm.DB, sub *model.Submission, count int) error {
+func (s *ReviewerRecruitmentService) RecordCorrections(db *gorm.DB, sub *model.Submission, count int) error {
 	if count <= 0 {
 		return nil
 	}
-	if err := s.repo.Lock(tx); err != nil {
-		return err
-	}
-	plan, m, p, index, err := s.locate(tx, sub)
-	if err != nil || m == nil {
-		return err
-	}
-	item := &p.Submissions[index]
-	item.Revisions += count
-	item.Approvers = []string{}
-	c := recruitmentForm(plan).Conditions
-	if item.Revisions > c.RevisionsPerSubmission && !item.Penalized {
-		item.Penalized = true
-	}
-	dto := recruitmentMemberDTO(m, p, c)
-	// maxAttempts limits the escalating base requirement; the optional single-language standard is not an entry barrier.
-	if c.ValidSubmissions+dto.Attempts > c.MaxAttempts {
-		return tx.Delete(m).Error
-	}
-	m.Progress = encodeRecruitment(p)
-	return tx.Save(m).Error
+	// 单独开启事务，保证 advisory lock 覆盖读改写；调用方在事务提交后再广播。
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := s.repo.Lock(tx); err != nil {
+			return err
+		}
+		plan, m, p, index, err := s.locate(tx, sub)
+		if err != nil || m == nil {
+			return err
+		}
+		item := &p.Submissions[index]
+		item.Revisions += count
+		item.Approvers = []string{}
+		c := recruitmentForm(plan).Conditions
+		if item.Revisions > c.RevisionsPerSubmission && !item.Penalized {
+			item.Penalized = true
+		}
+		dto := recruitmentMemberDTO(m, p, c)
+		// maxAttempts limits the escalating base requirement; the optional single-language standard is not an entry barrier.
+		if c.ValidSubmissions+dto.Attempts > c.MaxAttempts {
+			return tx.Delete(m).Error
+		}
+		m.Progress = encodeRecruitment(p)
+		return tx.Save(m).Error
+	})
 }
 func recruitmentCorrectionCount(structured map[string]any, comment string) int {
 	count := 0
@@ -533,8 +651,10 @@ func recruitmentCorrectionCount(structured map[string]any, comment string) int {
 }
 func (s *ReviewerRecruitmentService) Dashboard(ctx context.Context) (*RecruitmentDashboard, error) {
 	out := &RecruitmentDashboard{History: []RecruitmentPlan{}, Members: []RecruitmentMember{}, Submissions: []RecruitmentSubmission{}, Team: []model.UserInfo{}}
+	ended := false
 	err := s.repo.Transaction(ctx, func(tx *gorm.DB) error {
-		active, e := s.active(tx)
+		active, wasEnded, e := s.activeChanged(tx)
+		ended = wasEnded
 		if e != nil {
 			return e
 		}
@@ -555,33 +675,85 @@ func (s *ReviewerRecruitmentService) Dashboard(ctx context.Context) (*Recruitmen
 			}
 			out.Active = dto
 			c := recruitmentForm(p).Conditions
+			var pending []recruitmentSubmission
 			for j := range members {
 				m := &members[j]
 				progress := decodeRecruitment(m)
 				out.Members = append(out.Members, recruitmentMemberDTO(m, progress, c))
-				for _, item := range progress.Submissions {
-					var sub model.Submission
-					if e = tx.First(&sub, item.ID).Error; e != nil {
-						if errors.Is(e, gorm.ErrRecordNotFound) {
-							continue
-						}
-						return e
-					}
-					approvals := len(item.Approvers)
-					if item.Version != recruitmentVersion(&sub) {
-						approvals = 0
-					}
-					out.Submissions = append(out.Submissions, RecruitmentSubmission{ID: sub.ID, Title: sub.Title, Submitter: sub.Submitter, Status: sub.Status, Approvals: approvals, RequiredApprovals: c.ApprovalsPerSubmission, Revisions: item.Revisions})
+				pending = append(pending, progress.Submissions...)
+			}
+			if len(pending) == 0 {
+				continue
+			}
+			ids := make([]int64, 0, len(pending))
+			for _, item := range pending {
+				ids = append(ids, item.ID)
+			}
+			var subs []model.Submission
+			if e = tx.Where("id IN ?", ids).Find(&subs).Error; e != nil {
+				return e
+			}
+			byID := make(map[int64]model.Submission, len(subs))
+			for _, sub := range subs {
+				byID[sub.ID] = sub
+			}
+			for _, item := range pending {
+				sub, ok := byID[item.ID]
+				if !ok {
+					continue
 				}
+				approvals := len(item.Approvers)
+				if item.Version != recruitmentVersion(&sub) {
+					approvals = 0
+				}
+				out.Submissions = append(out.Submissions, RecruitmentSubmission{ID: sub.ID, Title: sub.Title, Submitter: sub.Submitter, Status: sub.Status, Approvals: approvals, RequiredApprovals: c.ApprovalsPerSubmission, Revisions: item.Revisions})
 			}
 		}
 		return nil
 	})
+	if err == nil {
+		s.fillTeam(ctx, out)
+	}
+	if err == nil && ended {
+		s.NotifyChanged(ctx)
+	}
 	return out, err
 }
-func max(a, b int) int {
-	if a > b {
-		return a
+
+// fillTeam 填充「当前审核团队」
+func (s *ReviewerRecruitmentService) fillTeam(ctx context.Context, out *RecruitmentDashboard) {
+	if s.reviewers == nil {
+		return
 	}
-	return b
+	s.teamMu.Lock()
+	if !s.teamCacheAt.IsZero() && time.Since(s.teamCacheAt) < teamCacheTTL {
+		out.Team = append(out.Team, s.teamCache...)
+		s.teamMu.Unlock()
+		return
+	}
+	s.teamMu.Unlock()
+
+	names, err := s.reviewers.ListAll(ctx)
+	if err != nil {
+		logrus.WithError(err).Warn("list reviewers for recruitment dashboard failed")
+		return
+	}
+	infos := map[string]UserSearchItem{}
+	if s.users != nil {
+		infos = s.users.GetInfos(ctx, names)
+	}
+	team := make([]model.UserInfo, 0, len(names))
+	for _, name := range names {
+		info := infos[name]
+		team = append(team, model.UserInfo{
+			Username:    name,
+			DisplayName: info.DisplayName,
+			Avatar:      info.Avatar,
+		})
+	}
+	s.teamMu.Lock()
+	s.teamCache = append([]model.UserInfo(nil), team...)
+	s.teamCacheAt = time.Now()
+	s.teamMu.Unlock()
+	out.Team = append(out.Team, team...)
 }

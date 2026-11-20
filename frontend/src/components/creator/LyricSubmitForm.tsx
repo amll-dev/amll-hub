@@ -18,9 +18,11 @@ import { queryKeys } from '@/lib/query';
 import { buttonTap, fadeUp, staggerContainer } from '@/lib/motion';
 import { useFormDraft } from '@/hooks/useFormDraft';
 import { useUnrearrangedMode } from '@/hooks/useUnrearrangedMode';
+import { useActiveRecruitment } from '@/hooks/useRecruitment';
 import { TagInput } from '@/components/ui/tag-input';
 import { detectLanguages, type LangCode } from '@/lib/lang-detect';
 import { detectAutoTags } from '@/lib/auto-tags';
+import { isRecruitmentTag, RECRUITMENT_TAG } from '@/lib/recruitment';
 import {
   buildDiffSnapshot,
   computeRevisionDiff,
@@ -88,11 +90,7 @@ const SUBMIT_TYPES: { value: SubmissionType; label: string; description: string 
 export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const recruitment = useQuery({
-    queryKey: ['reviewer-recruitment', 'active'],
-    queryFn: api.reviewerRecruitment.active,
-    refetchInterval: 30_000,
-  });
+  const recruitment = useActiveRecruitment();
   const [participate, setParticipate] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [validation, setValidation] = useState<TtmlValidationResult | null>(null);
@@ -349,8 +347,8 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
         ...unrearranged.submissionFields,
         ...revisionFields,
         tags: [
-          ...tags.filter((tag) => tag !== '参与审核招募' && tag !== '审核招募'),
-          ...(participate && recruitment.data?.active ? ['参与审核招募'] : []),
+          ...tags.filter((tag) => !isRecruitmentTag(tag)),
+          ...(participate && recruitment.data?.active ? [RECRUITMENT_TAG] : []),
         ],
         status: params.status,
         petitionIds: selectedPetitionIds.length > 0 ? selectedPetitionIds : undefined,
@@ -370,7 +368,7 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
     },
     onMutate: () => setSubmitMsg(null),
     onSuccess: (result, { status }) => {
-      void queryClient.invalidateQueries({ queryKey: ['reviewer-recruitment'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.recruitmentRoot });
       reset();
       const warnings: string[] = [];
       if (result.audioFailures.length > 0) {
@@ -623,17 +621,28 @@ export function LyricSubmitForm({ onSuccess }: { onSuccess?: () => void }) {
           })}
         </div>
         {(recruitment.data?.active || participate) && (
-          <label className="mt-3 flex items-center gap-3 text-sm text-ink-2">
-            <Checkbox
+          <label
+            className={`mt-3 flex items-start gap-3 rounded-md border px-4 py-3 transition-colors ${
+              participate
+                ? 'border-teal-500/60 bg-teal-50 dark:border-teal-500/40 dark:bg-teal-950/30'
+                : 'border-line bg-surface-2 hover:border-teal-500/40 dark:hover:border-teal-500/50'
+            } ${submitting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+          >
+            <input
+              type="checkbox"
               checked={participate}
               disabled={submitting}
-              onCheckedChange={(checked) => {
-                setParticipate(checked === true);
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setParticipate(checked);
                 if (checked) setSubmitType('new');
               }}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-teal-500 dark:accent-teal-400"
             />
-            参与审核招募
-            <span className="text-xs text-ink-3">提交进入待审核队列后自动报名</span>
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-foreground">参与审核招募</span>
+              <span className="mt-0.5 block text-xs text-ink-3">提交进入待审核队列后自动报名</span>
+            </span>
           </label>
         )}
       </motion.div>

@@ -1,4 +1,4 @@
-import type { RecruitmentConditions } from '@/lib/types';
+import type { RecruitmentPayload } from '@/lib/types';
 
 export const conditionFields = [
   { key: 'validSubmissions', label: '有效投稿数', min: 1 },
@@ -8,14 +8,5 @@ export const conditionFields = [
   { key: 'maxAttempts', label: '最多尝试次数', min: 1 },
 ] as const;
 
-export interface RecruitmentDraft {
-  announcement: string;
-  languages: string[];
-  conditions: RecruitmentConditions;
-  endsOn?: string;
-  targetMembers?: number;
-}
-export interface RecruitmentRecord extends RecruitmentDraft {
-  id: string;
-  createdAt: string;
-}
+/** 发起招募时还没有 id，由前端生成 UUID 作为幂等键。 */
+export type RecruitmentDraft = Omit<RecruitmentPayload, 'id'>;
