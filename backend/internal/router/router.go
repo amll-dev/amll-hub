@@ -128,13 +128,19 @@ func New(deps RouterDeps) *gin.Engine {
 	r.Use(middleware.Recovery())
 	corsConfig := cors.Config{
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Authorization", "Content-Type", "X-Request-ID"},
+		AllowHeaders:     []string{"Authorization", "Content-Type", "X-Device-ID", "X-Request-ID"},
 		ExposeHeaders:    []string{"Content-Length", "ETag", "X-Request-ID"},
 		AllowCredentials: false,
 	}
-	if allowedOrigins := os.Getenv("CORS_ALLOWED_ORIGINS"); allowedOrigins != "" {
-		corsConfig.AllowOrigins = strings.Split(allowedOrigins, ",")
-	} else {
+	if rawOrigins := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS")); rawOrigins != "" {
+		for _, origin := range strings.Split(rawOrigins, ",") {
+			// 浏览器 Origin 不带结尾斜杠，配置里多写一个 / 会导致永远匹配不上
+			if origin = strings.TrimRight(strings.TrimSpace(origin), "/"); origin != "" {
+				corsConfig.AllowOrigins = append(corsConfig.AllowOrigins, origin)
+			}
+		}
+	}
+	if len(corsConfig.AllowOrigins) == 0 {
 		corsConfig.AllowAllOrigins = true
 	}
 	r.Use(cors.New(corsConfig))
