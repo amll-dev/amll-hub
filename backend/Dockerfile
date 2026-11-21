@@ -22,6 +22,7 @@ RUN apk --no-cache add ca-certificates tzdata wget && \
 WORKDIR /app
 COPY --from=builder --chown=appuser:appuser /out/server /app/server
 COPY --from=builder --chown=appuser:appuser /app/migrations /app/migrations
+COPY --from=builder --chown=appuser:appuser /app/data /app/data
 
 EXPOSE 8080
 

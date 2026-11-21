@@ -239,6 +239,12 @@ func New(deps RouterDeps) *gin.Engine {
 			auth.POST("/forgot-password", authH.ForgotPassword)
 			auth.GET("/captcha", authH.GetCaptcha)
 
+			// 网页本机号码一键登录
+			auth.GET("/oneclick/enabled", authH.OneClickEnabled)
+			auth.POST("/oneclick/auth-token", authH.OneClickAuthToken)
+			auth.POST("/oneclick/login", authH.OneClickLogin)
+			auth.POST("/oneclick/native-login", authH.OneClickNativeLogin)
+
 			// 扫码登录：网页端申请票据 + 轮询状态（公开）
 			auth.POST("/qrcode", authH.CreateQRCode)
 			auth.GET("/qrcode/status", authH.QRCodeStatus)
@@ -252,10 +258,12 @@ func New(deps RouterDeps) *gin.Engine {
 
 			// 受保护接口
 			protected := auth.Group("")
-			protected.Use(middleware.Auth(jwtSecret))
+			protected.Use(middleware.Auth(jwtSecret, deps.Redis))
 			protected.GET("/profile", authH.GetProfile)
 			protected.PUT("/profile", authH.UpdateProfile)
 			protected.POST("/change-password", authH.ChangePassword)
+			// 安全：退出所有设备（递增会话版本，已签发 JWT 立即失效）
+			protected.POST("/security/revoke", authH.RevokeSessions)
 			protected.GET("/identity", authH.GetIdentityStatus)
 			protected.POST("/identity/code", authH.SendIdentityCode)
 			protected.POST("/identity/verify", authH.VerifyIdentity)
@@ -280,7 +288,7 @@ func New(deps RouterDeps) *gin.Engine {
 			storePublic.GET("/catalog.json", pluginStoreH.Catalog)
 			storePublic.GET("/artifacts/:file", pluginStoreH.Artifact)
 			storePublic.GET("/plugins", pluginStoreH.ListPublic)
-			storePublic.GET("/plugins/:key", middleware.OptionalAuth(jwtSecret), pluginStoreH.GetPublic)
+			storePublic.GET("/plugins/:key", middleware.OptionalAuth(jwtSecret, deps.Redis), pluginStoreH.GetPublic)
 			storePublic.GET("/plugins/:key/icon", pluginStoreH.GetIcon)
 			storePublic.GET("/plugins/:key/comments", pluginStoreH.ListComments)
 			storePublic.GET("/stats", pluginStoreH.Stats)
@@ -288,7 +296,7 @@ func New(deps RouterDeps) *gin.Engine {
 
 		// 插件商店：发布者（登录）
 		storeAuth := api.Group("/store")
-		storeAuth.Use(middleware.Auth(jwtSecret))
+		storeAuth.Use(middleware.Auth(jwtSecret, deps.Redis))
 		{
 			storeAuth.POST("/submissions", pluginStoreH.CreateSubmission)
 			// 静态段 validate 必须先于 :id 注册
@@ -309,7 +317,7 @@ func New(deps RouterDeps) *gin.Engine {
 
 		// 插件商店：审核员
 		storeReview := api.Group("/store/review")
-		storeReview.Use(middleware.Auth(jwtSecret), middleware.RequireReviewerOrAdmin(reviewerCache, adminCache))
+		storeReview.Use(middleware.Auth(jwtSecret, deps.Redis), middleware.RequireReviewerOrAdmin(reviewerCache, adminCache))
 		{
 			storeReview.GET("/queue", pluginReviewH.Queue)
 			storeReview.GET("/plugins/:key", pluginStoreH.GetReviewPlugin)
@@ -319,7 +327,7 @@ func New(deps RouterDeps) *gin.Engine {
 
 		// 插件商店：管理员
 		storeAdmin := api.Group("/store/admin")
-		storeAdmin.Use(middleware.Auth(jwtSecret), middleware.RequireAdmin(adminCache))
+		storeAdmin.Use(middleware.Auth(jwtSecret, deps.Redis), middleware.RequireAdmin(adminCache))
 		{
 			storeAdmin.POST("/versions/:id/listing", pluginAdminH.Listing)
 			storeAdmin.DELETE("/versions/:id", pluginAdminH.DeleteVersion)
@@ -333,7 +341,7 @@ func New(deps RouterDeps) *gin.Engine {
 
 		// 文档：公开只读（OptionalAuth 用于回传 canEdit）
 		docsPub := api.Group("/docs")
-		docsPub.Use(middleware.OptionalAuth(jwtSecret))
+		docsPub.Use(middleware.OptionalAuth(jwtSecret, deps.Redis))
 		{
 			docsPub.GET("", docH.ListPublic)
 			docsPub.GET("/nav", docH.ListNav)
@@ -344,7 +352,7 @@ func New(deps RouterDeps) *gin.Engine {
 		// 进行中的审核招募供首页 banner 使用（公开读取）
 		api.GET("/reviewer-recruitment/active", recruitmentH.Active)
 		sub := api.Group("")
-		sub.Use(middleware.Auth(jwtSecret))
+		sub.Use(middleware.Auth(jwtSecret, deps.Redis))
 		{
 			recruit := sub.Group("/reviewer-recruitment")
 			recruit.GET("/me", recruitmentH.Me)
@@ -521,7 +529,7 @@ func New(deps RouterDeps) *gin.Engine {
 
 		// 歌词请愿
 		lrPub := api.Group("/lyric-requests")
-		lrPub.Use(middleware.OptionalAuth(jwtSecret))
+		lrPub.Use(middleware.OptionalAuth(jwtSecret, deps.Redis))
 		{
 			lrPub.GET("", lyricRequestH.List)
 			lrPub.GET("/hot", lyricRequestH.Hot)
@@ -551,7 +559,7 @@ func New(deps RouterDeps) *gin.Engine {
 		// 公开用户主页（匿名可访问；带合法 token 时按本人视角返回更多数据）
 		// 这组路由必须在上面 /users/me/* 之后注册，理由见那里的注释
 		users := api.Group("/users")
-		users.Use(middleware.OptionalAuth(jwtSecret))
+		users.Use(middleware.OptionalAuth(jwtSecret, deps.Redis))
 		{
 			// 静态段必须先于 :name，否则 gin 构建路由树时 panic
 			users.GET("/search", userSearchH.Search)

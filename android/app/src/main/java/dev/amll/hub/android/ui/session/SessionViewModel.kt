@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.amll.hub.android.data.remote.AuthRepository
+import dev.amll.hub.android.data.remote.AuthSessionEvents
 import dev.amll.hub.android.data.remote.UnauthorizedException
 import dev.amll.hub.android.data.remote.UserProfile
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,18 +34,34 @@ sealed interface SessionState {
 @HiltViewModel
 class SessionViewModel @Inject constructor(
     private val repo: AuthRepository,
+    sessionEvents: AuthSessionEvents,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<SessionState>(SessionState.Loading)
     val state: StateFlow<SessionState> = _state.asStateFlow()
 
+    /** 任意接口已判定 401，冷启动读取 token 的协程不要再把状态改回已登录 */
+    private var loggedOutByServer = false
+
     init {
+        // 任意带 token 的请求返回 401 时，统一清本地登录态并回到登录页
+        viewModelScope.launch {
+            sessionEvents.unauthorized.collect {
+                loggedOutByServer = true
+                runCatching { repo.logout() }
+                _state.value = SessionState.LoggedOut
+            }
+        }
+
         viewModelScope.launch {
             val token = repo.currentToken()
-            _state.value = if (token.isNullOrBlank()) {
-                SessionState.LoggedOut
+            if (loggedOutByServer) return@launch
+            if (token.isNullOrBlank()) {
+                _state.value = SessionState.LoggedOut
             } else {
-                SessionState.LoggedIn(null)
+                // 先放行进首页，再校验 token；离线时保留登录态
+                _state.value = SessionState.LoggedIn(null)
+                refreshProfile()
             }
         }
     }
@@ -54,12 +71,18 @@ class SessionViewModel @Inject constructor(
         val current = _state.value as? SessionState.LoggedIn ?: return
         viewModelScope.launch {
             runCatching { repo.profile() }
-                .onSuccess { profile -> _state.value = SessionState.LoggedIn(profile) }
+                .onSuccess { profile ->
+                    // 期间可能已被其他请求的 401 踢下线，不要覆盖 LoggedOut
+                    if (!loggedOutByServer) {
+                        _state.value = SessionState.LoggedIn(profile)
+                    }
+                }
                 .onFailure { e ->
                     if (e is UnauthorizedException) {
-                        repo.logout()
+                        loggedOutByServer = true
+                        runCatching { repo.logout() }
                         _state.value = SessionState.LoggedOut
-                    } else {
+                    } else if (!loggedOutByServer) {
                         // 网络异常：token 依然有效，保留登录态与已有资料
                         _state.value = SessionState.LoggedIn(current.profile)
                     }
@@ -69,6 +92,7 @@ class SessionViewModel @Inject constructor(
 
     /** 登录成功后由 UI 回传资料 */
     fun onLoggedIn(profile: UserProfile?) {
+        loggedOutByServer = false
         _state.value = SessionState.LoggedIn(profile)
     }
 

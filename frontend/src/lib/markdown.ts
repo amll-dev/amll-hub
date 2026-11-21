@@ -23,6 +23,11 @@ const WIKI_SLUGS: Record<string, string> = {
   'instruction.md': '/docs/format-spec',
 };
 
+/** amll-ttml-tool wiki 页面名 → 站内文档路由（歌词元数据已迁移到站内元数据文档） */
+const TOOL_WIKI_SLUGS: Record<string, string> = {
+  歌词元数据: '/docs/metadata-guide',
+};
+
 function safeDecode(value: string): string {
   try {
     return decodeURIComponent(value);
@@ -57,6 +62,16 @@ function rewriteLink(href: string): string {
   if (pageName) {
     const target = WIKI_SLUGS[pageName.replace(/\.md$/, '')];
     if (target) return target + (absolute?.[2] ?? '');
+  }
+
+  // amll-ttml-tool wiki 的歌词元数据页 → 站内元数据文档
+  const toolWiki = raw.match(
+    /^https?:\/\/github\.com\/amll-dev\/amll-ttml-tool\/wiki\/([^#?]+)(#.*)?$/
+  );
+  const toolPage = toolWiki?.[1];
+  if (toolPage) {
+    const target = TOOL_WIKI_SLUGS[toolPage.replace(/\.md$/, '')];
+    if (target) return target + (toolWiki?.[2] ?? '');
   }
 
   const [pathPart = '', hash] = raw.split('#');

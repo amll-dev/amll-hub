@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useAtom, useAtomValue } from 'jotai';
@@ -19,12 +19,14 @@ import { useAuth } from '@/hooks/useAuth';
 import { useAliyunCaptcha } from '@/hooks/useAliyunCaptcha';
 import { useCountdown } from '@/hooks/useCountdown';
 import { api } from '@/lib/api';
+import { requestSpToken } from '@/lib/phoneAuth';
 import { queryKeys } from '@/lib/query';
 import { cn } from '@/lib/utils';
 import { buttonTap } from '@/lib/motion';
-import type { CaptchaConfig, LoginMfaRequired, LoginSuccess, MfaMethod } from '@/lib/auth';
+import type { CaptchaConfig, LoginMfaRequired, LoginSuccess, MfaMethod, SecurityNotice } from '@/lib/auth';
 import { isMfaRequired } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { SecurityNoticeModal } from '@/components/SecurityNoticeModal';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -220,6 +222,9 @@ export function AuthDialog() {
   const mfaCountdown = useCountdown();
   const mfaCurrent = mfaChallenge?.methods.find((m) => m.mfaType === mfaType);
 
+  // 新设备/异地登录提示
+  const [securityNotices, setSecurityNotices] = useState<SecurityNotice[] | null>(null);
+
   // 两套登录表单
   const passwordForm = useForm<PasswordFormValues>({
     resolver: zodResolver(passwordSchema),
@@ -399,6 +404,69 @@ export function AuthDialog() {
     setError('');
   };
 
+  /** 所有登录方式共用的成功收尾：写入登录态、关弹窗、处理跳转与安全提示 */
+  const handleLoginSuccess = (result: LoginSuccess) => {
+    login(result.token, result.user);
+    handleClose();
+    if (loginRedirect) {
+      navigate(loginRedirect);
+      clearLoginRedirect();
+    }
+    if (result.securityNotices?.length) {
+      setSecurityNotices(result.securityNotices);
+    }
+  };
+
+  // 一键登录入口是否可用（未配置 PNVS 时后端返回 false）
+  const oneClickEnabledQuery = useQuery({
+    queryKey: ['auth', 'oneclick-enabled'],
+    queryFn: () => api.getOneClickEnabled(),
+    enabled: loginOpen,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const oneClickEnabled = oneClickEnabledQuery.data?.enabled === true;
+
+  // 本机号码一键登录：取临时凭据 → 检测本机号码 → 拉起运营商授权页 → spToken 换本地 JWT
+  const oneClickMutation = useMutation({
+    mutationFn: async (options: { silent?: boolean } = {}) => {
+      void options;
+      const { accessToken, jwtToken } = await api.getOneClickAuthToken();
+      const spToken = await requestSpToken(accessToken, jwtToken);
+      // 用户取消授权 / 关闭授权页 / 切换其他方式，不提示错误
+      if (!spToken) return null;
+      return api.loginOneClick(spToken);
+    },
+    onSuccess: (result) => {
+      if (!result) return;
+      if (isMfaRequired(result)) {
+        startMfa(result);
+        return;
+      }
+      handleLoginSuccess(result);
+    },
+    onError: (e: Error, options) => {
+      // 自动检测失败时静默回退到密码/验证码表单
+      if (options?.silent) return;
+      setError(e.message || '一键登录失败，请使用短信验证码或密码登录');
+    },
+  });
+
+  // 打开登录弹窗先静默检测本机号码，检测到才拉起授权页；每个弹窗周期只尝试一次
+  const oneClickAutoTried = useRef(false);
+  useEffect(() => {
+    if (!loginOpen) {
+      oneClickAutoTried.current = false;
+      return;
+    }
+    if (!oneClickEnabled || oneClickAutoTried.current) return;
+    oneClickAutoTried.current = true;
+    const timer = window.setTimeout(() => oneClickMutation.mutate({ silent: true }), 350);
+    return () => window.clearTimeout(timer);
+    // oneClickMutation 在弹窗生命周期内保持稳定，不加入依赖以免重复拉起授权页
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loginOpen, oneClickEnabled]);
+
   // 密码登录
   const passwordLoginMutation = useMutation({
     mutationFn: (vars: PasswordFormValues) => api.login(vars.username, vars.password),
@@ -407,8 +475,7 @@ export function AuthDialog() {
         startMfa(result);
         return;
       }
-      login(result.token, result.user);
-      finishLogin();
+      handleLoginSuccess(result);
     },
     onError: (e: Error) => setError(e.message || '登录失败'),
   });
@@ -421,8 +488,7 @@ export function AuthDialog() {
         startMfa(result);
         return;
       }
-      login(result.token, result.user);
-      finishLogin();
+      handleLoginSuccess(result);
     },
     onError: (e: Error) => setError(e.message || '登录失败'),
   });
@@ -443,8 +509,7 @@ export function AuthDialog() {
         startMfa(result);
         return;
       }
-      login(result.token, result.user);
-      finishLogin();
+      handleLoginSuccess(result);
     },
     onError: (e: Error) => {
       const msg = e.message || '验证失败';
@@ -516,15 +581,6 @@ export function AuthDialog() {
     }
   };
 
-  /** 登录成功收尾：关闭弹窗；若带了跳转目标（点击需登录功能进入），自动前往 */
-  const finishLogin = () => {
-    handleClose();
-    if (loginRedirect) {
-      navigate(loginRedirect);
-      clearLoginRedirect();
-    }
-  };
-
   const submitting = passwordLoginMutation.isPending || codeLoginMutation.isPending;
 
   const tabItems: { key: Tab; label: string }[] = [
@@ -549,8 +605,7 @@ export function AuthDialog() {
             {loginOpen && (
               <QrLoginPanel
                 onSuccess={(result) => {
-                  login(result.token, result.user);
-                  finishLogin();
+                  handleLoginSuccess(result);
                 }}
               />
             )}
@@ -692,6 +747,8 @@ export function AuthDialog() {
                     transition={{ duration: 0.2, ease: 'easeOut' }}
                     className="flex flex-1 flex-col"
                   >
+                    {/* 本机号码检测在弹窗打开时自动进行，未检测到号码时直接展示表单 */}
+
                     {/* Tab 切换 */}
                     <div className="mb-6 flex items-center justify-center gap-8">
                       {tabItems.map((t) => (
@@ -1092,6 +1149,9 @@ export function AuthDialog() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* 新设备/异地登录提示 */}
+      <SecurityNoticeModal notices={securityNotices} onClose={() => setSecurityNotices(null)} />
     </>
   );
 }

@@ -211,12 +211,12 @@ func (s *GithubBindService) BindLogin(ctx context.Context, req GithubBindLoginRe
 	if _, err := s.loadBindPayload(ctx, req.Token); err != nil {
 		return nil, err
 	}
-	result, err := s.auth.Login(ctx, req.Account, req.Password)
+	result, err := s.auth.Login(ctx, req.Account, req.Password, infrastructure.LoginMeta{})
 	if errors.Is(err, ErrMfaSetupRequired) {
 		// 走到这里说明账号还没有任何 MFA 因子，只是组织策略要求先绑定。
 		// 此时没有任何第二因子可校验，而绑定页也进不去安全设置，按第三方登录的既有约定放行，
 		// 否则用户会卡死在绑定页。
-		return s.auth.LoginSkippingMfa(ctx, req.Account, req.Password)
+		return s.auth.LoginSkippingMfa(ctx, req.Account, req.Password, infrastructure.LoginMeta{})
 	}
 	return result, err
 }
@@ -232,7 +232,7 @@ func (s *GithubBindService) BindRegister(ctx context.Context, req GithubBindRegi
 	}
 	// 刚由本服务创建的新账号此刻不可能已有 MFA 因子，
 	// 用 SkippingMfa 是为了放行 Casdoor 的「必须先设置 MFA」策略，避免注册完卡在绑定页
-	result, err := s.auth.LoginSkippingMfa(ctx, req.Username, req.Password)
+	result, err := s.auth.LoginSkippingMfa(ctx, req.Username, req.Password, infrastructure.LoginMeta{})
 	if err != nil {
 		return nil, err
 	}
@@ -362,6 +362,7 @@ func (s *GithubBindService) issueJWT(ctx context.Context, username string) (stri
 		DisplayName: profile.DisplayName,
 		Email:       profile.Email,
 		Avatar:      profile.Avatar,
+		Ver:         s.auth.currentSessionVersion(ctx, s.org+"/"+username),
 	}, s.jwtSecret, s.jwtTTL)
 	if err != nil {
 		return "", fmt.Errorf("签发 token 失败: %w", err)

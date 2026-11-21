@@ -32,7 +32,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { fadeUp, staggerContainer } from '@/lib/motion';
 import { formatDateTime } from '@/lib/format';
 import { api } from '@/lib/api';
-import { openExternal } from '@/lib/navigation';
 import { queryKeys } from '@/lib/query';
 import { useSubmissionListSync } from '@/hooks/useSubmissionListSync';
 import { useRecruitmentSync } from '@/hooks/useRecruitmentSync';
@@ -519,7 +518,7 @@ function HomeOverview() {
             title={item.pluginName}
             tag={`v${item.version.version}`}
             time={formatDateTime(item.version.submittedAt)}
-            onOpen={() => openExternal(`/review/plugin?key=${encodeURIComponent(item.pluginKey)}`)}
+            onOpen={() => navigate(`/review/plugin?key=${encodeURIComponent(item.pluginKey)}`)}
           />
         ))}
       </HomePendingCard>

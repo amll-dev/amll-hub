@@ -30,6 +30,12 @@ class AuthRepository @Inject constructor(
         return resp.also { authStore.save(it.token) }
     }
 
+    /** 安卓原生一键登录：运营商 token 由 SDK 获取，后端负责换手机号并签 JWT */
+    suspend fun loginOneClickNative(token: String): LoginResult {
+        val resp = call { api.loginOneClickNative(OneClickNativeLoginRequest(token.trim())) }
+        return resp.also { authStore.save(it.token) }
+    }
+
     suspend fun sendCode(
         checkType: String,
         dest: String,

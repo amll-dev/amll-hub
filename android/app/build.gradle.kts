@@ -22,6 +22,10 @@ fun localOrEnv(key: String, env: String): String? =
 val apiBaseUrl: String = localOrEnv("amll.api.baseUrl", "AMLL_API_BASE_URL")
     ?: "https://api.beta.amllhub.bikonoo.com"
 
+// 阿里云号码认证 Android 方案的密钥（控制台「号码认证方案管理」→ 密钥），
+// 不是 AccessKey；留空时 App 内不展示一键登录。
+val pnvsAuthSecret: String = localOrEnv("amll.pnvs.secret", "AMLL_PNVS_SECRET") ?: ""
+
 // 发布签名：四项齐全才启用正式 keystore，否则 release 继续用 debug key 兜底
 val releaseStoreFile = localOrEnv("amll.release.storeFile", "AMLL_RELEASE_STORE_FILE")
 val releaseStorePassword = localOrEnv("amll.release.storePassword", "AMLL_RELEASE_STORE_PASSWORD")
@@ -48,6 +52,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+        buildConfigField("String", "PNVS_AUTH_SECRET", "\"$pnvsAuthSecret\"")
     }
 
     signingConfigs {
@@ -113,6 +118,10 @@ kotlin {
 }
 
 dependencies {
+    // 阿里云号码认证 SDK（auth/logger/main 三个 AAR，放在 app/libs）
+    implementation(fileTree("libs") { include("*.aar") })
+    implementation(libs.androidx.appcompat)
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
     // XML 主题（Theme.Material3.DayNight.NoActionBar）

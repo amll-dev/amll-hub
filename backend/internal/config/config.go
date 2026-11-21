@@ -35,7 +35,33 @@ type Config struct {
 	PluginStore  PluginStoreConfig
 	Worker       WorkerConfig
 	Email        EmailConfig
+	QQBot        QQBotConfig
+	AliyunPNVS   AliyunPNVSConfig
+	Security     SecurityConfig
 	ServiceToken string
+}
+
+// AliyunPNVSConfig 阿里云号码认证服务（本机号码一键登录）配置
+type AliyunPNVSConfig struct {
+	AccessKeyID     string
+	AccessKeySecret string
+	// SceneCode H5 认证方案的场景码
+	SceneCode string
+	RegionID  string
+}
+
+// Enabled 是否已配置一键登录所需凭据，未配置时按功能关闭处理
+func (c AliyunPNVSConfig) Enabled() bool {
+	return c.AccessKeyID != "" && c.AccessKeySecret != "" && c.SceneCode != ""
+}
+
+// SecurityConfig 登录安全提示配置
+type SecurityConfig struct {
+	// LoginNotifyEnabled 是否在登录成功后返回新设备/异地登录提示
+	LoginNotifyEnabled bool
+	// IPDBFile ipip.net IP 库路径（17mon .dat 或 ipdb .ipdb），
+	// 默认使用仓库内 backend/data/ipipfree.ipdb；留空时退化为网段判定
+	IPDBFile string
 }
 
 type HTTPConfig struct {
@@ -231,6 +257,28 @@ type WorkerConfig struct {
 	BaseURL string
 }
 
+// QQBotConfig QQ 官方机器人配置（内嵌在 API 进程内运行）
+type QQBotConfig struct {
+	// AppID / ClientSecret 开放平台机器人凭据
+	AppID        string
+	ClientSecret string
+	// Sandbox 是否连接沙箱环境
+	Sandbox bool
+	// Intents 事件订阅位，默认 GROUP_AND_C2C_EVENT
+	Intents int
+	// SiteURL 站点地址，用于拼接歌词/推荐/排行榜详情链接
+	SiteURL string
+	// Markdown 是否优先使用 Markdown 消息（不支持时自动回退纯文本）
+	Markdown bool
+	// FontPath 每日推荐卡片使用的中文字体路径，留空自动查找系统字体
+	FontPath string
+}
+
+// Enabled 是否已配置机器人凭据
+func (c QQBotConfig) Enabled() bool {
+	return c.AppID != "" && c.ClientSecret != ""
+}
+
 // EmailConfig 邮件通知配置
 type EmailConfig struct {
 	// Enabled 总开关，关闭时不查邮箱也不发信
@@ -410,6 +458,15 @@ func Load() (*Config, error) {
 	// Worker
 	v.SetDefault("WORKER_BASE_URL", "http://localhost:9090")
 
+	// QQ 官方机器人
+	v.SetDefault("QQ_BOT_APP_ID", "")
+	v.SetDefault("QQ_BOT_CLIENT_SECRET", "")
+	v.SetDefault("QQ_BOT_SANDBOX", false)
+	v.SetDefault("QQ_BOT_INTENTS", 1<<25) // GROUP_AND_C2C_EVENT
+	v.SetDefault("QQ_BOT_SITE_URL", "https://beta.amllhub.bikonoo.com")
+	v.SetDefault("QQ_BOT_MARKDOWN", true)
+	v.SetDefault("QQ_BOT_FONT_PATH", "")
+
 	// Email 邮件通知（审核结果）
 	v.SetDefault("EMAIL_ENABLED", false)
 	v.SetDefault("SMTP_HOST", "")
@@ -421,6 +478,16 @@ func Load() (*Config, error) {
 	v.SetDefault("SITE_URL", "http://localhost:5173")
 	v.SetDefault("EMAIL_CACHE_TTL", "10m")
 	v.SetDefault("EMAIL_TIMEOUT_SEC", 15)
+
+	// 阿里云号码认证（网页一键登录）
+	v.SetDefault("ALIYUN_PNVS_ACCESS_KEY_ID", "")
+	v.SetDefault("ALIYUN_PNVS_ACCESS_KEY_SECRET", "")
+	v.SetDefault("ALIYUN_PNVS_SCENE_CODE", "")
+	v.SetDefault("ALIYUN_PNVS_REGION_ID", "cn-hangzhou")
+
+	// 新设备/异地登录站内提示
+	v.SetDefault("SECURITY_LOGIN_NOTIFY_ENABLED", true)
+	v.SetDefault("SECURITY_IP_DB_FILE", "data/ipipfree.ipdb")
 
 	cfg := &Config{
 		HTTP: HTTPConfig{
@@ -545,6 +612,15 @@ func Load() (*Config, error) {
 		Worker: WorkerConfig{
 			BaseURL: v.GetString("WORKER_BASE_URL"),
 		},
+		QQBot: QQBotConfig{
+			AppID:        strings.TrimSpace(v.GetString("QQ_BOT_APP_ID")),
+			ClientSecret: strings.TrimSpace(v.GetString("QQ_BOT_CLIENT_SECRET")),
+			Sandbox:      v.GetBool("QQ_BOT_SANDBOX"),
+			Intents:      v.GetInt("QQ_BOT_INTENTS"),
+			SiteURL:      strings.TrimRight(v.GetString("QQ_BOT_SITE_URL"), "/"),
+			Markdown:     v.GetBool("QQ_BOT_MARKDOWN"),
+			FontPath:     strings.TrimSpace(v.GetString("QQ_BOT_FONT_PATH")),
+		},
 		Email: EmailConfig{
 			Enabled:       v.GetBool("EMAIL_ENABLED"),
 			Host:          v.GetString("SMTP_HOST"),
@@ -556,6 +632,16 @@ func Load() (*Config, error) {
 			SiteURL:       strings.TrimSuffix(v.GetString("SITE_URL"), "/"),
 			EmailCacheTTL: v.GetDuration("EMAIL_CACHE_TTL"),
 			TimeoutSec:    v.GetInt("EMAIL_TIMEOUT_SEC"),
+		},
+		AliyunPNVS: AliyunPNVSConfig{
+			AccessKeyID:     strings.TrimSpace(v.GetString("ALIYUN_PNVS_ACCESS_KEY_ID")),
+			AccessKeySecret: strings.TrimSpace(v.GetString("ALIYUN_PNVS_ACCESS_KEY_SECRET")),
+			SceneCode:       strings.TrimSpace(v.GetString("ALIYUN_PNVS_SCENE_CODE")),
+			RegionID:        strings.TrimSpace(v.GetString("ALIYUN_PNVS_REGION_ID")),
+		},
+		Security: SecurityConfig{
+			LoginNotifyEnabled: v.GetBool("SECURITY_LOGIN_NOTIFY_ENABLED"),
+			IPDBFile:           strings.TrimSpace(v.GetString("SECURITY_IP_DB_FILE")),
 		},
 	}
 

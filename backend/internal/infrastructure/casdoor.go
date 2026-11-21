@@ -157,6 +157,29 @@ func (c *CasdoorClient) basicAuthHeader() string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(c.cfg.ClientID+":"+c.cfg.ClientSecret))
 }
 
+// LoginMeta 登录请求携带的客户端信息。
+// Casdoor 依赖这些头做新设备/异地登录检测（X-Casdoor-Device、X-Forwarded-For、User-Agent）。
+type LoginMeta struct {
+	DeviceID  string
+	ClientIP  string
+	UserAgent string
+}
+
+// applyLoginMeta 把客户端信息写入发往 Casdoor 的请求头
+func applyLoginMeta(req *http.Request, meta LoginMeta) {
+	if meta.DeviceID != "" {
+		req.Header.Set("X-Casdoor-Device", meta.DeviceID)
+	}
+	if meta.ClientIP != "" {
+		// 必须配合 Casdoor 的 trustedProxy 才会被采信
+		req.Header.Set("X-Forwarded-For", meta.ClientIP)
+		req.Header.Set("X-Real-IP", meta.ClientIP)
+	}
+	if meta.UserAgent != "" {
+		req.Header.Set("User-Agent", meta.UserAgent)
+	}
+}
+
 // doWithBasicAuth 用 client_id:client_secret 做 Basic Auth 发请求
 func (c *CasdoorClient) doWithBasicAuth(ctx context.Context, method, path string, body io.Reader, contentType string) (*casdoorResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.cfg.Endpoint+path, body)
@@ -171,7 +194,7 @@ func (c *CasdoorClient) doWithBasicAuth(ctx context.Context, method, path string
 }
 
 // doWithBasicAuthAndCookies 发请求并返回响应中设置的 Cookie（用于 send-verification-code 等需要保持会话的场景）
-func (c *CasdoorClient) doWithBasicAuthAndCookies(ctx context.Context, method, path string, body io.Reader, contentType string) (*casdoorResponse, []*http.Cookie, error) {
+func (c *CasdoorClient) doWithBasicAuthAndCookies(ctx context.Context, method, path string, body io.Reader, contentType string, meta ...LoginMeta) (*casdoorResponse, []*http.Cookie, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.cfg.Endpoint+path, body)
 	if err != nil {
 		return nil, nil, err
@@ -179,6 +202,9 @@ func (c *CasdoorClient) doWithBasicAuthAndCookies(ctx context.Context, method, p
 	req.Header.Set("Authorization", c.basicAuthHeader())
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	if len(meta) > 0 {
+		applyLoginMeta(req, meta[0])
 	}
 
 	// 复用 c.http 的连接池，尽量让登录与随后的 MFA 校验走同一条 keep-alive 连接
@@ -233,7 +259,7 @@ func (c *CasdoorClient) doWithBasicAuthWithCookieJar(ctx context.Context, method
 
 // doWithCookieHeaderCore 带 Cookie 发请求，basicAuth 控制是否附加应用凭据。
 // 统一按 Cookie 头发送，不做 cookie jar 的域名/路径过滤；并复用 c.http 的连接池。
-func (c *CasdoorClient) doWithCookieHeaderCore(ctx context.Context, method, path string, body io.Reader, contentType string, cookies []*http.Cookie, basicAuth bool) (*casdoorResponse, []*http.Cookie, error) {
+func (c *CasdoorClient) doWithCookieHeaderCore(ctx context.Context, method, path string, body io.Reader, contentType string, cookies []*http.Cookie, basicAuth bool, meta ...LoginMeta) (*casdoorResponse, []*http.Cookie, error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.cfg.Endpoint+path, body)
 	if err != nil {
 		return nil, nil, err
@@ -246,6 +272,9 @@ func (c *CasdoorClient) doWithCookieHeaderCore(ctx context.Context, method, path
 	}
 	for _, ck := range cookies {
 		req.AddCookie(ck)
+	}
+	if len(meta) > 0 {
+		applyLoginMeta(req, meta[0])
 	}
 	if strings.HasPrefix(path, "/api/login") || strings.HasPrefix(path, "/api/mfa/") {
 		logrus.WithFields(logrus.Fields{
@@ -300,8 +329,8 @@ func (c *CasdoorClient) doWithCookieHeaderCore(ctx context.Context, method, path
 
 // doWithCookieHeader 直接按 Cookie 头发送会话（不带 Basic Auth）。
 // Casdoor 的 /api/login 二次验证、mfaAuth 发码等依赖这份会话。
-func (c *CasdoorClient) doWithCookieHeader(ctx context.Context, method, path string, body io.Reader, contentType string, cookies []*http.Cookie) (*casdoorResponse, []*http.Cookie, error) {
-	return c.doWithCookieHeaderCore(ctx, method, path, body, contentType, cookies, false)
+func (c *CasdoorClient) doWithCookieHeader(ctx context.Context, method, path string, body io.Reader, contentType string, cookies []*http.Cookie, meta ...LoginMeta) (*casdoorResponse, []*http.Cookie, error) {
+	return c.doWithCookieHeaderCore(ctx, method, path, body, contentType, cookies, false, meta...)
 }
 
 // cookieNames 只返回 Cookie 名，避免把会话值写进日志
@@ -556,7 +585,7 @@ func (c *CasdoorClient) appOwner() string {
 //
 // 与 OAuth 密码模式不同，这个接口会走 Casdoor 的 MFA 流程：
 // 返回 NextMfa 时说明密码已通过，但还需要二次验证。
-func (c *CasdoorClient) LoginWithPassword(ctx context.Context, username, password string) (*CasdoorLoginResult, error) {
+func (c *CasdoorClient) LoginWithPassword(ctx context.Context, username, password string, meta LoginMeta) (*CasdoorLoginResult, error) {
 	payload := map[string]any{
 		"organization": c.cfg.Organization,
 		"application":  c.cfg.Application,
@@ -574,7 +603,7 @@ func (c *CasdoorClient) LoginWithPassword(ctx context.Context, username, passwor
 	// 登录是高频路径，且带账号标识；正常流程不需要日志留痕
 	logrus.WithField("username", username).Debug("casdoor /api/login (password) request")
 
-	cr, cookies, err := c.doWithBasicAuthAndCookies(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json")
+	cr, cookies, err := c.doWithBasicAuthAndCookies(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json", meta)
 	if err != nil {
 		return nil, err
 	}
@@ -593,7 +622,7 @@ func (c *CasdoorClient) LoginWithPassword(ctx context.Context, username, passwor
 //
 // 该接口不返回 OAuth token，而是通过 Set-Cookie 下发会话，因此这里用 cookie jar 捕获，
 // 让「以登录用户身份」的接口（如 /api/reset-email-or-phone）也能复用这份会话。
-func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string) (*CasdoorLoginResult, error) {
+func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string, meta LoginMeta) (*CasdoorLoginResult, error) {
 	isEmail := strings.Contains(dest, "@")
 
 	payload := map[string]any{
@@ -616,7 +645,7 @@ func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string) (*Ca
 		"isEmail": isEmail,
 	}).Debug("casdoor /api/login (code) request")
 
-	cr, cookies, err := c.doWithBasicAuthAndCookies(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json")
+	cr, cookies, err := c.doWithBasicAuthAndCookies(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json", meta)
 	if err != nil {
 		return nil, err
 	}
@@ -632,7 +661,7 @@ func (c *CasdoorClient) LoginByCode(ctx context.Context, dest, code string) (*Ca
 }
 
 // VerifyMfaLogin 用 MFA 验证码继续完成登录
-func (c *CasdoorClient) VerifyMfaLogin(ctx context.Context, cookies []*http.Cookie, mfaType, passcode, recoveryCode string) (*CasdoorLoginResult, error) {
+func (c *CasdoorClient) VerifyMfaLogin(ctx context.Context, cookies []*http.Cookie, mfaType, passcode, recoveryCode string, meta LoginMeta) (*CasdoorLoginResult, error) {
 	payload := map[string]any{
 		"organization": c.cfg.Organization,
 		"application":  c.cfg.Application,
@@ -655,7 +684,7 @@ func (c *CasdoorClient) VerifyMfaLogin(ctx context.Context, cookies []*http.Cook
 	}).Debug("casdoor /api/login (mfa) request")
 
 	// 二次验证只依赖第一次登录返回的会话 cookie
-	cr, merged, err := c.doWithCookieHeader(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json", cookies)
+	cr, merged, err := c.doWithCookieHeader(ctx, "POST", "/api/login", bytes.NewReader(jsonBody), "application/json", cookies, meta)
 	if err != nil {
 		return nil, err
 	}
@@ -1491,4 +1520,120 @@ func (c *CasdoorClient) ResetPassword(ctx context.Context, owner, name, newPassw
 		return err
 	}
 	return nil
+}
+
+// oauthTokenResponse Casdoor token 端点的 OAuth 响应
+type oauthTokenResponse struct {
+	AccessToken      string `json:"access_token"`
+	IDToken          string `json:"id_token"`
+	RefreshToken     string `json:"refresh_token"`
+	TokenType        string `json:"token_type"`
+	ExpiresIn        int    `json:"expires_in"`
+	Scope            string `json:"scope"`
+	Error            string `json:"error"`
+	ErrorDescription string `json:"error_description"`
+}
+
+const (
+	// mobileOneClickH5GrantType 网页 H5 SDK 的一键登录 grant
+	mobileOneClickH5GrantType = "urn:casdoor:params:oauth:grant-type:mobile-one-click-h5"
+	// mobileOneClickNativeGrantType 原生 Android/iOS SDK 的一键登录 grant
+	mobileOneClickNativeGrantType = "urn:casdoor:params:oauth:grant-type:mobile-one-click"
+)
+
+// ExchangeMobileOneClickH5 用网页 H5 SDK 返回的 spToken 走 Casdoor 的 H5 一键登录 grant。
+// 成功时返回 Casdoor 签发的 access token；失败时返回的 error 只包含脱敏后的错误描述。
+func (c *CasdoorClient) ExchangeMobileOneClickH5(ctx context.Context, spToken string) (string, error) {
+	return c.exchangeMobileOneClickToken(ctx, mobileOneClickH5GrantType, spToken)
+}
+
+// ExchangeMobileOneClickNative 用原生 SDK 返回的运营商 token 走 Casdoor 的原生一键登录 grant。
+func (c *CasdoorClient) ExchangeMobileOneClickNative(ctx context.Context, token string) (string, error) {
+	return c.exchangeMobileOneClickToken(ctx, mobileOneClickNativeGrantType, token)
+}
+
+func (c *CasdoorClient) exchangeMobileOneClickToken(ctx context.Context, grantType, token string) (string, error) {
+	form := url.Values{}
+	form.Set("grant_type", grantType)
+	form.Set("client_id", c.cfg.ClientID)
+	form.Set("client_secret", c.cfg.ClientSecret)
+	form.Set("code", token)
+	form.Set("scope", "openid profile phone")
+
+	req, err := http.NewRequestWithContext(ctx, "POST", c.cfg.Endpoint+"/api/login/oauth/access_token", strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("casdoor request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxCasdoorResponseBytes))
+	if err != nil {
+		return "", fmt.Errorf("read casdoor response: %w", err)
+	}
+
+	var tr oauthTokenResponse
+	if err := json.Unmarshal(raw, &tr); err != nil {
+		return "", fmt.Errorf("decode casdoor token response: %w, status_code: %d, body_len: %d", err, resp.StatusCode, len(raw))
+	}
+	if tr.Error != "" || tr.AccessToken == "" {
+		msg := strings.TrimSpace(tr.Error)
+		if tr.ErrorDescription != "" {
+			msg += ": " + tr.ErrorDescription
+		}
+		if msg == "" {
+			msg = fmt.Sprintf("status_code: %d", resp.StatusCode)
+		}
+		return "", &CasdoorOAuthError{Code: tr.Error, Description: tr.ErrorDescription, StatusCode: resp.StatusCode, Message: msg}
+	}
+	return tr.AccessToken, nil
+}
+
+// CasdoorOAuthError Casdoor token 端点返回的 OAuth 错误
+type CasdoorOAuthError struct {
+	Code        string
+	Description string
+	StatusCode  int
+	Message     string
+}
+
+func (e *CasdoorOAuthError) Error() string { return e.Message }
+
+// GetUserInfo 用 Casdoor access token 读取当前用户
+func (c *CasdoorClient) GetUserInfo(ctx context.Context, accessToken string) (*CasdoorUser, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.cfg.Endpoint+"/api/userinfo", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("casdoor request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxCasdoorResponseBytes))
+	if err != nil {
+		return nil, fmt.Errorf("read casdoor response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("casdoor userinfo failed, status_code: %d", resp.StatusCode)
+	}
+
+	var user CasdoorUser
+	if err := json.Unmarshal(raw, &user); err != nil {
+		return nil, fmt.Errorf("decode casdoor userinfo: %w, body_len: %d", err, len(raw))
+	}
+	if user.Name == "" {
+		return nil, fmt.Errorf("casdoor userinfo returned empty name")
+	}
+	return &user, nil
 }

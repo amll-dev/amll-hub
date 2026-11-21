@@ -1,5 +1,6 @@
 import { Check, FileText, Upload, X } from 'lucide-react';
 import type { ActivityEntry } from '@/components/submission/shared';
+import { resolveApiUrl } from '@/lib/api';
 import type {
   PluginChannel,
   PluginListingStatus,
@@ -97,7 +98,7 @@ export function PluginIcon({
   if (iconUrl) {
     return (
       <img
-        src={iconUrl}
+        src={resolveApiUrl(iconUrl)}
         alt={name}
         className={cn('shrink-0 rounded-lg border border-line bg-card object-cover', className)}
       />

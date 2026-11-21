@@ -53,6 +53,21 @@ AMLL_API_BASE_URL=http://192.168.1.10:8080 ./gradlew assembleDebug
 
 ## 登录方式
 
+### 本机号码一键登录
+
+App 已接入阿里云号码认证 SDK（`app/libs` 下的 auth / logger / main 三个 AAR）。
+需要在 `local.properties` 配置 Android 认证方案的密钥（控制台「号码认证方案管理」→ 密钥，
+不是 AccessKey）：
+
+```properties
+amll.pnvs.secret=你的Android方案密钥
+```
+
+也可以用环境变量 `AMLL_PNVS_SECRET`。未配置时 App 不展示一键登录，直接走密码/验证码表单。
+
+Android 认证方案需要填写本应用的包名 `com.amlldev.amllhub` 与签名；授权页成功后
+App 会调用 `POST /api/v1/auth/oneclick/native-login` 把运营商 token 交给后端换本地 JWT。
+
 ### 账号密码
 `POST /api/v1/auth/login`
 

@@ -1,5 +1,6 @@
 package dev.amll.hub.android.ui.screen
 
+import android.app.Activity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -62,6 +65,7 @@ fun LoginScreen(
     viewModel: LoginViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val activity = LocalContext.current as? Activity
 
     Box(Modifier.fillMaxSize().background(Amll.colors.canvas)) {
         Column(
@@ -76,60 +80,82 @@ fun LoginScreen(
         ) {
             BrandMark()
             Spacer(Modifier.height(26.dp))
-            Text(
-                "登录 AMLL Hub",
-                style = Font.pageTitle.copy(fontSize = 22.sp),
-                color = Amll.colors.ink,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "登录后即可投稿歌词、参与审核",
-                style = Font.caption,
-                color = Amll.colors.ink3,
-                textAlign = TextAlign.Center,
-            )
 
-            Spacer(Modifier.height(26.dp))
+            when (state.mode) {
+                LoginMode.CHECKING -> CheckingContent()
+                LoginMode.ONE_CLICK -> OneClickContent(
+                    state = state,
+                    activity = activity,
+                    onLogin = { viewModel.loginOneClick(it) { r -> onLoggedIn(r.user) } },
+                    onSwitch = viewModel::switchToForm,
+                )
+                LoginMode.FORM -> {
+                    Text(
+                        "登录 AMLL Hub",
+                        style = Font.pageTitle.copy(fontSize = 22.sp),
+                        color = Amll.colors.ink,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "登录后即可投稿歌词、参与审核",
+                        style = Font.caption,
+                        color = Amll.colors.ink3,
+                        textAlign = TextAlign.Center,
+                    )
 
-            SegmentedTabs(
-                labels = listOf("密码登录", "验证码登录"),
-                selectedIndex = if (state.tab == LoginTab.PASSWORD) 0 else 1,
-                onSelect = { index ->
-                    viewModel.switchTab(if (index == 0) LoginTab.PASSWORD else LoginTab.CODE)
-                },
-            )
+                    Spacer(Modifier.height(26.dp))
 
-            Spacer(Modifier.height(18.dp))
+                    if (state.oneClickAvailable) {
+                        Text(
+                            "本机号码一键登录",
+                            modifier = Modifier.clickable(onClick = viewModel::switchToOneClick),
+                            style = Font.caption.copy(fontWeight = FontWeight.Medium),
+                            color = Amll.colors.primary,
+                        )
+                        Spacer(Modifier.height(14.dp))
+                    }
 
-            state.error?.let { message ->
-                ErrorBanner(message = message)
-                Spacer(Modifier.height(12.dp))
-            }
+                    SegmentedTabs(
+                        labels = listOf("密码登录", "验证码登录"),
+                        selectedIndex = if (state.tab == LoginTab.PASSWORD) 0 else 1,
+                        onSelect = { index ->
+                            viewModel.switchTab(if (index == 0) LoginTab.PASSWORD else LoginTab.CODE)
+                        },
+                    )
 
-            when (state.tab) {
-                LoginTab.PASSWORD -> PasswordForm(state, viewModel) {
-                    viewModel.submit { onLoggedIn(it.user) }
+                    Spacer(Modifier.height(18.dp))
+
+                    state.error?.let { message ->
+                        ErrorBanner(message = message)
+                        Spacer(Modifier.height(12.dp))
+                    }
+
+                    when (state.tab) {
+                        LoginTab.PASSWORD -> PasswordForm(state, viewModel) {
+                            viewModel.submit { onLoggedIn(it.user) }
+                        }
+                        LoginTab.CODE -> CodeForm(state, viewModel) {
+                            viewModel.submit { onLoggedIn(it.user) }
+                        }
+                    }
+
+                    Spacer(Modifier.height(22.dp))
+
+                    PrimaryButton(
+                        text = if (state.submitting) "登录中…" else "登录",
+                        enabled = state.canSubmit && !state.submitting,
+                        onClick = { viewModel.submit { onLoggedIn(it.user) } },
+                    )
+
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "登录即表示同意《用户协议》与《隐私政策》",
+                        style = Font.micro,
+                        color = Amll.colors.ink3,
+                        textAlign = TextAlign.Center,
+                    )
                 }
-                LoginTab.CODE -> CodeForm(state, viewModel) {
-                    viewModel.submit { onLoggedIn(it.user) }
-                }
             }
-
-            Spacer(Modifier.height(22.dp))
-
-            PrimaryButton(
-                text = if (state.submitting) "登录中…" else "登录",
-                enabled = state.canSubmit && !state.submitting,
-                onClick = { viewModel.submit { onLoggedIn(it.user) } },
-            )
-
-            Spacer(Modifier.height(14.dp))
-            Text(
-                "登录即表示同意《用户协议》与《隐私政策》",
-                style = Font.micro,
-                color = Amll.colors.ink3,
-                textAlign = TextAlign.Center,
-            )
         }
 
         val captcha = state.captcha
@@ -144,6 +170,73 @@ fun LoginScreen(
             )
         }
     }
+}
+
+@Composable
+private fun CheckingContent() {
+    Spacer(Modifier.height(40.dp))
+    CircularProgressIndicator(
+        modifier = Modifier.size(22.dp),
+        color = Amll.colors.primary,
+        strokeWidth = 2.dp,
+    )
+    Spacer(Modifier.height(12.dp))
+    Text(
+        "正在检测本机号码…",
+        style = Font.caption,
+        color = Amll.colors.ink3,
+    )
+    Spacer(Modifier.height(24.dp))
+}
+
+@Composable
+private fun OneClickContent(
+    state: LoginUiState,
+    activity: Activity?,
+    onLogin: (Activity) -> Unit,
+    onSwitch: () -> Unit,
+) {
+    Text(
+        "本机号码登录",
+        style = Font.pageTitle.copy(fontSize = 22.sp),
+        color = Amll.colors.ink,
+    )
+    Spacer(Modifier.height(6.dp))
+    Text(
+        "已检测到本机号码，一键完成登录",
+        style = Font.caption,
+        color = Amll.colors.ink3,
+        textAlign = TextAlign.Center,
+    )
+
+    Spacer(Modifier.height(36.dp))
+
+    state.error?.let { message ->
+        ErrorBanner(message = message)
+        Spacer(Modifier.height(12.dp))
+    }
+
+    PrimaryButton(
+        text = if (state.oneClickLoading) "登录中…" else "一键登录",
+        enabled = !state.oneClickLoading && activity != null,
+        onClick = { activity?.let(onLogin) },
+    )
+
+    Spacer(Modifier.height(16.dp))
+    Text(
+        "其他登录方式",
+        modifier = Modifier.clickable(onClick = onSwitch),
+        style = Font.caption.copy(fontWeight = FontWeight.Medium),
+        color = Amll.colors.ink3,
+    )
+
+    Spacer(Modifier.height(48.dp))
+    Text(
+        "本机号码认证服务由运营商提供",
+        style = Font.micro,
+        color = Amll.colors.ink3,
+        textAlign = TextAlign.Center,
+    )
 }
 
 @Composable

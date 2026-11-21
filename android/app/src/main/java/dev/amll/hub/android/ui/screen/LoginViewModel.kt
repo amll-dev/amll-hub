@@ -1,5 +1,6 @@
 package dev.amll.hub.android.ui.screen
 
+import android.app.Activity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,11 +21,15 @@ import javax.inject.Inject
 /** 登录方式 */
 enum class LoginTab { PASSWORD, CODE }
 
+/** 登录页当前展示：检测中 / 一键登录页 / 密码验证码表单 */
+enum class LoginMode { CHECKING, ONE_CLICK, FORM }
+
 /** 验证码类型 */
 enum class CodeType(val apiValue: String) { PHONE("phone"), EMAIL("email") }
 
 /** 登录页 UI 状态 */
 data class LoginUiState(
+    val mode: LoginMode = LoginMode.FORM,
     val tab: LoginTab = LoginTab.PASSWORD,
     val codeType: CodeType = CodeType.PHONE,
     val username: String = "",
@@ -33,6 +38,12 @@ data class LoginUiState(
     val code: String = "",
     val passwordVisible: Boolean = false,
     val submitting: Boolean = false,
+    /** 正在预取号，判断是否展示一键登录页 */
+    val oneClickChecking: Boolean = false,
+    /** 预取号成功，可一键登录 */
+    val oneClickAvailable: Boolean = false,
+    /** 正在拉起授权页 / 用运营商 token 换登录态 */
+    val oneClickLoading: Boolean = false,
     /** check-user 与拉取人机验证配置的短暂过程 */
     val preparingCode: Boolean = false,
     val sendingCode: Boolean = false,
@@ -61,6 +72,7 @@ data class LoginUiState(
 @HiltViewModel
 class LoginViewModel @Inject constructor(
     private val repo: AuthRepository,
+    private val pnvs: PnvsAuthManager,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LoginUiState())
@@ -68,6 +80,69 @@ class LoginViewModel @Inject constructor(
 
     private var countdownJob: Job? = null
     private var captchaConfig: CaptchaConfig? = null
+
+    init {
+        if (pnvs.enabled) {
+            _uiState.update { it.copy(mode = LoginMode.CHECKING, oneClickChecking = true) }
+            pnvs.prefetch { available ->
+                _uiState.update {
+                    it.copy(
+                        oneClickChecking = false,
+                        oneClickAvailable = available,
+                        mode = if (available) LoginMode.ONE_CLICK else LoginMode.FORM,
+                    )
+                }
+            }
+        }
+    }
+
+    /** 授权页切换登录方式 / 取消：回到密码验证码表单 */
+    fun switchToForm() {
+        _uiState.update {
+            it.copy(mode = LoginMode.FORM, oneClickLoading = false, error = null)
+        }
+    }
+
+    /** 从表单切回一键登录页 */
+    fun switchToOneClick() {
+        val state = _uiState.value
+        if (!state.oneClickAvailable) return
+        _uiState.update { it.copy(mode = LoginMode.ONE_CLICK, error = null) }
+    }
+
+    /** 拉起运营商授权页，拿到运营商 token 后换本地登录态 */
+    fun loginOneClick(activity: Activity, onSuccess: (LoginResult) -> Unit) {
+        if (_uiState.value.oneClickLoading) return
+        _uiState.update { it.copy(oneClickLoading = true, error = null) }
+
+        pnvs.login(
+            activity = activity,
+            onToken = { token ->
+                viewModelScope.launch {
+                    runCatching { repo.loginOneClickNative(token) }
+                        .onSuccess { result ->
+                            _uiState.update { it.copy(oneClickLoading = false) }
+                            onSuccess(result)
+                        }
+                        .onFailure { e ->
+                            _uiState.update {
+                                it.copy(
+                                    oneClickLoading = false,
+                                    mode = LoginMode.FORM,
+                                    error = e.userMessage(),
+                                )
+                            }
+                        }
+                }
+            },
+            onSwitch = { switchToForm() },
+            onError = { message ->
+                _uiState.update {
+                    it.copy(oneClickLoading = false, mode = LoginMode.FORM, error = message)
+                }
+            },
+        )
+    }
 
     fun switchTab(tab: LoginTab) {
         countdownJob?.cancel()

@@ -184,6 +184,7 @@ func (s *AuthService) ConfirmQRTicket(ctx context.Context, ticket, userID string
 		DisplayName: user.DisplayName,
 		Email:       user.Email,
 		Avatar:      user.Avatar,
+		Ver:         s.currentSessionVersion(ctx, userID),
 	}, s.jwtSecret, s.jwtTTL)
 	if err != nil {
 		return fmt.Errorf("签发 token 失败: %w", err)

@@ -55,3 +55,9 @@ pnpm-debug.log*
 
 # dev
 dev.sh
+
+# 本机构建缓存（C 盘空间不足时放在仓库内，不入库）
+/.tmp/
+
+# 阿里云号码认证 SDK 下载包（AAR 已复制到 android/app/libs）
+/numberAuthSDK_*/

@@ -102,8 +102,14 @@ import type {
 } from './auth';
 import { clearAuth, getToken } from './auth';
 import { triggerDownload } from './blob-download';
+import { getDeviceId } from './device';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
+
+export function resolveApiUrl(url: string): string {
+  if (!url || url.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
+  return `${API_BASE}${url}`;
+}
 
 const qmIdMidCache = new Map<string, { id: string; mid: string }>();
 
@@ -167,6 +173,11 @@ async function baseRequest<T>(
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
+  }
+  // 后端据此识别新设备登录；为空时后端跳过设备维度判定
+  const deviceId = getDeviceId();
+  if (deviceId) {
+    headers['X-Device-ID'] = deviceId;
   }
 
   const controller = new AbortController();
@@ -475,6 +486,32 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ dest, code }),
     });
+  },
+
+  /** 一键登录是否可用 GET /api/v1/auth/oneclick/enabled */
+  getOneClickEnabled(): Promise<{ enabled: boolean }> {
+    return request<{ enabled: boolean }>('/api/v1/auth/oneclick/enabled', { method: 'GET' });
+  },
+
+  /** 获取 H5 取号临时凭据 POST /api/v1/auth/oneclick/auth-token */
+  getOneClickAuthToken(): Promise<{ accessToken: string; jwtToken: string }> {
+    return request<{ accessToken: string; jwtToken: string }>(
+      '/api/v1/auth/oneclick/auth-token',
+      { method: 'POST' }
+    );
+  },
+
+  /** 本机号码一键登录 POST /api/v1/auth/oneclick/login */
+  loginOneClick(spToken: string): Promise<LoginResult> {
+    return request<LoginResult>('/api/v1/auth/oneclick/login', {
+      method: 'POST',
+      body: JSON.stringify({ spToken }),
+    });
+  },
+
+  /** 退出所有设备 POST /api/v1/auth/security/revoke */
+  revokeSessions(): Promise<void> {
+    return request<void>('/api/v1/auth/security/revoke', { method: 'POST' });
   },
 
   /** 完成登录二次验证 POST /api/v1/auth/login/mfa */
@@ -1781,7 +1818,7 @@ export const api = {
     /** 带鉴权下载插件包（直接打开链接不会携带 token） */
     async downloadSubmissionArtifact(versionId: number, filename: string): Promise<void> {
       const token = getToken();
-      const res = await fetch(`/api/v1/store/submissions/${versionId}/artifact`, {
+      const res = await fetch(`${API_BASE}/api/v1/store/submissions/${versionId}/artifact`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       if (!res.ok) {

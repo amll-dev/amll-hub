@@ -22,6 +22,11 @@ jobs:
     defaults:
       run:
         working-directory: ./android
+    env:
+      # 可选：配置后 CI 打出的 APK 才启用安卓一键登录；未配置时为空，
+      # PnvsAuthManager 会自动隐藏入口，构建与密码/验证码登录不受影响。
+      # 注意：CI 的 debug 签名与本地不一致，只有阿里云方案登记了同一签名才能成功取号。
+      AMLL_PNVS_SECRET: ${{ secrets.AMLL_PNVS_SECRET }}
 
     steps:
       - uses: actions/checkout@v7

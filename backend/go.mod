@@ -21,10 +21,12 @@ require github.com/cybaka520/AMLLHub-Music-API v0.0.0-20261101074547-e28507b69fc
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
+	github.com/aliyun/alibaba-cloud-sdk-go v1.63.107
 	github.com/gin-contrib/gzip v1.2.6
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/microcosm-cc/bluemonday v1.0.27
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/xiaowumin-mark/amll-ttml v0.0.0-20260531031314-ba3d96f45513
 	github.com/yuin/goldmark v1.8.7
 	golang.org/x/image v0.48.0
@@ -35,6 +37,8 @@ require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
+	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
@@ -91,7 +95,7 @@ require (
 	github.com/xiaowumin-mark/AMLX-MUSIC-API v0.0.0-20260510143522-2522b551028d
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
-	golang.org/x/arch v0.22.0 // indirect
+	golang.org/x/arch v0.33.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20240222234643-814bf88cf225 // indirect
 	golang.org/x/net v0.51.0 // indirect
