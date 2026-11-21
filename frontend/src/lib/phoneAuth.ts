@@ -86,9 +86,7 @@ export function loadPhoneAuthSdk(): Promise<PhoneNumberServerCtor> {
 
 /** 关闭 SDK 授权页（弹窗和整页两种形态的关闭控件不同） */
 function closeAuthPage(): void {
-  document
-    .querySelector<HTMLElement>('#J_dialogType .close, #J_pageType .nav-back-icon')
-    ?.click();
+  document.querySelector<HTMLElement>('#J_dialogType .close, #J_pageType .nav-back-icon')?.click();
 }
 
 /** 授权页的自定义视图：底部「其他登录方式」 */
@@ -126,7 +124,10 @@ function buildAuthPageCustomView() {
  * checkLoginAvailable 通过才会渲染授权页；用户取消、关闭授权页或点「其他登录方式」
  * 时返回 null，由调用方回退到密码/验证码登录。
  */
-export async function requestSpToken(accessToken: string, jwtToken: string): Promise<string | null> {
+export async function requestSpToken(
+  accessToken: string,
+  jwtToken: string
+): Promise<string | null> {
   const Ctor = await loadPhoneAuthSdk();
   const server = new Ctor();
 

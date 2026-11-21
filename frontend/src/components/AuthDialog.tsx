@@ -23,7 +23,13 @@ import { requestSpToken } from '@/lib/phoneAuth';
 import { queryKeys } from '@/lib/query';
 import { cn } from '@/lib/utils';
 import { buttonTap } from '@/lib/motion';
-import type { CaptchaConfig, LoginMfaRequired, LoginSuccess, MfaMethod, SecurityNotice } from '@/lib/auth';
+import type {
+  CaptchaConfig,
+  LoginMfaRequired,
+  LoginSuccess,
+  MfaMethod,
+  SecurityNotice,
+} from '@/lib/auth';
 import { isMfaRequired } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { SecurityNoticeModal } from '@/components/SecurityNoticeModal';

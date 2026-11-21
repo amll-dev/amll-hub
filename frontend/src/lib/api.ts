@@ -495,10 +495,9 @@ export const api = {
 
   /** 获取 H5 取号临时凭据 POST /api/v1/auth/oneclick/auth-token */
   getOneClickAuthToken(): Promise<{ accessToken: string; jwtToken: string }> {
-    return request<{ accessToken: string; jwtToken: string }>(
-      '/api/v1/auth/oneclick/auth-token',
-      { method: 'POST' }
-    );
+    return request<{ accessToken: string; jwtToken: string }>('/api/v1/auth/oneclick/auth-token', {
+      method: 'POST',
+    });
   },
 
   /** 本机号码一键登录 POST /api/v1/auth/oneclick/login */
