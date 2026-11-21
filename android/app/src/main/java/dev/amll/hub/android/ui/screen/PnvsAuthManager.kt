@@ -103,7 +103,8 @@ class PnvsAuthManager @Inject constructor(
                         ResultCode.CODE_ERROR_USER_SWITCH,
                         ResultCode.CODE_ERROR_USER_CANCEL,
                         ResultCode.CODE_ERROR_USER_CONTROL_CANCEL_BYBTN,
-                        ResultCode.CODE_ERROR_USER_CONTROL_CANCEL_BYKEY -> {
+                        ResultCode.CODE_ERROR_USER_CONTROL_CANCEL_BYKEY,
+                        -> {
                             settled = true
                             runCatching { h.quitLoginPage() }
                             onSwitch()
@@ -127,7 +128,8 @@ class PnvsAuthManager @Inject constructor(
                         ResultCode.CODE_ERROR_USER_SWITCH,
                         ResultCode.CODE_ERROR_USER_CANCEL,
                         ResultCode.CODE_ERROR_USER_CONTROL_CANCEL_BYBTN,
-                        ResultCode.CODE_ERROR_USER_CONTROL_CANCEL_BYKEY -> {
+                        ResultCode.CODE_ERROR_USER_CONTROL_CANCEL_BYKEY,
+                        -> {
                             if (!settled) {
                                 settled = true
                                 runCatching { h.quitLoginPage() }
