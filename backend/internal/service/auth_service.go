@@ -116,6 +116,12 @@ type AuthService struct {
 	jwtTTL          time.Duration
 	org             string
 	mfaSetupEnabled bool
+	loginRisk       *LoginRiskService
+}
+
+// SetLoginRisk 注入新设备/异地登录提示服务（未注入时不做站内提示）
+func (s *AuthService) SetLoginRisk(risk *LoginRiskService) {
+	s.loginRisk = risk
 }
 
 // NewAuthService 创建 AuthService
@@ -280,6 +286,8 @@ type LoginResult struct {
 	MfaRequired    bool         `json:"mfaRequired,omitempty"`
 	MfaChallengeID string       `json:"mfaChallengeId,omitempty"`
 	MfaMethods     []MfaMethod  `json:"mfaMethods,omitempty"`
+	// SecurityNotices 新设备/异地登录提示，登录成功时返回，可能同时有多条
+	SecurityNotices []SecurityNotice `json:"securityNotices,omitempty"`
 }
 
 // MfaMethod 暴露给前端的 MFA 因子（不含 TOTP secret）
@@ -297,6 +305,7 @@ type mfaChallenge struct {
 	Cookies []*http.Cookie            `json:"cookies"`
 	Methods []infrastructure.MfaProps `json:"methods"`
 	Fails   int                       `json:"fails"`
+	Meta    infrastructure.LoginMeta  `json:"meta"`
 }
 
 func mfaChallengeKey(id string) string {
@@ -338,19 +347,19 @@ type UserProfile struct {
 }
 
 // Login 密码登录。MFA 用户会先返回 mfaRequired，验证通过后才签发本地 JWT。
-func (s *AuthService) Login(ctx context.Context, username, password string) (*LoginResult, error) {
-	return s.login(ctx, username, password, false)
+func (s *AuthService) Login(ctx context.Context, username, password string, meta infrastructure.LoginMeta) (*LoginResult, error) {
+	return s.login(ctx, username, password, false, meta)
 }
-func (s *AuthService) LoginSkippingMfa(ctx context.Context, username, password string) (*LoginResult, error) {
-	return s.login(ctx, username, password, true)
+func (s *AuthService) LoginSkippingMfa(ctx context.Context, username, password string, meta infrastructure.LoginMeta) (*LoginResult, error) {
+	return s.login(ctx, username, password, true, meta)
 }
 
-func (s *AuthService) login(ctx context.Context, username, password string, skipMfa bool) (*LoginResult, error) {
+func (s *AuthService) login(ctx context.Context, username, password string, skipMfa bool, meta infrastructure.LoginMeta) (*LoginResult, error) {
 	if s.isLoginLocked(ctx, username) {
 		return nil, ErrAccountLocked
 	}
 
-	lr, err := s.casdoor.LoginWithPassword(ctx, username, password)
+	lr, err := s.casdoor.LoginWithPassword(ctx, username, password, meta)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"username": username, "error": err}).Warn("casdoor login failed")
 		locked := s.recordLoginFail(ctx, username)
@@ -374,9 +383,9 @@ func (s *AuthService) login(ctx context.Context, username, password string, skip
 				"username": username,
 				"user_id":  s.org + "/" + user.Name,
 			}).Info("mfa skipped for third-party login flow")
-			return s.completeLogin(ctx, s.org+"/"+user.Name, nil)
+			return s.completeLogin(ctx, s.org+"/"+user.Name, nil, meta)
 		}
-		return s.newMfaChallenge(ctx, lr, user)
+		return s.newMfaChallenge(ctx, lr, user, meta)
 	case infrastructure.CasdoorLoginMfaSetupRequired:
 		if skipMfa {
 			// 第三方登录链路不阻塞在「先绑定 MFA」上，否则新注册用户会卡死在绑定页
@@ -385,13 +394,13 @@ func (s *AuthService) login(ctx context.Context, username, password string, skip
 				return nil, fmt.Errorf("查询登录用户失败: %w", uErr)
 			}
 			logrus.WithField("username", username).Info("mfa setup requirement skipped for third-party login flow")
-			return s.completeLogin(ctx, s.org+"/"+user.Name, nil)
+			return s.completeLogin(ctx, s.org+"/"+user.Name, nil, meta)
 		}
 		return nil, ErrMfaSetupRequired
 	case infrastructure.CasdoorLoginUpdatePassword:
 		return nil, ErrPasswordUpdateRequired
 	default:
-		return s.completeLogin(ctx, lr.UserID, lr.Cookies)
+		return s.completeLogin(ctx, lr.UserID, lr.Cookies, meta)
 	}
 }
 
@@ -422,8 +431,38 @@ func (s *AuthService) getUserByID(ctx context.Context, userID string) (*infrastr
 	return s.casdoor.GetUserProfile(ctx, userID)
 }
 
-// completeLogin 查用户、缓存 Casdoor 会话、签发本地 JWT
-func (s *AuthService) completeLogin(ctx context.Context, userID string, cookies []*http.Cookie) (*LoginResult, error) {
+// sessionVersionKey 用户会话版本号的 Redis 键
+func sessionVersionKey(userID string) string {
+	return "auth:sessionVersion:" + userID
+}
+
+// currentSessionVersion 读取用户当前会话版本；Redis 异常时按 0 处理（不阻断登录）
+func (s *AuthService) currentSessionVersion(ctx context.Context, userID string) int64 {
+	ver, err := s.rdb.Get(ctx, sessionVersionKey(userID)).Int64()
+	if err != nil {
+		if !errors.Is(err, redis.Nil) {
+			logrus.WithError(err).Warn("read session version failed, fallback to 0")
+		}
+		return 0
+	}
+	return ver
+}
+
+// RevokeSessions 递增用户会话版本，使该用户已签发的所有 JWT 立即失效。
+// 同时清掉 Casdoor 会话/Token 缓存，避免服务端继续以该用户身份访问 Casdoor。
+func (s *AuthService) RevokeSessions(ctx context.Context, userID string) error {
+	if userID == "" {
+		return ErrInvalidInput
+	}
+	if err := s.rdb.Incr(ctx, sessionVersionKey(userID)).Err(); err != nil {
+		return fmt.Errorf("revoke sessions failed: %w", err)
+	}
+	_ = s.rdb.Del(ctx, casdoorSessionKey(userID), casdoorTokenKey(userID)).Err()
+	return nil
+}
+
+// completeLogin 查用户、缓存 Casdoor 会话、判定登录风险、签发本地 JWT
+func (s *AuthService) completeLogin(ctx context.Context, userID string, cookies []*http.Cookie, meta infrastructure.LoginMeta) (*LoginResult, error) {
 	user, err := s.getUserByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("查询登录用户失败: %w", err)
@@ -443,17 +482,25 @@ func (s *AuthService) completeLogin(ctx context.Context, userID string, cookies 
 		DisplayName: user.DisplayName,
 		Email:       user.Email,
 		Avatar:      user.Avatar,
+		Ver:         s.currentSessionVersion(ctx, fullID),
 	}, s.jwtSecret, s.jwtTTL)
 	if err != nil {
 		return nil, fmt.Errorf("签发 token 失败: %w", err)
 	}
 
 	profile := toUserProfile(user)
-	return &LoginResult{Token: token, User: &profile}, nil
+	result := &LoginResult{Token: token, User: &profile}
+
+	// 首次登录只记录；新设备/新地点才返回提示
+	if s.loginRisk != nil {
+		result.SecurityNotices = s.loginRisk.Evaluate(ctx, fullID, meta)
+	}
+
+	return result, nil
 }
 
 // newMfaChallenge 保存第一次登录的 Casdoor 会话，返回二次验证挑战
-func (s *AuthService) newMfaChallenge(ctx context.Context, lr *infrastructure.CasdoorLoginResult, user *infrastructure.CasdoorUser) (*LoginResult, error) {
+func (s *AuthService) newMfaChallenge(ctx context.Context, lr *infrastructure.CasdoorLoginResult, user *infrastructure.CasdoorUser, meta infrastructure.LoginMeta) (*LoginResult, error) {
 	id, err := newChallengeID()
 	if err != nil {
 		return nil, fmt.Errorf("生成 MFA 会话失败: %w", err)
@@ -465,6 +512,7 @@ func (s *AuthService) newMfaChallenge(ctx context.Context, lr *infrastructure.Ca
 		Phone:   user.Phone,
 		Cookies: lr.Cookies,
 		Methods: lr.MfaMethods,
+		Meta:    meta,
 	}
 	data, err := json.Marshal(ch)
 	if err != nil {
@@ -541,7 +589,7 @@ func mapMfaSendErr(err error) error {
 }
 
 // VerifyMfaLogin 完成第二次验证；如果 Casdoor 还要求其它因子，会继续返回 mfaRequired。
-func (s *AuthService) VerifyMfaLogin(ctx context.Context, challengeID, mfaType, passcode, recoveryCode string) (*LoginResult, error) {
+func (s *AuthService) VerifyMfaLogin(ctx context.Context, challengeID, mfaType, passcode, recoveryCode string, meta infrastructure.LoginMeta) (*LoginResult, error) {
 	ch, err := s.loadMfaChallenge(ctx, challengeID)
 	if err != nil {
 		return nil, err
@@ -557,7 +605,7 @@ func (s *AuthService) VerifyMfaLogin(ctx context.Context, challengeID, mfaType, 
 		return nil, ErrInvalidCode
 	}
 
-	lr, err := s.casdoor.VerifyMfaLogin(ctx, ch.Cookies, mfaType, passcode, recoveryCode)
+	lr, err := s.casdoor.VerifyMfaLogin(ctx, ch.Cookies, mfaType, passcode, recoveryCode, meta)
 	if err != nil {
 		ch.Fails++
 		if ch.Fails >= maxMfaFails {
@@ -599,7 +647,11 @@ func (s *AuthService) VerifyMfaLogin(ctx context.Context, challengeID, mfaType, 
 		if userID == "" {
 			userID = ch.UserID
 		}
-		return s.completeLogin(ctx, userID, lr.Cookies)
+		finalMeta := meta
+		if finalMeta.DeviceID == "" {
+			finalMeta = ch.Meta
+		}
+		return s.completeLogin(ctx, userID, lr.Cookies, finalMeta)
 	}
 }
 
@@ -687,7 +739,7 @@ func (s *AuthService) resolveLoginDest(ctx context.Context, dest string) (string
 	return toE164(dest), nil
 }
 
-func (s *AuthService) LoginByCode(ctx context.Context, dest, code string) (*LoginResult, error) {
+func (s *AuthService) LoginByCode(ctx context.Context, dest, code string, meta infrastructure.LoginMeta) (*LoginResult, error) {
 	if !strings.Contains(dest, "@") {
 		dest = toE164(dest)
 	}
@@ -703,7 +755,7 @@ func (s *AuthService) LoginByCode(ctx context.Context, dest, code string) (*Logi
 		}
 	}
 
-	lr, err := s.casdoor.LoginByCode(ctx, casdoorDest, code)
+	lr, err := s.casdoor.LoginByCode(ctx, casdoorDest, code, meta)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"dest": dest, "error": err}).Warn("casdoor login by code failed")
 		locked := s.recordLoginFail(ctx, dest)
@@ -721,7 +773,7 @@ func (s *AuthService) LoginByCode(ctx context.Context, dest, code string) (*Logi
 		if uErr != nil {
 			return nil, fmt.Errorf("查询登录用户失败: %w", uErr)
 		}
-		return s.newMfaChallenge(ctx, lr, user)
+		return s.newMfaChallenge(ctx, lr, user, meta)
 	case infrastructure.CasdoorLoginMfaSetupRequired:
 		return nil, ErrMfaSetupRequired
 	case infrastructure.CasdoorLoginUpdatePassword:
@@ -735,7 +787,7 @@ func (s *AuthService) LoginByCode(ctx context.Context, dest, code string) (*Logi
 			}
 			userID = s.org + "/" + user.Name
 		}
-		return s.completeLogin(ctx, userID, lr.Cookies)
+		return s.completeLogin(ctx, userID, lr.Cookies, meta)
 	}
 }
 

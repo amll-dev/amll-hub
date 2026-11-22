@@ -14,6 +14,10 @@ interface AuthApi {
     @POST("api/v1/auth/login-code")
     suspend fun loginByCode(@Body body: LoginByCodeRequest): ApiResponse<LoginResult>
 
+    /** 安卓原生一键登录：把运营商 SDK 的 token 交给后端换本地 JWT */
+    @POST("api/v1/auth/oneclick/native-login")
+    suspend fun loginOneClickNative(@Body body: OneClickNativeLoginRequest): ApiResponse<LoginResult>
+
     @POST("api/v1/auth/send-code")
     suspend fun sendCode(@Body body: SendCodeRequest): ApiResponse<Unit>
 

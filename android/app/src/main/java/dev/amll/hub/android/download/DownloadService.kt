@@ -233,8 +233,8 @@ class DownloadService : Service() {
         val part = File(dir, "${UUID.randomUUID()}.part")
         val contentType = fetchInto(music.displayUrl, part)
 
-        val format = detectFormat(contentType, music.displayUrl)
-        val extension = extensionFor(format, music.displayUrl)
+        val format = detectFormat(part, contentType, music.displayUrl)
+        val extension = extensionFor(format, music.displayUrl, part)
         val audio = File(dir, "${part.nameWithoutExtension}.$extension")
         if (!part.renameTo(audio)) {
             part.copyTo(audio, overwrite = true)
@@ -360,7 +360,11 @@ class DownloadService : Service() {
 
     /* ===== 格式识别 ===== */
 
-    private fun detectFormat(contentType: String?, url: String): AudioFormat {
+    private fun detectFormat(file: File, contentType: String?, url: String): AudioFormat {
+        when (sniffAudioExt(file)) {
+            "flac" -> return AudioFormat.FLAC
+            "mp3" -> return AudioFormat.MP3
+        }
         val type = contentType?.lowercase().orEmpty()
         val path = url.substringBefore('?').substringBefore('#').lowercase()
         return when {
@@ -370,14 +374,36 @@ class DownloadService : Service() {
         }
     }
 
-    private fun extensionFor(format: AudioFormat, url: String): String = when (format) {
+    private fun extensionFor(format: AudioFormat, url: String, file: File): String = when (format) {
         AudioFormat.MP3 -> "mp3"
         AudioFormat.FLAC -> "flac"
-        AudioFormat.OTHER -> {
-            val name = url.substringBefore('?').substringBefore('#').substringAfterLast('/')
-            val ext = name.substringAfterLast('.', "").lowercase()
-            ext.takeIf { it.length in 2..5 && it.all { c -> c.isLetterOrDigit() } } ?: "bin"
+        // 嗅探优先：CDN 可能不给扩展名，甚至把 flac 标成 audio/mpeg
+        AudioFormat.OTHER -> sniffAudioExt(file) ?: urlExtension(url)
+    }
+
+    /** 读取文件头嗅探真实容器格式，避免只靠 Content-Type/URL 误判音质后缀。 */
+    private fun sniffAudioExt(file: File): String? {
+        val head = ByteArray(12)
+        val read = runCatching { file.inputStream().use { it.read(head) } }.getOrDefault(0)
+        if (read < 4) return null
+        fun ascii(start: Int, len: Int) = String(head, start, len, Charsets.ISO_8859_1)
+        return when {
+            ascii(0, 4) == "fLaC" -> "flac"
+            ascii(0, 4) == "OggS" -> "ogg"
+            ascii(0, 4) == "RIFF" -> "wav"
+            ascii(0, 4) == "MAC " -> "ape"
+            ascii(4, 4) == "ftyp" -> "m4a"
+            ascii(0, 3) == "ID3" -> "mp3"
+            head[0] == 0xFF.toByte() && (head[1].toInt() and 0xE0) == 0xE0 ->
+                if ((head[1].toInt() and 0x06) == 0) "aac" else "mp3"
+            else -> null
         }
+    }
+
+    private fun urlExtension(url: String): String {
+        val name = url.substringBefore('?').substringBefore('#').substringAfterLast('/')
+        val ext = name.substringAfterLast('.', "").lowercase()
+        return ext.takeIf { it.length in 2..5 && it.all { c -> c.isLetterOrDigit() } } ?: "bin"
     }
 
     /* ===== 写入系统下载目录 ===== */

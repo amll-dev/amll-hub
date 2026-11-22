@@ -46,10 +46,11 @@ export async function downloadMusicWithMeta(audioUrl: string, meta: DownloadMeta
   }
   const audioBuffer = await audioRes.arrayBuffer();
   const contentType = audioRes.headers.get('content-type') ?? '';
-  const isMp3 = isMp3Content(audioUrl, contentType);
+  // 以文件头嗅探为准：CDN 常把 flac 标成 audio/mpeg 或不带扩展名
+  const ext = resolveAudioExt(audioBuffer, audioUrl, contentType);
+  const isMp3 = ext === 'mp3';
 
   const coverBuffer = await fetchCover(meta.coverUrl);
-  const ext = isMp3 ? 'mp3' : guessExt(audioUrl, contentType);
   const filename = `${sanitizeFileName(meta.title)} - ${sanitizeFileName(meta.artists)}.${ext}`;
 
   const blob = buildAudioBlob(audioBuffer, meta, coverBuffer, isMp3, contentType);
@@ -110,7 +111,8 @@ export async function downloadAllAsZip(
       }
       const audioBuffer = await audioRes.arrayBuffer();
       const contentType = audioRes.headers.get('content-type') ?? '';
-      const isMp3 = isMp3Content(info.url, contentType);
+      const ext = resolveAudioExt(audioBuffer, info.url, contentType);
+      const isMp3 = ext === 'mp3';
 
       const coverBuffer = await fetchCover(item.coverUrl ?? info.cover);
       const meta: DownloadMeta = {
@@ -121,7 +123,6 @@ export async function downloadAllAsZip(
       const blob = buildAudioBlob(audioBuffer, meta, coverBuffer, isMp3, contentType);
 
       // 文件名
-      const ext = isMp3 ? 'mp3' : guessExt(info.url, contentType);
       const base = `${sanitizeFileName(meta.title)} - ${sanitizeFileName(meta.artists)}`;
       let filename = `${base}.${ext}`;
       if (usedNames.has(filename)) {
@@ -171,13 +172,40 @@ export function downloadText(content: string, fileName: string, mime = 'text/pla
 
 // ===== 内部工具函数 =====
 
-/** 判断是否为 MP3 格式 */
-function isMp3Content(url: string, contentType: string): boolean {
-  return (
-    contentType.includes('audio/mpeg') ||
-    contentType.includes('audio/mp3') ||
-    /\.mp3(\?|$)/i.test(url)
-  );
+/**
+ * 根据文件头嗅探音频格式。
+ * CDN 经常把 flac 标成 audio/mpeg 或 application/octet-stream，
+ * 只靠 URL/Content-Type 会把无损音质误判成 mp3，因此优先读取二进制头。
+ */
+function sniffAudioExt(buffer: ArrayBuffer): string | null {
+  const head = new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 16));
+  const ascii = (start: number, len: number) =>
+    String.fromCharCode(...head.subarray(start, start + len));
+
+  if (head.length >= 4) {
+    const magic = ascii(0, 4);
+    if (magic === 'fLaC') return 'flac';
+    if (magic === 'OggS') return 'ogg';
+    if (magic === 'RIFF') return 'wav';
+    if (magic === 'MAC ') return 'ape';
+  }
+  // MP4/M4A：第 4-8 字节为 ftyp
+  if (head.length >= 12 && ascii(4, 4) === 'ftyp') return 'm4a';
+  // ID3v2 标签
+  if (head.length >= 3 && ascii(0, 3) === 'ID3') return 'mp3';
+  // MPEG / ADTS 帧同步
+  const b0 = head[0] ?? 0;
+  const b1 = head[1] ?? 0;
+  if (head.length >= 2 && b0 === 0xff && (b1 & 0xe0) === 0xe0) {
+    // ADTS AAC 的 layer 位为 0，MPEG 音频层非 0
+    return (b1 & 0x06) === 0 ? 'aac' : 'mp3';
+  }
+  return null;
+}
+
+/** 确定扩展名：文件头嗅探 > URL/Content-Type 推断 > mp3 兜底 */
+function resolveAudioExt(buffer: ArrayBuffer, url: string, contentType: string): string {
+  return sniffAudioExt(buffer) ?? guessExt(url, contentType);
 }
 
 /** 获取封面 ArrayBuffer */

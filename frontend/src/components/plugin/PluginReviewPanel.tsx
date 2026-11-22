@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { Clock, Package, Search } from 'lucide-react';
 import { api } from '@/lib/api';
-import { openExternal } from '@/lib/navigation';
 import { fadeUp, staggerContainer } from '@/lib/motion';
 import { queryKeys } from '@/lib/query';
 import { formatBytes, formatDateTime } from '@/lib/format';
@@ -28,6 +28,7 @@ export function PluginReviewPanel() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('pending');
   const [page, setPage] = useState(1);
+  const navigate = useNavigate();
 
   // 输入即时反馈、300ms 后才写查询 key（与审核中心的歌词列表同一策略）：
   // 原来只能按回车触发，手机 / 内嵌 WebView 没有回车键就完全搜不了；
@@ -124,7 +125,7 @@ export function PluginReviewPanel() {
                     <button
                       type="button"
                       onClick={() => {
-                        openExternal(`/review/plugin?key=${encodeURIComponent(item.pluginKey)}`);
+                        navigate(`/review/plugin?key=${encodeURIComponent(item.pluginKey)}`);
                       }}
                       className="flex w-full items-center justify-between gap-3 rounded-md border border-line bg-background px-4 py-3 text-left transition-colors hover:bg-surface-2"
                     >

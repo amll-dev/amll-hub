@@ -245,6 +245,35 @@ func TestPluginValidator_ResourcesFromManifest(t *testing.T) {
 	}
 }
 
+func TestPluginValidator_StringsContributionResource(t *testing.T) {
+	manifest := trustedManifest()
+	manifest["contributes"] = map[string]any{
+		"strings": []any{"strings/strings.json"},
+	}
+	descriptor := map[string]any{"packageVersion": 0, "manifest": manifest}
+	raw, _ := json.Marshal(descriptor)
+	v := NewPluginValidator(testLimits())
+	ok := v.Validate(buildTestZip(t, map[string][]byte{
+		"manifest.json":                  raw,
+		"assets/index.js":                []byte("export {}"),
+		"resources/strings/strings.json": []byte(`{"emptyLine":{"default":"Empty"}}`),
+	}))
+	if !ok.OK {
+		t.Fatalf("expected strings contribution package to pass, got %+v", ok.Issues)
+	}
+	if len(ok.ResourceEntries) != 1 || ok.ResourceEntries[0] != "strings/strings.json" {
+		t.Fatalf("resource entries = %v", ok.ResourceEntries)
+	}
+
+	missing := v.Validate(buildTestZip(t, map[string][]byte{
+		"manifest.json":   raw,
+		"assets/index.js": []byte("export {}"),
+	}))
+	if missing.OK {
+		t.Fatal("missing declared strings resource must be rejected")
+	}
+}
+
 func TestPluginValidator_ValidateFile(t *testing.T) {
 	v := NewPluginValidator(testLimits())
 	path := filepath.Join(t.TempDir(), "plugin.zip")

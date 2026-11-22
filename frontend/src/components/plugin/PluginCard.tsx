@@ -3,6 +3,7 @@ import { Star } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { PluginStoreListItem } from '@/lib/types';
+import { resolveApiUrl } from '@/lib/api';
 import { PluginIcon } from './shared';
 import { RatingInline } from './PluginRating';
 
@@ -125,7 +126,7 @@ function useCoverTone(pluginKey: string, iconUrl?: string): CoverTone {
       iconToneCache.set(iconUrl, next);
       if (!cancelled) setTone(next);
     };
-    img.src = iconUrl;
+    img.src = resolveApiUrl(iconUrl);
     return () => {
       cancelled = true;
     };

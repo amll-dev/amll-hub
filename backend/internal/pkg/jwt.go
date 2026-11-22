@@ -19,6 +19,8 @@ type Claims struct {
 	DisplayName string `json:"displayName"` // 显示名称
 	Email       string `json:"email"`       // 邮箱
 	Avatar      string `json:"avatar"`      // 头像 URL
+	// Ver 会话版本号。缺省（旧 token）按 0 处理，递增后旧 token 立即失效。
+	Ver int64 `json:"ver,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -43,6 +45,7 @@ type UserTokenInput struct {
 	DisplayName string
 	Email       string
 	Avatar      string
+	Ver         int64 // 用户当前会话版本号
 }
 
 // SignUserToken 按统一结构签发站点 JWT。
@@ -55,6 +58,7 @@ func SignUserToken(in UserTokenInput, secret string, ttl time.Duration) (string,
 		DisplayName: in.DisplayName,
 		Email:       in.Email,
 		Avatar:      in.Avatar,
+		Ver:         in.Ver,
 	}, secret, ttl)
 }
 

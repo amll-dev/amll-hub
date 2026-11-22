@@ -16,6 +16,7 @@ import (
 	"github.com/amll-dev/amll-hub/backend/internal/mail"
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
+	"github.com/amll-dev/amll-hub/backend/internal/qqbot"
 	"github.com/amll-dev/amll-hub/backend/internal/repository"
 	"github.com/amll-dev/amll-hub/backend/internal/router"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
@@ -133,14 +134,35 @@ func Run() {
 	onlineSearchSvc := service.NewOnlineSearchService(cfg)
 	cloudMusicSvc := service.NewCloudMusicService(cfg, redisClient)
 	qmMusicSvc := service.NewQMMusicService(cfg, redisClient)
+	authCasdoorClient := infrastructure.NewCasdoorClient(cfg.Casdoor)
 	authSvc := service.NewAuthService(
-		infrastructure.NewCasdoorClient(cfg.Casdoor),
+		authCasdoorClient,
 		redisClient,
 		cfg.Casdoor.JWTSecret,
 		cfg.Casdoor.JWTTTL,
 		cfg.Casdoor.Organization,
 		cfg.MFA.SetupEnabled,
 	)
+	// 新设备/异地登录站内提示
+	if cfg.Security.LoginNotifyEnabled {
+		authSvc.SetLoginRisk(service.NewLoginRiskService(redisClient, cfg.Security.IPDBFile))
+	}
+
+	// 阿里云号码认证（网页一键登录）：未配置凭据时功能关闭，前端隐藏入口
+	var pnvsClient *infrastructure.AliyunPnvsClient
+	if cfg.AliyunPNVS.Enabled() {
+		pnvsClient, err = infrastructure.NewAliyunPnvsClient(
+			cfg.AliyunPNVS.AccessKeyID,
+			cfg.AliyunPNVS.AccessKeySecret,
+			cfg.AliyunPNVS.SceneCode,
+			cfg.AliyunPNVS.RegionID,
+		)
+		if err != nil {
+			logrus.WithError(err).Warn("init aliyun pnvs client failed, one-click login disabled")
+			pnvsClient = nil
+		}
+	}
+	oneClickSvc := service.NewOneClickService(authSvc, pnvsClient, authCasdoorClient, redisClient, cfg.Casdoor.Organization)
 
 	// GitHub OAuth 登录/绑定 + 投稿数据迁移
 	githubOAuthClient := infrastructure.NewGithubOAuthClient(cfg.GitHubOAuth)
@@ -292,6 +314,15 @@ func Run() {
 	// 90 天历史消息清理
 	notifSvc.StartCleanupTask(appCtx)
 
+	// 4.2.1 启动 QQ 机器人（群内 @ 查询；要求后端单副本）
+	if cfg.QQBot.Enabled() {
+		qqBot := qqbot.New(cfg.QQBot, searchSvc, dailyRecSvc, latestSongSvc, notFoundSvc)
+		pkg.GoSafe("qqbot", func() { qqBot.Run(appCtx) })
+		logrus.Info("QQ bot enabled")
+	} else {
+		logrus.Info("QQ bot disabled: QQ_BOT_APP_ID / QQ_BOT_CLIENT_SECRET 未配置")
+	}
+
 	// 4.3 启动投稿自动拒绝任务
 	autoRejectJob := job.NewAutoRejectJob(
 		db, subRepo, historyRepo, fileSvc, viewerSvc,
@@ -313,6 +344,10 @@ func Run() {
 	)
 	pkg.GoSafe("temp-object-cleanup-job", func() { tempCleanupJob.Run(appCtx) })
 
+	// 4.3.3 定时同步检查：每 5 分钟比对远端 commit，有更新自动入队
+	syncScheduler := job.NewSyncScheduler(syncSvc, job.DefaultSyncCheckInterval)
+	pkg.GoSafe("sync-scheduler", func() { syncScheduler.Run(appCtx) })
+
 	// 4.4 审核员/超级管理员缓存
 	reviewerCache := middleware.NewReviewerCache(reviewerRepo, cfg.Submission.ReviewerCacheTTL)
 	adminCache := middleware.NewAdminCache(adminRepo, cfg.Submission.ReviewerCacheTTL)
@@ -328,7 +363,7 @@ func Run() {
 	onlineSearchH := handler.NewOnlineSearchHandler(onlineSearchSvc)
 	cloudMusicH := handler.NewCloudMusicHandler(cloudMusicSvc)
 	qmMusicH := handler.NewQMMusicHandler(qmMusicSvc)
-	authH := handler.NewAuthHandler(authSvc, reviewerCache, adminCache)
+	authH := handler.NewAuthHandler(authSvc, oneClickSvc, reviewerCache, adminCache)
 	authGithubH := handler.NewAuthGithubHandler(githubBindSvc, reviewerCache, adminCache)
 	migrationH := handler.NewMigrationHandler(migrationSvc)
 

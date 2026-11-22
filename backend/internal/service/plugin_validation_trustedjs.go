@@ -92,9 +92,13 @@ func collectResourceEntries(manifest map[string]any) []string {
 			}
 		}
 	}
-	if stringsList := manifestStringSlice(manifest, "contributes.strings"); len(stringsList) > 0 {
-		for _, entry := range stringsList {
-			add(entry)
+	if raw, ok := lookupContributes(manifest, "strings"); ok {
+		if stringsList, ok := raw.([]any); ok {
+			for _, item := range stringsList {
+				if entry, ok := item.(string); ok {
+					add(entry)
+				}
+			}
 		}
 	}
 	sort.Strings(out)

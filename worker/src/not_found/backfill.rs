@@ -112,7 +112,7 @@ async fn run_batch(app: &Arc<AppState>, lock_token: &str) -> Result<()> {
     Ok(())
 }
 
-/// 取一批待回填记录
+/// 取一批待回填记录：按热度优先，热门补全后自然轮到低热度记录
 async fn load_empty_records(app: &Arc<AppState>) -> Result<Vec<EmptyRecord>> {
     let sql = r#"SELECT platform, platform_id
         FROM not_found_requests
@@ -124,7 +124,7 @@ async fn load_empty_records(app: &Arc<AppState>) -> Result<Vec<EmptyRecord>> {
                 updated_at <= created_at + interval '1 second'
                 OR updated_at < now() - interval '1 day'
               )
-        ORDER BY created_at DESC
+        ORDER BY request_count DESC, last_seen_at DESC, created_at DESC
         LIMIT $1"#;
 
     EmptyRecord::find_by_statement(Statement::from_sql_and_values(

@@ -15,6 +15,20 @@ var ErrWeakPassword = errors.New("weak password")
 // ErrMfaMethodEnabled 该 MFA 因子已启用，不允许重走 setup 静默换绑
 var ErrMfaMethodEnabled = errors.New("mfa method already enabled")
 
+// 网页一键登录相关错误
+var (
+	// ErrOneClickDisabled 未配置阿里云 PNVS，功能关闭
+	ErrOneClickDisabled = errors.New("one-click login disabled")
+	// ErrOneClickInvalidToken spToken 无效或已过期
+	ErrOneClickInvalidToken = errors.New("invalid one-click token")
+	// ErrOneClickUserNotFound 手机号未注册，且 Casdoor 未开启自动注册
+	ErrOneClickUserNotFound = errors.New("one-click user not found")
+	// ErrOneClickMfaRequired 用户启用了 MFA，不能走一键登录
+	ErrOneClickMfaRequired = errors.New("one-click mfa required")
+	// ErrOneClickRateLimited 一键登录请求过于频繁
+	ErrOneClickRateLimited = errors.New("one-click rate limited")
+)
+
 // Casdoor 上游错误的语义哨兵。业务函数只对 normalizeCasdoorErr 的返回值做
 // errors.Is 判断，不再各自对 err.Error() 做 strings.Contains；
 // 具体的文案 / 错误码匹配集中在 infrastructure.ClassifyCasdoorErr 一处。

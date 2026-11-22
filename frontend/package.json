@@ -37,6 +37,7 @@
     "@radix-ui/react-tabs": "^1.1.21",
     "@radix-ui/react-tooltip": "^1.2.16",
     "@tanstack/react-query": "^5.102.8",
+    "aliyun_numberauthsdk_web": "^2.1.15",
     "browser-id3-writer": "^4.4.0",
     "browser-image-compression": "^2.0.2",
     "class-variance-authority": "^0.7.1",

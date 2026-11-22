@@ -20,12 +20,13 @@ func NewLatestSongService(latestRepo *repository.LatestSongRepo) *LatestSongServ
 
 // LatestSongItem 列表返回项
 type LatestSongItem struct {
-	ID       int64  `json:"id"`
-	SongID   int64  `json:"songId"`
-	NcmID    string `json:"ncmId"`
-	Title    string `json:"title"`
-	Artist   string `json:"artist"`
-	CoverURL string `json:"coverUrl"`
+	ID           int64  `json:"id"`
+	SongID       int64  `json:"songId"`
+	NcmID        string `json:"ncmId"`
+	Title        string `json:"title"`
+	Artist       string `json:"artist"`
+	CoverURL     string `json:"coverUrl"`
+	RawLyricFile string `json:"rawLyricFile"`
 }
 
 // List 查询最新收录列表
@@ -37,12 +38,13 @@ func (s *LatestSongService) List(ctx context.Context) ([]LatestSongItem, error) 
 	items := make([]LatestSongItem, 0, len(list))
 	for _, l := range list {
 		items = append(items, LatestSongItem{
-			ID:       l.ID,
-			SongID:   l.SongID,
-			NcmID:    l.NcmID,
-			Title:    l.Title,
-			Artist:   l.Artist,
-			CoverURL: l.CoverURL,
+			ID:           l.ID,
+			SongID:       l.SongID,
+			NcmID:        l.NcmID,
+			Title:        l.Title,
+			Artist:       l.Artist,
+			CoverURL:     l.CoverURL,
+			RawLyricFile: l.RawLyricFile,
 		})
 	}
 	return items, nil

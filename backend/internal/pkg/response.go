@@ -36,6 +36,12 @@ func OKWithMsg(c *gin.Context, data any, message string) {
 const (
 	// CodeCaptchaFailed 人机验证未通过：前端据此保留验证码弹窗让用户重试
 	CodeCaptchaFailed = 4001
+	// 一键登录业务码：前端据此决定回退文案与是否隐藏入口
+	CodeOneClickInvalidToken = 4101
+	CodeOneClickUserNotFound = 4102
+	CodeOneClickMfaRequired  = 4103
+	CodeOneClickDisabled     = 4104
+	CodeOneClickRateLimited  = 4105
 )
 
 // 失败响应

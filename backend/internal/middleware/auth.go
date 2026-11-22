@@ -1,12 +1,17 @@
 package middleware
 
 import (
+	"context"
 	"crypto/subtle"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -18,10 +23,18 @@ const (
 	UserDisplayNameKey = "user_display_name"
 	// UserAvatarKey context 中存储头像 URL 的 key
 	UserAvatarKey = "user_avatar"
+	// SessionVersionKeyPrefix 用户会话版本号在 Redis 中的键前缀
+	SessionVersionKeyPrefix = "auth:sessionVersion:"
 )
 
-// Auth JWT 校验中间件
-func Auth(jwtSecret string) gin.HandlerFunc {
+// Auth JWT 校验中间件。
+// 传入 Redis 时额外校验 token 的 ver 会话版本，用于「不是我」一键踢下线；
+// 不传时只做签名/有效期校验（后台任务、测试等场景）。
+func Auth(jwtSecret string, rdb ...*redis.Client) gin.HandlerFunc {
+	var client *redis.Client
+	if len(rdb) > 0 {
+		client = rdb[0]
+	}
 	return func(c *gin.Context) {
 		token := bearerToken(c.GetHeader("Authorization"))
 		if token == "" {
@@ -29,12 +42,33 @@ func Auth(jwtSecret string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if !setClaims(c, token, jwtSecret) {
+		if !setClaims(c, token, jwtSecret, client) {
 			c.Abort()
 			return
 		}
 		c.Next()
 	}
+}
+
+// sessionVersionValid 校验 token 的会话版本号。
+// 旧 token 没有 ver claim，按 0 处理；Redis 不可用时放行，避免鉴权被缓存故障拖垮。
+func sessionVersionValid(rdb *redis.Client, userID string, ver int64) bool {
+	if rdb == nil || userID == "" {
+		return true
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	current, err := rdb.Get(ctx, SessionVersionKeyPrefix+userID).Int64()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			current = 0
+		} else {
+			logrus.WithError(err).Warn("read session version failed, skip version check")
+			return true
+		}
+	}
+	return ver == current
 }
 
 // ServiceTokenHeader 内部服务调用时携带固定 token 的头
@@ -60,11 +94,17 @@ func AuthOrService(jwtSecret, serviceToken string) gin.HandlerFunc {
 }
 
 // OptionalAuth 公开接口的可选认证
-func OptionalAuth(jwtSecret string) gin.HandlerFunc {
+func OptionalAuth(jwtSecret string, rdb ...*redis.Client) gin.HandlerFunc {
+	var client *redis.Client
+	if len(rdb) > 0 {
+		client = rdb[0]
+	}
 	return func(c *gin.Context) {
 		if token := bearerToken(c.GetHeader("Authorization")); token != "" {
 			if claims, err := pkg.ParseJWT(token, jwtSecret); err == nil {
-				applyClaims(c, claims)
+				if sessionVersionValid(client, claims.Sub, claims.Ver) {
+					applyClaims(c, claims)
+				}
 			}
 		}
 		c.Next()
@@ -92,10 +132,14 @@ func applyClaims(c *gin.Context, claims *pkg.Claims) {
 }
 
 // setClaims 解析 JWT 并写入 context；失败时写响应并返回 false
-func setClaims(c *gin.Context, token, jwtSecret string) bool {
+func setClaims(c *gin.Context, token, jwtSecret string, rdb *redis.Client) bool {
 	claims, err := pkg.ParseJWT(token, jwtSecret)
 	if err != nil {
 		pkg.Fail(c, http.StatusUnauthorized, http.StatusUnauthorized, "invalid or expired token")
+		return false
+	}
+	if !sessionVersionValid(rdb, claims.Sub, claims.Ver) {
+		pkg.Fail(c, http.StatusUnauthorized, http.StatusUnauthorized, "登录状态已失效，请重新登录")
 		return false
 	}
 	applyClaims(c, claims)

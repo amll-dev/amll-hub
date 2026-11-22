@@ -36,6 +36,10 @@ data class LoginRequest(val username: String, val password: String)
 @Serializable
 data class LoginByCodeRequest(val dest: String, val code: String)
 
+/** 安卓原生一键登录：运营商 token 换本地 JWT */
+@Serializable
+data class OneClickNativeLoginRequest(val token: String)
+
 /** 账号存在性预检 POST /api/v1/auth/check-user */
 @Serializable
 data class CheckUserRequest(

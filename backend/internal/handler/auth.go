@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/amll-dev/amll-hub/backend/internal/infrastructure"
 	"github.com/amll-dev/amll-hub/backend/internal/middleware"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/amll-dev/amll-hub/backend/internal/service"
@@ -18,13 +20,23 @@ import (
 // AuthHandler 认证 handler
 type AuthHandler struct {
 	svc           *service.AuthService
+	oneClick      *service.OneClickService
 	reviewerCache *middleware.ReviewerCache
 	adminCache    *middleware.AdminCache
 }
 
 // NewAuthHandler 创建 AuthHandler
-func NewAuthHandler(svc *service.AuthService, rc *middleware.ReviewerCache, ac *middleware.AdminCache) *AuthHandler {
-	return &AuthHandler{svc: svc, reviewerCache: rc, adminCache: ac}
+func NewAuthHandler(svc *service.AuthService, oneClick *service.OneClickService, rc *middleware.ReviewerCache, ac *middleware.AdminCache) *AuthHandler {
+	return &AuthHandler{svc: svc, oneClick: oneClick, reviewerCache: rc, adminCache: ac}
+}
+
+// loginMeta 提取本次登录的客户端信息，供 Casdoor 与站内风险判定使用
+func loginMeta(c *gin.Context) infrastructure.LoginMeta {
+	return infrastructure.LoginMeta{
+		DeviceID:  c.GetHeader("X-Device-ID"),
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.GetHeader("User-Agent"),
+	}
 }
 
 // 根据用户名查询审核员/超级管理员缓存
@@ -56,7 +68,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
 	defer cancel()
 
-	result, err := h.svc.Login(ctx, req.Username, req.Password)
+	result, err := h.svc.Login(ctx, req.Username, req.Password, loginMeta(c))
 	if err != nil {
 		writeAuthErr(c, err)
 		return
@@ -82,7 +94,7 @@ func (h *AuthHandler) LoginMfa(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
 	defer cancel()
 
-	result, err := h.svc.VerifyMfaLogin(ctx, req.ChallengeID, req.MfaType, req.Passcode, req.RecoveryCode)
+	result, err := h.svc.VerifyMfaLogin(ctx, req.ChallengeID, req.MfaType, req.Passcode, req.RecoveryCode, loginMeta(c))
 	if err != nil {
 		writeAuthErr(c, err)
 		return
@@ -130,7 +142,7 @@ func (h *AuthHandler) LoginByCode(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
 	defer cancel()
 
-	result, err := h.svc.LoginByCode(ctx, req.Dest, req.Code)
+	result, err := h.svc.LoginByCode(ctx, req.Dest, req.Code, loginMeta(c))
 	if err != nil {
 		writeAuthErr(c, err)
 		return
@@ -401,6 +413,92 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 }
 
 // UploadAvatar POST /api/v1/auth/avatar
+// OneClickEnabled 一键登录是否可用（未配置 PNVS 时前端隐藏入口）
+func (h *AuthHandler) OneClickEnabled(c *gin.Context) {
+	pkg.OK(c, gin.H{"enabled": h.oneClick.Enabled()})
+}
+
+// OneClickAuthToken 获取 H5 取号 SDK 临时凭据
+func (h *AuthHandler) OneClickAuthToken(c *gin.Context) {
+	if !h.oneClick.Allow(c.Request.Context(), "auth:oneclick:token:"+c.ClientIP(), 10, time.Minute) {
+		writeAuthErr(c, service.ErrOneClickRateLimited)
+		return
+	}
+	token, err := h.oneClick.AuthToken(c.Request.Context())
+	if err != nil {
+		writeAuthErr(c, err)
+		return
+	}
+	pkg.OK(c, token)
+}
+
+// OneClickLogin 用 H5 SDK 返回的 spToken 登录
+func (h *AuthHandler) OneClickLogin(c *gin.Context) {
+	if !h.oneClick.Allow(c.Request.Context(), "auth:oneclick:login:"+c.ClientIP(), 10, time.Minute) {
+		writeAuthErr(c, service.ErrOneClickRateLimited)
+		return
+	}
+
+	var req struct {
+		SpToken string `json:"spToken"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.BadRequest(c, "请求参数有误")
+		return
+	}
+
+	result, err := h.oneClick.Login(c.Request.Context(), req.SpToken, loginMeta(c))
+	if err != nil {
+		writeAuthErr(c, err)
+		return
+	}
+	if result.User != nil {
+		h.enrichReviewer(c, result.User)
+	}
+	pkg.OK(c, result)
+}
+
+// OneClickNativeLogin 用 Android/iOS 原生 SDK 的运营商 token 登录
+func (h *AuthHandler) OneClickNativeLogin(c *gin.Context) {
+	if !h.oneClick.Allow(c.Request.Context(), "auth:oneclick:native:"+c.ClientIP(), 10, time.Minute) {
+		writeAuthErr(c, service.ErrOneClickRateLimited)
+		return
+	}
+
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		pkg.BadRequest(c, "请求参数有误")
+		return
+	}
+
+	result, err := h.oneClick.LoginNative(c.Request.Context(), req.Token, loginMeta(c))
+	if err != nil {
+		writeAuthErr(c, err)
+		return
+	}
+	if result.User != nil {
+		h.enrichReviewer(c, result.User)
+	}
+	pkg.OK(c, result)
+}
+
+// RevokeSessions 递增会话版本，踢掉该账号已签发的所有 JWT
+func (h *AuthHandler) RevokeSessions(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID == "" {
+		pkg.Unauthorized(c)
+		return
+	}
+	if err := h.svc.RevokeSessions(c.Request.Context(), userID); err != nil {
+		logrus.WithError(err).Warn("revoke sessions failed")
+		pkg.InternalError(c, "操作失败，请稍后重试")
+		return
+	}
+	pkg.OKWithMsg(c, nil, "已退出所有设备")
+}
+
 func (h *AuthHandler) UploadAvatar(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID == "" {
@@ -517,6 +615,16 @@ func writeAuthErr(c *gin.Context, err error) {
 		pkg.Fail(c, http.StatusBadGateway, http.StatusBadGateway, detail)
 	case errors.Is(err, service.ErrUpstreamUnavailable):
 		writeUpstreamErr(c, err, "认证服务暂不可用")
+	case errors.Is(err, service.ErrOneClickDisabled):
+		pkg.Fail(c, http.StatusServiceUnavailable, pkg.CodeOneClickDisabled, "一键登录暂未开放")
+	case errors.Is(err, service.ErrOneClickInvalidToken):
+		pkg.Fail(c, http.StatusBadRequest, pkg.CodeOneClickInvalidToken, "本机号码校验已过期，请重新尝试或改用其他登录方式")
+	case errors.Is(err, service.ErrOneClickUserNotFound):
+		pkg.Fail(c, http.StatusUnauthorized, pkg.CodeOneClickUserNotFound, "该手机号尚未注册，请先注册后再登录")
+	case errors.Is(err, service.ErrOneClickMfaRequired):
+		pkg.Fail(c, http.StatusUnauthorized, pkg.CodeOneClickMfaRequired, "该账号已开启两步验证，请使用密码或验证码登录")
+	case errors.Is(err, service.ErrOneClickRateLimited):
+		pkg.Fail(c, http.StatusTooManyRequests, pkg.CodeOneClickRateLimited, "操作过于频繁，请稍后再试")
 	default:
 		logrus.WithError(err).Warn("auth service unknown error")
 		pkg.InternalError(c, "内部错误")
