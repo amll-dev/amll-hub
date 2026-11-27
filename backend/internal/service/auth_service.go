@@ -16,6 +16,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/amll-dev/amll-hub/backend/internal/infrastructure"
+	"github.com/amll-dev/amll-hub/backend/internal/model"
 	"github.com/amll-dev/amll-hub/backend/internal/pkg"
 	"github.com/redis/go-redis/v9"
 )
@@ -108,6 +109,11 @@ func isSVG(data []byte) bool {
 	return strings.Contains(strings.ToLower(string(head)), "<svg")
 }
 
+// loginNotifier 登录安全提醒的站内通知发送能力（*NotificationService 实现）
+type loginNotifier interface {
+	Notify(ctx context.Context, in NotifyInput) error
+}
+
 // AuthService 认证业务逻辑
 type AuthService struct {
 	casdoor         *infrastructure.CasdoorClient
@@ -117,11 +123,17 @@ type AuthService struct {
 	org             string
 	mfaSetupEnabled bool
 	loginRisk       *LoginRiskService
+	loginNotify     loginNotifier
 }
 
 // SetLoginRisk 注入新设备/异地登录提示服务（未注入时不做站内提示）
 func (s *AuthService) SetLoginRisk(risk *LoginRiskService) {
 	s.loginRisk = risk
+}
+
+// SetNotifier 注入站内消息服务（未注入时不发送登录安全提醒）
+func (s *AuthService) SetNotifier(n loginNotifier) {
+	s.loginNotify = n
 }
 
 // NewAuthService 创建 AuthService
@@ -286,8 +298,6 @@ type LoginResult struct {
 	MfaRequired    bool         `json:"mfaRequired,omitempty"`
 	MfaChallengeID string       `json:"mfaChallengeId,omitempty"`
 	MfaMethods     []MfaMethod  `json:"mfaMethods,omitempty"`
-	// SecurityNotices 新设备/异地登录提示，登录成功时返回，可能同时有多条
-	SecurityNotices []SecurityNotice `json:"securityNotices,omitempty"`
 }
 
 // MfaMethod 暴露给前端的 MFA 因子（不含 TOTP secret）
@@ -491,12 +501,77 @@ func (s *AuthService) completeLogin(ctx context.Context, userID string, cookies 
 	profile := toUserProfile(user)
 	result := &LoginResult{Token: token, User: &profile}
 
-	// 首次登录只记录；新设备/新地点才返回提示
+	// 首次登录只记录；新设备/新地点
 	if s.loginRisk != nil {
-		result.SecurityNotices = s.loginRisk.Evaluate(ctx, fullID, meta)
+		s.notifySecurityNotices(ctx, fullID, s.loginRisk.Evaluate(ctx, fullID, meta))
 	}
 
 	return result, nil
+}
+
+// notifySecurityNotices 把新设备/异地登录提醒写入站内消息
+func (s *AuthService) notifySecurityNotices(ctx context.Context, userID string, notices []SecurityNotice) {
+	if len(notices) == 0 || s.loginNotify == nil {
+		return
+	}
+
+	username := userID
+	if _, name, ok := strings.Cut(userID, "/"); ok && name != "" {
+		username = name
+	}
+
+	hasDevice, hasLocation := false, false
+	for _, n := range notices {
+		switch n.Type {
+		case "new_device":
+			hasDevice = true
+		case "new_location":
+			hasLocation = true
+		}
+	}
+	title := "检测到新设备登录"
+	switch {
+	case hasDevice && hasLocation:
+		title = "检测到新设备异地登录"
+	case hasLocation:
+		title = "检测到异地登录"
+	}
+
+	first := notices[0]
+	lines := []string{"你的账号刚刚在新设备或新地点登录："}
+	if first.Device != "" {
+		lines = append(lines, "设备："+first.Device)
+	}
+	if first.Location != "" {
+		lines = append(lines, "地点："+first.Location)
+	}
+	if first.IP != "" {
+		lines = append(lines, "IP："+first.IP)
+	}
+	if first.Time != "" {
+		if t, err := time.Parse(time.RFC3339, first.Time); err == nil {
+			lines = append(lines, "时间："+t.Format("2006-01-02 15:04:05"))
+		}
+	}
+	lines = append(lines, "", "如果这不是你本人的操作，请立即修改密码并退出所有设备。")
+
+	in := NotifyInput{
+		Username:    username,
+		Type:        model.NotifyTypeSystem,
+		Result:      model.NotifyResultLoginSecurity,
+		Title:       title,
+		Content:     strings.Join(lines, "\n"),
+		ActionPath:  "/profile/security",
+		ActionLabel: "查看账号安全",
+	}
+
+	pkg.GoSafe("login-security-notify", func() {
+		c, cancel := pkg.DetachedTimeout(ctx, 10*time.Second)
+		defer cancel()
+		if err := s.loginNotify.Notify(c, in); err != nil {
+			logrus.WithError(err).WithField("username", username).Warn("send login security notification failed")
+		}
+	})
 }
 
 // newMfaChallenge 保存第一次登录的 Casdoor 会话，返回二次验证挑战

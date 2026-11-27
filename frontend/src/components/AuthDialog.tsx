@@ -23,16 +23,9 @@ import { requestSpToken } from '@/lib/phoneAuth';
 import { queryKeys } from '@/lib/query';
 import { cn } from '@/lib/utils';
 import { buttonTap } from '@/lib/motion';
-import type {
-  CaptchaConfig,
-  LoginMfaRequired,
-  LoginSuccess,
-  MfaMethod,
-  SecurityNotice,
-} from '@/lib/auth';
+import type { CaptchaConfig, LoginMfaRequired, LoginSuccess, MfaMethod } from '@/lib/auth';
 import { isMfaRequired } from '@/lib/auth';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { SecurityNoticeModal } from '@/components/SecurityNoticeModal';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -228,9 +221,6 @@ export function AuthDialog() {
   const mfaCountdown = useCountdown();
   const mfaCurrent = mfaChallenge?.methods.find((m) => m.mfaType === mfaType);
 
-  // 新设备/异地登录提示
-  const [securityNotices, setSecurityNotices] = useState<SecurityNotice[] | null>(null);
-
   // 两套登录表单
   const passwordForm = useForm<PasswordFormValues>({
     resolver: zodResolver(passwordSchema),
@@ -410,16 +400,13 @@ export function AuthDialog() {
     setError('');
   };
 
-  /** 所有登录方式共用的成功收尾：写入登录态、关弹窗、处理跳转与安全提示 */
+  /** 所有登录方式共用的成功收尾：写入登录态、关弹窗、处理跳转 */
   const handleLoginSuccess = (result: LoginSuccess) => {
     login(result.token, result.user);
     handleClose();
     if (loginRedirect) {
       navigate(loginRedirect);
       clearLoginRedirect();
-    }
-    if (result.securityNotices?.length) {
-      setSecurityNotices(result.securityNotices);
     }
   };
 
@@ -1155,9 +1142,6 @@ export function AuthDialog() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* 新设备/异地登录提示 */}
-      <SecurityNoticeModal notices={securityNotices} onClose={() => setSecurityNotices(null)} />
     </>
   );
 }

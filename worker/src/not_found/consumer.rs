@@ -177,8 +177,8 @@ pub async fn process_with_mode(
     // 1. 检查白名单（Redis）
     let mut redis_conn = app.redis.clone();
     if let Some(kind) = is_in_whitelist(&mut redis_conn, &msg.platform, &msg.platform_id).await? {
-        // 白名单命中也必须写库：回填只捞 category='not_found' 且 song_name='' 的记录，
-        // 只返回 true 不写库会让这批记录每轮重复占满配额、永远不收敛。
+        // 白名单命中也必须写库：后端补齐任务只捞 category='not_found'
+        // 且歌名/封面为空的记录，只返回 true 不写库会让这批记录反复被重新解析、永远不收敛。
         if let Err(e) = mark_whitelist_hit_pg(&app.db, msg, kind.as_category()).await {
             warn!(error = %e, "白名单命中写回 category 失败");
             // 写库失败不能算「已解决」，让回填至少打时间戳兜底

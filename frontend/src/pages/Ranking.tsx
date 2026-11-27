@@ -72,7 +72,8 @@ export function Ranking() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight">无歌词排行榜</h1>
         <p className="mt-2 text-sm text-ink-2">
-          最近 {days} 天内未找到歌词的歌曲，按请求次数排序（每周一清空）
+          {days === 7 ? '本周' : `最近 ${days} 天内`}
+          未找到歌词的歌曲，按请求次数排序（每周一清空）
         </p>
       </div>
 
@@ -88,7 +89,7 @@ export function Ranking() {
                 onClick={() => changeDays(d)}
                 className={`${btnBase} ${days === d ? btnActive : btnIdle}`}
               >
-                {d} 天
+                {d === 7 ? '本周' : `${d} 天`}
               </button>
             ))}
           </div>

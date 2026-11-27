@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { CheckCheck } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import {
@@ -29,7 +28,6 @@ const typeTabs: { value: MessageType | 'all'; label: string }[] = [
 /** 消息中心页：分页 + 类型筛选，直接读 TanStack Query（不共享面板 atom） */
 export function MessagesPage() {
   const { user, openLogin } = useAuth();
-  const navigate = useNavigate();
   const [type, setType] = useState<MessageType | 'all'>('all');
   const [page, setPage] = useState(1);
 
@@ -115,7 +113,6 @@ export function MessagesPage() {
             loading={isPending}
             onRead={(m) => {
               if (!m.read) markRead.mutate(m.id);
-              if (m.action?.path) navigate(m.action.path);
             }}
             onDelete={(m) => del.mutate(m.id)}
           />

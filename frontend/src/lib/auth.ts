@@ -17,17 +17,6 @@ export interface UserProfile {
 export interface LoginSuccess {
   token: string;
   user: UserProfile;
-  /** 新设备/异地登录提示，登录成功后返回 */
-  securityNotices?: SecurityNotice[];
-}
-
-/** 登录安全提示：新设备 / 新地点 */
-export interface SecurityNotice {
-  type: 'new_device' | 'new_location' | string;
-  device?: string;
-  location?: string;
-  ip?: string;
-  time?: string;
 }
 
 /** MFA 因子 */

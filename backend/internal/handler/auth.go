@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -34,9 +35,48 @@ func NewAuthHandler(svc *service.AuthService, oneClick *service.OneClickService,
 func loginMeta(c *gin.Context) infrastructure.LoginMeta {
 	return infrastructure.LoginMeta{
 		DeviceID:  c.GetHeader("X-Device-ID"),
-		ClientIP:  c.ClientIP(),
+		ClientIP:  loginClientIP(c),
 		UserAgent: c.GetHeader("User-Agent"),
 	}
+}
+
+// loginClientIP 取本次登录的真实客户端 IP
+func loginClientIP(c *gin.Context) string {
+	ip := normalizeLoginIP(c.ClientIP())
+	if ip == "" || !isInternalIP(ip) {
+		return ip
+	}
+	// X-Forwarded-For 形如 "客户端, 代理1, 代理2"，从右往左跳过代理地址
+	for _, header := range []string{"X-Forwarded-For", "X-Real-IP"} {
+		values := strings.Split(c.GetHeader(header), ",")
+		for i := len(values) - 1; i >= 0; i-- {
+			if candidate := normalizeLoginIP(values[i]); candidate != "" && !isInternalIP(candidate) {
+				return candidate
+			}
+		}
+	}
+	return ip
+}
+
+// normalizeLoginIP 去掉端口与 IPv6 方括号
+func normalizeLoginIP(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(raw); err == nil {
+		raw = host
+	}
+	return strings.Trim(raw, "[]")
+}
+
+// isInternalIP 回环、私网、链路本地地址都不可能是公网用户 IP
+func isInternalIP(ip string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return true
+	}
+	return parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsLinkLocalUnicast()
 }
 
 // 根据用户名查询审核员/超级管理员缓存

@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useSetAtom } from 'jotai';
 import {
   Award,
   CircleCheck,
@@ -8,12 +8,14 @@ import {
   MessageSquare,
   Music,
   PencilLine,
+  ShieldAlert,
   ShieldCheck,
   TimerOff,
   X,
   XCircle,
   type LucideIcon,
 } from 'lucide-react';
+import { messagePanelVisibleAtom, notificationDetailAtom } from '@/atoms/message';
 import type { Message, MessageType, ReviewResult } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -36,6 +38,8 @@ const reviewResultIcons: Record<ReviewResult, LucideIcon> = {
   // ⚠️ 以前没这个键，会退化成通用的 ShieldCheck，看不出是哪种结果。
   revised: FileCheck,
   recruitment_completed: Award,
+  // 登录安全提醒：新设备/异地登录
+  login_security: ShieldAlert,
   closed: TimerOff,
 };
 
@@ -51,7 +55,7 @@ function iconOf(message: Message): LucideIcon {
 
 /**
  * 单条消息行。
- * 点击：乐观已读（由父组件 mutate）+ 跳转 action.path；
+ * 点击：乐观已读（由父组件 mutate）+ 打开详情弹窗（不再直接跳转页面，长消息可完整查看）；
  * 悬停右上角出现删除按钮。
  */
 export function NotificationItem({
@@ -63,12 +67,15 @@ export function NotificationItem({
   onRead: (m: Message) => void;
   onDelete: (m: Message) => void;
 }) {
-  const navigate = useNavigate();
+  const setDetail = useSetAtom(notificationDetailAtom);
+  const setPanelVisible = useSetAtom(messagePanelVisibleAtom);
   const Icon = iconOf(message);
 
   const handleClick = () => {
     onRead(message);
-    if (message.action?.path) navigate(message.action.path);
+    // 先收起消息面板（桌面下拉 / 移动 Sheet），再打开详情弹窗，避免两层弹层叠加
+    setPanelVisible(false);
+    setDetail(message);
   };
 
   return (
@@ -104,8 +111,8 @@ export function NotificationItem({
               {formatRelativeTime(message.createdAt)}
             </span>
           </span>
-          {/* whitespace-pre-line：公告正文允许换行，单行消息不受影响 */}
-          <span className="mt-0.5 line-clamp-2 whitespace-pre-line text-xs leading-relaxed text-ink-3">
+          {/* whitespace-pre-line：公告正文允许换行；break-words 防止超长链接撑出卡片 */}
+          <span className="mt-0.5 line-clamp-2 whitespace-pre-line break-words text-xs leading-relaxed text-ink-3">
             {message.content}
           </span>
           {message.action && (

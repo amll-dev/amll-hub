@@ -894,6 +894,8 @@ export type ReviewResult =
   | 'revised'
   // 已完成本期审核招募（后端 model.NotifyResultRecruitmentCompleted）
   | 'recruitment_completed'
+  // 登录安全提醒：新设备/异地登录（后端 model.NotifyResultLoginSecurity）
+  | 'login_security'
   | 'closed';
 
 /** 跳转动作 */
