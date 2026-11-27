@@ -162,7 +162,7 @@ func Run() {
 			pnvsClient = nil
 		}
 	}
-	oneClickSvc := service.NewOneClickService(authSvc, pnvsClient, authCasdoorClient, redisClient, cfg.Casdoor.Organization)
+	oneClickSvc := service.NewOneClickService(authSvc, pnvsClient, authCasdoorClient, redisClient, cfg.Casdoor.Organization, cfg.AliyunPNVS.SiteURL)
 
 	// GitHub OAuth 登录/绑定 + 投稿数据迁移
 	githubOAuthClient := infrastructure.NewGithubOAuthClient(cfg.GitHubOAuth)

@@ -439,8 +439,11 @@ export function AuthDialog() {
       handleLoginSuccess(result);
     },
     onError: (e: Error, options) => {
-      // 自动检测失败时静默回退到密码/验证码表单
-      if (options?.silent) return;
+      // 自动检测失败时静默回退到密码/验证码表单，只打日志便于排查
+      if (options?.silent) {
+        console.warn('[oneclick] 本机号码检测失败，回退登录表单：', e.message);
+        return;
+      }
       setError(e.message || '一键登录失败，请使用短信验证码或密码登录');
     },
   });

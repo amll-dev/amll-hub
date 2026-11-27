@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -464,12 +465,29 @@ func (h *AuthHandler) OneClickAuthToken(c *gin.Context) {
 		writeAuthErr(c, service.ErrOneClickRateLimited)
 		return
 	}
-	token, err := h.oneClick.AuthToken(c.Request.Context())
+	token, err := h.oneClick.AuthToken(c.Request.Context(), requestOrigin(c))
 	if err != nil {
 		writeAuthErr(c, err)
 		return
 	}
 	pkg.OK(c, token)
+}
+
+// requestOrigin 取前端页面来源（Origin 优先，其次 Referer）。
+// 阿里云取号要求 H5 页面地址与实际访问域名一致，后端据此上报 Url / Origin。
+func requestOrigin(c *gin.Context) string {
+	if origin := strings.TrimSpace(c.GetHeader("Origin")); origin != "" && origin != "null" {
+		return origin
+	}
+	referer := c.GetHeader("Referer")
+	if referer == "" {
+		return ""
+	}
+	u, err := url.Parse(referer)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // OneClickLogin 用 H5 SDK 返回的 spToken 登录
