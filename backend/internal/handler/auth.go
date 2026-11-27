@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -34,9 +36,48 @@ func NewAuthHandler(svc *service.AuthService, oneClick *service.OneClickService,
 func loginMeta(c *gin.Context) infrastructure.LoginMeta {
 	return infrastructure.LoginMeta{
 		DeviceID:  c.GetHeader("X-Device-ID"),
-		ClientIP:  c.ClientIP(),
+		ClientIP:  loginClientIP(c),
 		UserAgent: c.GetHeader("User-Agent"),
 	}
+}
+
+// loginClientIP 取本次登录的真实客户端 IP
+func loginClientIP(c *gin.Context) string {
+	ip := normalizeLoginIP(c.ClientIP())
+	if ip == "" || !isInternalIP(ip) {
+		return ip
+	}
+	// X-Forwarded-For 形如 "客户端, 代理1, 代理2"，从右往左跳过代理地址
+	for _, header := range []string{"X-Forwarded-For", "X-Real-IP"} {
+		values := strings.Split(c.GetHeader(header), ",")
+		for i := len(values) - 1; i >= 0; i-- {
+			if candidate := normalizeLoginIP(values[i]); candidate != "" && !isInternalIP(candidate) {
+				return candidate
+			}
+		}
+	}
+	return ip
+}
+
+// normalizeLoginIP 去掉端口与 IPv6 方括号
+func normalizeLoginIP(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if host, _, err := net.SplitHostPort(raw); err == nil {
+		raw = host
+	}
+	return strings.Trim(raw, "[]")
+}
+
+// isInternalIP 回环、私网、链路本地地址都不可能是公网用户 IP
+func isInternalIP(ip string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return true
+	}
+	return parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsLinkLocalUnicast()
 }
 
 // 根据用户名查询审核员/超级管理员缓存
@@ -424,12 +465,29 @@ func (h *AuthHandler) OneClickAuthToken(c *gin.Context) {
 		writeAuthErr(c, service.ErrOneClickRateLimited)
 		return
 	}
-	token, err := h.oneClick.AuthToken(c.Request.Context())
+	token, err := h.oneClick.AuthToken(c.Request.Context(), requestOrigin(c))
 	if err != nil {
 		writeAuthErr(c, err)
 		return
 	}
 	pkg.OK(c, token)
+}
+
+// requestOrigin 取前端页面来源（Origin 优先，其次 Referer）。
+// 阿里云取号要求 H5 页面地址与实际访问域名一致，后端据此上报 Url / Origin。
+func requestOrigin(c *gin.Context) string {
+	if origin := strings.TrimSpace(c.GetHeader("Origin")); origin != "" && origin != "null" {
+		return origin
+	}
+	referer := c.GetHeader("Referer")
+	if referer == "" {
+		return ""
+	}
+	u, err := url.Parse(referer)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // OneClickLogin 用 H5 SDK 返回的 spToken 登录

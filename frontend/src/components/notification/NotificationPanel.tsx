@@ -11,7 +11,6 @@ import {
   usePanelNotifications,
 } from '@/hooks/useNotifications';
 import { NotificationList } from './NotificationList';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 
 /**
@@ -19,7 +18,7 @@ import { cn } from '@/lib/utils';
  * - 头部：标题 + 全部已读
  * - 列表：第 1 页 20 条，ScrollArea 限高
  * - 底部：查看全部消息 → /messages
- * onNavigate：点击带跳转的条目或"查看全部"时回调，外壳用于关闭自身。
+ * onNavigate：点击"查看全部"时回调，外壳用于关闭自身。
  * onClose：提供时（Sheet 外壳）在头部渲染关闭按钮。
  */
 export function NotificationPanel({
@@ -46,7 +45,6 @@ export function NotificationPanel({
 
   const handleRead = (m: Message) => {
     if (!m.read) markRead.mutate(m.id);
-    if (m.action?.path) onNavigate?.();
   };
 
   return (
@@ -81,15 +79,15 @@ export function NotificationPanel({
         </div>
       </div>
 
-      {/* 列表 */}
-      <ScrollArea className="max-h-[420px]">
+      {/* 列表：max-h + overflow-y-auto 形成真正可滚动的区域（ScrollArea 在 max-h 下不会滚动，内容会被卡片裁掉） */}
+      <div className="max-h-[420px] overflow-y-auto overscroll-contain">
         <NotificationList
           items={items}
           loading={isPending}
           onRead={handleRead}
           onDelete={(m) => del.mutate(m.id)}
         />
-      </ScrollArea>
+      </div>
 
       {/* 底部：查看全部 */}
       <Link

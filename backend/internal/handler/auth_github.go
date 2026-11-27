@@ -112,7 +112,7 @@ func (h *AuthGithubHandler) BindLogin(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
 	defer cancel()
 
-	result, err := h.svc.BindLogin(ctx, req)
+	result, err := h.svc.BindLogin(ctx, req, loginMeta(c))
 	if err != nil {
 		writeGithubErr(c, err)
 		return
@@ -138,7 +138,7 @@ func (h *AuthGithubHandler) BindRegister(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), longTimeout)
 	defer cancel()
 
-	result, err := h.svc.BindRegister(ctx, req)
+	result, err := h.svc.BindRegister(ctx, req, loginMeta(c))
 	if err != nil {
 		writeGithubErr(c, err)
 		return

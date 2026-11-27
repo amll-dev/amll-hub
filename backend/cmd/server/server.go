@@ -130,10 +130,10 @@ func Run() {
 	searchSvc := service.NewSearchService(cfg, meiliClient, redisClient)
 	statsSvc := service.NewStatsService(songRepo, artistRepo, syncRepo, redisClient)
 	indexSvc := service.NewIndexService(cfg, minioClient)
-	notFoundSvc := service.NewNotFoundService(notFoundRepo, redisClient, mq)
-	onlineSearchSvc := service.NewOnlineSearchService(cfg)
 	cloudMusicSvc := service.NewCloudMusicService(cfg, redisClient)
 	qmMusicSvc := service.NewQMMusicService(cfg, redisClient)
+	notFoundSvc := service.NewNotFoundService(notFoundRepo, redisClient, mq, cfg.NCM.APIBase, qmMusicSvc)
+	onlineSearchSvc := service.NewOnlineSearchService(cfg)
 	authCasdoorClient := infrastructure.NewCasdoorClient(cfg.Casdoor)
 	authSvc := service.NewAuthService(
 		authCasdoorClient,
@@ -162,7 +162,7 @@ func Run() {
 			pnvsClient = nil
 		}
 	}
-	oneClickSvc := service.NewOneClickService(authSvc, pnvsClient, authCasdoorClient, redisClient, cfg.Casdoor.Organization)
+	oneClickSvc := service.NewOneClickService(authSvc, pnvsClient, authCasdoorClient, redisClient, cfg.Casdoor.Organization, cfg.AliyunPNVS.SiteURL)
 
 	// GitHub OAuth 登录/绑定 + 投稿数据迁移
 	githubOAuthClient := infrastructure.NewGithubOAuthClient(cfg.GitHubOAuth)
@@ -208,6 +208,8 @@ func Run() {
 	}
 	mailResolver := mail.NewResolver(casdoorClient, cfg.Email.EmailCacheTTL)
 	notifSvc.SetEmail(mailSender, mailResolver, cfg.Email.SiteURL)
+	// 新设备/异地登录提醒写入站内消息
+	authSvc.SetNotifier(notifSvc)
 
 	// 系统公告
 	announcementSvc := service.NewAnnouncementService(
@@ -289,6 +291,8 @@ func Run() {
 		}
 		preloadCancel()
 		notFoundSvc.StartWeeklyClearTask(appCtx)
+		// 每 5 分钟补齐歌名/封面缺失的无歌词记录
+		notFoundSvc.StartBackfillTask(appCtx)
 	}
 
 	// 4.2 启动 WebSocket Hub

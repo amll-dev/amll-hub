@@ -21,6 +21,8 @@ const (
 	NotifyResultRevised = "revised"
 	// NotifyResultRecruitmentCompleted 已完成本期审核招募
 	NotifyResultRecruitmentCompleted = "recruitment_completed"
+	// NotifyResultLoginSecurity 登录安全提醒（新设备/异地登录）
+	NotifyResultLoginSecurity = "login_security"
 )
 
 // Notification 站内消息

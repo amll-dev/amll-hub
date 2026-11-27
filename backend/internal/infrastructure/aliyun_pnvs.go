@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/aliyun/alibaba-cloud-sdk-go/services/dypnsapi"
 )
@@ -34,15 +35,24 @@ func NewAliyunPnvsClient(accessKeyID, accessKeySecret, sceneCode, regionID strin
 	return &AliyunPnvsClient{core: client, sceneCode: sceneCode}, nil
 }
 
-// GetAuthToken 获取 H5 取号所需的 AccessToken / JwtToken
-func (c *AliyunPnvsClient) GetAuthToken(ctx context.Context) (*OneClickAuthToken, error) {
+// GetAuthToken 获取 H5 取号所需的 AccessToken / JwtToken。
+// origin 为调用页面的来源（协议 + 域名 + 端口）；阿里云要求 Url / Origin 必填，
+// 缺任一项会直接返回 MissingUrl / MissingOrigin。
+func (c *AliyunPnvsClient) GetAuthToken(ctx context.Context, origin string) (*OneClickAuthToken, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+
+	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+	if origin == "" {
+		return nil, fmt.Errorf("PNVS GetAuthToken requires h5 page origin")
 	}
 
 	request := dypnsapi.CreateGetAuthTokenRequest()
 	request.Scheme = "https"
 	request.SceneCode = c.sceneCode
+	request.Origin = origin
+	request.Url = origin + "/"
 
 	response, err := c.core.GetAuthToken(request)
 	if err != nil {

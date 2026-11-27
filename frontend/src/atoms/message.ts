@@ -20,6 +20,12 @@ export const hasUnreadAtom = atom((get) => get(serverUnreadAtom) > 0 || get(unre
 /** 消息面板是否展开（抑制 WS 推送 toast 用） */
 export const messagePanelOpenAtom = atom(false);
 
+/** 消息面板外壳（桌面 DropdownMenu / 移动 Sheet）的展开状态 */
+export const messagePanelVisibleAtom = atom(false);
+
+/** 消息详情弹窗当前展示的消息（null = 关闭） */
+export const notificationDetailAtom = atom<Message | null>(null);
+
 const store = getDefaultStore();
 
 // ===== 命令式动作（与 atoms/auth.ts 同风格，组件外可直接调用） =====
@@ -70,8 +76,15 @@ export function bumpServerUnread(delta = 1): void {
   store.set(serverUnreadAtom, Math.max(0, store.get(serverUnreadAtom) + delta));
 }
 
+/** 打开消息详情弹窗 */
+export function openMessageDetail(m: Message): void {
+  store.set(notificationDetailAtom, m);
+}
+
 /** 退出登录时清空（防串号） */
 export function resetMessages(): void {
   store.set(messagesAtom, []);
   store.set(serverUnreadAtom, 0);
+  store.set(notificationDetailAtom, null);
+  store.set(messagePanelVisibleAtom, false);
 }

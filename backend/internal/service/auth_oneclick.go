@@ -20,6 +20,8 @@ type OneClickService struct {
 	casdoor *infrastructure.CasdoorClient
 	rdb     *redis.Client
 	org     string
+	// siteURL 站点地址，请求未带 Origin/Referer 时兜底取号页面地址
+	siteURL string
 }
 
 // NewOneClickService 创建一键登录服务；pnvs 为 nil 表示功能未配置
@@ -29,8 +31,9 @@ func NewOneClickService(
 	casdoor *infrastructure.CasdoorClient,
 	rdb *redis.Client,
 	org string,
+	siteURL string,
 ) *OneClickService {
-	return &OneClickService{auth: auth, pnvs: pnvs, casdoor: casdoor, rdb: rdb, org: org}
+	return &OneClickService{auth: auth, pnvs: pnvs, casdoor: casdoor, rdb: rdb, org: org, siteURL: siteURL}
 }
 
 // Enabled 是否已配置一键登录
@@ -55,12 +58,16 @@ func (s *OneClickService) Allow(ctx context.Context, key string, limit int64, wi
 	return n <= limit
 }
 
-// AuthToken 获取 H5 取号 SDK 所需的临时凭据
-func (s *OneClickService) AuthToken(ctx context.Context) (*infrastructure.OneClickAuthToken, error) {
+// AuthToken 获取 H5 取号 SDK 所需的临时凭据；origin 为前端页面来源，
+// 为空时回退到站点配置地址（阿里云要求 Url / Origin 必填）
+func (s *OneClickService) AuthToken(ctx context.Context, origin string) (*infrastructure.OneClickAuthToken, error) {
 	if !s.Enabled() {
 		return nil, ErrOneClickDisabled
 	}
-	return s.pnvs.GetAuthToken(ctx)
+	if strings.TrimSpace(origin) == "" {
+		origin = s.siteURL
+	}
+	return s.pnvs.GetAuthToken(ctx, origin)
 }
 
 // Login 用 H5 SDK 返回的 spToken 完成登录
@@ -119,6 +126,12 @@ func classifyOneClickErr(err error) error {
 	if !errors.As(err, &oauthErr) {
 		return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
+
+	// Casdoor 侧的错误描述里常含真实原因（如运营商 AccessKey 失效），先落日志便于排查
+	logrus.WithFields(logrus.Fields{
+		"error":       oauthErr.Code,
+		"description": oauthErr.Description,
+	}).Warn("one-click login rejected by casdoor")
 
 	desc := strings.ToLower(oauthErr.Code + " " + oauthErr.Description)
 	switch {

@@ -11,6 +11,7 @@ import { AuthBoot } from '@/boot/AuthBoot';
 import { SearchBoot } from '@/boot/SearchBoot';
 import { ThemeBoot } from '@/boot/ThemeBoot';
 import { NotificationBoot } from '@/boot/NotificationBoot';
+import { NotificationDetailDialog } from '@/components/notification/NotificationDetailDialog';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { OfflineBanner } from '@/components/OfflineBanner';
@@ -129,6 +130,7 @@ export function Layout() {
       </div>
       <Player />
       <LazyAuthDialog />
+      <NotificationDetailDialog />
       <Toaster />
     </TooltipProvider>
   );

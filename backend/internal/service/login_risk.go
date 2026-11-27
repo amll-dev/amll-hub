@@ -18,7 +18,7 @@ const (
 	loginRiskTTL = 180 * 24 * time.Hour
 )
 
-// SecurityNotice 登录成功后返回给前端的安全提示
+// SecurityNotice 新设备/异地登录的站内通知素材
 type SecurityNotice struct {
 	// Type new_device / new_location
 	Type     string `json:"type"`
@@ -28,10 +28,10 @@ type SecurityNotice struct {
 	Time     string `json:"time"`
 }
 
-// LoginRiskService 新设备/异地登录的站内提示判定。
+// LoginRiskService 新设备/异地登录的站内通知判定。
 //
 // 与 Casdoor 的 CheckSigninRisk 相互独立：Casdoor 负责邮件（仅 /api/login 链路），
-// 这里负责所有登录方式的站内弹窗，两边使用同一个 deviceId 与客户端 IP。
+// 这里负责所有登录方式的站内通知，两边使用同一个 deviceId 与客户端 IP。
 type LoginRiskService struct {
 	rdb     *redis.Client
 	locator ipLocationFinder
@@ -55,7 +55,7 @@ func loginDeviceKey(userID string) string   { return "auth:devices:" + userID }
 func loginLocationKey(userID string) string { return "auth:locations:" + userID }
 
 // Evaluate 判断本次登录是否属于新设备/新地点，并把本次登录记录到 Redis。
-// 首次登录只记录不提示；同一设备/地点只提示一次。
+// 首次登录只记录不通知；同一设备/地点只通知一次。
 func (s *LoginRiskService) Evaluate(ctx context.Context, userID string, meta infrastructure.LoginMeta) []SecurityNotice {
 	if s == nil || s.rdb == nil || userID == "" {
 		return nil
@@ -66,11 +66,17 @@ func (s *LoginRiskService) Evaluate(ctx context.Context, userID string, meta inf
 		return nil
 	}
 	parsed := net.ParseIP(ip)
-	if parsed == nil || parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsLinkLocalUnicast() {
+	if parsed == nil {
 		return nil
 	}
 
-	location := s.resolveLocation(ip)
+	// 私网 / 回环 IP（反向代理地址、内网直连）解析不出地区，
+	// 只保留设备维度判定，避免整条提醒链路因为拿不到公网 IP 而完全静默
+	location := ""
+	if !parsed.IsLoopback() && !parsed.IsPrivate() && !parsed.IsLinkLocalUnicast() {
+		location = s.resolveLocation(ip)
+	}
+
 	deviceID := strings.TrimSpace(meta.DeviceID)
 	if deviceID == "" && location == "" {
 		return nil

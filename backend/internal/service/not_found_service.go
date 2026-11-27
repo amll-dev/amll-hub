@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -77,6 +78,11 @@ type NotFoundService struct {
 	redis *redis.Client
 	mq    *infrastructure.RabbitMQ
 
+	// 补齐任务依赖：NCM 代理地址与 QQ 音乐解析服务
+	ncmAPIBase string
+	qmSvc      *QMMusicService
+	httpClient *http.Client
+
 	// 进程内并发去重锁：Redis 不可用时的单进程兜底
 	inFlight sync.Map
 }
@@ -89,11 +95,16 @@ func NewNotFoundService(
 	repo *repository.NotFoundRepo,
 	redisClient *redis.Client,
 	mq *infrastructure.RabbitMQ,
+	ncmAPIBase string,
+	qmSvc *QMMusicService,
 ) *NotFoundService {
 	return &NotFoundService{
-		repo:  repo,
-		redis: redisClient,
-		mq:    mq,
+		repo:       repo,
+		redis:      redisClient,
+		mq:         mq,
+		ncmAPIBase: ncmAPIBase,
+		qmSvc:      qmSvc,
+		httpClient: &http.Client{Timeout: 15 * time.Second},
 	}
 }
 

@@ -48,6 +48,8 @@ type AliyunPNVSConfig struct {
 	// SceneCode H5 认证方案的场景码
 	SceneCode string
 	RegionID  string
+	// SiteURL 一键登录所在站点地址，取号时作为 H5 页面地址上报
+	SiteURL string
 }
 
 // Enabled 是否已配置一键登录所需凭据，未配置时按功能关闭处理
@@ -638,6 +640,7 @@ func Load() (*Config, error) {
 			AccessKeySecret: strings.TrimSpace(v.GetString("ALIYUN_PNVS_ACCESS_KEY_SECRET")),
 			SceneCode:       strings.TrimSpace(v.GetString("ALIYUN_PNVS_SCENE_CODE")),
 			RegionID:        strings.TrimSpace(v.GetString("ALIYUN_PNVS_REGION_ID")),
+			SiteURL:         strings.TrimSuffix(v.GetString("SITE_URL"), "/"),
 		},
 		Security: SecurityConfig{
 			LoginNotifyEnabled: v.GetBool("SECURITY_LOGIN_NOTIFY_ENABLED"),

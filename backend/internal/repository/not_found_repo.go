@@ -144,7 +144,7 @@ type RankingItem struct {
 }
 
 // GetRanking 查询排行榜（服务端真分页）
-// days 最大 7（只统计近 7 天仍有请求的记录，对应每周重置的计数窗口）；limit 缺省/过大时最多返回 maxRankingLimit 条；
+// days 最大 7（只统计近 7 天仍有请求的记录，对应每周重置的计数窗口），且窗口最多回溯到本周一 00:00；limit 缺省/过大时最多返回 maxRankingLimit 条；
 // total 始终是符合条件的全量命中数，items 为 [offset, offset+limit) 区间。
 func (r *NotFoundRepo) GetRanking(ctx context.Context, days int, platform string, limit, offset int) (int64, []RankingItem, error) {
 	if days > 7 {
@@ -156,7 +156,14 @@ func (r *NotFoundRepo) GetRanking(ctx context.Context, days int, platform string
 	if offset < 0 {
 		offset = 0
 	}
-	startTime := time.Now().AddDate(0, 0, -days)
+
+	now := time.Now()
+	startTime := now.AddDate(0, 0, -days)
+	// 榜单窗口与每周清零边界对齐：清零前的记录 request_count 已归零，
+	// 只按滚动窗口筛选会让它们以「0 次请求」继续展示，因此最多回溯到本周一。
+	if weekStart := startOfWeek(now); weekStart.After(startTime) {
+		startTime = weekStart
+	}
 
 	query := r.db.WithContext(ctx).
 		Model(&model.NotFoundRequest{}).
@@ -191,6 +198,74 @@ func (r *NotFoundRepo) GetRanking(ctx context.Context, days int, platform string
 		return 0, nil, fmt.Errorf("query ranking: %w", err)
 	}
 	return total, items, nil
+}
+
+// startOfWeek 返回 t 所在周的周一 00:00（与每周清零任务的边界一致）
+func startOfWeek(t time.Time) time.Time {
+	day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	offset := (int(t.Weekday()) + 6) % 7 // 周一 = 0
+	return day.AddDate(0, 0, -offset)
+}
+
+// IncompleteRecord 待补齐记录（仅平台与歌曲 ID）
+type IncompleteRecord struct {
+	Platform   string `gorm:"column:platform"`
+	PlatformID string `gorm:"column:platform_id"`
+}
+
+// ListIncompleteRecords 按排行榜热度优先取一批歌名或封面为空的记录。
+//
+// 排序与排行榜一致（request_count DESC），热门歌曲先补；updated_at ASC 作为
+// 同热度内的轮转：每轮处理都会刷新 updated_at，失败的记录排到同热度队尾，
+// 既保证下一轮（5 分钟后）能再次重试，又不会让同热度的少数失败记录反复占满批次。
+// request_count 每周一清零，上周的失败记录会自动落到低优先级，不会长期挡住新记录。
+func (r *NotFoundRepo) ListIncompleteRecords(ctx context.Context, limit int) ([]IncompleteRecord, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+
+	var items []IncompleteRecord
+	err := r.db.WithContext(ctx).
+		Model(&model.NotFoundRequest{}).
+		Select("platform, platform_id").
+		Where("category = ?", model.CategoryNotFound).
+		Where("platform IN ?", []string{"ncm", "qq"}).
+		Where("(COALESCE(song_name, '') = '' OR COALESCE(cover, '') = '')").
+		Order("request_count DESC, updated_at ASC, id ASC").
+		Limit(limit).
+		Find(&items).Error
+	if err != nil {
+		return nil, fmt.Errorf("list incomplete not_found records: %w", err)
+	}
+	return items, nil
+}
+
+// TouchRecord 仅刷新 updated_at，作为「本轮已尝试」标记，让记录排到队尾
+func (r *NotFoundRepo) TouchRecord(ctx context.Context, platform, platformID string) error {
+	result := r.db.WithContext(ctx).
+		Model(&model.NotFoundRequest{}).
+		Where("platform = ? AND platform_id = ?", platform, platformID).
+		Update("updated_at", gorm.Expr("NOW()"))
+	return result.Error
+}
+
+// UpdateParsedMetadata 回写解析得到的分类与歌曲元数据。
+// 字段值留空时保留已有值（记录可能只缺歌名或只缺封面），避免把已补全的信息覆盖成空。
+func (r *NotFoundRepo) UpdateParsedMetadata(
+	ctx context.Context,
+	platform, platformID, category, songName, artists, cover, album string,
+) error {
+	result := r.db.WithContext(ctx).
+		Model(&model.NotFoundRequest{}).
+		Where("platform = ? AND platform_id = ?", platform, platformID).
+		Updates(map[string]any{
+			"category":  category,
+			"song_name": gorm.Expr("COALESCE(NULLIF(?, ''), song_name)", songName),
+			"artists":   gorm.Expr("COALESCE(NULLIF(?, ''), artists)", artists),
+			"cover":     gorm.Expr("COALESCE(NULLIF(?, ''), cover)", cover),
+			"album":     gorm.Expr("COALESCE(NULLIF(?, ''), album)", album),
+		})
+	return result.Error
 }
 
 // UpdateCategory 更新某条记录的分类（Worker 解析后回写）
